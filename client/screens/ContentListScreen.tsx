@@ -330,6 +330,7 @@ export default function ContentListScreen() {
         streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
         thumbnail: s.stream_icon ?? undefined,
         streamIcon: s.stream_icon ?? undefined,
+        categoryId: selectedCategoryId ?? undefined,
       });
     } else if (type === "movies") {
       const s = item as VodStream;
