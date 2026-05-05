@@ -8,6 +8,7 @@ import {
   Platform,
   PanResponder,
   ScrollView,
+  BackHandler,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -164,6 +165,44 @@ function CtrlBtn({
   );
 }
 
+// ─── Track chip (individual selectable item inside TrackPanel) ────────────────
+function TrackChip({
+  label,
+  isSelected,
+  onPress,
+  onFocus,
+  hasTVPreferredFocus,
+}: {
+  label: string;
+  isSelected: boolean;
+  onPress: () => void;
+  onFocus?: () => void;
+  hasTVPreferredFocus?: boolean;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  return (
+    <Pressable
+      style={[
+        styles.trackChip,
+        isSelected && styles.trackChipActive,
+        isActive && styles.trackChipFocused,
+      ]}
+      onPress={onPress}
+      onFocus={() => { setFocused(true); onFocus?.(); }}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+    >
+      <ThemedText style={[styles.trackChipText, isSelected && styles.trackChipTextActive]}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 // ─── Track panel (CC / Audio) ─────────────────────────────────────────────────
 function TrackPanel({
   title,
@@ -211,17 +250,13 @@ function TrackPanel({
         keyboardShouldPersistTaps="always"
       >
         {showOff && (
-          <Pressable
-            style={({ pressed, focused }) => [
-              styles.trackChip,
-              !selected && styles.trackChipActive,
-              (pressed || focused) && styles.trackChipFocused,
-            ]}
+          <TrackChip
+            label="Off"
+            isSelected={!selected}
             onPress={() => onSelect(null)}
             onFocus={onFocus}
-          >
-            <ThemedText style={[styles.trackChipText, !selected && styles.trackChipTextActive]}>Off</ThemedText>
-          </Pressable>
+            hasTVPreferredFocus={!selected}
+          />
         )}
 
         {tracks.length === 0 && (
@@ -230,24 +265,18 @@ function TrackPanel({
           </View>
         )}
 
-        {tracks.map((track) => {
+        {tracks.map((track, idx) => {
           const isSelected = selected?.id === track.id;
           const display = track.label || track.language || track.id || "Unknown";
           return (
-            <Pressable
+            <TrackChip
               key={track.id}
-              style={({ pressed, focused }) => [
-                styles.trackChip,
-                isSelected && styles.trackChipActive,
-                (pressed || focused) && styles.trackChipFocused,
-              ]}
+              label={display}
+              isSelected={isSelected}
               onPress={() => onSelect(track)}
               onFocus={onFocus}
-            >
-              <ThemedText style={[styles.trackChipText, isSelected && styles.trackChipTextActive]}>
-                {display}
-              </ThemedText>
-            </Pressable>
+              hasTVPreferredFocus={!showOff && idx === 0}
+            />
           );
         })}
       </ScrollView>
@@ -286,14 +315,14 @@ export default function PlayerScreen() {
   });
 
   // ── Controls visibility ───────────────────────────────────────────────────
+  const activePanelRef = useRef<"cc" | "audio" | null>(null);
+
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (!IS_TV) {
-      timerRef.current = setTimeout(() => {
-        setShowControls(false);
-        // Don't auto-close the panel — let user dismiss it manually
-      }, HIDE_DELAY);
-    }
+    timerRef.current = setTimeout(() => {
+      // Don't hide if a panel is open
+      if (!activePanelRef.current) setShowControls(false);
+    }, HIDE_DELAY);
   }, []);
 
   const showAndReset = useCallback(() => {
@@ -358,15 +387,31 @@ export default function PlayerScreen() {
     return () => { sub1.remove(); sub2.remove(); };
   }, [isLive, player]);
 
+  // ── Hardware back button — close panel before exiting (Android TV) ────────
+  useEffect(() => {
+    const handler = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (activePanelRef.current) {
+        activePanelRef.current = null;
+        setActivePanel(null);
+        showAndReset();
+        return true; // consumed
+      }
+      return false; // let navigation handle
+    });
+    return () => handler.remove();
+  }, [showAndReset]);
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleBack = useCallback(() => {
     if (activePanel) {
+      activePanelRef.current = null;
       setActivePanel(null);
+      showAndReset();
       return;
     }
     player.pause();
     navigation.goBack();
-  }, [activePanel, player, navigation]);
+  }, [activePanel, player, navigation, showAndReset]);
 
   const handlePlayPause = useCallback(() => {
     isPlaying ? player.pause() : player.play();
@@ -391,7 +436,7 @@ export default function PlayerScreen() {
   }, [player, showAndReset]);
 
   const handleScreenTap = useCallback(() => {
-    if (activePanel) { setActivePanel(null); showAndReset(); return; }
+    if (activePanel) { activePanelRef.current = null; setActivePanel(null); showAndReset(); return; }
     if (showControls) {
       setShowControls(false);
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -404,6 +449,7 @@ export default function PlayerScreen() {
     const t = track as SubtitleTrack | null;
     setActiveSubtitle(t);
     player.subtitleTrack = t;
+    activePanelRef.current = null;
     setActivePanel(null);
     showAndReset();
   }, [player, showAndReset]);
@@ -412,12 +458,17 @@ export default function PlayerScreen() {
     const t = track as AudioTrack | null;
     setActiveAudio(t);
     if (t) player.audioTrack = t;
+    activePanelRef.current = null;
     setActivePanel(null);
     showAndReset();
   }, [player, showAndReset]);
 
   const togglePanel = useCallback((panel: "cc" | "audio") => {
-    setActivePanel((p) => p === panel ? null : panel);
+    setActivePanel((p) => {
+      const next = p === panel ? null : panel;
+      activePanelRef.current = next;
+      return next;
+    });
     showAndReset();
   }, [showAndReset]);
 
@@ -446,8 +497,8 @@ export default function PlayerScreen() {
     );
   }
 
-  // Controls visible on TV always; on touch only when showControls
-  const ctrlVisible = showControls || IS_TV;
+  // Controls visible when showControls=true, or when a panel is open (so panel stays visible during auto-hide)
+  const ctrlVisible = showControls || !!activePanel;
 
   return (
     <View style={styles.container}>
@@ -475,7 +526,7 @@ export default function PlayerScreen() {
       {/* ── Controls overlay — ALWAYS mounted so TV remote can focus buttons ── */}
       <View
         style={[styles.overlay, !ctrlVisible && styles.overlayHidden]}
-        pointerEvents={ctrlVisible ? "box-none" : "none"}
+        pointerEvents="box-none"
       >
         {/* Gradients */}
         <LinearGradient

@@ -398,6 +398,10 @@ export default function ContentListScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          initialNumToRender={24}
+          maxToRenderPerBatch={24}
+          windowSize={5}
+          removeClippedSubviews
           ListHeaderComponent={searchBarHeader}
           renderItem={({ item }) => (
             <ContentCard

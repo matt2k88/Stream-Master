@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Pressable,
   Animated,
-  Text,
   ActivityIndicator,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -23,8 +22,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   const doneRef = useRef(false);
   const [showSkip, setShowSkip] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [debugStatus, setDebugStatus] = useState("initialising...");
-  const [debugError, setDebugError] = useState("");
 
   const dismiss = useCallback(() => {
     if (doneRef.current) return;
@@ -44,14 +41,10 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
 
   useEffect(() => {
     const sub = player.addListener("statusChange", (e: any) => {
-      setDebugStatus(e.status ?? "unknown");
       if (e.status === "readyToPlay") {
         setIsReady(true);
         setShowSkip(true);
-        setDebugError("");
       } else if (e.status === "error") {
-        setDebugError(e.error?.message ?? e.error?.toString() ?? "unknown error");
-        // Auto-dismiss on error after 3s so app still opens
         setTimeout(() => dismiss(), 3000);
       }
     });
@@ -63,7 +56,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
       if (e.isPlaying) {
         setIsReady(true);
         setShowSkip(true);
-        setDebugStatus("playing");
       }
     });
     return () => sub.remove();
@@ -95,12 +87,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
       {!isReady ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
-          {/* Debug label — shows player state on device */}
-          <Text style={styles.debugText}>{debugStatus}</Text>
-          {debugError ? (
-            <Text style={styles.debugError}>{debugError}</Text>
-          ) : null}
-          <Text style={styles.debugUrl} numberOfLines={3}>{videoUrl}</Text>
         </View>
       ) : null}
 
@@ -196,20 +182,5 @@ const styles = StyleSheet.create({
   fadeOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#000",
-  },
-  debugText: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  debugError: {
-    color: "#FF5555",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  debugUrl: {
-    color: "rgba(255,102,0,0.5)",
-    fontSize: 10,
-    textAlign: "center",
   },
 });

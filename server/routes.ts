@@ -253,27 +253,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     try {
       const now = new Date().toISOString();
-      const entry = { profile_id, content_type, stream_id: stream_id ?? null, name, thumbnail_url: thumbnail_url ?? null, stream_url: stream_url ?? null, updated_at: now };
+      const entry = {
+        profile_id,
+        content_type,
+        stream_id: stream_id ?? null,
+        name,
+        thumbnail_url: thumbnail_url ?? null,
+        stream_url: stream_url ?? null,
+        updated_at: now,
+      };
 
-      // Get existing entries ordered oldest first (so we can replace the oldest if at limit)
-      const { data: existing } = await supabase
+      // Step 1: Remove any existing entry for the same stream (dedup / re-watch)
+      if (stream_id) {
+        await supabase
+          .from("recently_watched")
+          .delete()
+          .eq("profile_id", profile_id)
+          .eq("stream_id", String(stream_id));
+      }
+
+      // Step 2: Get remaining entries ordered oldest first
+      const { data: existing, error: fetchErr } = await supabase
         .from("recently_watched")
         .select("id, updated_at")
         .eq("profile_id", profile_id)
         .order("updated_at", { ascending: true });
 
+      if (fetchErr) console.error("[recently-watched] fetch error:", fetchErr.message);
+
       let result;
       if (!existing || existing.length < 2) {
-        const { data } = await supabase.from("recently_watched").insert(entry).select().single();
-        result = data;
+        // Try inserting; fall back to updating oldest if unique constraint fires
+        const { data, error: insertErr } = await supabase
+          .from("recently_watched")
+          .insert(entry)
+          .select()
+          .single();
+
+        if (insertErr) {
+          console.error("[recently-watched] insert error:", insertErr.message, insertErr.code);
+          // Unique constraint violation (code 23505) or any insert failure — update oldest
+          if (existing && existing.length > 0) {
+            const { data: upd, error: updErr } = await supabase
+              .from("recently_watched")
+              .update(entry)
+              .eq("id", existing[0].id)
+              .select()
+              .single();
+            if (updErr) console.error("[recently-watched] fallback update error:", updErr.message);
+            result = upd;
+          }
+        } else {
+          result = data;
+        }
       } else {
-        // Replace the oldest entry
-        const { data } = await supabase.from("recently_watched").update(entry).eq("id", existing[0].id).select().single();
+        // At limit — replace the oldest entry
+        const { data, error: updErr } = await supabase
+          .from("recently_watched")
+          .update(entry)
+          .eq("id", existing[0].id)
+          .select()
+          .single();
+        if (updErr) console.error("[recently-watched] update error:", updErr.message);
         result = data;
       }
-      if (!result) return res.json(null);
-      res.json(result);
-    } catch {
+
+      res.json(result ?? null);
+    } catch (e: any) {
+      console.error("[recently-watched] POST exception:", e?.message);
       res.json(null);
     }
   });

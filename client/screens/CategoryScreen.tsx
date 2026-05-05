@@ -395,6 +395,10 @@ export default function CategoryScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+          initialNumToRender={20}
+          maxToRenderPerBatch={20}
+          windowSize={5}
+          removeClippedSubviews
           renderItem={({ item }) => (
             <CategoryCard
               item={item}

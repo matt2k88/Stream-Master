@@ -130,6 +130,43 @@ function ProfileButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshing: boolean }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  return (
+    <Pressable
+      style={[styles.headerBtn, isActive && styles.headerBtnActive]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      disabled={refreshing}
+    >
+      <Feather name="refresh-cw" size={16} color={refreshing || isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
+function AccountButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  return (
+    <Pressable
+      style={[styles.headerBtn, isActive && styles.headerBtnActive]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <Feather name="user" size={18} color={isActive ? Colors.dark.accent : Colors.dark.accent} />
+    </Pressable>
+  );
+}
+
 function MessagesButton({ onPress }: { onPress: () => void }) {
   const { unreadCount } = useMessages();
   const [pressed, setPressed] = useState(false);
@@ -204,27 +241,11 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerActions}>
-          <Pressable
-            style={({ pressed, focused }) => [styles.headerBtn, (pressed || focused) && styles.headerBtnActive]}
-            onPress={handleRefresh}
-            disabled={refreshing}
-          >
-            <Feather
-              name="refresh-cw"
-              size={16}
-              color={refreshing ? Colors.dark.accent : Colors.dark.textSecondary}
-            />
-          </Pressable>
+          <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
 
           <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
-
-          <Pressable
-            style={({ pressed, focused }) => [styles.headerBtn, (pressed || focused) && styles.headerBtnActive]}
-            onPress={() => navigation.navigate("AccountInfo")}
-          >
-            <Feather name="user" size={18} color={Colors.dark.accent} />
-          </Pressable>
+          <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
         </View>
       </View>
 

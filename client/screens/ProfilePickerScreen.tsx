@@ -48,15 +48,19 @@ function ProfileCard({
   size: number;
 }) {
   const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
 
   return (
     <Pressable
-      style={[styles.profileCard, { width: size }, pressed && styles.profileCardActive]}
+      style={[styles.profileCard, { width: size }, isActive && styles.profileCardActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     >
-      <View style={styles.avatarWrap}>
+      <View style={[styles.avatarWrap, isActive && { transform: [{ scale: 1.08 }] }]}>
         <ProfileAvatar icon={profile.avatar_icon} color={profile.avatar_color} size={54} />
         {profile.pin ? (
           <View style={[styles.lockBadge, { backgroundColor: profile.avatar_color }]}>
@@ -64,7 +68,7 @@ function ProfileCard({
           </View>
         ) : null}
       </View>
-      <ThemedText style={styles.profileName} numberOfLines={1}>
+      <ThemedText style={[styles.profileName, isActive && styles.profileNameActive]} numberOfLines={1}>
         {profile.name}
       </ThemedText>
     </Pressable>
@@ -73,17 +77,21 @@ function ProfileCard({
 
 function AddProfileCard({ onPress, size }: { onPress: () => void; size: number }) {
   const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
   return (
     <Pressable
-      style={[styles.addCard, { width: size }, pressed && styles.addCardActive]}
+      style={[styles.addCard, { width: size }, isActive && styles.addCardActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     >
-      <View style={styles.addIconWrap}>
+      <View style={[styles.addIconWrap, isActive && styles.addIconWrapActive]}>
         <Feather name="plus" size={26} color={Colors.dark.accent} />
       </View>
-      <ThemedText style={styles.addText}>Add Profile</ThemedText>
+      <ThemedText style={[styles.addText, isActive && styles.addTextActive]}>Add Profile</ThemedText>
     </Pressable>
   );
 }
@@ -238,8 +246,18 @@ const styles = StyleSheet.create({
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xl },
   grid: { paddingTop: Spacing.sm },
-  profileCard: { alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm },
-  profileCardActive: { opacity: 0.75 },
+  profileCard: {
+    alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md, borderWidth: 2, borderColor: "transparent",
+    paddingHorizontal: Spacing.sm,
+  },
+  profileCardActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 12, elevation: 8,
+  },
+  profileNameActive: { color: Colors.dark.accent },
   avatarWrap: { position: "relative" },
   avatarRing: {
     borderWidth: 2, justifyContent: "center", alignItems: "center",
@@ -256,15 +274,26 @@ const styles = StyleSheet.create({
     color: Colors.dark.text, fontSize: 13, fontWeight: "600",
     textAlign: "center", maxWidth: "90%",
   },
-  addCard: { alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm },
-  addCardActive: { opacity: 0.7 },
+  addCard: {
+    alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md, borderWidth: 2, borderColor: "transparent",
+    paddingHorizontal: Spacing.sm,
+  },
+  addCardActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 12, elevation: 8,
+  },
   addIconWrap: {
     width: 72, height: 72, borderRadius: 36,
     borderWidth: 2, borderColor: Colors.dark.border, borderStyle: "dashed",
     justifyContent: "center", alignItems: "center",
     backgroundColor: Colors.dark.backgroundDefault,
   },
+  addIconWrapActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   addText: { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: "500" },
+  addTextActive: { color: Colors.dark.accent },
   centered: {
     flex: 1, justifyContent: "center", alignItems: "center",
     gap: Spacing.md, paddingTop: Spacing["4xl"],
