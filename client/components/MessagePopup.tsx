@@ -13,7 +13,7 @@ import { useMessages } from "@/contexts/MessageContext";
 import { LinearGradient } from "expo-linear-gradient";
 
 export default function MessagePopup() {
-  const { pendingMessage, dismissCurrent } = useMessages();
+  const { pendingMessage, dismissCurrent, isOnDashboard } = useMessages();
   const scaleAnim = useRef(new Animated.Value(0.88)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -29,7 +29,7 @@ export default function MessagePopup() {
     }
   }, [pendingMessage?.id]);
 
-  if (!pendingMessage) return null;
+  if (!pendingMessage || !isOnDashboard) return null;
 
   const formattedDate = new Date(pendingMessage.created_at).toLocaleDateString("en-US", {
     year: "numeric", month: "short", day: "numeric",

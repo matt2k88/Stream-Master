@@ -3,7 +3,6 @@ import {
   View,
   StyleSheet,
   Pressable,
-  useWindowDimensions,
   Animated,
 } from "react-native";
 import { Image } from "expo-image";
@@ -108,8 +107,6 @@ export default function AdvertCarousel({ style }: { style?: any }) {
           contentFit="cover"
           transition={0}
         />
-        {/* Dark vignette at bottom for label */}
-        <View style={styles.vignette} />
         {current.name ? (
           <View style={styles.label}>
             <ThemedText style={styles.labelText} numberOfLines={1}>
@@ -135,13 +132,14 @@ export default function AdvertCarousel({ style }: { style?: any }) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // 16:9 aspect ratio — width is set by parent, height derives from this
+    aspectRatio: 16 / 9,
+    width: "100%",
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    position: "relative",
   },
   placeholder: {
     justifyContent: "center",
@@ -159,23 +157,14 @@ const styles = StyleSheet.create({
   image: {
     ...StyleSheet.absoluteFillObject,
   },
-  vignette: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 48,
-    backgroundColor: "transparent",
-    // gradient via backgroundColor layering
-  },
   label: {
     position: "absolute",
-    bottom: 28,
+    bottom: Spacing.sm,
     left: Spacing.md,
     right: Spacing.md,
   },
   labelText: {
-    color: "#fff",
+    color: "rgba(255,255,255,0.8)",
     fontSize: 11,
     fontWeight: "600",
   },

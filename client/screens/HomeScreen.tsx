@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -171,7 +171,15 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { refresh } = useData();
+  const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      setOnDashboard(true);
+      return () => setOnDashboard(false);
+    }, [setOnDashboard])
+  );
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -349,8 +357,8 @@ const styles = StyleSheet.create({
   subRow: { flexDirection: "row", gap: Spacing.md },
   searchCol: { width: "32%", flexShrink: 0 },
 
-  rightPanelCarousel: { flex: 1 },
-  portraitCarousel: { flex: 1, minHeight: 80 },
+  rightPanelCarousel: { width: "100%" },
+  portraitCarousel: { width: "100%" },
 
   // Nav buttons
   navButton: {

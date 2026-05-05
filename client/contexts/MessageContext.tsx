@@ -16,6 +16,8 @@ interface MessageContextType {
   seenIds: Set<string>;
   pendingMessage: Message | null;
   unreadCount: number;
+  isOnDashboard: boolean;
+  setOnDashboard: (v: boolean) => void;
   dismissCurrent: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -29,6 +31,7 @@ export function MessageProvider({ children }: { children: ReactNode }) {
   const [userMessages, setUserMessages] = useState<Message[]>([]);
   const [allMessages, setAllMessages] = useState<Message[]>([]);
   const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
+  const [isOnDashboard, setOnDashboard] = useState(false);
   const isFetchingRef = useRef(false);
 
   const fetchAll = useCallback(async (uname: string) => {
@@ -69,6 +72,7 @@ export function MessageProvider({ children }: { children: ReactNode }) {
       setUserMessages([]);
       setAllMessages([]);
       setSeenIds(new Set());
+      setOnDashboard(false);
     }
   }, [username, fetchAll]);
 
@@ -93,7 +97,12 @@ export function MessageProvider({ children }: { children: ReactNode }) {
 
   return (
     <MessageContext.Provider
-      value={{ userMessages, allMessages, seenIds, pendingMessage, unreadCount, dismissCurrent, refresh }}
+      value={{
+        userMessages, allMessages, seenIds,
+        pendingMessage, unreadCount,
+        isOnDashboard, setOnDashboard,
+        dismissCurrent, refresh,
+      }}
     >
       {children}
     </MessageContext.Provider>
