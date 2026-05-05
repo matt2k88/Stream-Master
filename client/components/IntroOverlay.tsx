@@ -5,6 +5,7 @@ import {
   Pressable,
   Animated,
   Text,
+  ActivityIndicator,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,21 +19,22 @@ interface IntroPlayerProps {
 
 function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   const insets = useSafeAreaInsets();
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  // Fade overlay goes from transparent → black on dismiss
+  const fadeAnim = useRef(new Animated.Value(0)).current;
   const doneRef = useRef(false);
   const [showSkip, setShowSkip] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   const dismiss = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
     Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 600,
+      toValue: 1,
+      duration: 500,
       useNativeDriver: true,
     }).start(() => onDone());
   }, [fadeAnim, onDone]);
 
-  // Player is created with the real URL — same pattern as PlayerScreen
   const player = useVideoPlayer(videoUrl, (p) => {
     p.muted = false;
     p.loop = false;
@@ -41,14 +43,20 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
 
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
-      if (e.status === "readyToPlay") setShowSkip(true);
+      if (e.status === "readyToPlay") {
+        setIsReady(true);
+        setShowSkip(true);
+      }
     });
     return () => sub.remove();
   }, [player]);
 
   useEffect(() => {
     const sub = player.addListener("playingChange", (e) => {
-      if (e.isPlaying) setShowSkip(true);
+      if (e.isPlaying) {
+        setIsReady(true);
+        setShowSkip(true);
+      }
     });
     return () => sub.remove();
   }, [player]);
@@ -61,7 +69,8 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   }, [player, dismiss]);
 
   return (
-    <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+    <View style={styles.container}>
+      {/* Video sits in a plain View — not Animated — so native surface renders correctly */}
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -71,16 +80,30 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
         allowsPictureInPicture={false}
       />
 
+      {/* Loading spinner until ready */}
+      {!isReady ? (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+        </View>
+      ) : null}
+
+      {/* Skip button */}
       {showSkip ? (
         <Pressable
           style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
           onPress={dismiss}
-          hitSlop={10}
+          hitSlop={12}
         >
           <Text style={styles.skipText}>Skip</Text>
         </Pressable>
       ) : null}
-    </Animated.View>
+
+      {/* Dismiss fade — black overlay animates in on exit */}
+      <Animated.View
+        style={[styles.fadeOverlay, { opacity: fadeAnim }]}
+        pointerEvents="none"
+      />
+    </View>
   );
 }
 
@@ -116,14 +139,12 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
     return () => { cancelled = true; };
   }, []);
 
-  // false = no intro, skip straight through
   useEffect(() => {
     if (videoUrl === false) onDone();
   }, [videoUrl, onDone]);
 
-  // null = still loading — black screen
   if (videoUrl === null) {
-    return <View style={styles.overlay} />;
+    return <View style={styles.container} />;
   }
 
   if (videoUrl === false) return null;
@@ -132,10 +153,16 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  container: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#000",
     zIndex: 9999,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.6)",
   },
   skipBtn: {
     position: "absolute",
@@ -151,5 +178,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     opacity: 0.9,
+  },
+  fadeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000",
   },
 });
