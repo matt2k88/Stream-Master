@@ -18,6 +18,7 @@ import AccountInfoScreen from "@/screens/AccountInfoScreen";
 import ProfilePickerScreen from "@/screens/ProfilePickerScreen";
 import CreateProfileScreen from "@/screens/CreateProfileScreen";
 import PinEntryScreen from "@/screens/PinEntryScreen";
+import SearchScreen from "@/screens/SearchScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -25,6 +26,7 @@ export type RootStackParamList = {
   CreateProfile: { profile?: Profile } | undefined;
   PinEntry: { profile: Profile; fromHome?: boolean };
   Home: undefined;
+  Search: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string };
@@ -57,6 +59,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
             <Stack.Screen name="PinEntry" component={PinEntryScreen} />
             <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Category" component={CategoryScreen} />
             <Stack.Screen name="ContentList" component={ContentListScreen} />
             <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />

@@ -20,9 +20,10 @@ interface NavButtonProps {
   onPress: () => void;
   large?: boolean;
   tall?: boolean;
+  slim?: boolean;
 }
 
-function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
+function NavButton({ title, icon, onPress, large, tall, slim }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
@@ -33,6 +34,7 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
         styles.navButton,
         large && styles.navButtonLarge,
         tall && styles.navButtonTall,
+        slim && styles.navButtonSlim,
         isActive && styles.navButtonActive,
       ]}
       onPress={onPress}
@@ -49,10 +51,10 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
+      <View style={[styles.iconWrap, isActive && styles.iconWrapActive, slim && styles.iconWrapSlim]}>
         <Feather
           name={icon}
-          size={large || tall ? 34 : 26}
+          size={large || tall ? 34 : slim ? 20 : 26}
           color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
         />
       </View>
@@ -61,10 +63,51 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
           styles.navButtonText,
           (large || tall) && styles.navButtonTextLarge,
           isActive && styles.navButtonTextActive,
+          slim && styles.navButtonTextSlim,
         ]}
       >
         {title}
       </ThemedText>
+      {isActive ? <View style={styles.activeIndicator} /> : null}
+    </Pressable>
+  );
+}
+
+function SearchButton({ onPress, prominent }: { onPress: () => void; prominent?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+
+  return (
+    <Pressable
+      style={[
+        styles.searchButton,
+        prominent && styles.searchButtonProminent,
+        isActive && styles.searchButtonActive,
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <LinearGradient
+        colors={isActive
+          ? ["rgba(255,102,0,0.22)", "rgba(255,102,0,0.10)"]
+          : ["rgba(255,102,0,0.08)", "rgba(255,102,0,0.02)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={[styles.searchBtnIconWrap, isActive && styles.searchBtnIconWrapActive]}>
+        <Feather name="search" size={prominent ? 24 : 18} color={isActive ? Colors.dark.accent : Colors.dark.accent} />
+      </View>
+      <ThemedText style={[styles.searchBtnText, prominent && styles.searchBtnTextProminent, isActive && styles.searchBtnTextActive]}>
+        {prominent ? "Search All Content" : "Search"}
+      </ThemedText>
+      <View style={styles.searchBtnHint}>
+        <ThemedText style={styles.searchBtnHintText}>channels, movies, series</ThemedText>
+      </View>
       {isActive ? <View style={styles.activeIndicator} /> : null}
     </Pressable>
   );
@@ -164,6 +207,7 @@ export default function HomeScreen() {
 
       {/* Body */}
       {isLandscape ? (
+        // ── Landscape / TV ─────────────────────────────────────────────────
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
           <View style={styles.leftPanel}>
             <NavButton
@@ -172,6 +216,7 @@ export default function HomeScreen() {
               onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
               large
             />
+            {/* Bottom row: Movies + Series + Search */}
             <View style={styles.subRow}>
               <NavButton
                 title="Movies"
@@ -185,6 +230,10 @@ export default function HomeScreen() {
                 onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
                 tall
               />
+              {/* Search — slimmer column */}
+              <View style={styles.searchCol}>
+                <SearchButton onPress={() => navigation.navigate("Search")} />
+              </View>
             </View>
           </View>
           <View style={styles.rightPanel}>
@@ -201,6 +250,7 @@ export default function HomeScreen() {
           </View>
         </View>
       ) : (
+        // ── Portrait / Mobile ───────────────────────────────────────────────
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
           <View style={styles.portraitNav}>
             <NavButton
@@ -222,6 +272,14 @@ export default function HomeScreen() {
               />
             </View>
           </View>
+
+          {/* Search — prominent button below main nav */}
+          <SearchButton
+            onPress={() => navigation.navigate("Search")}
+            prominent
+          />
+
+          {/* Coming Soon — squished */}
           <View style={styles.portraitFuture}>
             <LinearGradient
               colors={["rgba(255,102,0,0.05)", "transparent"]}
@@ -229,7 +287,7 @@ export default function HomeScreen() {
               start={{ x: 0.5, y: 0 }}
               end={{ x: 0.5, y: 1 }}
             />
-            <Feather name="zap" size={24} color="rgba(255,102,0,0.2)" />
+            <Feather name="zap" size={18} color="rgba(255,102,0,0.2)" />
             <ThemedText style={styles.futurePanelText}>Coming Soon</ThemedText>
           </View>
         </View>
@@ -270,18 +328,25 @@ const styles = StyleSheet.create({
   },
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
+
+  // Body layouts
   bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg },
   leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
   rightPanel: { flex: 1 },
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md },
   portraitNav: { gap: Spacing.md },
   portraitFuture: {
-    flex: 1, borderRadius: BorderRadius.md, borderWidth: 1,
+    height: 68,
+    borderRadius: BorderRadius.md, borderWidth: 1,
     borderColor: Colors.dark.border, borderStyle: "dashed",
     justifyContent: "center", alignItems: "center",
-    gap: Spacing.sm, overflow: "hidden", minHeight: 120,
+    gap: Spacing.xs, overflow: "hidden",
   },
+
   subRow: { flexDirection: "row", gap: Spacing.md },
+  searchCol: { flex: 0, width: "30%", minWidth: 90 },
+
+  // Nav buttons
   navButton: {
     flex: 1, backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
@@ -290,6 +355,7 @@ const styles = StyleSheet.create({
   },
   navButtonLarge: { minHeight: 120, padding: Spacing.xl, flex: 2 },
   navButtonTall: { minHeight: 160, padding: Spacing.xl },
+  navButtonSlim: { padding: Spacing.md },
   navButtonActive: {
     borderColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
@@ -302,9 +368,51 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border,
   },
   iconWrapActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
+  iconWrapSlim: { width: 36, height: 36 },
   navButtonText: { fontSize: 14, fontWeight: "600", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
   navButtonTextLarge: { fontSize: 18, fontWeight: "700" },
+  navButtonTextSlim: { fontSize: 12 },
   navButtonTextActive: { color: Colors.dark.accent },
+
+  // Search button
+  searchButton: {
+    flex: 1,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.accent,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.md,
+    gap: Spacing.xs,
+    overflow: "hidden",
+  },
+  searchButtonProminent: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.lg,
+    gap: Spacing.md,
+  },
+  searchButtonActive: {
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8, shadowRadius: 14, elevation: 10,
+  },
+  searchBtnIconWrap: {
+    width: 40, height: 40, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.accentDim,
+    borderWidth: 1, borderColor: Colors.dark.accent,
+    justifyContent: "center", alignItems: "center",
+  },
+  searchBtnIconWrapActive: { backgroundColor: "rgba(255,102,0,0.3)" },
+  searchBtnText: {
+    color: Colors.dark.accent, fontSize: 13, fontWeight: "700", letterSpacing: 0.3,
+  },
+  searchBtnTextProminent: { fontSize: 16, fontWeight: "700" },
+  searchBtnTextActive: { color: Colors.dark.accent },
+  searchBtnHint: { display: "none" },
+  searchBtnHintText: { color: Colors.dark.textSecondary, fontSize: 11 },
+
   activeIndicator: {
     position: "absolute", bottom: 0, left: "20%", right: "20%",
     height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1,

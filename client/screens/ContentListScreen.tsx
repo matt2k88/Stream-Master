@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   Animated,
+  TextInput,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +25,8 @@ import { useFavourites } from "@/contexts/FavouritesContext";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
 type ContentItem = LiveStream | VodStream | Series;
+
+const SEARCH_LIMIT = 150;
 
 function getImageRatio(type: string): number {
   if (type === "movies" || type === "series") return 1.5;
@@ -104,7 +107,6 @@ function ContentCard({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      {/* Thumbnail */}
       <View style={[styles.cardThumb, { width: cardWidth, height: imgH }]}>
         {imageUrl ? (
           <Image
@@ -122,7 +124,6 @@ function ContentCard({
         <StarBadge visible={isFavourited} />
       </View>
 
-      {/* Info */}
       <View style={styles.cardInfo}>
         <ThemedText
           style={[styles.cardName, isActive && styles.cardNameActive]}
@@ -151,6 +152,7 @@ export default function ContentListScreen() {
   const { width, height } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
+  const [query, setQuery] = useState("");
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -158,16 +160,27 @@ export default function ContentListScreen() {
   const gap = Spacing.sm;
 
   const isFavouritesView = categoryId === "favourites";
+  const trimmedQuery = query.trim().toLowerCase();
+  const isSearching = trimmedQuery.length > 0;
 
-  const defaultCols = type === "live"
+  const numColumns = type === "live"
     ? Math.max(3, Math.floor(width / 150))
     : Math.max(3, Math.floor(width / 130));
-  const numColumns = defaultCols;
   const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
 
-  const content: ContentItem[] = useMemo(() => {
+  // All streams for this section type (used for section-wide search)
+  const allSectionStreams: ContentItem[] = useMemo(() => {
+    switch (type) {
+      case "live": return liveStreams;
+      case "movies": return vodStreams;
+      case "series": return seriesList;
+      default: return [];
+    }
+  }, [type, liveStreams, vodStreams, seriesList]);
+
+  // Category-filtered or favourites content (shown when not searching)
+  const categoryContent: ContentItem[] = useMemo(() => {
     if (isFavouritesView) {
-      // Filter full stream list by favourited IDs for this type
       const favIds = new Set(
         getFavouritesByType(type as "live" | "movies" | "series").map((f) => f.stream_id)
       );
@@ -185,6 +198,16 @@ export default function ContentListScreen() {
       default: return [];
     }
   }, [type, categoryId, isFavouritesView, liveStreams, vodStreams, seriesList, getFavouritesByType]);
+
+  // Search results — searches entire section, not just current category
+  const searchResults: ContentItem[] = useMemo(() => {
+    if (!trimmedQuery) return [];
+    return allSectionStreams
+      .filter((s) => s.name.toLowerCase().includes(trimmedQuery))
+      .slice(0, SEARCH_LIMIT);
+  }, [trimmedQuery, allSectionStreams]);
+
+  const displayContent = isSearching ? searchResults : categoryContent;
 
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
@@ -212,6 +235,7 @@ export default function ContentListScreen() {
   };
 
   const handleLongPress = (item: ContentItem) => {
+    if (isSearching) return; // disable long-press in search mode
     const streamId = getStreamId(item, type);
     toggleFavourite({
       streamId,
@@ -228,7 +252,58 @@ export default function ContentListScreen() {
     return String(item.num);
   };
 
-  if (isSyncing && content.length === 0 && !isFavouritesView) {
+  const sectionPlaceholder =
+    type === "live" ? "Search all live channels..." :
+    type === "movies" ? "Search all movies..." :
+    "Search all series...";
+
+  const countDisplay = isSearching ? searchResults.length : displayContent.length;
+
+  const searchBarHeader = (
+    <View style={styles.searchBarWrap}>
+      <View style={[styles.searchBar, isSearching && styles.searchBarActive]}>
+        <Feather
+          name="search"
+          size={15}
+          color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
+        />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={sectionPlaceholder}
+          placeholderTextColor={Colors.dark.textSecondary}
+          value={query}
+          onChangeText={setQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+        {query.length > 0 ? (
+          <Pressable onPress={() => setQuery("")} hitSlop={8}>
+            <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
+          </Pressable>
+        ) : null}
+      </View>
+      {isSearching ? (
+        <View style={styles.searchMeta}>
+          <ThemedText style={styles.searchMetaText}>
+            {searchResults.length === 0
+              ? `No results for "${query}"`
+              : `${searchResults.length} results across all ${
+                  type === "live" ? "channels" : type === "movies" ? "movies" : "series"
+                }`}
+          </ThemedText>
+          {searchResults.length === SEARCH_LIMIT ? (
+            <ThemedText style={styles.searchMetaLimit}>
+              (first {SEARCH_LIMIT} shown)
+            </ThemedText>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+
+  if (isSyncing && categoryContent.length === 0 && !isFavouritesView) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
@@ -254,18 +329,24 @@ export default function ContentListScreen() {
             <Feather name="star" size={16} color={Colors.dark.accent} />
           ) : null}
           <ThemedText style={styles.headerTitle} numberOfLines={1}>
-            {categoryName}
+            {isSearching ? "Search Results" : categoryName}
           </ThemedText>
         </View>
-        <View style={styles.countBadge}>
-          <ThemedText style={styles.countText}>{content.length}</ThemedText>
+        <View style={[
+          styles.countBadge,
+          isSearching && styles.countBadgeSearch,
+        ]}>
+          <ThemedText style={[styles.countText, isSearching && styles.countTextSearch]}>
+            {countDisplay}
+          </ThemedText>
         </View>
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
-      {isFavouritesView && content.length === 0 ? (
+      {isFavouritesView && !isSearching && categoryContent.length === 0 ? (
         <View style={styles.centered}>
+          {searchBarHeader}
           <Feather name="star" size={44} color={Colors.dark.border} />
           <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
           <ThemedText style={styles.emptyText}>
@@ -274,7 +355,7 @@ export default function ContentListScreen() {
         </View>
       ) : (
         <FlatList
-          data={content}
+          data={displayContent}
           keyExtractor={getItemId}
           numColumns={numColumns}
           key={`content-${type}-${numColumns}`}
@@ -286,21 +367,31 @@ export default function ContentListScreen() {
           }}
           columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          ListHeaderComponent={searchBarHeader}
           renderItem={({ item }) => (
             <ContentCard
               item={item}
               type={type}
               onPress={() => handleItemPress(item)}
               onLongPress={() => handleLongPress(item)}
-              isFavourited={isFavourite(getStreamId(item, type), type)}
+              isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
               cardWidth={cardWidth}
             />
           )}
           ListEmptyComponent={
-            <View style={styles.centered}>
-              <Feather name="inbox" size={36} color={Colors.dark.border} />
-              <ThemedText style={styles.emptyText}>No content in this category</ThemedText>
-            </View>
+            isSearching ? (
+              <View style={styles.centeredInline}>
+                <Feather name="search" size={36} color={Colors.dark.border} />
+                <ThemedText style={styles.emptyText}>No matches found</ThemedText>
+              </View>
+            ) : (
+              <View style={styles.centeredInline}>
+                <Feather name="inbox" size={36} color={Colors.dark.border} />
+                <ThemedText style={styles.emptyText}>No content in this category</ThemedText>
+              </View>
+            )
           }
         />
       )}
@@ -330,8 +421,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm, paddingVertical: 3,
     minWidth: 38, alignItems: "center",
   },
+  countBadgeSearch: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   countText: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center" },
+  countTextSearch: { color: Colors.dark.accent, fontWeight: "700" },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.sm },
+
+  // Search bar
+  searchBarWrap: { marginBottom: Spacing.sm, gap: Spacing.xs },
+  searchBar: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1.5, borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md, height: 42,
+  },
+  searchBarActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 4,
+  },
+  searchInput: {
+    flex: 1, color: Colors.dark.text, fontSize: 13,
+    height: 42, padding: 0,
+  },
+  searchMeta: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, paddingHorizontal: Spacing.xs },
+  searchMetaText: { flex: 1, color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
+  searchMetaLimit: { color: Colors.dark.textSecondary, fontSize: 11 },
+
+  // Cards
   card: {
     flex: 1, backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm, overflow: "hidden",
@@ -342,9 +459,7 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8, shadowRadius: 14, elevation: 10,
   },
-  cardFavourited: {
-    borderColor: "rgba(255,102,0,0.45)",
-  },
+  cardFavourited: { borderColor: "rgba(255,102,0,0.45)" },
   cardThumb: { overflow: "hidden", backgroundColor: Colors.dark.backgroundSecondary },
   cardImage: { width: "100%", height: "100%" },
   cardPlaceholder: {
@@ -370,9 +485,14 @@ const styles = StyleSheet.create({
     height: 2, backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
   },
+
   centered: {
     flex: 1, justifyContent: "center", alignItems: "center",
     gap: Spacing.md, paddingTop: Spacing["4xl"],
+  },
+  centeredInline: {
+    paddingTop: Spacing["4xl"],
+    justifyContent: "center", alignItems: "center", gap: Spacing.md,
   },
   emptyTitle: { color: Colors.dark.text, fontSize: 16, fontWeight: "700" },
   emptyText: { color: Colors.dark.textSecondary, fontSize: 14, textAlign: "center", paddingHorizontal: Spacing.xl },
