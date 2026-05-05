@@ -25,16 +25,17 @@ interface NavButtonProps {
   style?: any;
   iconSize?: number;
   textSize?: number;
+  compact?: boolean;
 }
 
-function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16 }: NavButtonProps) {
+function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, compact = false }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
 
   return (
     <Pressable
-      style={[styles.navButton, isActive && styles.navButtonActive, style]}
+      style={[styles.navButton, compact && styles.navButtonCompact, isActive && styles.navButtonActive, style]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -49,7 +50,7 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16 }
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
+      <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         <Feather
           name={icon}
           size={iconSize}
@@ -311,16 +312,18 @@ export default function HomeScreen() {
               icon="film"
               onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
               style={styles.portraitSubBtn}
-              iconSize={22}
-              textSize={14}
+              iconSize={20}
+              textSize={13}
+              compact
             />
             <NavButton
               title="Series"
               icon="grid"
               onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
               style={styles.portraitSubBtn}
-              iconSize={22}
-              textSize={14}
+              iconSize={20}
+              textSize={13}
+              compact
             />
           </View>
           <RecentlyWatchedCard
@@ -338,7 +341,9 @@ export default function HomeScreen() {
             }}
           />
           <SearchButton onPress={() => navigation.navigate("Search")} />
-          <AdvertCarousel style={styles.portraitCarousel} />
+          <View style={styles.portraitCarousel}>
+            <AdvertCarousel style={StyleSheet.absoluteFill} />
+          </View>
         </View>
       )}
     </ThemedView>
@@ -439,9 +444,9 @@ const styles = StyleSheet.create({
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
   portraitLiveBtn: { minHeight: 90 },
-  portraitSubRow: { height: 72, flexDirection: "row", gap: Spacing.sm },
+  portraitSubRow: { height: 90, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
-  portraitCarousel: { flex: 1, width: "100%" },
+  portraitCarousel: { width: "100%", aspectRatio: 16 / 9 },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
   navButton: {
@@ -454,6 +459,10 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.sm,
     overflow: "hidden",
+  },
+  navButtonCompact: {
+    padding: Spacing.sm,
+    gap: 4,
   },
   navButtonActive: {
     borderColor: Colors.dark.accent,
@@ -469,6 +478,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: Colors.dark.border,
   },
+  iconWrapCompact: { width: 36, height: 36 },
   iconWrapActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   navButtonText: { fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
   navButtonTextActive: { color: Colors.dark.accent },
