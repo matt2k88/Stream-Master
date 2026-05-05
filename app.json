@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.iptv.player"
+      "package": "com.iptv.player",
+      "usesCleartextTraffic": true
     },
     "web": {
       "output": "single",
