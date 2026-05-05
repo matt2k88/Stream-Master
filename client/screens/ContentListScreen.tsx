@@ -324,14 +324,24 @@ export default function ContentListScreen() {
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
       const s = item as LiveStream;
-      navigation.navigate("LivePreview", {
-        streamId: s.stream_id,
-        name: s.name,
-        streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
-        thumbnail: s.stream_icon ?? undefined,
-        streamIcon: s.stream_icon ?? undefined,
-        categoryId: selectedCategoryId ?? undefined,
-      });
+      if (selectedCategoryId === "favourites") {
+        navigation.navigate("Player", {
+          streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
+          title: s.name,
+          type: "live",
+          thumbnail: s.stream_icon ?? undefined,
+          streamId: String(s.stream_id),
+        });
+      } else {
+        navigation.navigate("LivePreview", {
+          streamId: s.stream_id,
+          name: s.name,
+          streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
+          thumbnail: s.stream_icon ?? undefined,
+          streamIcon: s.stream_icon ?? undefined,
+          categoryId: selectedCategoryId ?? undefined,
+        });
+      }
     } else if (type === "movies") {
       const s = item as VodStream;
       navigation.navigate("Player", {

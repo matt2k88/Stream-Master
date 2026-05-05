@@ -291,7 +291,7 @@ function TrackPanel({
 export default function PlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PlayerRouteProp>();
-  const { streamUrl, title, type, thumbnail, streamId } = route.params;
+  const { streamUrl, title, type, thumbnail, streamId, seriesId: seriesIdParam, seriesName: seriesNameParam } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
   const { isFavourite, toggleFavourite } = useFavourites();
@@ -301,10 +301,15 @@ export default function PlayerScreen() {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
   const favStreamType = type === "live" ? "live" : type === "series" ? "series" : "movies";
-  const favStreamId = streamId ? parseInt(streamId, 10) : 0;
+  const favStreamId = type === "series" && seriesIdParam
+    ? parseInt(seriesIdParam, 10)
+    : streamId ? parseInt(streamId, 10) : 0;
+  const favStreamName = type === "series" && seriesNameParam ? seriesNameParam : title;
   const isFavourited = favStreamId > 0 ? isFavourite(favStreamId, favStreamType) : false;
 
   const [showControls, setShowControls] = useState(true);
+  const [ctrlsKey, setCtrlsKey] = useState(0);
+  const prevShowControls = useRef(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -341,13 +346,22 @@ export default function PlayerScreen() {
     resetTimer();
   }, [resetTimer]);
 
+  // Bump key when controls go from hidden → visible so the play button remounts
+  // and hasTVPreferredFocus re-fires, restoring D-pad focus
+  useEffect(() => {
+    if (showControls && !prevShowControls.current) {
+      setCtrlsKey((k) => k + 1);
+    }
+    prevShowControls.current = showControls;
+  }, [showControls]);
+
   const handleToggleFavourite = useCallback(async () => {
     if (!favStreamId) return;
     const wasAdded = !isFavourited;
     await toggleFavourite({
       streamId: favStreamId,
       streamType: favStreamType as "live" | "movies" | "series",
-      streamName: title,
+      streamName: favStreamName,
       streamIcon: thumbnail,
       categoryId: null,
     });
@@ -599,6 +613,7 @@ export default function PlayerScreen() {
           ) : null}
 
           <CtrlBtn
+            key={`play-${ctrlsKey}`}
             icon={isPlaying ? "pause" : "play"}
             onPress={handlePlayPause}
             onFocus={showAndReset}

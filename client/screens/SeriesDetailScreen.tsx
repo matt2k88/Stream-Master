@@ -108,6 +108,8 @@ export default function SeriesDetailScreen() {
       type: "series",
       thumbnail: ep.info?.movie_image ?? cover ?? undefined,
       streamId: String(ep.id),
+      seriesId: String(seriesId),
+      seriesName,
     });
   };
 

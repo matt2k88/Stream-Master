@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
   Animated,
 } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -173,6 +173,13 @@ export default function LivePreviewScreen() {
   useEffect(() => {
     return () => { try { player.pause(); } catch {} };
   }, [player]);
+
+  // Resume playback whenever screen regains focus (e.g. returning from PlayerScreen)
+  useFocusEffect(
+    useCallback(() => {
+      try { player.play(); } catch {}
+    }, [player])
+  );
 
   // Reload EPG whenever the selected channel changes
   useEffect(() => {
@@ -556,6 +563,7 @@ const styles = StyleSheet.create({
 
   playerWrap: {
     aspectRatio: 16 / 9,
+    maxHeight: "45%",
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     backgroundColor: "#000",

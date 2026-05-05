@@ -311,24 +311,12 @@ export default function HomeScreen() {
               }}
               onPress={(item) => {
                 if (!item.stream_url) return;
-                if (item.content_type === "live" && item.stream_id) {
-                  const sid = parseInt(item.stream_id, 10);
-                  if (!isNaN(sid)) {
-                    navigation.navigate("LivePreview", {
-                      streamId: sid,
-                      name: item.name,
-                      streamUrl: item.stream_url,
-                      thumbnail: item.thumbnail_url ?? undefined,
-                      streamIcon: item.thumbnail_url ?? undefined,
-                    });
-                    return;
-                  }
-                }
                 navigation.navigate("Player", {
                   streamUrl: item.stream_url,
                   title: item.name,
-                  type: item.content_type === "series" ? "series" : "vod",
+                  type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                   thumbnail: item.thumbnail_url ?? undefined,
+                  streamId: item.stream_id ?? undefined,
                 });
               }}
             />
@@ -370,24 +358,12 @@ export default function HomeScreen() {
             refreshKey={recentRefreshKey}
             onPress={(item) => {
               if (!item.stream_url) return;
-              if (item.content_type === "live" && item.stream_id) {
-                const sid = parseInt(item.stream_id, 10);
-                if (!isNaN(sid)) {
-                  navigation.navigate("LivePreview", {
-                    streamId: sid,
-                    name: item.name,
-                    streamUrl: item.stream_url,
-                    thumbnail: item.thumbnail_url ?? undefined,
-                    streamIcon: item.thumbnail_url ?? undefined,
-                  });
-                  return;
-                }
-              }
               navigation.navigate("Player", {
                 streamUrl: item.stream_url,
                 title: item.name,
-                type: item.content_type === "series" ? "series" : "vod",
+                type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                 thumbnail: item.thumbnail_url ?? undefined,
+                streamId: item.stream_id ?? undefined,
               });
             }}
           />
