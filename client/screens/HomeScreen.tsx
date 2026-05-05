@@ -358,9 +358,9 @@ const styles = StyleSheet.create({
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
 
   // Body layouts
-  bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg },
+  bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg, paddingTop: Spacing.md },
   leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
-  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md },
+  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
 
   subRow: { flexDirection: "row", gap: Spacing.md },
   searchCol: { width: "32%", flexShrink: 0 },
@@ -375,9 +375,9 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     padding: Spacing.lg, gap: Spacing.sm, overflow: "hidden", minHeight: 80,
   },
-  navButtonLarge: { minHeight: 110, padding: Spacing.xl },
+  navButtonLarge: { minHeight: 88, padding: Spacing.lg },
   navButtonTall: { minHeight: 140, padding: Spacing.xl },
-  navButtonMedium: { minHeight: 115, padding: Spacing.xl },
+  navButtonMedium: { minHeight: 130, padding: Spacing.xl },
   navButtonActive: {
     borderColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
