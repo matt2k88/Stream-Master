@@ -450,9 +450,10 @@ const styles = StyleSheet.create({
 
   // Cards
   card: {
-    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
+    backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm, overflow: "hidden",
     borderWidth: 1, borderColor: Colors.dark.border,
+    alignSelf: "flex-start",
   },
   cardActive: {
     borderColor: Colors.dark.accent,
