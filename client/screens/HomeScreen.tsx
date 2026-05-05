@@ -381,11 +381,10 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  // Carousel fills all remaining right-panel space above search
+  // Carousel — keeps correct 16:9 ratio for 1920×1080 images
   carouselFill: {
-    flex: 1,
     width: "100%",
-    aspectRatio: undefined,   // remove 16:9 constraint so it fills height
+    aspectRatio: 16 / 9,
   },
 
   // ── Portrait body ────────────────────────────────────────────────────────
