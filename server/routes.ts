@@ -236,10 +236,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .select("*")
         .eq("profile_id", profile_id as string)
         .single();
-      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      // PGRST116 = no rows; 42P01 = table doesn't exist yet
+      if (error && error.code !== "PGRST116" && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
+        return res.status(500).json({ error: error.message });
+      }
       res.json(data ?? null);
     } catch {
-      res.status(500).json({ error: "Failed to fetch recently watched" });
+      res.json(null);
     }
   });
 
@@ -257,10 +260,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         )
         .select()
         .single();
-      if (error) return res.status(500).json({ error: error.message });
-      res.json(data);
+      if (error && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
+        return res.status(500).json({ error: error.message });
+      }
+      res.json(data ?? null);
     } catch {
-      res.status(500).json({ error: "Failed to update recently watched" });
+      res.json(null);
     }
   });
 

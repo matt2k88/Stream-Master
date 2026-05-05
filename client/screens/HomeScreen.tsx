@@ -157,10 +157,13 @@ export default function HomeScreen() {
   const { refresh } = useData();
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
+  const [recentRefreshKey, setRecentRefreshKey] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
       setOnDashboard(true);
+      // Refresh recently-watched card every time user returns to home
+      setRecentRefreshKey((k) => k + 1);
       return () => setOnDashboard(false);
     }, [setOnDashboard])
   );
@@ -270,10 +273,11 @@ export default function HomeScreen() {
             {/* Previously Watched — fills dead space at bottom */}
             <RecentlyWatchedCard
               style={styles.recentlyWatched}
+              refreshKey={recentRefreshKey}
               onPress={(item) => {
-                if ((item as any).stream_url) {
+                if (item.stream_url) {
                   navigation.navigate("Player", {
-                    streamUrl: (item as any).stream_url,
+                    streamUrl: item.stream_url,
                     title: item.name,
                     type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                     thumbnail: item.thumbnail_url ?? undefined,
@@ -314,10 +318,11 @@ export default function HomeScreen() {
           </View>
           <RecentlyWatchedCard
             style={styles.portraitRecent}
+            refreshKey={recentRefreshKey}
             onPress={(item) => {
-              if ((item as any).stream_url) {
+              if (item.stream_url) {
                 navigation.navigate("Player", {
-                  streamUrl: (item as any).stream_url,
+                  streamUrl: item.stream_url,
                   title: item.name,
                   type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                   thumbnail: item.thumbnail_url ?? undefined,

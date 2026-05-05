@@ -14,6 +14,7 @@ interface RecentlyWatched {
   stream_id: string | null;
   name: string;
   thumbnail_url: string | null;
+  stream_url: string | null;
   updated_at: string;
 }
 
@@ -32,9 +33,10 @@ const TYPE_LABEL: Record<string, string> = {
 interface Props {
   style?: any;
   onPress?: (item: RecentlyWatched) => void;
+  refreshKey?: number;
 }
 
-export default function RecentlyWatchedCard({ style, onPress }: Props) {
+export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Props) {
   const { activeProfile } = useProfile();
   const [item, setItem] = useState<RecentlyWatched | null | undefined>(undefined);
   const [pressed, setPressed] = useState(false);
@@ -56,7 +58,7 @@ export default function RecentlyWatchedCard({ style, onPress }: Props) {
 
   useEffect(() => {
     fetchItem();
-  }, [fetchItem]);
+  }, [fetchItem, refreshKey]);
 
   const isEmpty = item === null || item === undefined;
   const isLoading = item === undefined;
