@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { StyleSheet, Platform } from "react-native";
+import { StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -22,8 +22,7 @@ import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
-  // Skip intro entirely on web — expo-video doesn't work in browsers
-  const [introComplete, setIntroComplete] = useState(Platform.OS === "web");
+  const [introComplete, setIntroComplete] = useState(false);
 
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);

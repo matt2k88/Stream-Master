@@ -6,7 +6,6 @@ import {
   Animated,
   Text,
   ActivityIndicator,
-  Platform,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -131,12 +130,6 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
   const [videoUrl, setVideoUrl] = useState<string | null | false>(null);
 
   useEffect(() => {
-    // expo-video doesn't fire events reliably on web — skip intro there
-    if (Platform.OS === "web") {
-      onDone();
-      return;
-    }
-
     let cancelled = false;
     (async () => {
       try {
