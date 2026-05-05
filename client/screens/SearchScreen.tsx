@@ -19,7 +19,6 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
-import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AnyStream = LiveStream | VodStream | Series;
@@ -32,6 +31,7 @@ function getThumb(item: AnyStream): string | null {
   return null;
 }
 
+// ── Card used in both mobile (horizontal) and desktop (grid) modes ────────────
 function ResultCard({
   item,
   sectionType,
@@ -85,7 +85,8 @@ function ResultCard({
   );
 }
 
-function SectionRow({
+// ── Mobile: horizontal-scrolling row per section ──────────────────────────────
+function MobileSectionRow({
   title,
   icon,
   items,
@@ -101,7 +102,6 @@ function SectionRow({
   onPressItem: (item: AnyStream) => void;
 }) {
   if (items.length === 0) return null;
-
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -118,36 +118,91 @@ function SectionRow({
         }
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.sectionRow}
+        contentContainerStyle={styles.sectionRowContent}
         renderItem={({ item }) => (
-          <ResultCard
-            item={item}
-            sectionType={type}
-            cardWidth={cardWidth}
-            onPress={() => onPressItem(item)}
-          />
+          <ResultCard item={item} sectionType={type} cardWidth={cardWidth} onPress={() => onPressItem(item)} />
         )}
       />
     </View>
   );
 }
 
+// ── Desktop: grid section (wrapping rows, scrolls vertically) ─────────────────
+function DesktopSectionGrid({
+  title,
+  icon,
+  items,
+  type,
+  cardWidth,
+  numCols,
+  gap,
+  padH,
+  onPressItem,
+}: {
+  title: string;
+  icon: keyof typeof Feather.glyphMap;
+  items: AnyStream[];
+  type: "live" | "movies" | "series";
+  cardWidth: number;
+  numCols: number;
+  gap: number;
+  padH: number;
+  onPressItem: (item: AnyStream) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <View style={styles.section}>
+      <View style={[styles.sectionHeader, { paddingHorizontal: padH }]}>
+        <Feather name={icon} size={14} color={Colors.dark.accent} />
+        <ThemedText style={styles.sectionTitle}>{title}</ThemedText>
+        <View style={styles.sectionBadge}>
+          <ThemedText style={styles.sectionBadgeText}>{items.length}</ThemedText>
+        </View>
+      </View>
+      <FlatList
+        data={items}
+        keyExtractor={(item) =>
+          "stream_id" in item ? String(item.stream_id) : String((item as Series).series_id)
+        }
+        numColumns={numCols}
+        key={`grid-${type}-${numCols}`}
+        scrollEnabled={false}
+        contentContainerStyle={{ paddingHorizontal: padH, gap }}
+        columnWrapperStyle={numCols > 1 ? { gap } : undefined}
+        renderItem={({ item }) => (
+          <ResultCard item={item} sectionType={type} cardWidth={cardWidth} onPress={() => onPressItem(item)} />
+        )}
+      />
+    </View>
+  );
+}
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { liveStreams, vodStreams, seriesList } = useData();
   const { width, height } = useWindowDimensions();
-  const inputRef = useRef<TextInput>(null);
   const [query, setQuery] = useState("");
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
 
-  const isLandscape = width > height;
-  const cardW = isLandscape
-    ? Math.floor((width - padH * 2) / 8)
-    : Math.floor((width - padH * 2) / 4);
+  // Desktop = landscape or wide screen
+  const isDesktop = width > height || width >= 600;
+
+  // Column counts and card widths
+  const gap = Spacing.sm;
+
+  // Mobile: horizontal scroll — card width based on ~4 visible cards
+  const mobileCardW = Math.floor((width - padH * 2) / 4.5);
+
+  // Desktop: grid — show same density as ContentListScreen
+  const desktopMovieCols = Math.max(4, Math.floor(width / 130));
+  const desktopLiveCols = Math.max(4, Math.floor(width / 150));
+  const desktopMovieCardW = Math.floor((width - padH * 2 - gap * (desktopMovieCols - 1)) / desktopMovieCols);
+  const desktopLiveCardW = Math.floor((width - padH * 2 - gap * (desktopLiveCols - 1)) / desktopLiveCols);
 
   const trimmed = query.trim().toLowerCase();
 
@@ -185,11 +240,9 @@ export default function SearchScreen() {
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
         </Pressable>
-
-        <View style={styles.searchInputWrap}>
-          <Feather name="search" size={16} color={query ? Colors.dark.accent : Colors.dark.textSecondary} />
+        <View style={[styles.searchInputWrap, trimmed.length > 0 && styles.searchInputWrapActive]}>
+          <Feather name="search" size={16} color={trimmed ? Colors.dark.accent : Colors.dark.textSecondary} />
           <TextInput
-            ref={inputRef}
             style={styles.searchInput}
             placeholder="Search channels, movies, series..."
             placeholderTextColor={Colors.dark.textSecondary}
@@ -211,7 +264,7 @@ export default function SearchScreen() {
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
-      {/* Results */}
+      {/* Empty state */}
       {!trimmed ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconRing}>
@@ -228,7 +281,8 @@ export default function SearchScreen() {
           <ThemedText style={styles.emptyTitle}>No Results</ThemedText>
           <ThemedText style={styles.emptySubtitle}>Nothing matched "{query}"</ThemedText>
         </View>
-      ) : (
+      ) : isDesktop ? (
+        // ── Desktop: vertical-scrolling grid ────────────────────────────────
         <ScrollView
           style={styles.results}
           contentContainerStyle={[styles.resultsContent, { paddingBottom: padB }]}
@@ -236,28 +290,53 @@ export default function SearchScreen() {
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
-          <SectionRow
-            title="Live TV"
-            icon="tv"
-            items={results.live}
-            type="live"
-            cardWidth={cardW}
+          <DesktopSectionGrid
+            title="Live TV" icon="tv"
+            items={results.live} type="live"
+            cardWidth={desktopLiveCardW} numCols={desktopLiveCols}
+            gap={gap} padH={padH}
             onPressItem={(item) => handlePress(item, "live")}
           />
-          <SectionRow
-            title="Movies"
-            icon="film"
-            items={results.movies}
-            type="movies"
-            cardWidth={cardW}
+          <DesktopSectionGrid
+            title="Movies" icon="film"
+            items={results.movies} type="movies"
+            cardWidth={desktopMovieCardW} numCols={desktopMovieCols}
+            gap={gap} padH={padH}
             onPressItem={(item) => handlePress(item, "movies")}
           />
-          <SectionRow
-            title="Series"
-            icon="grid"
-            items={results.series}
-            type="series"
-            cardWidth={cardW}
+          <DesktopSectionGrid
+            title="Series" icon="grid"
+            items={results.series} type="series"
+            cardWidth={desktopMovieCardW} numCols={desktopMovieCols}
+            gap={gap} padH={padH}
+            onPressItem={(item) => handlePress(item, "series")}
+          />
+        </ScrollView>
+      ) : (
+        // ── Mobile: horizontal-scrolling rows ───────────────────────────────
+        <ScrollView
+          style={styles.results}
+          contentContainerStyle={[styles.resultsContent, { paddingBottom: padB }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
+          <MobileSectionRow
+            title="Live TV" icon="tv"
+            items={results.live} type="live"
+            cardWidth={mobileCardW}
+            onPressItem={(item) => handlePress(item, "live")}
+          />
+          <MobileSectionRow
+            title="Movies" icon="film"
+            items={results.movies} type="movies"
+            cardWidth={mobileCardW}
+            onPressItem={(item) => handlePress(item, "movies")}
+          />
+          <MobileSectionRow
+            title="Series" icon="grid"
+            items={results.series} type="series"
+            cardWidth={mobileCardW}
             onPressItem={(item) => handlePress(item, "series")}
           />
         </ScrollView>
@@ -265,8 +344,6 @@ export default function SearchScreen() {
     </ThemedView>
   );
 }
-
-const CARD_GAP = Spacing.sm;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
@@ -291,6 +368,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.dark.border,
     borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.md, height: 42,
+  },
+  searchInputWrapActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 4,
   },
   searchInput: {
     flex: 1, color: Colors.dark.text, fontSize: 14,
@@ -331,7 +413,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm, paddingVertical: 2,
   },
   sectionBadgeText: { color: Colors.dark.accent, fontSize: 11, fontWeight: "700" },
-  sectionRow: { paddingHorizontal: Spacing.md, gap: CARD_GAP },
+  sectionRowContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm },
 
   resultCard: {
     backgroundColor: Colors.dark.backgroundDefault,

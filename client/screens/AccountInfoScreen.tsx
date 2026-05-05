@@ -5,11 +5,13 @@ import {
   Pressable,
   ActivityIndicator,
   useWindowDimensions,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -17,10 +19,26 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { LinearGradient } from "expo-linear-gradient";
+import { getApiUrl } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-function InfoRow({ label, value, icon }: { label: string; value: string; icon: keyof typeof Feather.glyphMap }) {
+interface DeveloperDetails {
+  developer_name?: string;
+  developer_contact?: string;
+  website_link?: string;
+  renewal_link?: string;
+}
+
+function InfoRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: keyof typeof Feather.glyphMap;
+}) {
   return (
     <View style={styles.infoRow}>
       <Feather name={icon} size={14} color={Colors.dark.accent} />
@@ -32,21 +50,87 @@ function InfoRow({ label, value, icon }: { label: string; value: string; icon: k
   );
 }
 
+function CopyRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: keyof typeof Feather.glyphMap;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
+  const handleCopy = async () => {
+    await Clipboard.setStringAsync(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <View style={styles.infoRow}>
+      <Feather name={icon} size={14} color={Colors.dark.accent} />
+      <View style={styles.infoContent}>
+        <ThemedText style={styles.infoLabel}>{label}</ThemedText>
+        <ThemedText style={styles.infoValue} numberOfLines={1} selectable={false}>
+          {value}
+        </ThemedText>
+      </View>
+      <Pressable
+        style={[styles.copyBtn, pressed && styles.copyBtnActive, copied && styles.copyBtnCopied]}
+        onPress={handleCopy}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        hitSlop={8}
+      >
+        <Feather
+          name={copied ? "check" : "copy"}
+          size={13}
+          color={copied ? Colors.dark.success : Colors.dark.textSecondary}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
 export default function AccountInfoScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile } = useProfile();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
+  const [devLoading, setDevLoading] = useState(true);
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  useEffect(() => { handleRefresh(); }, []);
+  useEffect(() => {
+    handleRefresh();
+    fetchDevDetails();
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refreshUserInfo();
     setIsRefreshing(false);
+  };
+
+  const fetchDevDetails = async () => {
+    setDevLoading(true);
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/developer-details", baseUrl);
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setDevDetails(data);
+      }
+    } catch {
+      // silently fail — developer details are optional
+    } finally {
+      setDevLoading(false);
+    }
   };
 
   const formatDate = (ts: string) => {
@@ -65,7 +149,6 @@ export default function AccountInfoScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
   const user = userInfo?.user_info;
-  const server = userInfo?.server_info;
 
   return (
     <ThemedView style={styles.container}>
@@ -95,7 +178,18 @@ export default function AccountInfoScreen() {
           <ActivityIndicator size="large" color={Colors.dark.accent} />
         </View>
       ) : user ? (
-        <View style={[styles.body, { paddingHorizontal: padH, paddingBottom: padB, flexDirection: isLandscape ? "row" : "column" }]}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            styles.body,
+            {
+              paddingHorizontal: padH,
+              paddingBottom: padB,
+              flexDirection: isLandscape ? "row" : "column",
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Left column */}
           <View style={[styles.leftCol, isLandscape && styles.leftColLandscape]}>
             {/* Account card */}
@@ -159,21 +253,43 @@ export default function AccountInfoScreen() {
           {/* Info section */}
           <View style={styles.infoSection}>
             <View style={styles.infoGrid}>
+              {/* Subscription card — no "Created" row */}
               <View style={styles.infoCard}>
                 <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
                 <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
                 <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
-                <InfoRow label="Created" value={formatDate(user.created_at)} icon="clock" />
                 <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
               </View>
-              {server ? (
-                <View style={styles.infoCard}>
-                  <ThemedText style={styles.cardLabel}>Server</ThemedText>
-                  <InfoRow label="URL" value={server.url || "N/A"} icon="server" />
-                  <InfoRow label="Port" value={server.port || "N/A"} icon="hash" />
-                  <InfoRow label="Timezone" value={server.timezone || "N/A"} icon="globe" />
-                </View>
-              ) : null}
+
+              {/* Developer card */}
+              <View style={styles.infoCard}>
+                <ThemedText style={styles.cardLabel}>Developer</ThemedText>
+                {devLoading ? (
+                  <View style={styles.devLoading}>
+                    <ActivityIndicator size="small" color={Colors.dark.accent} />
+                  </View>
+                ) : devDetails && (devDetails.developer_name || devDetails.developer_contact) ? (
+                  <>
+                    {devDetails.developer_name ? (
+                      <InfoRow label="Name" value={devDetails.developer_name} icon="code" />
+                    ) : null}
+                    {devDetails.developer_contact ? (
+                      <InfoRow label="Contact" value={devDetails.developer_contact} icon="message-circle" />
+                    ) : null}
+                    {devDetails.website_link ? (
+                      <CopyRow label="Website" value={devDetails.website_link} icon="globe" />
+                    ) : null}
+                    {devDetails.renewal_link ? (
+                      <CopyRow label="Renewal" value={devDetails.renewal_link} icon="refresh-cw" />
+                    ) : null}
+                  </>
+                ) : (
+                  <View style={styles.devEmpty}>
+                    <Feather name="code" size={20} color={Colors.dark.border} />
+                    <ThemedText style={styles.devEmptyText}>No details available</ThemedText>
+                  </View>
+                )}
+              </View>
             </View>
 
             <Pressable
@@ -184,7 +300,7 @@ export default function AccountInfoScreen() {
               <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
             </Pressable>
           </View>
-        </View>
+        </ScrollView>
       ) : (
         <View style={styles.centered}>
           <Feather name="alert-circle" size={40} color={Colors.dark.error} />
@@ -210,7 +326,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  body: { flex: 1, gap: Spacing.md },
+  body: { gap: Spacing.md, alignItems: isNaN(0) ? "stretch" : undefined },
   leftCol: { gap: Spacing.sm },
   leftColLandscape: { width: 170, flexShrink: 0 },
   userCard: {
@@ -253,7 +369,7 @@ const styles = StyleSheet.create({
   profileActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   profileActionText: { color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
   infoSection: { flex: 1, gap: Spacing.md },
-  infoGrid: { flex: 1, flexDirection: "row", gap: Spacing.md },
+  infoGrid: { flexDirection: "row", gap: Spacing.md },
   infoCard: {
     flex: 1, backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
@@ -265,11 +381,29 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: "row", alignItems: "center",
-    paddingVertical: Spacing.xs, borderBottomWidth: 1, borderBottomColor: Colors.dark.border, gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
+    gap: Spacing.sm,
   },
   infoContent: { flex: 1 },
   infoLabel: { fontSize: 11, color: Colors.dark.textSecondary },
   infoValue: { fontSize: 13, color: Colors.dark.text, fontWeight: "500" },
+
+  // Copy button
+  copyBtn: {
+    width: 28, height: 28, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  copyBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  copyBtnCopied: { borderColor: Colors.dark.success, backgroundColor: "rgba(34,197,94,0.1)" },
+
+  // Developer card states
+  devLoading: { paddingVertical: Spacing.md, alignItems: "center" },
+  devEmpty: { paddingVertical: Spacing.md, alignItems: "center", gap: Spacing.xs },
+  devEmptyText: { color: Colors.dark.textSecondary, fontSize: 12 },
+
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,

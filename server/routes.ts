@@ -134,6 +134,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Developer details ─────────────────────────────────────────────────────
+  app.get("/api/developer-details", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("developer_details")
+        .select("developer_name, developer_contact, website_link, renewal_link")
+        .limit(1)
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? {});
+    } catch {
+      res.status(500).json({ error: "Failed to fetch developer details" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
