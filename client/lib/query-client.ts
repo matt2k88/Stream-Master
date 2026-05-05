@@ -1,19 +1,33 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import Constants from "expo-constants";
 
 /**
- * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
- * @returns {string} The API base URL
+ * Gets the base URL for the Express API server.
+ * Priority:
+ *  1. EXPO_PUBLIC_DOMAIN env var (dev server injects this)
+ *  2. Expo manifest hostUri (production/static builds — set by build.js)
  */
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
-
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+  const envDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (envDomain) {
+    return new URL(`https://${envDomain}`).href;
   }
 
-  let url = new URL(`https://${host}`);
+  // Fallback: extract host from Expo's manifest hostUri.
+  // build.js sets hostUri = "<deployedDomain>/<platform>", so split on "/" to get the domain.
+  const hostUri =
+    (Constants.expoConfig as any)?.hostUri ??
+    (Constants as any).manifest?.hostUri ??
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
 
-  return url.href;
+  if (hostUri) {
+    const domain = String(hostUri).split("/")[0];
+    if (domain) {
+      return new URL(`https://${domain}`).href;
+    }
+  }
+
+  throw new Error("EXPO_PUBLIC_DOMAIN is not set and no Expo manifest hostUri found");
 }
 
 async function throwIfResNotOk(res: Response) {

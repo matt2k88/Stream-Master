@@ -369,9 +369,9 @@ const styles = StyleSheet.create({
   profileActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   profileActionText: { color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
   infoSection: { flex: 1, gap: Spacing.md },
-  infoGrid: { flexDirection: "row", gap: Spacing.md },
+  infoGrid: { flexDirection: "column", gap: Spacing.md },
   infoCard: {
-    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
+    backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     padding: Spacing.md, gap: Spacing.xs,
   },
