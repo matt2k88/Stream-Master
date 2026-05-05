@@ -94,11 +94,11 @@ export function SyncScreen({ progress }: SyncScreenProps) {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const barWidth = useRef(new Animated.Value(0)).current;
 
-  const doneCount = [progress.live, progress.movies, progress.series].filter(
+  const doneCount = [progress.live, progress.movies, progress.series, progress.epg].filter(
     (s) => s === "done" || s === "error"
   ).length;
 
-  const totalPercent = doneCount / 3;
+  const totalPercent = doneCount / 4;
 
   useEffect(() => {
     Animated.timing(barWidth, {
@@ -140,6 +140,7 @@ export function SyncScreen({ progress }: SyncScreenProps) {
           <StatusTile label="LIVE TV" status={progress.live} />
           <StatusTile label="MOVIES" status={progress.movies} />
           <StatusTile label="SERIES" status={progress.series} />
+          <StatusTile label="TV GUIDE" status={progress.epg} />
         </View>
 
         {/* Progress bar */}

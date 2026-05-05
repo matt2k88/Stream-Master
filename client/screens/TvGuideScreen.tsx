@@ -2,8 +2,8 @@ import React, {
   useState, useRef, useCallback, useEffect, useMemo,
 } from "react";
 import {
-  View, StyleSheet, FlatList, Pressable, ActivityIndicator,
-  Animated, useWindowDimensions, Image,
+  View, StyleSheet, FlatList, Pressable, Animated,
+  PanResponder, useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -14,30 +14,27 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
-import { xtreamApi, EpgListing, LiveStream, Category } from "@/lib/xtream-api";
+import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-// ── Layout constants ────────────────────────────────────────────────────────
-const PX_PER_MIN = 3;            // 1 hour = 180 px
-const CHANNEL_W = 148;           // fixed channel info column width
-const CAT_W = 120;               // categories sidebar width
-const ROW_H = 50;                // compact row height
-const HEADER_H = 38;             // time-slot header height
-const PAST_MINS = 60;            // show 1 hr of past
-const FUTURE_MINS = 300;         // show 5 hrs of future
+// ── Layout constants ─────────────────────────────────────────────────────────
+const PX_PER_MIN = 3;
+const CHANNEL_W = 148;
+const CAT_W = 118;
+const ROW_H = 50;
+const HEADER_H = 44;
+const PAST_MINS = 60;
+const FUTURE_MINS = 300;
 const TOTAL_MINS = PAST_MINS + FUTURE_MINS;
-const GRID_W = TOTAL_MINS * PX_PER_MIN; // 1080 px
-const NOW_X = PAST_MINS * PX_PER_MIN;   // px of NOW line inside grid
+const GRID_W = TOTAL_MINS * PX_PER_MIN;
+const NOW_X = PAST_MINS * PX_PER_MIN;
+const SCROLL_STEP = 180; // 1 hour per button press
 
 function b64(s: string): string {
   if (!s) return "";
   try { return atob(s); } catch { return s; }
-}
-
-function ts2px(ts: number, guideStart: number): number {
-  return ((ts - guideStart) / 60) * PX_PER_MIN;
 }
 
 function fmtHHMM(date: Date): string {
@@ -59,7 +56,7 @@ function buildTimeSlots(guideStart: number): { label: string; x: number }[] {
   return slots;
 }
 
-// ── EPG block ───────────────────────────────────────────────────────────────
+// ── EPG block ────────────────────────────────────────────────────────────────
 function EpgBlock({ listing, guideStart, onPress }: {
   listing: EpgListing;
   guideStart: number;
@@ -67,8 +64,8 @@ function EpgBlock({ listing, guideStart, onPress }: {
 }) {
   const [focused, setFocused] = useState(false);
   const isNow = listing.now_playing === 1;
-  const left = ts2px(listing.start_timestamp, guideStart);
-  const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 20);
+  const left = ((listing.start_timestamp - guideStart) / 60) * PX_PER_MIN;
+  const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 24);
   const title = b64(listing.title) || "No info";
 
   return (
@@ -88,7 +85,7 @@ function EpgBlock({ listing, guideStart, onPress }: {
       ) : null}
       {focused ? (
         <LinearGradient
-          colors={["rgba(255,102,0,0.30)", "rgba(255,102,0,0.12)"]}
+          colors={["rgba(255,102,0,0.32)", "rgba(255,102,0,0.14)"]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
@@ -106,44 +103,32 @@ function EpgBlock({ listing, guideStart, onPress }: {
   );
 }
 
-// ── Channel row ─────────────────────────────────────────────────────────────
-function ChannelRow({ channel, epg, guideStart, scrollX, onChannelPress, onEpgPress }: {
+// ── Channel row ──────────────────────────────────────────────────────────────
+function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
   channel: LiveStream;
-  epg: EpgListing[] | null;
+  epg: EpgListing[];
   guideStart: number;
   scrollX: Animated.Value;
-  onChannelPress: () => void;
-  onEpgPress: (listing: EpgListing) => void;
+  onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
 
   return (
     <View style={styles.row}>
-      {/* Fixed channel column */}
       <Pressable
         style={[styles.channelCell, focused && styles.channelCellFocused]}
-        onPress={onChannelPress}
+        onPress={onPress}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
       >
-        {channel.stream_icon ? (
-          <Image source={{ uri: channel.stream_icon }} style={styles.channelIcon} resizeMode="contain" />
-        ) : (
-          <View style={styles.channelIconPlaceholder}>
-            <Feather name="tv" size={14} color={Colors.dark.textSecondary} />
-          </View>
-        )}
         <ThemedText style={styles.channelName} numberOfLines={2}>{channel.name}</ThemedText>
       </Pressable>
 
-      {/* EPG grid — clipped, translates with scroll */}
       <View style={styles.epgClip}>
         <Animated.View
           style={[styles.epgTrack, { transform: [{ translateX: Animated.multiply(scrollX, -1) }] }]}
         >
-          {epg === null ? (
-            <ActivityIndicator style={styles.epgSpinner} color={Colors.dark.textSecondary} size="small" />
-          ) : epg.length === 0 ? (
+          {epg.length === 0 ? (
             <ThemedText style={styles.noEpgText}>No programme data</ThemedText>
           ) : (
             epg.map((listing, i) => (
@@ -151,21 +136,19 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onChannelPress, onEpgPr
                 key={i}
                 listing={listing}
                 guideStart={guideStart}
-                onPress={() => onEpgPress(listing)}
+                onPress={onPress}
               />
             ))
           )}
-          {/* Separator line */}
-          <View style={styles.rowDivider} />
         </Animated.View>
       </View>
     </View>
   );
 }
 
-// ── Category pill ────────────────────────────────────────────────────────────
-function CatItem({ cat, selected, onPress }: {
-  cat: Category | { category_id: string; category_name: string };
+// ── Category item ────────────────────────────────────────────────────────────
+function CatItem({ name, selected, onPress }: {
+  name: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -178,12 +161,29 @@ function CatItem({ cat, selected, onPress }: {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      {isActive ? (
-        <View style={styles.catActiveBar} />
-      ) : null}
+      {isActive ? <View style={styles.catActiveBar} /> : null}
       <ThemedText style={[styles.catName, isActive && styles.catNameActive]} numberOfLines={2}>
-        {cat.category_name}
+        {name}
       </ThemedText>
+    </Pressable>
+  );
+}
+
+// ── Scroll button (TV remote + touch) ────────────────────────────────────────
+function ScrollBtn({ icon, onPress }: { icon: "chevron-left" | "chevron-right"; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.scrollBtn, isActive && styles.scrollBtnActive]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <Feather name={icon} size={16} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
     </Pressable>
   );
 }
@@ -192,39 +192,57 @@ function CatItem({ cat, selected, onPress }: {
 export default function TvGuideScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
-  const { liveCategories, liveStreams } = useData();
+  const { width } = useWindowDimensions();
+  const { liveCategories, liveStreams, epgData } = useData();
 
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
-  const [epgCache, setEpgCache] = useState<Map<number, EpgListing[]>>(new Map());
-  const [fetchingSet, setFetchingSet] = useState<Set<number>>(new Set());
   const [clockStr, setClockStr] = useState(fmtHHMM(new Date()));
 
-  // NOW + guide start (1 hr before now)
   const nowRef = useRef(Math.floor(Date.now() / 1000));
   const guideStart = nowRef.current - PAST_MINS * 60;
 
-  // Scroll position (shared between time header & EPG rows via Animated)
+  // Scroll state
   const scrollX = useRef(new Animated.Value(0)).current;
-  const headerScrollRef = useRef<any>(null);
+  const scrollOffset = useRef(0);
+  const epgAreaWidth = width - CAT_W - CHANNEL_W;
+  const maxScroll = Math.max(0, GRID_W - epgAreaWidth);
 
-  // Time slots for header
+  function doScrollTo(x: number, animated = false) {
+    const clamped = Math.max(0, Math.min(x, maxScroll));
+    scrollOffset.current = clamped;
+    if (animated) {
+      Animated.timing(scrollX, { toValue: clamped, duration: 200, useNativeDriver: true }).start();
+    } else {
+      scrollX.setValue(clamped);
+    }
+  }
+
+  // PanResponder for horizontal swipe on the EPG content area
+  const dragStart = useRef(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > Math.abs(g.dy) + 4,
+      onPanResponderGrant: () => {
+        dragStart.current = scrollOffset.current;
+      },
+      onPanResponderMove: (_, g) => {
+        doScrollTo(dragStart.current - g.dx);
+      },
+      onPanResponderRelease: () => {
+        dragStart.current = scrollOffset.current;
+      },
+    })
+  ).current;
+
+  // Time slots
   const timeSlots = useMemo(() => buildTimeSlots(guideStart), [guideStart]);
 
-  // Auto-set initial scroll so NOW line is visible
-  const initScroll = useRef(false);
+  // Initial scroll to show NOW at ~20% from left
   useEffect(() => {
-    if (!initScroll.current) {
-      initScroll.current = true;
-      // Scroll so the now line is at about 20% from left
-      const screenEpgW = width - (isLandscape ? CAT_W : 0) - CHANNEL_W;
-      const targetScroll = Math.max(0, NOW_X - screenEpgW * 0.2);
-      setTimeout(() => {
-        headerScrollRef.current?.scrollTo({ x: targetScroll, animated: false });
-      }, 100);
-    }
-  }, [width, isLandscape]);
+    const target = Math.max(0, NOW_X - epgAreaWidth * 0.2);
+    doScrollTo(target);
+  }, [epgAreaWidth]);
 
   // Live clock
   useEffect(() => {
@@ -232,15 +250,12 @@ export default function TvGuideScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // All categories + "All Channels"
-  const allCat = useMemo(() => ({
-    category_id: "__all__",
-    category_name: "All Channels",
-  }), []);
+  // Categories with "All Channels" pinned first
+  const cats = useMemo(() => [
+    { category_id: "__all__", category_name: "All Channels" },
+    ...liveCategories,
+  ], [liveCategories]);
 
-  const cats = useMemo(() => [allCat, ...liveCategories], [liveCategories, allCat]);
-
-  // Auto-select first category
   useEffect(() => {
     if (selectedCatId === null && cats.length > 0) {
       setSelectedCatId(cats[0].category_id);
@@ -249,75 +264,23 @@ export default function TvGuideScreen() {
 
   // Filtered channels
   const channels = useMemo(() => {
-    if (!selectedCatId || selectedCatId === "__all__") return liveStreams.slice(0, 200);
+    if (!selectedCatId || selectedCatId === "__all__") return liveStreams.slice(0, 300);
     return liveStreams.filter((s) => s.category_id === selectedCatId);
   }, [selectedCatId, liveStreams]);
-
-  // EPG fetcher
-  const fetchEpg = useCallback(async (streamId: number) => {
-    if (fetchingSet.has(streamId) || epgCache.has(streamId)) return;
-    setFetchingSet((prev) => new Set(prev).add(streamId));
-    try {
-      const data = await xtreamApi.getShortEpg(streamId, 12);
-      setEpgCache((prev) => {
-        const next = new Map(prev);
-        next.set(streamId, data);
-        return next;
-      });
-    } catch {
-      setEpgCache((prev) => {
-        const next = new Map(prev);
-        next.set(streamId, []);
-        return next;
-      });
-    } finally {
-      setFetchingSet((prev) => {
-        const next = new Set(prev);
-        next.delete(streamId);
-        return next;
-      });
-    }
-  }, [epgCache, fetchingSet]);
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    viewableItems.forEach(({ item }: { item: LiveStream }) => {
-      fetchEpg(item.stream_id);
-    });
-  }).current;
-
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 30 }).current;
-
-  // Horizontal scroll drives scrollX (attached to the time header ScrollView)
-  const onHeaderScroll = Animated.event(
-    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-    { useNativeDriver: true }
-  );
 
   const padH = Math.max(insets.left, Spacing.xs);
   const padT = Math.max(insets.top, Spacing.xs);
   const padB = Math.max(insets.bottom, Spacing.xs);
 
   const renderChannel = useCallback(({ item }: { item: LiveStream }) => {
-    const epg = epgCache.has(item.stream_id)
-      ? (epgCache.get(item.stream_id) ?? [])
-      : null;
+    const epg = epgData[item.stream_id] ?? [];
     return (
       <ChannelRow
         channel={item}
         epg={epg}
         guideStart={guideStart}
         scrollX={scrollX}
-        onChannelPress={() => {
-          const url = xtreamApi.getLiveStreamUrl(item.stream_id);
-          navigation.navigate("LivePreview", {
-            streamId: item.stream_id,
-            name: item.name,
-            streamUrl: url,
-            streamIcon: item.stream_icon,
-            categoryId: item.category_id,
-          });
-        }}
-        onEpgPress={() => {
+        onPress={() => {
           const url = xtreamApi.getLiveStreamUrl(item.stream_id);
           navigation.navigate("LivePreview", {
             streamId: item.stream_id,
@@ -329,25 +292,28 @@ export default function TvGuideScreen() {
         }}
       />
     );
-  }, [epgCache, guideStart, scrollX, navigation]);
+  }, [epgData, guideStart, scrollX, navigation]);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: padT }]}>
-      {/* ── Header bar ─────────────────────────────────────────────────── */}
+      {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <View style={[styles.topBar, { paddingHorizontal: padH }]}>
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Feather name="arrow-left" size={20} color={Colors.dark.accent} />
+          <Feather name="arrow-left" size={18} color={Colors.dark.accent} />
         </Pressable>
-        <Feather name="tv" size={16} color={Colors.dark.accent} />
+        <Feather name="calendar" size={14} color={Colors.dark.accent} />
         <ThemedText style={styles.topBarTitle}>TV Guide</ThemedText>
         <View style={styles.topBarSpacer} />
+        {/* TV-remote scroll buttons */}
+        <ScrollBtn icon="chevron-left" onPress={() => doScrollTo(scrollOffset.current - SCROLL_STEP, true)} />
+        <ScrollBtn icon="chevron-right" onPress={() => doScrollTo(scrollOffset.current + SCROLL_STEP, true)} />
         <View style={styles.clockWrap}>
-          <Feather name="clock" size={12} color={Colors.dark.textSecondary} />
+          <Feather name="clock" size={11} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.clockText}>{clockStr}</ThemedText>
         </View>
       </View>
 
-      {/* ── Body ────────────────────────────────────────────────────────── */}
+      {/* ── Body ─────────────────────────────────────────────────────────── */}
       <View style={[styles.body, { paddingBottom: padB }]}>
 
         {/* Categories sidebar */}
@@ -358,7 +324,7 @@ export default function TvGuideScreen() {
             showsVerticalScrollIndicator={false}
             renderItem={({ item }) => (
               <CatItem
-                cat={item}
+                name={item.category_name}
                 selected={item.category_id === selectedCatId}
                 onPress={() => setSelectedCatId(item.category_id)}
               />
@@ -366,53 +332,49 @@ export default function TvGuideScreen() {
           />
         </View>
 
-        {/* EPG main area */}
+        {/* EPG area */}
         <View style={styles.epgArea}>
-          {/* Time header — user scrolls this to navigate time */}
+          {/* Time header (translated by scrollX) */}
           <View style={styles.timeHeaderRow}>
             <View style={styles.channelHeaderCell}>
               <ThemedText style={styles.channelHeaderText}>CHANNEL</ThemedText>
             </View>
-            <Animated.ScrollView
-              ref={headerScrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              scrollEventThrottle={16}
-              onScroll={onHeaderScroll}
-              style={styles.timeHeaderScroll}
-              contentContainerStyle={{ width: GRID_W }}
-            >
-              <View style={[styles.timeHeaderContent, { width: GRID_W }]}>
-                <View style={[styles.nowLineLabel, { left: NOW_X - 1 }]}>
-                  <View style={styles.nowLineLabelDot} />
-                </View>
+            <View style={styles.timeHeaderClip}>
+              <Animated.View
+                style={[
+                  styles.timeHeaderContent,
+                  { width: GRID_W, transform: [{ translateX: Animated.multiply(scrollX, -1) }] },
+                ]}
+              >
+                {/* NOW dot */}
+                <View style={[styles.nowDot, { left: NOW_X - 3 }]} />
                 {timeSlots.map((slot) => (
-                  <View key={slot.label + slot.x} style={[styles.timeSlot, { left: slot.x }]}>
+                  <View key={slot.x} style={[styles.timeSlot, { left: slot.x }]}>
                     <ThemedText style={styles.timeSlotText}>{slot.label}</ThemedText>
                     <View style={styles.timeSlotTick} />
                   </View>
                 ))}
-              </View>
-            </Animated.ScrollView>
+              </Animated.View>
+            </View>
           </View>
 
-          {/* Channel rows — scroll vertically only */}
-          <FlatList
-            data={channels}
-            keyExtractor={(item) => String(item.stream_id)}
-            renderItem={renderChannel}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Feather name="tv" size={32} color={Colors.dark.textSecondary} />
-                <ThemedText style={styles.emptyText}>No channels in this category</ThemedText>
-              </View>
-            }
-          />
+          {/* Channel rows — swipe-able via PanResponder */}
+          <View style={{ flex: 1 }} {...panResponder.panHandlers}>
+            <FlatList
+              data={channels}
+              keyExtractor={(item) => String(item.stream_id)}
+              renderItem={renderChannel}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Feather name="tv" size={28} color={Colors.dark.textSecondary} />
+                  <ThemedText style={styles.emptyText}>No channels in this category</ThemedText>
+                </View>
+              }
+            />
+          </View>
 
-          {/* NOW indicator line — translates left as user scrolls right */}
+          {/* NOW vertical line */}
           <Animated.View
             style={[
               styles.nowLine,
@@ -432,6 +394,7 @@ export default function TvGuideScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
+  // Top bar
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -439,41 +402,48 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundDefault,
   },
   backBtn: {
-    width: 34, height: 34,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundDefault,
+    width: 32, height: 32, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundSecondary,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
-  topBarTitle: {
-    fontSize: 17, fontWeight: "700", color: Colors.dark.text, letterSpacing: 0.3,
-  },
+  topBarTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
   topBarSpacer: { flex: 1 },
-  clockWrap: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.full,
+  scrollBtn: {
+    width: 32, height: 32, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundSecondary,
     borderWidth: 1, borderColor: Colors.dark.border,
-    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    justifyContent: "center", alignItems: "center",
+  },
+  scrollBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 8,
+    elevation: 6,
+  },
+  clockWrap: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingHorizontal: Spacing.sm, paddingVertical: 5,
   },
   clockText: { fontSize: 13, fontWeight: "600", color: Colors.dark.text },
 
-  // ── Body ──────────────────────────────────────────────────────────────────
+  // Body
   body: { flex: 1, flexDirection: "row" },
 
-  // ── Categories ─────────────────────────────────────────────────────────────
+  // Categories
   catPanel: {
     width: CAT_W,
     borderRightWidth: 1,
     borderRightColor: Colors.dark.border,
   },
   catItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 10,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.sm, paddingVertical: 9,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.dark.border,
     overflow: "hidden",
@@ -484,13 +454,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
   },
-  catName: {
-    fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "500",
-    marginLeft: Spacing.xs,
-  },
+  catName: { fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "500", marginLeft: Spacing.xs },
   catNameActive: { color: Colors.dark.accent, fontWeight: "700" },
 
-  // ── EPG area ───────────────────────────────────────────────────────────────
+  // EPG area
   epgArea: { flex: 1, overflow: "hidden" },
 
   // Time header
@@ -502,139 +469,81 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
   },
   channelHeaderCell: {
-    width: CHANNEL_W,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRightWidth: 1,
-    borderRightColor: Colors.dark.border,
+    width: CHANNEL_W, justifyContent: "center", alignItems: "center",
+    borderRightWidth: 1, borderRightColor: Colors.dark.border,
   },
-  channelHeaderText: {
-    fontSize: 9, fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 1.5,
-  },
+  channelHeaderText: { fontSize: 9, fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 1.5 },
   timeHeaderClip: { flex: 1, overflow: "hidden" },
-  timeHeaderScroll: { flex: 1 },
   timeHeaderContent: { height: HEADER_H, position: "relative" },
-  timeSlot: {
+  nowDot: {
     position: "absolute",
-    top: 0, bottom: 0,
-    alignItems: "flex-start",
-    justifyContent: "center",
-    paddingLeft: 4,
-  },
-  timeSlotText: {
-    fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary,
-  },
-  timeSlotTick: {
-    position: "absolute",
-    left: 0, top: 0, bottom: 0,
-    width: 1,
-    backgroundColor: Colors.dark.border,
-  },
-  nowLineLabel: {
-    position: "absolute",
-    top: 4, bottom: 4,
-    alignItems: "center",
-    zIndex: 10,
-  },
-  nowLineLabelDot: {
+    top: 6,
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
   },
+  timeSlot: {
+    position: "absolute", top: 0, bottom: 0,
+    alignItems: "flex-start", justifyContent: "center", paddingLeft: 5,
+  },
+  timeSlotText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
+  timeSlotTick: {
+    position: "absolute", left: 0, top: 0, bottom: 0,
+    width: 1, backgroundColor: Colors.dark.border,
+  },
 
   // Channel rows
   row: {
-    height: ROW_H,
-    flexDirection: "row",
+    height: ROW_H, flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.dark.border,
   },
   channelCell: {
-    width: CHANNEL_W,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: Spacing.xs,
-    borderRightWidth: 1,
-    borderRightColor: Colors.dark.border,
+    width: CHANNEL_W, justifyContent: "center",
+    paddingHorizontal: Spacing.sm,
+    borderRightWidth: 1, borderRightColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundDefault,
   },
   channelCellFocused: {
     backgroundColor: Colors.dark.accentDim,
     borderRightColor: Colors.dark.accent,
   },
-  channelIcon: { width: 36, height: 28, borderRadius: 3 },
-  channelIconPlaceholder: {
-    width: 36, height: 28, borderRadius: 3,
-    backgroundColor: Colors.dark.backgroundSecondary,
-    justifyContent: "center", alignItems: "center",
-  },
-  channelName: {
-    flex: 1, fontSize: 11, fontWeight: "600", color: Colors.dark.text, lineHeight: 14,
-  },
+  channelName: { fontSize: 11, fontWeight: "600", color: Colors.dark.text, lineHeight: 15 },
 
   // EPG content
   epgClip: { flex: 1, overflow: "hidden" },
   epgTrack: {
-    position: "absolute",
-    left: 0, top: 0, bottom: 0,
-    width: GRID_W,
+    position: "absolute", left: 0, top: 0, bottom: 0, width: GRID_W,
   },
   epgBlock: {
-    position: "absolute",
-    top: 3, bottom: 3,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+    position: "absolute", top: 3, bottom: 3,
+    borderRadius: 4, borderWidth: 1, borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundDefault,
-    paddingHorizontal: 6,
-    justifyContent: "center",
-    overflow: "hidden",
+    paddingHorizontal: 6, justifyContent: "center", overflow: "hidden",
   },
-  epgBlockNow: { borderColor: "rgba(255,102,0,0.4)" },
+  epgBlockNow: { borderColor: "rgba(255,102,0,0.45)" },
   epgBlockFocused: {
     borderColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 6,
     elevation: 6,
   },
-  epgBlockTitle: {
-    fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary,
-  },
+  epgBlockTitle: { fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary },
   epgBlockTitleNow: { color: Colors.dark.text },
-  epgBlockTime: {
-    fontSize: 9, color: Colors.dark.textSecondary, marginTop: 2,
-  },
-  rowDivider: {
-    position: "absolute", left: 0, right: 0, bottom: 0, height: StyleSheet.hairlineWidth,
-    backgroundColor: Colors.dark.border,
-  },
-  epgSpinner: { marginTop: 12 },
+  epgBlockTime: { fontSize: 9, color: Colors.dark.textSecondary, marginTop: 2 },
   noEpgText: {
-    position: "absolute",
-    left: 8, top: 0, bottom: 0,
-    textAlignVertical: "center",
+    position: "absolute", left: 8,
     fontSize: 11, color: Colors.dark.textSecondary,
-    lineHeight: ROW_H,
+    lineHeight: ROW_H, top: 0,
   },
 
-  // NOW vertical line
+  // NOW line
   nowLine: {
-    position: "absolute",
-    top: HEADER_H,
-    bottom: 0,
-    width: 2,
+    position: "absolute", top: HEADER_H, bottom: 0, width: 2,
     backgroundColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 6,
-    elevation: 8,
-    zIndex: 20,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.9, shadowRadius: 6,
+    elevation: 8, zIndex: 20,
   },
 
-  emptyState: {
-    alignItems: "center", justifyContent: "center",
-    paddingVertical: 60, gap: Spacing.md,
-  },
+  emptyState: { alignItems: "center", justifyContent: "center", paddingVertical: 60, gap: Spacing.md },
   emptyText: { color: Colors.dark.textSecondary, fontSize: 14 },
 });
