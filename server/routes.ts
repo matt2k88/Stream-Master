@@ -269,6 +269,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Recently Watched — dev seed (test only) ───────────────────────────────
+  app.get("/api/recently-watched/seed", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("recently_watched")
+        .upsert(
+          {
+            profile_id: profile_id as string,
+            content_type: "movie",
+            stream_id: "99999",
+            name: "Test Movie — Previously Watched",
+            thumbnail_url: "https://image.tmdb.org/t/p/w500/3bhkrj58Vtu7enYsLMId5A5kUre.jpg",
+            stream_url: null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "profile_id" }
+        )
+        .select()
+        .single();
+      if (error && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ success: true, data });
+    } catch {
+      res.status(500).json({ error: "Seed failed" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {
