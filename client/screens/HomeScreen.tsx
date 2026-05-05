@@ -262,34 +262,46 @@ export default function HomeScreen() {
         // Right 50%: Advert carousel (fills top) + Search All (bottom)
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
 
-          {/* LEFT PANEL */}
+          {/* LEFT PANEL — 2×2 grid */}
           <View style={styles.leftPanel}>
-            {/* Live TV — takes ~60% of the left height */}
-            <NavButton
-              title="Live TV"
-              icon="tv"
-              onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
-              style={styles.liveTvBtn}
-              iconSize={38}
-              textSize={22}
-            />
-            {/* Movies + Series — each half of remaining 40% */}
-            <View style={styles.subRow}>
+            {/* Top row: Live TV + Movies (bigger) */}
+            <View style={styles.topRow}>
+              <NavButton
+                title="Live TV"
+                icon="tv"
+                onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
+                style={styles.topBtn}
+                iconSize={30}
+                textSize={17}
+              />
               <NavButton
                 title="Movies"
                 icon="film"
                 onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
-                style={styles.subBtn}
-                iconSize={28}
-                textSize={16}
+                style={styles.topBtn}
+                iconSize={30}
+                textSize={17}
               />
+            </View>
+            {/* Bottom row: Series + TV Guide (smaller) */}
+            <View style={styles.botRow}>
               <NavButton
                 title="Series"
                 icon="grid"
                 onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
-                style={styles.subBtn}
-                iconSize={28}
-                textSize={16}
+                style={styles.botBtn}
+                iconSize={22}
+                textSize={13}
+                compact
+              />
+              <NavButton
+                title="TV Guide"
+                icon="calendar"
+                onPress={() => navigation.navigate("TvGuide")}
+                style={styles.botBtn}
+                iconSize={22}
+                textSize={13}
+                compact
               />
             </View>
           </View>
@@ -325,31 +337,43 @@ export default function HomeScreen() {
       ) : (
         // ── Portrait / Mobile layout ────────────────────────────────────────
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          <NavButton
-            title="Live TV"
-            icon="tv"
-            onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
-            style={styles.portraitLiveBtn}
-            iconSize={34}
-            textSize={20}
-          />
-          <View style={styles.portraitSubRow}>
+          {/* Portrait top row: Live TV + Movies */}
+          <View style={styles.portraitTopRow}>
+            <NavButton
+              title="Live TV"
+              icon="tv"
+              onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
+              style={styles.portraitTopBtn}
+              iconSize={26}
+              textSize={15}
+            />
             <NavButton
               title="Movies"
               icon="film"
               onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
-              style={styles.portraitSubBtn}
-              iconSize={20}
-              textSize={13}
-              compact
+              style={styles.portraitTopBtn}
+              iconSize={26}
+              textSize={15}
             />
+          </View>
+          {/* Portrait bottom row: Series + TV Guide */}
+          <View style={styles.portraitSubRow}>
             <NavButton
               title="Series"
               icon="grid"
               onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
               style={styles.portraitSubBtn}
-              iconSize={20}
-              textSize={13}
+              iconSize={18}
+              textSize={12}
+              compact
+            />
+            <NavButton
+              title="TV Guide"
+              icon="calendar"
+              onPress={() => navigation.navigate("TvGuide")}
+              style={styles.portraitSubBtn}
+              iconSize={18}
+              textSize={12}
               compact
             />
           </View>
@@ -433,19 +457,18 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  liveTvBtn: {
-    flex: 3,             // takes ~60% of left panel height
-    minHeight: 0,
-  },
-  subRow: {
-    flex: 2,             // takes ~40% of left panel height
+  topRow: {
+    flex: 3,
     flexDirection: "row",
     gap: Spacing.sm,
   },
-  subBtn: {
-    flex: 1,
-    minHeight: 0,
+  topBtn: { flex: 1, minHeight: 0 },
+  botRow: {
+    flex: 2,
+    flexDirection: "row",
+    gap: Spacing.sm,
   },
+  botBtn: { flex: 1, minHeight: 0 },
 
   // Right panel — 50%
   rightPanel: {
@@ -471,8 +494,9 @@ const styles = StyleSheet.create({
 
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-  portraitLiveBtn: { minHeight: 90 },
-  portraitSubRow: { height: 90, flexDirection: "row", gap: Spacing.sm },
+  portraitTopRow: { height: 90, flexDirection: "row", gap: Spacing.sm },
+  portraitTopBtn: { flex: 1 },
+  portraitSubRow: { height: 72, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
   portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 

@@ -21,6 +21,7 @@ import PinEntryScreen from "@/screens/PinEntryScreen";
 import SearchScreen from "@/screens/SearchScreen";
 import MessagesScreen from "@/screens/MessagesScreen";
 import LivePreviewScreen from "@/screens/LivePreviewScreen";
+import TvGuideScreen from "@/screens/TvGuideScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -30,6 +31,7 @@ export type RootStackParamList = {
   Home: undefined;
   Search: undefined;
   Messages: undefined;
+  TvGuide: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string };
@@ -77,6 +79,7 @@ export default function RootStackNavigator() {
               component={LivePreviewScreen}
               options={{ animation: "fade", orientation: "landscape" }}
             />
+            <Stack.Screen name="TvGuide" component={TvGuideScreen} />
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
           </>
         )}

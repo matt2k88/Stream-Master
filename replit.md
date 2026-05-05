@@ -11,7 +11,8 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **Login Screen**: Two-step login — pick server from Supabase DB list, then enter username/password
 - **Auto Login**: Credentials are persisted per device (SecureStore on native, AsyncStorage on web). App logs in automatically on next launch.
 - **Sync Screen**: On login/refresh, all categories and streams are fetched upfront. Shows an animated loading screen (LIVE TV / MOVIES / SERIES tiles) with progress bar.
-- **Home Screen**: Left 50% = large Live TV button + doubled-height Movies/Series row (landscape). Right 50% = Advert carousel (images from Supabase `adverts` table, 16:9, auto-cycling with dots). Refresh, Messages, Profile, and Account buttons in header.
+- **Home Screen**: Left 50% = 2×2 button grid: top row Live TV + Movies (bigger), bottom row Series + TV Guide (smaller). Right 50% = Advert carousel + Search + Recently Watched. Refresh, Messages, Profile, and Account buttons in header.
+- **TV Guide**: Full EPG grid screen. Left panel = live categories. Right = channel rows with time-based EPG blocks. User scrolls the time header to navigate. EPG fetched per-channel via `get_short_epg` (lazy, cached). Orange NOW line indicator. Works in portrait and landscape.
 - **Advert Carousel**: Fetches from `/api/adverts`, auto-cycles every 5s with fade transition, dot indicators, fills the Coming Soon panel on both portrait and landscape.
 - **Message System**: MessageContext checks for user-targeted messages on login + every 60s. Popup shows first unread message with dismiss → logs to `message_seen`. Messages bell button in header (with unread badge) opens MessagesScreen showing all system messages.
 - **Category Browse**: Uses cached DataContext data — instant, no per-screen fetches
@@ -57,6 +58,7 @@ client/
 │   ├── LivePreviewScreen.tsx   # Live channel mini-player + EPG (now/next)
 │   ├── SeriesDetailScreen.tsx  # Series episodes
 │   ├── PlayerScreen.tsx        # Full-screen player + favourite star button + toast
+│   ├── TvGuideScreen.tsx       # EPG grid: categories + time-based channel guide
 │   └── AccountInfoScreen.tsx   # Account details
 ├── components/
 │   ├── SyncScreen.tsx          # Full-screen data sync overlay
