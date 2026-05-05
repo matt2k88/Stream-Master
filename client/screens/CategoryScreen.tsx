@@ -28,6 +28,32 @@ type AnyStream = LiveStream | VodStream | Series;
 
 const SEARCH_LIMIT = 100;
 
+function BackBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, isActive && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="arrow-left" size={20} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
+  );
+}
+
 function FavouritesButton({
   type,
   count,
@@ -50,17 +76,19 @@ function FavouritesButton({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <LinearGradient
-        colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-      />
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        />
+      ) : null}
       <View style={styles.favLeft}>
-        <View style={styles.favIconWrap}>
+        <View style={[styles.favIconWrap, isActive && styles.favIconWrapActive]}>
           <Feather name="star" size={18} color={Colors.dark.accent} />
         </View>
-        <ThemedText style={styles.favTitle}>Favourites</ThemedText>
+        <ThemedText style={[styles.favTitle, isActive && styles.favTitleActive]}>Favourites</ThemedText>
       </View>
       <View style={styles.favRight}>
         {count > 0 ? (
@@ -68,9 +96,9 @@ function FavouritesButton({
             <ThemedText style={styles.favCountText}>{count}</ThemedText>
           </View>
         ) : null}
-        <Feather name="chevron-right" size={18} color={Colors.dark.accent} />
+        <Feather name="chevron-right" size={18} color={isActive ? "#FFD700" : Colors.dark.accent} />
       </View>
-      <View style={styles.favBottomBar} />
+      {isActive ? <View style={styles.favBottomBar} /> : null}
     </Pressable>
   );
 }
@@ -332,12 +360,7 @@ export default function CategoryScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Pressable
-          style={({ pressed, focused }) => [styles.backBtn, (pressed || focused) && styles.backBtnPressed]}
-          onPress={() => navigation.goBack()}
-        >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
-        </Pressable>
+        <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle}>{title}</ThemedText>
         <View style={{ width: 40 }} />
       </View>
@@ -480,8 +503,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
+    overflow: "hidden",
   },
-  backBtnPressed: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  backBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: Colors.dark.text },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.sm },
 
@@ -517,20 +541,26 @@ const styles = StyleSheet.create({
   favButton: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.dark.border,
     paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
     overflow: "hidden",
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
-  favButtonActive: { shadowOpacity: 0.8, shadowRadius: 18, elevation: 14, borderColor: "#FFD700" },
+  favButtonActive: {
+    borderColor: "#FFD700",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7, shadowRadius: 14, elevation: 10,
+  },
   favLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
   favIconWrap: {
     width: 36, height: 36, borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.accentDim, borderWidth: 1, borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.backgroundSecondary, borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
-  favTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.accent, letterSpacing: 0.3 },
+  favIconWrapActive: {
+    backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent,
+  },
+  favTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
+  favTitleActive: { color: Colors.dark.accent },
   favRight: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
   favCountBadge: {
     backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.full,
@@ -539,8 +569,8 @@ const styles = StyleSheet.create({
   favCountText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   favBottomBar: {
     position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
-    backgroundColor: Colors.dark.accent,
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
+    backgroundColor: "#FFD700",
+    shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
   },
 
   // Category cards

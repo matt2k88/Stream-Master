@@ -65,7 +65,7 @@ function MessageRow({ item, seen }: { item: Message; seen: boolean }) {
 export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { allMessages, seenIds } = useMessages();
+  const { userMessages, seenIds } = useMessages();
   const [backFocused, setBackFocused] = useState(false);
   const [backPressed, setBackPressed] = useState(false);
   const backActive = backFocused || backPressed;
@@ -89,13 +89,13 @@ export default function MessagesScreen() {
         </Pressable>
         <ThemedText style={styles.headerTitle}>Messages</ThemedText>
         <View style={styles.headerBadge}>
-          <ThemedText style={styles.headerBadgeText}>{allMessages.length}</ThemedText>
+          <ThemedText style={styles.headerBadgeText}>{userMessages.length}</ThemedText>
         </View>
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
-      {allMessages.length === 0 ? (
+      {userMessages.length === 0 ? (
         <View style={styles.empty}>
           <Feather name="inbox" size={44} color={Colors.dark.border} />
           <ThemedText style={styles.emptyTitle}>No Messages</ThemedText>
@@ -103,7 +103,7 @@ export default function MessagesScreen() {
         </View>
       ) : (
         <FlatList
-          data={allMessages}
+          data={userMessages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: padH, paddingBottom: padB, gap: Spacing.sm }}
           showsVerticalScrollIndicator={false}

@@ -170,6 +170,44 @@ function CatItem({ name, selected, onPress }: {
   );
 }
 
+// ── Top bar icon button with hover/focus overlay ──────────────────────────────
+function TopBarBtn({
+  onPress,
+  disabled,
+  dimWhenDisabled,
+  children,
+}: {
+  onPress: () => void;
+  disabled?: boolean;
+  dimWhenDisabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = (focused || pressed) && !disabled;
+  return (
+    <Pressable
+      style={[styles.topBarBtn, isActive && styles.topBarBtnActive, dimWhenDisabled && disabled && { opacity: 0.5 }]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.08)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      {children}
+    </Pressable>
+  );
+}
+
 // ── Scroll button (TV remote + touch) ────────────────────────────────────────
 function ScrollBtn({ icon, onPress }: { icon: "chevron-left" | "chevron-right"; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
@@ -251,11 +289,8 @@ export default function TvGuideScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // Categories with "All Channels" pinned first
-  const cats = useMemo(() => [
-    { category_id: "__all__", category_name: "All Channels" },
-    ...liveCategories,
-  ], [liveCategories]);
+  // Categories — no "All Channels" pseudo-entry
+  const cats = useMemo(() => liveCategories, [liveCategories]);
 
   useEffect(() => {
     if (selectedCatId === null && cats.length > 0) {
@@ -265,7 +300,7 @@ export default function TvGuideScreen() {
 
   // Filtered channels
   const channels = useMemo(() => {
-    if (!selectedCatId || selectedCatId === "__all__") return liveStreams.slice(0, 300);
+    if (!selectedCatId) return [];
     return liveStreams.filter((s) => s.category_id === selectedCatId);
   }, [selectedCatId, liveStreams]);
 
@@ -299,22 +334,18 @@ export default function TvGuideScreen() {
     <ThemedView style={[styles.container, { paddingTop: padT }]}>
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <View style={[styles.topBar, { paddingHorizontal: padH }]}>
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
+        <TopBarBtn onPress={() => navigation.goBack()}>
           <Feather name="arrow-left" size={18} color={Colors.dark.accent} />
-        </Pressable>
+        </TopBarBtn>
         <Feather name="calendar" size={14} color={Colors.dark.accent} />
         <ThemedText style={styles.topBarTitle}>TV Guide</ThemedText>
         <View style={styles.topBarSpacer} />
         {/* TV Guide refresh button */}
-        <Pressable
-          style={[styles.scrollBtn, isEpgRefreshing && { opacity: 0.5 }]}
-          onPress={refreshEpg}
-          disabled={isEpgRefreshing}
-        >
+        <TopBarBtn onPress={refreshEpg} disabled={isEpgRefreshing} dimWhenDisabled>
           {isEpgRefreshing
             ? <ActivityIndicator size="small" color={Colors.dark.accent} />
             : <Feather name="refresh-cw" size={14} color={Colors.dark.textSecondary} />}
-        </Pressable>
+        </TopBarBtn>
         {/* TV-remote scroll buttons */}
         <ScrollBtn icon="chevron-left" onPress={() => doScrollTo(scrollOffset.current - SCROLL_STEP, true)} />
         <ScrollBtn icon="chevron-right" onPress={() => doScrollTo(scrollOffset.current + SCROLL_STEP, true)} />
@@ -415,11 +446,17 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundDefault,
   },
-  backBtn: {
+  topBarBtn: {
     width: 32, height: 32, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundSecondary,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
+    overflow: "hidden",
+  },
+  topBarBtnActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 8,
+    elevation: 6,
   },
   topBarTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
   topBarSpacer: { flex: 1 },
