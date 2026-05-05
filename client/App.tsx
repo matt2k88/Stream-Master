@@ -16,6 +16,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { DataProvider } from "@/contexts/DataContext";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
+import { MessageProvider } from "@/contexts/MessageContext";
+import MessagePopup from "@/components/MessagePopup";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
@@ -30,16 +32,19 @@ export default function App() {
           <DataProvider>
             <ProfileProvider>
               <FavouritesProvider>
-                <SafeAreaProvider>
-                  <GestureHandlerRootView style={styles.root}>
-                    <KeyboardProvider>
-                      <NavigationContainer>
-                        <RootStackNavigator />
-                      </NavigationContainer>
-                      <StatusBar style="light" hidden={false} />
-                    </KeyboardProvider>
-                  </GestureHandlerRootView>
-                </SafeAreaProvider>
+                <MessageProvider>
+                  <SafeAreaProvider>
+                    <GestureHandlerRootView style={styles.root}>
+                      <KeyboardProvider>
+                        <NavigationContainer>
+                          <RootStackNavigator />
+                        </NavigationContainer>
+                        <StatusBar style="light" hidden={false} />
+                        <MessagePopup />
+                      </KeyboardProvider>
+                    </GestureHandlerRootView>
+                  </SafeAreaProvider>
+                </MessageProvider>
               </FavouritesProvider>
             </ProfileProvider>
           </DataProvider>

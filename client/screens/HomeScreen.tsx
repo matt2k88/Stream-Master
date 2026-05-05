@@ -11,6 +11,8 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useMessages } from "@/contexts/MessageContext";
+import AdvertCarousel from "@/components/AdvertCarousel";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -70,7 +72,6 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
   );
 }
 
-// Compact horizontal search bar button
 function SearchButton({ onPress, slim }: { onPress: () => void; slim?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -140,6 +141,30 @@ function ProfileButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function MessagesButton({ onPress }: { onPress: () => void }) {
+  const { unreadCount } = useMessages();
+  const [pressed, setPressed] = useState(false);
+  const hasUnread = unreadCount > 0;
+
+  return (
+    <Pressable
+      style={[styles.headerBtn, pressed && styles.headerBtnActive, hasUnread && styles.headerBtnAlert]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name="bell" size={18} color={hasUnread ? Colors.dark.accent : Colors.dark.textSecondary} />
+      {hasUnread ? (
+        <View style={styles.unreadBadge}>
+          <ThemedText style={styles.unreadBadgeText}>
+            {unreadCount > 9 ? "9+" : String(unreadCount)}
+          </ThemedText>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -192,6 +217,8 @@ export default function HomeScreen() {
             onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
           />
 
+          <MessagesButton onPress={() => navigation.navigate("Messages")} />
+
           <Pressable
             style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
             onPress={() => navigation.navigate("AccountInfo")}
@@ -214,7 +241,6 @@ export default function HomeScreen() {
               onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
               large
             />
-            {/* Bottom row: Movies + Series + Search (slim) */}
             <View style={styles.subRow}>
               <NavButton
                 title="Movies"
@@ -233,23 +259,11 @@ export default function HomeScreen() {
               </View>
             </View>
           </View>
-          <View style={styles.rightPanel}>
-            <View style={styles.futurePanel}>
-              <LinearGradient
-                colors={["rgba(255,102,0,0.04)", "transparent"]}
-                style={StyleSheet.absoluteFill}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-              />
-              <Feather name="zap" size={28} color="rgba(255,102,0,0.2)" />
-              <ThemedText style={styles.futurePanelText}>Coming Soon</ThemedText>
-            </View>
-          </View>
+          <AdvertCarousel style={styles.rightPanelCarousel} />
         </View>
       ) : (
         // ── Portrait / Mobile ───────────────────────────────────────────────
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          {/* Main nav buttons */}
           <NavButton
             title="Live TV"
             icon="tv"
@@ -269,20 +283,10 @@ export default function HomeScreen() {
             />
           </View>
 
-          {/* Search — compact bar, roughly half the height of Movies/Series */}
           <SearchButton onPress={() => navigation.navigate("Search")} />
 
-          {/* Coming Soon — takes remaining space */}
-          <View style={styles.portraitFuture}>
-            <LinearGradient
-              colors={["rgba(255,102,0,0.05)", "transparent"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-            />
-            <Feather name="zap" size={18} color="rgba(255,102,0,0.2)" />
-            <ThemedText style={styles.futurePanelText}>Coming Soon</ThemedText>
-          </View>
+          {/* Advert carousel fills remaining space */}
+          <AdvertCarousel style={styles.portraitCarousel} />
         </View>
       )}
     </ThemedView>
@@ -307,6 +311,21 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   headerBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  headerBtnAlert: {
+    borderColor: "rgba(255,102,0,0.5)",
+    backgroundColor: Colors.dark.accentDim,
+  },
+  unreadBadge: {
+    position: "absolute", top: -4, right: -4,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.full,
+    minWidth: 16, height: 16,
+    justifyContent: "center", alignItems: "center",
+    paddingHorizontal: 3,
+    borderWidth: 1.5, borderColor: Colors.dark.backgroundRoot,
+  },
+  unreadBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800" },
+
   profileBtn: {
     flexDirection: "row", alignItems: "center", gap: Spacing.xs,
     paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs,
@@ -325,21 +344,13 @@ const styles = StyleSheet.create({
   // Body layouts
   bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg },
   leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
-  rightPanel: { flex: 1 },
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md },
 
   subRow: { flexDirection: "row", gap: Spacing.md },
   searchCol: { width: "32%", flexShrink: 0 },
 
-  // Coming soon — portrait version fills remaining space
-  portraitFuture: {
-    flex: 1,
-    borderRadius: BorderRadius.md, borderWidth: 1,
-    borderColor: Colors.dark.border, borderStyle: "dashed",
-    justifyContent: "center", alignItems: "center",
-    gap: Spacing.xs, overflow: "hidden",
-    minHeight: 60,
-  },
+  rightPanelCarousel: { flex: 1 },
+  portraitCarousel: { flex: 1, minHeight: 80 },
 
   // Nav buttons
   navButton: {
@@ -366,7 +377,7 @@ const styles = StyleSheet.create({
   navButtonTextLarge: { fontSize: 18, fontWeight: "700" },
   navButtonTextActive: { color: Colors.dark.accent },
 
-  // Search button — compact horizontal bar for portrait
+  // Search button
   searchButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -414,15 +425,5 @@ const styles = StyleSheet.create({
     position: "absolute", bottom: 0, left: "20%", right: "20%",
     height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
-  },
-  futurePanel: {
-    flex: 1, borderRadius: BorderRadius.md, borderWidth: 1,
-    borderColor: Colors.dark.border, borderStyle: "dashed",
-    justifyContent: "center", alignItems: "center",
-    gap: Spacing.sm, overflow: "hidden",
-  },
-  futurePanelText: {
-    color: "rgba(255,102,0,0.3)", fontSize: 13,
-    fontWeight: "600", letterSpacing: 1, textTransform: "uppercase",
   },
 });

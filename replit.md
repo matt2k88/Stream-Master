@@ -11,7 +11,9 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **Login Screen**: Two-step login — pick server from Supabase DB list, then enter username/password
 - **Auto Login**: Credentials are persisted per device (SecureStore on native, AsyncStorage on web). App logs in automatically on next launch.
 - **Sync Screen**: On login/refresh, all categories and streams are fetched upfront. Shows an animated loading screen (LIVE TV / MOVIES / SERIES tiles) with progress bar.
-- **Home Screen**: Left 50% = large Live TV button + doubled-height Movies/Series row (landscape). Right 50% = Coming Soon panel. Refresh button + Account button in header.
+- **Home Screen**: Left 50% = large Live TV button + doubled-height Movies/Series row (landscape). Right 50% = Advert carousel (images from Supabase `adverts` table, 16:9, auto-cycling with dots). Refresh, Messages, Profile, and Account buttons in header.
+- **Advert Carousel**: Fetches from `/api/adverts`, auto-cycles every 5s with fade transition, dot indicators, fills the Coming Soon panel on both portrait and landscape.
+- **Message System**: MessageContext checks for user-targeted messages on login + every 60s. Popup shows first unread message with dismiss → logs to `message_seen`. Messages bell button in header (with unread badge) opens MessagesScreen showing all system messages.
 - **Category Browse**: Uses cached DataContext data — instant, no per-screen fetches
 - **Content Lists**: Filtered from cached streams by category_id — instant navigation
 - **Series Detail**: Season and episode navigation

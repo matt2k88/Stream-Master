@@ -19,6 +19,7 @@ import ProfilePickerScreen from "@/screens/ProfilePickerScreen";
 import CreateProfileScreen from "@/screens/CreateProfileScreen";
 import PinEntryScreen from "@/screens/PinEntryScreen";
 import SearchScreen from "@/screens/SearchScreen";
+import MessagesScreen from "@/screens/MessagesScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -27,6 +28,7 @@ export type RootStackParamList = {
   PinEntry: { profile: Profile; fromHome?: boolean };
   Home: undefined;
   Search: undefined;
+  Messages: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string };
@@ -53,13 +55,13 @@ export default function RootStackNavigator() {
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
-          // All authenticated screens in one stack — ProfilePicker is always the entry point
           <>
             <Stack.Screen name="ProfilePicker" component={ProfilePickerScreen} />
             <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
             <Stack.Screen name="PinEntry" component={PinEntryScreen} />
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
+            <Stack.Screen name="Messages" component={MessagesScreen} />
             <Stack.Screen name="Category" component={CategoryScreen} />
             <Stack.Screen name="ContentList" component={ContentListScreen} />
             <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />

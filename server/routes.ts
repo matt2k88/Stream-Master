@@ -134,6 +134,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Adverts ───────────────────────────────────────────────────────────────
+  app.get("/api/adverts", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("adverts")
+        .select("id, name, image_url, created_at")
+        .order("created_at");
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch adverts" });
+    }
+  });
+
+  // ── Messages ──────────────────────────────────────────────────────────────
+  app.get("/api/messages", async (req, res) => {
+    const { username } = req.query;
+    try {
+      let q = supabase.from("messages").select("*").order("created_at", { ascending: false });
+      if (username) q = q.eq("username", username as string);
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch messages" });
+    }
+  });
+
+  app.get("/api/message-seen", async (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      const { data, error } = await supabase
+        .from("message_seen")
+        .select("message_id")
+        .eq("username", username as string);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json((data ?? []).map((r: any) => r.message_id));
+    } catch {
+      res.status(500).json({ error: "Failed to fetch seen messages" });
+    }
+  });
+
+  app.post("/api/message-seen", async (req, res) => {
+    const { message_id, username } = req.body;
+    if (!message_id || !username) return res.status(400).json({ error: "message_id and username required" });
+    try {
+      // Upsert to avoid duplicates
+      const { data, error } = await supabase
+        .from("message_seen")
+        .upsert({ message_id, username }, { onConflict: "message_id,username", ignoreDuplicates: true })
+        .select()
+        .single();
+      if (error && error.code !== "23505") return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to mark message as seen" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {
