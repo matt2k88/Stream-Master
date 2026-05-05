@@ -1,29 +1,42 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 /**
  * Gets the base URL for the Express API server.
  * Priority:
  *  1. EXPO_PUBLIC_DOMAIN env var (dev server injects this)
- *  2. Expo manifest hostUri (production/static builds — set by build.js)
+ *  2. Web: window.location.origin (same-domain production deployment)
+ *  3. Native: various Expo manifest hostUri paths (set by build.js)
  */
 export function getApiUrl(): string {
+  // 1. Dev env var (injected by npm run expo:dev)
   const envDomain = process.env.EXPO_PUBLIC_DOMAIN;
   if (envDomain) {
     return new URL(`https://${envDomain}`).href;
   }
 
-  // Fallback: extract host from Expo's manifest hostUri.
-  // build.js sets hostUri = "<deployedDomain>/<platform>", so split on "/" to get the domain.
-  const hostUri =
-    (Constants.expoConfig as any)?.hostUri ??
-    (Constants as any).manifest?.hostUri ??
-    (Constants as any).manifest2?.extra?.expoClient?.hostUri;
+  // 2. Web browser — API is served from the same origin
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin;
+  }
 
-  if (hostUri) {
-    const domain = String(hostUri).split("/")[0];
-    if (domain) {
-      return new URL(`https://${domain}`).href;
+  // 3. Native: try every known path where Expo puts hostUri
+  // build.js writes: manifest.extra.expoClient.hostUri = "<domain>/<platform>"
+  const candidates: unknown[] = [
+    (Constants.expoConfig as any)?.hostUri,
+    (Constants.expoConfig as any)?.extra?.expoClient?.hostUri,
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri,
+    (Constants as any).manifest?.hostUri,
+    (Constants as any).expoGoConfig?.debuggerHost,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "string") {
+      const domain = candidate.split("/")[0];
+      if (domain) {
+        return new URL(`https://${domain}`).href;
+      }
     }
   }
 
