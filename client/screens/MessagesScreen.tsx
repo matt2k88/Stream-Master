@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   StyleSheet,
@@ -11,15 +11,34 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
+import { LinearGradient } from "expo-linear-gradient";
 import { useMessages, Message } from "@/contexts/MessageContext";
 
 function MessageRow({ item, seen }: { item: Message; seen: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+
   const date = new Date(item.created_at).toLocaleDateString("en-US", {
     year: "numeric", month: "short", day: "numeric",
   });
 
   return (
-    <View style={[styles.row, seen && styles.rowSeen]}>
+    <Pressable
+      style={[styles.row, seen && styles.rowSeen, isActive && styles.rowActive]}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.08)", "transparent"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        />
+      ) : null}
       <View style={[styles.rowIcon, seen && styles.rowIconSeen]}>
         <Feather
           name={seen ? "check-circle" : "bell"}
@@ -39,7 +58,7 @@ function MessageRow({ item, seen }: { item: Message; seen: boolean }) {
         </ThemedText>
       </View>
       {!seen ? <View style={styles.unreadDot} /> : null}
-    </View>
+    </Pressable>
   );
 }
 
@@ -47,6 +66,9 @@ export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { allMessages, seenIds } = useMessages();
+  const [backFocused, setBackFocused] = useState(false);
+  const [backPressed, setBackPressed] = useState(false);
+  const backActive = backFocused || backPressed;
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -56,8 +78,12 @@ export default function MessagesScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
+          style={[styles.iconBtn, backActive && styles.iconBtnActive]}
           onPress={() => navigation.goBack()}
+          onFocus={() => setBackFocused(true)}
+          onBlur={() => setBackFocused(false)}
+          onPressIn={() => setBackPressed(true)}
+          onPressOut={() => setBackPressed(false)}
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
         </Pressable>
@@ -122,10 +148,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,102,0,0.25)",
     padding: Spacing.md,
+    overflow: "hidden",
   },
   rowSeen: {
     borderColor: Colors.dark.border,
     opacity: 0.7,
+  },
+  rowActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 6,
   },
   rowIcon: {
     width: 36, height: 36, borderRadius: BorderRadius.full,

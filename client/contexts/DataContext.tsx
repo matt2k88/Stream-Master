@@ -23,6 +23,7 @@ interface DataContextType {
   isSyncing: boolean;
   hasData: boolean;
   syncProgress: SyncProgress;
+  isEpgRefreshing: boolean;
   liveCategories: Category[];
   liveStreams: LiveStream[];
   vodCategories: Category[];
@@ -31,6 +32,7 @@ interface DataContextType {
   seriesList: Series[];
   epgData: Record<number, EpgListing[]>;
   refresh: () => Promise<void>;
+  refreshEpg: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -71,8 +73,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [seriesCategories, setSeriesCategories] = useState<Category[]>([]);
   const [seriesList, setSeriesList] = useState<Series[]>([]);
   const [epgData, setEpgData] = useState<Record<number, EpgListing[]>>({});
+  const [isEpgRefreshing, setIsEpgRefreshing] = useState(false);
 
   const syncRunning = useRef(false);
+  const liveStreamsRef = useRef<LiveStream[]>([]);
 
   const sync = useCallback(async () => {
     if (syncRunning.current) return;
@@ -92,6 +96,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ]);
         setLiveCategories(cats);
         setLiveStreams(streams);
+        liveStreamsRef.current = streams;
         fetchedStreams = streams;
         setSyncProgress((p) => ({ ...p, live: "done" }));
       } catch {
@@ -151,6 +156,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshEpg = useCallback(async () => {
+    if (isEpgRefreshing) return;
+    setIsEpgRefreshing(true);
+    try {
+      const toFetch = liveStreamsRef.current.slice(0, EPG_MAX_CHANNELS);
+      const allEpg: Record<number, EpgListing[]> = {};
+      for (let i = 0; i < toFetch.length; i += EPG_BATCH_SIZE) {
+        const batch = toFetch.slice(i, i + EPG_BATCH_SIZE).map((s) => s.stream_id);
+        const batchResult = await fetchEpgBatch(batch);
+        Object.assign(allEpg, batchResult);
+      }
+      setEpgData(allEpg);
+    } finally {
+      setIsEpgRefreshing(false);
+    }
+  }, [isEpgRefreshing]);
+
   useEffect(() => {
     if (isAuthenticated && !hasData && !syncRunning.current) {
       sync();
@@ -174,6 +196,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         isSyncing,
         hasData,
         syncProgress,
+        isEpgRefreshing,
         liveCategories,
         liveStreams,
         vodCategories,
@@ -182,6 +205,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         seriesList,
         epgData,
         refresh: sync,
+        refreshEpg,
       }}
     >
       {children}

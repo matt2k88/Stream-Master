@@ -23,6 +23,37 @@ import { getApiUrl } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+function HoverBtn({
+  style,
+  activeStyle,
+  onPress,
+  disabled,
+  children,
+}: {
+  style: any;
+  activeStyle: any;
+  onPress: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[style, isActive && activeStyle]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 interface DeveloperDetails {
   developer_name?: string;
   developer_contact?: string;
@@ -153,22 +184,15 @@ export default function AccountInfoScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
-          onPress={() => navigation.goBack()}
-        >
+        <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
-        </Pressable>
+        </HoverBtn>
         <ThemedText style={styles.headerTitle}>Account</ThemedText>
-        <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
-          onPress={handleRefresh}
-          disabled={isRefreshing}
-        >
+        <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={handleRefresh} disabled={isRefreshing}>
           {isRefreshing
             ? <ActivityIndicator size="small" color={Colors.dark.accent} />
             : <Feather name="refresh-cw" size={16} color={Colors.dark.textSecondary} />}
-        </Pressable>
+        </HoverBtn>
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -232,20 +256,22 @@ export default function AccountInfoScreen() {
             {/* Profile action buttons */}
             {activeProfile ? (
               <View style={styles.profileActions}>
-                <Pressable
-                  style={({ pressed }) => [styles.profileActionBtn, pressed && styles.profileActionBtnActive]}
+                <HoverBtn
+                  style={styles.profileActionBtn}
+                  activeStyle={styles.profileActionBtnActive}
                   onPress={() => navigation.navigate("CreateProfile", { profile: activeProfile })}
                 >
                   <Feather name="edit-2" size={14} color={Colors.dark.accent} />
                   <ThemedText style={styles.profileActionText}>Edit Profile</ThemedText>
-                </Pressable>
-                <Pressable
-                  style={({ pressed }) => [styles.profileActionBtn, pressed && styles.profileActionBtnActive]}
+                </HoverBtn>
+                <HoverBtn
+                  style={styles.profileActionBtn}
+                  activeStyle={styles.profileActionBtnActive}
                   onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
                 >
                   <Feather name="users" size={14} color={Colors.dark.textSecondary} />
                   <ThemedText style={[styles.profileActionText, { color: Colors.dark.textSecondary }]}>Switch Profile</ThemedText>
-                </Pressable>
+                </HoverBtn>
               </View>
             ) : null}
           </View>
@@ -292,13 +318,14 @@ export default function AccountInfoScreen() {
               </View>
             </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
+            <HoverBtn
+              style={styles.logoutBtn}
+              activeStyle={styles.logoutBtnPressed}
               onPress={async () => { clearProfile(); await logout(); }}
             >
               <Feather name="log-out" size={16} color={Colors.dark.error} />
               <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
-            </Pressable>
+            </HoverBtn>
           </View>
         </ScrollView>
       ) : (

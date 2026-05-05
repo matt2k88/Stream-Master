@@ -14,6 +14,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
+import { ActivityIndicator } from "react-native";
 import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -193,7 +194,7 @@ export default function TvGuideScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { width } = useWindowDimensions();
-  const { liveCategories, liveStreams, epgData } = useData();
+  const { liveCategories, liveStreams, epgData, refreshEpg, isEpgRefreshing } = useData();
 
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [clockStr, setClockStr] = useState(fmtHHMM(new Date()));
@@ -304,6 +305,16 @@ export default function TvGuideScreen() {
         <Feather name="calendar" size={14} color={Colors.dark.accent} />
         <ThemedText style={styles.topBarTitle}>TV Guide</ThemedText>
         <View style={styles.topBarSpacer} />
+        {/* TV Guide refresh button */}
+        <Pressable
+          style={[styles.scrollBtn, isEpgRefreshing && { opacity: 0.5 }]}
+          onPress={refreshEpg}
+          disabled={isEpgRefreshing}
+        >
+          {isEpgRefreshing
+            ? <ActivityIndicator size="small" color={Colors.dark.accent} />
+            : <Feather name="refresh-cw" size={14} color={Colors.dark.textSecondary} />}
+        </Pressable>
         {/* TV-remote scroll buttons */}
         <ScrollBtn icon="chevron-left" onPress={() => doScrollTo(scrollOffset.current - SCROLL_STEP, true)} />
         <ScrollBtn icon="chevron-right" onPress={() => doScrollTo(scrollOffset.current + SCROLL_STEP, true)} />

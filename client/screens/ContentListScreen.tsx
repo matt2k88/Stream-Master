@@ -83,6 +83,7 @@ function ContentCard({
   onLongPress,
   isFavourited,
   cardWidth,
+  cardHeight,
 }: {
   item: ContentItem;
   type: string;
@@ -90,6 +91,7 @@ function ContentCard({
   onLongPress: () => void;
   isFavourited: boolean;
   cardWidth: number;
+  cardHeight: number;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -99,14 +101,14 @@ function ContentCard({
 
   const imageUrl = getIconUrl(item);
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
-  const imgH = Math.round(cardWidth * getImageRatio(type));
+  const imgH = cardHeight - 52;
   const imgFit = getImageFit(type);
 
   return (
     <Pressable
       style={[
         styles.card,
-        { width: cardWidth },
+        { width: cardWidth, height: cardHeight },
         isActive && !isFavourited && styles.cardActive,
         isFavourited && styles.cardFavourited,
         isActive && isFavourited && styles.cardFavouritedActive,
@@ -263,8 +265,10 @@ export default function ContentListScreen() {
 
   const numColumns = type === "live"
     ? Math.max(2, Math.floor(contentWidth / 150))
-    : Math.max(2, Math.floor(contentWidth / 130));
+    : Math.max(2, Math.floor(contentWidth / 140));
   const cardWidth = Math.floor((contentWidth - CONTENT_PAD * 2 - gap * (numColumns - 1)) / numColumns);
+  const cardImgH = Math.round(cardWidth * getImageRatio(type));
+  const cardTotalH = cardImgH + 52;
 
   // Categories for the sidebar
   const categories: SidebarCat[] = useMemo(() => {
@@ -529,9 +533,10 @@ export default function ContentListScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={24}
-              maxToRenderPerBatch={24}
-              windowSize={5}
+              initialNumToRender={type === "live" ? 30 : 16}
+              maxToRenderPerBatch={type === "live" ? 24 : 10}
+              updateCellsBatchingPeriod={type === "live" ? 50 : 80}
+              windowSize={type === "live" ? 5 : 3}
               removeClippedSubviews
               renderItem={({ item }) => (
                 <ContentCard
@@ -541,6 +546,7 @@ export default function ContentListScreen() {
                   onLongPress={() => handleLongPress(item)}
                   isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
                   cardWidth={cardWidth}
+                  cardHeight={cardTotalH}
                 />
               )}
               ListEmptyComponent={
@@ -674,7 +680,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm, overflow: "hidden",
     borderWidth: 1, borderColor: Colors.dark.border,
-    alignSelf: "flex-start",
   },
   cardActive: {
     borderColor: Colors.dark.accent,
