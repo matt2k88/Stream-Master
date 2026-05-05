@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "IPTV Player",
-    "slug": "iptv-player",
+    "slug": "stream-master",
+    "owner": "mgcultra",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
@@ -54,6 +55,11 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5584f3b5-d394-4b4d-becd-3d1f20cfb755"
+      }
     }
   }
 }
