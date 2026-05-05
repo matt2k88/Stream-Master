@@ -216,6 +216,8 @@ export default function ContentListScreen() {
         streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
         title: s.name,
         type: "live",
+        thumbnail: s.stream_icon ?? undefined,
+        streamId: String(s.stream_id),
       });
     } else if (type === "movies") {
       const s = item as VodStream;
@@ -223,6 +225,8 @@ export default function ContentListScreen() {
         streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension),
         title: s.name,
         type: "vod",
+        thumbnail: s.stream_icon ?? undefined,
+        streamId: String(s.stream_id),
       });
     } else {
       const s = item as Series;

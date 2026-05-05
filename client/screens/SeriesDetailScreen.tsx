@@ -106,6 +106,8 @@ export default function SeriesDetailScreen() {
       streamUrl: xtreamApi.getSeriesStreamUrl(ep.id, ep.container_extension),
       title: `${seriesName} - ${ep.title}`,
       type: "series",
+      thumbnail: ep.info?.movie_image ?? cover ?? undefined,
+      streamId: String(ep.id),
     });
   };
 

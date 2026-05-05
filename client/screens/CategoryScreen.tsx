@@ -239,10 +239,10 @@ export default function CategoryScreen() {
   const handleStreamPress = (item: AnyStream) => {
     if (type === "live") {
       const s = item as LiveStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), title: s.name, type: "live" });
+      navigation.navigate("Player", { streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), title: s.name, type: "live", thumbnail: s.stream_icon ?? undefined, streamId: String(s.stream_id) });
     } else if (type === "movies") {
       const s = item as VodStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod" });
+      navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod", thumbnail: s.stream_icon ?? undefined, streamId: String(s.stream_id) });
     } else {
       const s = item as Series;
       navigation.navigate("SeriesDetail", { seriesId: s.series_id, seriesName: s.name, cover: s.cover });

@@ -18,6 +18,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
+import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
+import { useProfile } from "@/contexts/ProfileContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
@@ -257,8 +259,10 @@ function TrackPanel({
 export default function PlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PlayerRouteProp>();
-  const { streamUrl, title, type } = route.params;
+  const { streamUrl, title, type, thumbnail, streamId } = route.params;
   const isLive = type === "live";
+  const { activeProfile } = useProfile();
+  const savedRef = useRef(false);
 
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -305,8 +309,22 @@ export default function PlayerScreen() {
   // ── Player event listeners ────────────────────────────────────────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
-      if (e.status === "readyToPlay") { setIsLoading(false); setError(""); }
-      else if (e.status === "error") { setIsLoading(false); setError(e.error?.message ?? "Playback failed"); }
+      if (e.status === "readyToPlay") {
+        setIsLoading(false);
+        setError("");
+        if (activeProfile && !savedRef.current) {
+          savedRef.current = true;
+          const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
+          saveRecentlyWatched({
+            profileId: activeProfile.id,
+            contentType,
+            streamId: streamId,
+            name: title,
+            thumbnailUrl: thumbnail,
+            streamUrl: streamUrl,
+          });
+        }
+      } else if (e.status === "error") { setIsLoading(false); setError(e.error?.message ?? "Playback failed"); }
       else if (e.status === "loading") setIsLoading(true);
     });
     return () => sub.remove();

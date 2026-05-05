@@ -14,6 +14,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useMessages } from "@/contexts/MessageContext";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
+import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -262,10 +263,24 @@ export default function HomeScreen() {
 
           {/* RIGHT PANEL */}
           <View style={styles.rightPanel}>
-            {/* Advert carousel fills top of right panel */}
+            {/* Advert carousel */}
             <AdvertCarousel style={styles.carouselFill} />
-            {/* Search All sits at the bottom */}
+            {/* Search All */}
             <SearchButton onPress={() => navigation.navigate("Search")} />
+            {/* Previously Watched — fills dead space at bottom */}
+            <RecentlyWatchedCard
+              style={styles.recentlyWatched}
+              onPress={(item) => {
+                if ((item as any).stream_url) {
+                  navigation.navigate("Player", {
+                    streamUrl: (item as any).stream_url,
+                    title: item.name,
+                    type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
+                    thumbnail: item.thumbnail_url ?? undefined,
+                  });
+                }
+              }}
+            />
           </View>
         </View>
       ) : (
@@ -297,6 +312,19 @@ export default function HomeScreen() {
               textSize={15}
             />
           </View>
+          <RecentlyWatchedCard
+            style={styles.portraitRecent}
+            onPress={(item) => {
+              if ((item as any).stream_url) {
+                navigation.navigate("Player", {
+                  streamUrl: (item as any).stream_url,
+                  title: item.name,
+                  type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
+                  thumbnail: item.thumbnail_url ?? undefined,
+                });
+              }
+            }}
+          />
           <SearchButton onPress={() => navigation.navigate("Search")} />
           <AdvertCarousel style={styles.portraitCarousel} />
         </View>
@@ -387,10 +415,19 @@ const styles = StyleSheet.create({
     aspectRatio: 16 / 9,
   },
 
+  // Recently Watched
+  recentlyWatched: {
+    flex: 1,          // fills leftover space in right panel below search
+    minHeight: 0,
+  },
+  portraitRecent: {
+    width: "100%",
+  },
+
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
   portraitLiveBtn: { minHeight: 90 },
-  portraitSubBtn: { flex: 1, minHeight: 110 },
+  portraitSubBtn: { flex: 1, minHeight: 70 },
   portraitCarousel: { flex: 1, width: "100%" },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────

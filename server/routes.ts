@@ -226,6 +226,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Recently Watched ──────────────────────────────────────────────────────
+  app.get("/api/recently-watched", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("recently_watched")
+        .select("*")
+        .eq("profile_id", profile_id as string)
+        .single();
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? null);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch recently watched" });
+    }
+  });
+
+  app.post("/api/recently-watched", async (req, res) => {
+    const { profile_id, content_type, stream_id, name, thumbnail_url, stream_url } = req.body;
+    if (!profile_id || !content_type || !name) {
+      return res.status(400).json({ error: "profile_id, content_type, and name required" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("recently_watched")
+        .upsert(
+          { profile_id, content_type, stream_id: stream_id ?? null, name, thumbnail_url: thumbnail_url ?? null, stream_url: stream_url ?? null, updated_at: new Date().toISOString() },
+          { onConflict: "profile_id" }
+        )
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to update recently watched" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {
