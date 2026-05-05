@@ -21,25 +21,19 @@ interface NavButtonProps {
   title: string;
   icon: keyof typeof Feather.glyphMap;
   onPress: () => void;
-  large?: boolean;
-  tall?: boolean;
-  medium?: boolean;
+  style?: any;
+  iconSize?: number;
+  textSize?: number;
 }
 
-function NavButton({ title, icon, onPress, large, tall, medium }: NavButtonProps) {
+function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16 }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
 
   return (
     <Pressable
-      style={[
-        styles.navButton,
-        large && styles.navButtonLarge,
-        tall && styles.navButtonTall,
-        medium && styles.navButtonMedium,
-        isActive && styles.navButtonActive,
-      ]}
+      style={[styles.navButton, isActive && styles.navButtonActive, style]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -57,17 +51,11 @@ function NavButton({ title, icon, onPress, large, tall, medium }: NavButtonProps
       <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
         <Feather
           name={icon}
-          size={large || tall ? 34 : medium ? 28 : 26}
+          size={iconSize}
           color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
         />
       </View>
-      <ThemedText
-        style={[
-          styles.navButtonText,
-          (large || tall) && styles.navButtonTextLarge,
-          isActive && styles.navButtonTextActive,
-        ]}
-      >
+      <ThemedText style={[styles.navButtonText, { fontSize: textSize }, isActive && styles.navButtonTextActive]}>
         {title}
       </ThemedText>
       {isActive ? <View style={styles.activeIndicator} /> : null}
@@ -75,18 +63,14 @@ function NavButton({ title, icon, onPress, large, tall, medium }: NavButtonProps
   );
 }
 
-function SearchButton({ onPress, slim }: { onPress: () => void; slim?: boolean }) {
+function SearchButton({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
 
   return (
     <Pressable
-      style={[
-        styles.searchButton,
-        slim && styles.searchButtonSlim,
-        isActive && styles.searchButtonActive,
-      ]}
+      style={[styles.searchButton, isActive && styles.searchButtonActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -102,14 +86,15 @@ function SearchButton({ onPress, slim }: { onPress: () => void; slim?: boolean }
         end={{ x: 1, y: 1 }}
       />
       <View style={[styles.searchBtnIconWrap, isActive && styles.searchBtnIconWrapActive]}>
-        <Feather name="search" size={slim ? 16 : 18} color={Colors.dark.accent} />
+        <Feather name="search" size={18} color={Colors.dark.accent} />
       </View>
-      <ThemedText style={[styles.searchBtnText, slim && styles.searchBtnTextSlim, isActive && styles.searchBtnTextActive]}>
-        {slim ? "Search" : "Search All Content"}
-      </ThemedText>
-      {!slim ? (
+      <View style={styles.searchBtnTextCol}>
+        <ThemedText style={[styles.searchBtnText, isActive && styles.searchBtnTextActive]}>
+          Search All Content
+        </ThemedText>
         <ThemedText style={styles.searchBtnHint}>channels, movies, series</ThemedText>
-      ) : null}
+      </View>
+      <Feather name="chevron-right" size={16} color={Colors.dark.accent + "88"} />
       {isActive ? <View style={styles.activeIndicator} /> : null}
     </Pressable>
   );
@@ -128,12 +113,7 @@ function ProfileButton({ onPress }: { onPress: () => void }) {
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
     >
-      <View
-        style={[
-          styles.profileBtnAvatar,
-          { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color },
-        ]}
-      >
+      <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
         <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
       </View>
       <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
@@ -197,7 +177,7 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <View style={styles.headerBrand}>
           <Image
@@ -224,10 +204,7 @@ export default function HomeScreen() {
             />
           </Pressable>
 
-          <ProfileButton
-            onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
-          />
-
+          <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
 
           <Pressable
@@ -241,67 +218,86 @@ export default function HomeScreen() {
 
       <View style={[styles.headerDivider, { marginHorizontal: padH }]} />
 
-      {/* Announcement Ticker */}
+      {/* ── Announcement Ticker ─────────────────────────────────────────────── */}
       <AnnouncementTicker />
 
-      {/* Body */}
+      {/* ── Body ───────────────────────────────────────────────────────────── */}
       {isLandscape ? (
-        // ── Landscape / TV ─────────────────────────────────────────────────
+        // ── Landscape / TV layout ──────────────────────────────────────────
+        // Left 50%: Live TV (top, large) + Movies | Series (bottom, equal)
+        // Right 50%: Advert carousel (fills top) + Search All (bottom)
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
+
+          {/* LEFT PANEL */}
           <View style={styles.leftPanel}>
+            {/* Live TV — takes ~60% of the left height */}
             <NavButton
               title="Live TV"
               icon="tv"
               onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
-              large
+              style={styles.liveTvBtn}
+              iconSize={38}
+              textSize={22}
             />
+            {/* Movies + Series — each half of remaining 40% */}
             <View style={styles.subRow}>
               <NavButton
                 title="Movies"
                 icon="film"
                 onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
-                tall
+                style={styles.subBtn}
+                iconSize={28}
+                textSize={16}
               />
               <NavButton
                 title="Series"
                 icon="grid"
                 onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
-                tall
+                style={styles.subBtn}
+                iconSize={28}
+                textSize={16}
               />
-              <View style={styles.searchCol}>
-                <SearchButton onPress={() => navigation.navigate("Search")} slim />
-              </View>
             </View>
           </View>
-          <AdvertCarousel style={styles.rightPanelCarousel} />
+
+          {/* RIGHT PANEL */}
+          <View style={styles.rightPanel}>
+            {/* Advert carousel fills top of right panel */}
+            <AdvertCarousel style={styles.carouselFill} />
+            {/* Search All sits at the bottom */}
+            <SearchButton onPress={() => navigation.navigate("Search")} />
+          </View>
         </View>
       ) : (
-        // ── Portrait / Mobile ───────────────────────────────────────────────
+        // ── Portrait / Mobile layout ────────────────────────────────────────
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
           <NavButton
             title="Live TV"
             icon="tv"
             onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
-            large
+            style={styles.portraitLiveBtn}
+            iconSize={34}
+            textSize={20}
           />
           <View style={styles.subRow}>
             <NavButton
               title="Movies"
               icon="film"
               onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
-              medium
+              style={styles.portraitSubBtn}
+              iconSize={28}
+              textSize={15}
             />
             <NavButton
               title="Series"
               icon="grid"
               onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
-              medium
+              style={styles.portraitSubBtn}
+              iconSize={28}
+              textSize={15}
             />
           </View>
-
           <SearchButton onPress={() => navigation.navigate("Search")} />
-
-          {/* Advert carousel fills remaining space */}
           <AdvertCarousel style={styles.portraitCarousel} />
         </View>
       )}
@@ -311,6 +307,8 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+
+  // ── Header ──────────────────────────────────────────────────────────────
   header: {
     flexDirection: "row", alignItems: "center",
     justifyContent: "space-between", paddingBottom: Spacing.md,
@@ -327,26 +325,18 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   headerBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  headerBtnAlert: {
-    borderColor: "rgba(255,102,0,0.5)",
-    backgroundColor: Colors.dark.accentDim,
-  },
+  headerBtnAlert: { borderColor: "rgba(255,102,0,0.5)", backgroundColor: Colors.dark.accentDim },
   unreadBadge: {
     position: "absolute", top: -4, right: -4,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: BorderRadius.full,
-    minWidth: 16, height: 16,
-    justifyContent: "center", alignItems: "center",
-    paddingHorizontal: 3,
-    borderWidth: 1.5, borderColor: Colors.dark.backgroundRoot,
+    backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.full,
+    minWidth: 16, height: 16, justifyContent: "center", alignItems: "center",
+    paddingHorizontal: 3, borderWidth: 1.5, borderColor: Colors.dark.backgroundRoot,
   },
   unreadBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800" },
-
   profileBtn: {
     flexDirection: "row", alignItems: "center", gap: Spacing.xs,
     paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, maxWidth: 130,
   },
   profileBtnActive: { backgroundColor: Colors.dark.backgroundSecondary },
@@ -355,50 +345,90 @@ const styles = StyleSheet.create({
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
-  headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
+  headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
-  // Body layouts
-  bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg, paddingTop: Spacing.md },
-  leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
-  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-
-  subRow: { flexDirection: "row", gap: Spacing.md },
-  searchCol: { width: "32%", flexShrink: 0 },
-
-  rightPanelCarousel: { width: "100%" },
-  portraitCarousel: { width: "100%" },
-
-  // Nav buttons
-  navButton: {
-    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
-    justifyContent: "center", alignItems: "center",
-    padding: Spacing.lg, gap: Spacing.sm, overflow: "hidden", minHeight: 80,
+  // ── Landscape body ───────────────────────────────────────────────────────
+  bodyLandscape: {
+    flex: 1,
+    flexDirection: "row",
+    gap: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
-  navButtonLarge: { minHeight: 88, padding: Spacing.lg },
-  navButtonTall: { minHeight: 140, padding: Spacing.xl },
-  navButtonMedium: { minHeight: 130, padding: Spacing.xl },
+
+  // Left panel — 50%
+  leftPanel: {
+    flex: 1,
+    flexDirection: "column",
+    gap: Spacing.sm,
+  },
+  liveTvBtn: {
+    flex: 3,             // takes ~60% of left panel height
+    minHeight: 0,
+  },
+  subRow: {
+    flex: 2,             // takes ~40% of left panel height
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  subBtn: {
+    flex: 1,
+    minHeight: 0,
+  },
+
+  // Right panel — 50%
+  rightPanel: {
+    flex: 1,
+    flexDirection: "column",
+    gap: Spacing.sm,
+  },
+  // Carousel fills all remaining right-panel space above search
+  carouselFill: {
+    flex: 1,
+    width: "100%",
+    aspectRatio: undefined,   // remove 16:9 constraint so it fills height
+  },
+
+  // ── Portrait body ────────────────────────────────────────────────────────
+  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
+  portraitLiveBtn: { minHeight: 90 },
+  portraitSubBtn: { flex: 1, minHeight: 110 },
+  portraitCarousel: { flex: 1, width: "100%" },
+
+  // ── Nav buttons (base) ──────────────────────────────────────────────────
+  navButton: {
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    overflow: "hidden",
+  },
   navButtonActive: {
     borderColor: Colors.dark.accent,
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 16, elevation: 12,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 16,
+    elevation: 12,
   },
   iconWrap: {
-    width: 52, height: 52, borderRadius: BorderRadius.full,
+    width: 56, height: 56, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: Colors.dark.border,
   },
   iconWrapActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
-  navButtonText: { fontSize: 14, fontWeight: "600", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
-  navButtonTextLarge: { fontSize: 18, fontWeight: "700" },
+  navButtonText: { fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
   navButtonTextActive: { color: Colors.dark.accent },
 
-  // Search button
+  // ── Search button ────────────────────────────────────────────────────────
   searchButton: {
     flexDirection: "row",
     alignItems: "center",
-    height: 52,
+    height: 56,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md,
     borderWidth: 1.5,
@@ -406,37 +436,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     gap: Spacing.md,
     overflow: "hidden",
-  },
-  searchButtonSlim: {
-    flex: 1,
-    height: undefined,
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.xs,
+    flexShrink: 0,
   },
   searchButtonActive: {
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 14, elevation: 10,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 14,
+    elevation: 10,
   },
   searchBtnIconWrap: {
-    width: 32, height: 32, borderRadius: BorderRadius.full,
+    width: 34, height: 34, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.accentDim,
     borderWidth: 1, borderColor: Colors.dark.accent,
     justifyContent: "center", alignItems: "center",
     flexShrink: 0,
   },
   searchBtnIconWrapActive: { backgroundColor: "rgba(255,102,0,0.3)" },
+  searchBtnTextCol: { flex: 1, gap: 1 },
   searchBtnText: {
-    color: Colors.dark.accent, fontSize: 15, fontWeight: "700", letterSpacing: 0.2, flex: 1,
+    color: Colors.dark.accent, fontSize: 15, fontWeight: "700", letterSpacing: 0.2,
   },
-  searchBtnTextSlim: { fontSize: 12, flex: 0, textAlign: "center" },
   searchBtnTextActive: { color: Colors.dark.accent },
-  searchBtnHint: {
-    color: Colors.dark.textSecondary, fontSize: 11, flexShrink: 1,
-  },
+  searchBtnHint: { color: Colors.dark.textSecondary, fontSize: 11 },
 
   activeIndicator: {
     position: "absolute", bottom: 0, left: "20%", right: "20%",
