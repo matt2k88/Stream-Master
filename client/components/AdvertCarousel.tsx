@@ -7,6 +7,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, BorderRadius, Spacing } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
@@ -26,24 +27,26 @@ export default function AdvertCarousel({ style }: { style?: any }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const base = getApiUrl();
-        const res = await fetch(new URL("/api/adverts", base).toString());
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          setAdverts(data);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const base = getApiUrl();
+          const res = await fetch(new URL("/api/adverts", base).toString());
+          if (res.ok && !cancelled) {
+            const data = await res.json();
+            setAdverts(data);
+          }
+        } catch {
+          // silently fail — shows placeholder
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-      } catch {
-        // silently fail — shows placeholder
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+      })();
+      return () => { cancelled = true; };
+    }, [])
+  );
 
   const advance = useCallback(() => {
     if (adverts.length <= 1) return;
