@@ -174,6 +174,10 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
               />
             </React.Fragment>
           ))}
+          {/* Pad to 2 items so layout stays stable */}
+          {displayItems && displayItems.length === 1 ? (
+            <View style={[styles.separator, { opacity: 0 }]} />
+          ) : null}
         </View>
       )}
     </View>
@@ -257,30 +261,32 @@ const styles = StyleSheet.create({
   },
 
   itemsList: {
-    gap: 0,
+    flexDirection: "row",
+    gap: Spacing.sm,
   },
   separator: {
-    height: 1,
+    width: 1,
     backgroundColor: Colors.dark.border,
-    marginVertical: 3,
   },
 
   row: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: Spacing.xs,
     borderRadius: BorderRadius.sm,
     paddingVertical: 4,
-    paddingHorizontal: 2,
+    paddingHorizontal: 4,
     overflow: "hidden",
+    minWidth: 0,
   },
   rowActive: {
     backgroundColor: "rgba(255,102,0,0.06)",
   },
 
   thumbWrap: {
-    width: 72,
-    height: 40,
+    width: 52,
+    height: 34,
     borderRadius: BorderRadius.sm,
     overflow: "hidden",
     backgroundColor: Colors.dark.backgroundSecondary,

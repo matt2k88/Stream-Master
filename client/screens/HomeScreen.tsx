@@ -203,7 +203,6 @@ export default function HomeScreen() {
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
-  const [recentMaxItems, setRecentMaxItems] = useState(2);
 
   useFocusEffect(
     useCallback(() => {
@@ -316,11 +315,7 @@ export default function HomeScreen() {
             <RecentlyWatchedCard
               style={styles.recentlyWatched}
               refreshKey={recentRefreshKey}
-              maxItems={recentMaxItems}
-              onLayout={(e) => {
-                const h = e.nativeEvent.layout.height;
-                setRecentMaxItems(h >= 130 ? 2 : 1);
-              }}
+              maxItems={2}
               onPress={(item) => {
                 if (!item.stream_url) return;
                 navigation.navigate("Player", {

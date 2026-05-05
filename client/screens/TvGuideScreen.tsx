@@ -246,6 +246,10 @@ export default function TvGuideScreen() {
   const epgAreaWidth = width - CAT_W - CHANNEL_W;
   const maxScroll = Math.max(0, GRID_W - epgAreaWidth);
 
+  // Track horizontal panning so the vertical FlatList stays locked during swipe
+  const [hPanning, setHPanning] = useState(false);
+  const hPanningRef = useRef(false);
+
   function doScrollTo(x: number, animated = false) {
     const clamped = Math.max(0, Math.min(x, maxScroll));
     scrollOffset.current = clamped;
@@ -256,20 +260,34 @@ export default function TvGuideScreen() {
     }
   }
 
-  // PanResponder for horizontal swipe on the EPG content area
+  // PanResponder for horizontal swipe on the EPG content area.
+  // Uses Capture variants so the gesture is stolen from the FlatList before
+  // it can scroll vertically.
   const dragStart = useRef(0);
   const panResponder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
       onMoveShouldSetPanResponder: (_, g) =>
+        Math.abs(g.dx) > Math.abs(g.dy) + 4,
+      onMoveShouldSetPanResponderCapture: (_, g) =>
         Math.abs(g.dx) > Math.abs(g.dy) + 4,
       onPanResponderGrant: () => {
         dragStart.current = scrollOffset.current;
+        hPanningRef.current = true;
+        setHPanning(true);
       },
       onPanResponderMove: (_, g) => {
         doScrollTo(dragStart.current - g.dx);
       },
       onPanResponderRelease: () => {
         dragStart.current = scrollOffset.current;
+        hPanningRef.current = false;
+        setHPanning(false);
+      },
+      onPanResponderTerminate: () => {
+        hPanningRef.current = false;
+        setHPanning(false);
       },
     })
   ).current;
@@ -407,6 +425,7 @@ export default function TvGuideScreen() {
               keyExtractor={(item) => String(item.stream_id)}
               renderItem={renderChannel}
               showsVerticalScrollIndicator={false}
+              scrollEnabled={!hPanning}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <Feather name="tv" size={28} color={Colors.dark.textSecondary} />

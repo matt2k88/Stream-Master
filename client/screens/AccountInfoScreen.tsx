@@ -143,7 +143,7 @@ export default function AccountInfoScreen() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await refreshUserInfo();
+    await Promise.all([refreshUserInfo(), fetchDevDetails()]);
     setIsRefreshing(false);
   };
 
@@ -386,9 +386,9 @@ const styles = StyleSheet.create({
   },
   profileCardLabel: { fontSize: 10, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
   profileCardName: { fontSize: 14, fontWeight: "700" },
-  profileActions: { flexDirection: "row", gap: Spacing.sm },
+  profileActions: { flexDirection: "column", gap: Spacing.sm },
   profileActionBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: Spacing.xs, paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.dark.border,
