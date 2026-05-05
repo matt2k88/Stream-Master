@@ -10,6 +10,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
+import { useProfile } from "@/contexts/ProfileContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -48,7 +49,6 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-
       <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
         <Feather
           name={icon}
@@ -65,8 +65,36 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
       >
         {title}
       </ThemedText>
-
       {isActive ? <View style={styles.activeIndicator} /> : null}
+    </Pressable>
+  );
+}
+
+function ProfileButton({ onPress }: { onPress: () => void }) {
+  const { activeProfile } = useProfile();
+  const [pressed, setPressed] = useState(false);
+
+  if (!activeProfile) return null;
+
+  return (
+    <Pressable
+      style={[styles.profileBtn, pressed && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <View
+        style={[
+          styles.profileBtnAvatar,
+          { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color },
+        ]}
+      >
+        <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
+      </View>
+      <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
+        {activeProfile.name}
+      </ThemedText>
+      <Feather name="chevron-down" size={12} color={activeProfile.avatar_color + "99"} />
     </Pressable>
   );
 }
@@ -119,6 +147,10 @@ export default function HomeScreen() {
             />
           </Pressable>
 
+          <ProfileButton
+            onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+          />
+
           <Pressable
             style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
             onPress={() => navigation.navigate("AccountInfo")}
@@ -128,13 +160,11 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Divider */}
       <View style={[styles.headerDivider, { marginHorizontal: padH }]} />
 
       {/* Body */}
       {isLandscape ? (
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          {/* Left panel */}
           <View style={styles.leftPanel}>
             <NavButton
               title="Live TV"
@@ -157,8 +187,6 @@ export default function HomeScreen() {
               />
             </View>
           </View>
-
-          {/* Right panel */}
           <View style={styles.rightPanel}>
             <View style={styles.futurePanel}>
               <LinearGradient
@@ -173,7 +201,6 @@ export default function HomeScreen() {
           </View>
         </View>
       ) : (
-        /* Portrait layout */
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
           <View style={styles.portraitNav}>
             <NavButton
@@ -195,7 +222,6 @@ export default function HomeScreen() {
               />
             </View>
           </View>
-
           <View style={styles.portraitFuture}>
             <LinearGradient
               colors={["rgba(255,102,0,0.05)", "transparent"]}
@@ -213,184 +239,85 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: Spacing.md,
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", paddingBottom: Spacing.md,
   },
-  headerBrand: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  headerLogo: {
-    width: 36,
-    height: 36,
-  },
-  appName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.dark.text,
-    letterSpacing: 0.5,
-  },
-  appVersion: {
-    fontSize: 11,
-    color: Colors.dark.accent,
-    fontWeight: "600",
-    letterSpacing: 1,
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    alignItems: "center",
-  },
+  headerBrand: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  headerLogo: { width: 36, height: 36 },
+  appName: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, letterSpacing: 0.5 },
+  appVersion: { fontSize: 11, color: Colors.dark.accent, fontWeight: "600", letterSpacing: 1 },
+  headerActions: { flexDirection: "row", gap: Spacing.sm, alignItems: "center" },
   headerBtn: {
-    width: 38,
-    height: 38,
+    width: 38, height: 38, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  headerBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  profileBtn: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
+    borderWidth: 1, maxWidth: 130,
   },
-  headerBtnActive: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accentDim,
+  profileBtnActive: { backgroundColor: Colors.dark.backgroundSecondary },
+  profileBtnAvatar: {
+    width: 26, height: 26, borderRadius: 13,
+    borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
-  headerDivider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginBottom: Spacing.md,
-  },
-  bodyLandscape: {
-    flex: 1,
-    flexDirection: "row",
-    gap: Spacing.lg,
-  },
-  leftPanel: {
-    flex: 1,
-    flexDirection: "column",
-    gap: Spacing.md,
-  },
-  rightPanel: {
-    flex: 1,
-  },
-  bodyPortrait: {
-    flex: 1,
-    flexDirection: "column",
-    gap: Spacing.md,
-  },
-  portraitNav: {
-    gap: Spacing.md,
-  },
+  profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
+  headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
+  bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg },
+  leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
+  rightPanel: { flex: 1 },
+  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md },
+  portraitNav: { gap: Spacing.md },
   portraitFuture: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderStyle: "dashed",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.sm,
-    overflow: "hidden",
-    minHeight: 120,
+    flex: 1, borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: Colors.dark.border, borderStyle: "dashed",
+    justifyContent: "center", alignItems: "center",
+    gap: Spacing.sm, overflow: "hidden", minHeight: 120,
   },
-  subRow: {
-    flexDirection: "row",
-    gap: Spacing.md,
-  },
+  subRow: { flexDirection: "row", gap: Spacing.md },
   navButton: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.lg,
-    gap: Spacing.sm,
-    overflow: "hidden",
-    minHeight: 80,
+    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+    padding: Spacing.lg, gap: Spacing.sm, overflow: "hidden", minHeight: 80,
   },
-  navButtonLarge: {
-    minHeight: 120,
-    padding: Spacing.xl,
-    flex: 2,
-  },
-  navButtonTall: {
-    minHeight: 160,
-    padding: Spacing.xl,
-  },
+  navButtonLarge: { minHeight: 120, padding: Spacing.xl, flex: 2 },
+  navButtonTall: { minHeight: 160, padding: Spacing.xl },
   navButtonActive: {
     borderColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8, shadowRadius: 16, elevation: 12,
   },
   iconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: BorderRadius.full,
+    width: 52, height: 52, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundSecondary,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: Colors.dark.border,
   },
-  iconWrapActive: {
-    backgroundColor: Colors.dark.accentDim,
-    borderColor: Colors.dark.accent,
-  },
-  navButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.dark.textSecondary,
-    letterSpacing: 0.3,
-  },
-  navButtonTextLarge: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  navButtonTextActive: {
-    color: Colors.dark.accent,
-  },
+  iconWrapActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
+  navButtonText: { fontSize: 14, fontWeight: "600", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
+  navButtonTextLarge: { fontSize: 18, fontWeight: "700" },
+  navButtonTextActive: { color: Colors.dark.accent },
   activeIndicator: {
-    position: "absolute",
-    bottom: 0,
-    left: "20%",
-    right: "20%",
-    height: 2,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: 1,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
+    position: "absolute", bottom: 0, left: "20%", right: "20%",
+    height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
   },
   futurePanel: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderStyle: "dashed",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.sm,
-    overflow: "hidden",
+    flex: 1, borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: Colors.dark.border, borderStyle: "dashed",
+    justifyContent: "center", alignItems: "center",
+    gap: Spacing.sm, overflow: "hidden",
   },
   futurePanelText: {
-    color: "rgba(255,102,0,0.3)",
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    color: "rgba(255,102,0,0.3)", fontSize: 13,
+    fontWeight: "600", letterSpacing: 1, textTransform: "uppercase",
   },
 });

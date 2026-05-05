@@ -14,6 +14,7 @@ import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DataProvider } from "@/contexts/DataContext";
+import { ProfileProvider } from "@/contexts/ProfileContext";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
@@ -26,16 +27,18 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <DataProvider>
-            <SafeAreaProvider>
-              <GestureHandlerRootView style={styles.root}>
-                <KeyboardProvider>
-                  <NavigationContainer>
-                    <RootStackNavigator />
-                  </NavigationContainer>
-                  <StatusBar style="light" hidden={false} />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </SafeAreaProvider>
+            <ProfileProvider>
+              <SafeAreaProvider>
+                <GestureHandlerRootView style={styles.root}>
+                  <KeyboardProvider>
+                    <NavigationContainer>
+                      <RootStackNavigator />
+                    </NavigationContainer>
+                    <StatusBar style="light" hidden={false} />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </SafeAreaProvider>
+            </ProfileProvider>
           </DataProvider>
         </AuthProvider>
       </QueryClientProvider>

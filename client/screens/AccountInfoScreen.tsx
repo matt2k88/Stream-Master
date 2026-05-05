@@ -15,6 +15,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -35,6 +36,7 @@ export default function AccountInfoScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
+  const { activeProfile, clearProfile } = useProfile();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -53,7 +55,9 @@ export default function AccountInfoScreen() {
   };
 
   const statusColor = (s: string) =>
-    s?.toLowerCase() === "active" ? Colors.dark.success : s?.toLowerCase() === "expired" ? Colors.dark.error : Colors.dark.textSecondary;
+    s?.toLowerCase() === "active" ? Colors.dark.success
+    : s?.toLowerCase() === "expired" ? Colors.dark.error
+    : Colors.dark.textSecondary;
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -90,26 +94,50 @@ export default function AccountInfoScreen() {
         </View>
       ) : user ? (
         <View style={[styles.body, { paddingHorizontal: padH, paddingBottom: padB, flexDirection: isLandscape ? "row" : "column" }]}>
-          {/* User card */}
-          <View style={[styles.userCard, isLandscape && styles.userCardLandscape]}>
-            <LinearGradient
-              colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.avatarRing}>
-              <View style={styles.avatar}>
-                <Feather name="user" size={26} color={Colors.dark.accent} />
+          {/* Left column: user card + profile card */}
+          <View style={[styles.leftCol, isLandscape && styles.leftColLandscape]}>
+            {/* User card */}
+            <View style={styles.userCard}>
+              <LinearGradient
+                colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <View style={styles.avatarRing}>
+                <View style={styles.avatar}>
+                  <Feather name="user" size={26} color={Colors.dark.accent} />
+                </View>
+              </View>
+              <ThemedText style={styles.username} numberOfLines={1}>{user.username}</ThemedText>
+              <View style={styles.statusBadge}>
+                <View style={[styles.statusDot, { backgroundColor: statusColor(user.status) }]} />
+                <ThemedText style={[styles.statusText, { color: statusColor(user.status) }]}>
+                  {user.status || "Unknown"}
+                </ThemedText>
               </View>
             </View>
-            <ThemedText style={styles.username} numberOfLines={1}>{user.username}</ThemedText>
-            <View style={styles.statusBadge}>
-              <View style={[styles.statusDot, { backgroundColor: statusColor(user.status) }]} />
-              <ThemedText style={[styles.statusText, { color: statusColor(user.status) }]}>
-                {user.status || "Unknown"}
-              </ThemedText>
-            </View>
+
+            {/* Active profile card */}
+            {activeProfile ? (
+              <Pressable
+                style={({ pressed }) => [styles.profileCard, pressed && styles.profileCardPressed]}
+                onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+              >
+                <View style={[styles.profileAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
+                  <Feather name={activeProfile.avatar_icon as any} size={18} color={activeProfile.avatar_color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.profileCardLabel}>Active Profile</ThemedText>
+                  <ThemedText style={[styles.profileCardName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
+                    {activeProfile.name}
+                  </ThemedText>
+                </View>
+                <View style={styles.switchProfileBtn}>
+                  <ThemedText style={styles.switchProfileText}>Switch</ThemedText>
+                </View>
+              </Pressable>
+            ) : null}
           </View>
 
           {/* Info section */}
@@ -134,7 +162,7 @@ export default function AccountInfoScreen() {
 
             <Pressable
               style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
-              onPress={async () => { await logout(); }}
+              onPress={async () => { clearProfile(); await logout(); }}
             >
               <Feather name="log-out" size={16} color={Colors.dark.error} />
               <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
@@ -155,185 +183,98 @@ export default function AccountInfoScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingBottom: Spacing.md,
-    gap: Spacing.md,
+    flexDirection: "row", alignItems: "center",
+    paddingBottom: Spacing.md, gap: Spacing.md,
   },
-  headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.dark.text,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginBottom: Spacing.md,
-  },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: Colors.dark.text },
+  divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.full,
+    width: 40, height: 40, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
   },
-  iconBtnActive: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accentDim,
-  },
-  body: {
-    flex: 1,
-    gap: Spacing.md,
-  },
+  iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  body: { flex: 1, gap: Spacing.md },
+  leftCol: { gap: Spacing.md },
+  leftColLandscape: { width: 160, flexShrink: 0 },
   userCard: {
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
+    borderRadius: BorderRadius.md, borderWidth: 1,
     borderColor: "rgba(255,102,0,0.3)",
-    padding: Spacing.lg,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: Spacing.sm,
-    overflow: "hidden",
-  },
-  userCardLandscape: {
-    width: 150,
-    flexShrink: 0,
+    padding: Spacing.lg, alignItems: "center",
+    gap: Spacing.sm, overflow: "hidden",
   },
   avatarRing: {
-    width: 68,
-    height: 68,
-    borderRadius: BorderRadius.full,
-    borderWidth: 2,
-    borderColor: Colors.dark.accent,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
+    width: 68, height: 68, borderRadius: 34,
+    borderWidth: 2, borderColor: Colors.dark.accent,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 12,
   },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.full,
+    width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.dark.accentDim,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "center", alignItems: "center",
   },
-  username: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.dark.text,
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-  infoSection: {
-    flex: 1,
-    gap: Spacing.md,
-  },
-  infoGrid: {
-    flex: 1,
-    flexDirection: "row",
-    gap: Spacing.md,
-  },
-  infoCard: {
-    flex: 1,
+  username: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  statusBadge: { flexDirection: "row", alignItems: "center", gap: Spacing.xs },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  statusText: { fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
+  profileCard: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    padding: Spacing.md,
-    gap: Spacing.xs,
+    borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: Colors.dark.border, padding: Spacing.md,
+  },
+  profileCardPressed: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.backgroundSecondary },
+  profileAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 2, justifyContent: "center", alignItems: "center",
+  },
+  profileCardLabel: { fontSize: 10, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 },
+  profileCardName: { fontSize: 14, fontWeight: "700" },
+  switchProfileBtn: {
+    backgroundColor: Colors.dark.accentDim, borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
+  },
+  switchProfileText: { color: Colors.dark.accent, fontSize: 11, fontWeight: "600" },
+  infoSection: { flex: 1, gap: Spacing.md },
+  infoGrid: { flex: 1, flexDirection: "row", gap: Spacing.md },
+  infoCard: {
+    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.md, gap: Spacing.xs,
   },
   cardLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: Colors.dark.accent,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    marginBottom: Spacing.xs,
+    fontSize: 11, fontWeight: "700", color: Colors.dark.accent,
+    textTransform: "uppercase", letterSpacing: 0.8, marginBottom: Spacing.xs,
   },
   infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row", alignItems: "center",
     paddingVertical: Spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.dark.border,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
     gap: Spacing.sm,
   },
-  infoContent: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-  },
-  infoValue: {
-    fontSize: 13,
-    color: Colors.dark.text,
-    fontWeight: "500",
-  },
+  infoContent: { flex: 1 },
+  infoLabel: { fontSize: 11, color: Colors.dark.textSecondary },
+  infoValue: { fontSize: 13, color: Colors.dark.text, fontWeight: "500" },
   logoutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm,
-    paddingVertical: Spacing.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,59,59,0.4)",
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
+    paddingVertical: Spacing.md, borderWidth: 1, borderColor: "rgba(255,59,59,0.4)",
     gap: Spacing.sm,
   },
-  logoutBtnPressed: {
-    backgroundColor: "rgba(255,59,59,0.08)",
-    borderColor: Colors.dark.error,
-  },
-  logoutText: {
-    color: Colors.dark.error,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  errorText: {
-    color: Colors.dark.error,
-    textAlign: "center",
-  },
+  logoutBtnPressed: { backgroundColor: "rgba(255,59,59,0.08)", borderColor: Colors.dark.error },
+  logoutText: { color: Colors.dark.error, fontWeight: "700", fontSize: 14 },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md },
+  errorText: { color: Colors.dark.error, textAlign: "center" },
   retryBtn: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
+    backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.sm,
   },
-  retryBtnText: {
-    color: "#fff",
-    fontWeight: "700",
-  },
+  retryBtnText: { color: "#fff", fontWeight: "700" },
 });
