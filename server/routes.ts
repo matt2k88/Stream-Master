@@ -210,6 +210,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Intros ────────────────────────────────────────────────────────────────
+  app.get("/api/intros", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("intros")
+        .select("id, name, video_url")
+        .order("created_at")
+        .limit(1)
+        .single();
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? null);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch intro" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {

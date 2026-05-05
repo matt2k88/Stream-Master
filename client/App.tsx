@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -18,37 +18,48 @@ import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import MessagePopup from "@/components/MessagePopup";
+import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
+  const [introComplete, setIntroComplete] = useState(false);
+
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+  }, []);
+
+  const handleIntroDone = useCallback(() => {
+    setIntroComplete(true);
   }, []);
 
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <DataProvider>
-            <ProfileProvider>
-              <FavouritesProvider>
-                <MessageProvider>
-                  <SafeAreaProvider>
-                    <GestureHandlerRootView style={styles.root}>
-                      <KeyboardProvider>
-                        <NavigationContainer>
-                          <RootStackNavigator />
-                        </NavigationContainer>
-                        <StatusBar style="light" hidden={false} />
-                        <MessagePopup />
-                      </KeyboardProvider>
-                    </GestureHandlerRootView>
-                  </SafeAreaProvider>
-                </MessageProvider>
-              </FavouritesProvider>
-            </ProfileProvider>
-          </DataProvider>
-        </AuthProvider>
+        <SafeAreaProvider>
+          <GestureHandlerRootView style={styles.root}>
+            {!introComplete ? (
+              <IntroOverlay onDone={handleIntroDone} />
+            ) : (
+              <AuthProvider>
+                <DataProvider>
+                  <ProfileProvider>
+                    <FavouritesProvider>
+                      <MessageProvider>
+                        <KeyboardProvider>
+                          <NavigationContainer>
+                            <RootStackNavigator />
+                          </NavigationContainer>
+                          <StatusBar style="light" hidden={false} />
+                          <MessagePopup />
+                        </KeyboardProvider>
+                      </MessageProvider>
+                    </FavouritesProvider>
+                  </ProfileProvider>
+                </DataProvider>
+              </AuthProvider>
+            )}
+          </GestureHandlerRootView>
+        </SafeAreaProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
