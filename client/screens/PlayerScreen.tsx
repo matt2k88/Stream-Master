@@ -5,7 +5,6 @@ import {
   Pressable,
   ActivityIndicator,
   StatusBar,
-  Platform,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -15,65 +14,40 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
-import { useAuth } from "@/contexts/AuthContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
-
-// Dynamic import — VLC is only available in native Android builds
-let VLCPlayer: any = null;
-if (Platform.OS === "android") {
-  try {
-    VLCPlayer = require("react-native-vlc-media-player").default;
-  } catch (_) {
-    // Not available in Expo Go / web — falls back to internal player
-  }
-}
 
 export default function PlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PlayerRouteProp>();
   const { streamUrl, title } = route.params;
-  const { playerMode } = useAuth();
-
-  const useVLC = playerMode === "vlc" && Platform.OS === "android" && VLCPlayer !== null;
 
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- Internal expo-video player ---
-  const internalPlayer = useVideoPlayer(useVLC ? null : streamUrl, (p) => {
-    if (!useVLC) {
-      p.loop = false;
-      p.play();
-    }
+  const player = useVideoPlayer(streamUrl, (p) => {
+    p.loop = false;
+    p.play();
   });
 
   useEffect(() => {
-    if (useVLC) return;
-    const sub = internalPlayer.addListener("statusChange", (status) => {
+    const sub = player.addListener("statusChange", (status) => {
       if (status.status === "readyToPlay") { setIsLoading(false); setError(""); }
-      else if (status.status === "error") {
-        setIsLoading(false);
-        setError(status.error?.message || "Failed to load stream");
-      } else if (status.status === "loading") {
-        setIsLoading(true);
-      }
+      else if (status.status === "error") { setIsLoading(false); setError(status.error?.message || "Failed to load stream"); }
+      else if (status.status === "loading") { setIsLoading(true); }
     });
     return () => sub.remove();
-  }, [internalPlayer, useVLC]);
+  }, [player]);
 
   useEffect(() => {
-    if (useVLC) return;
-    const sub = internalPlayer.addListener("playingChange", (playing) => setIsPlaying(playing));
+    const sub = player.addListener("playingChange", (playing) => setIsPlaying(playing));
     return () => sub.remove();
-  }, [internalPlayer, useVLC]);
+  }, [player]);
 
-  // --- Controls auto-hide ---
   const resetControlsTimeout = useCallback(() => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
@@ -95,18 +69,12 @@ export default function PlayerScreen() {
   };
 
   const handlePlayPause = () => {
-    if (useVLC) {
-      const next = !isPaused;
-      setIsPaused(next);
-      setIsPlaying(!next);
-    } else {
-      isPlaying ? internalPlayer.pause() : internalPlayer.play();
-    }
+    isPlaying ? player.pause() : player.play();
     resetControlsTimeout();
   };
 
   const handleBack = () => {
-    if (!useVLC) internalPlayer.pause();
+    player.pause();
     navigation.goBack();
   };
 
@@ -141,37 +109,17 @@ export default function PlayerScreen() {
   return (
     <Pressable style={styles.container} onPress={handleScreenPress}>
       <StatusBar hidden />
-
-      {/* Video surface */}
-      {useVLC ? (
-        <VLCPlayer
-          source={{ uri: streamUrl }}
-          style={styles.video}
-          paused={isPaused}
-          resizeMode="contain"
-          muted={false}
-          volume={200}
-          onBuffering={() => setIsLoading(true)}
-          onPlaying={() => { setIsLoading(false); setIsPlaying(true); setIsPaused(false); setError(""); }}
-          onPaused={() => { setIsPlaying(false); setIsPaused(true); }}
-          onStopped={() => setIsPlaying(false)}
-          onError={() => { setIsLoading(false); setError("VLC could not play this stream"); }}
-        />
-      ) : (
-        <VideoView
-          style={styles.video}
-          player={internalPlayer}
-          contentFit="contain"
-          nativeControls={false}
-        />
-      )}
+      <VideoView
+        style={styles.video}
+        player={player}
+        contentFit="contain"
+        nativeControls={false}
+      />
 
       {isLoading ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
-          <ThemedText style={styles.loadingText}>
-            {useVLC ? "VLC loading stream..." : "Loading stream..."}
-          </ThemedText>
+          <ThemedText style={styles.loadingText}>Loading stream...</ThemedText>
         </View>
       ) : null}
 
@@ -196,13 +144,7 @@ export default function PlayerScreen() {
               <Feather name="arrow-left" size={22} color="#fff" />
             </Pressable>
             <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
-            {useVLC ? (
-              <View style={styles.vlcBadge}>
-                <ThemedText style={styles.vlcBadgeText}>VLC</ThemedText>
-              </View>
-            ) : (
-              <View style={{ width: 48 }} />
-            )}
+            <View style={{ width: 48 }} />
           </View>
 
           <View style={styles.centerControls}>
@@ -295,22 +237,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     textAlign: "center",
-  },
-  vlcBadge: {
-    width: 48,
-    height: 26,
-    borderRadius: BorderRadius.xs,
-    backgroundColor: "rgba(255,102,0,0.25)",
-    borderWidth: 1,
-    borderColor: Colors.dark.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  vlcBadgeText: {
-    color: Colors.dark.accent,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
   },
   centerControls: {
     flex: 1,

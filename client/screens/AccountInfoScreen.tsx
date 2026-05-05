@@ -5,7 +5,6 @@ import {
   Pressable,
   ActivityIndicator,
   useWindowDimensions,
-  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -15,105 +14,19 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { useAuth, PlayerMode } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-function InfoRow({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: keyof typeof Feather.glyphMap;
-}) {
+function InfoRow({ label, value, icon }: { label: string; value: string; icon: keyof typeof Feather.glyphMap }) {
   return (
     <View style={styles.infoRow}>
       <Feather name={icon} size={14} color={Colors.dark.accent} />
       <View style={styles.infoContent}>
         <ThemedText style={styles.infoLabel}>{label}</ThemedText>
-        <ThemedText style={styles.infoValue} numberOfLines={1}>
-          {value}
-        </ThemedText>
+        <ThemedText style={styles.infoValue} numberOfLines={1}>{value}</ThemedText>
       </View>
-    </View>
-  );
-}
-
-function PlayerToggle() {
-  const { playerMode, setPlayerMode } = useAuth();
-
-  const options: { mode: PlayerMode; label: string; icon: keyof typeof Feather.glyphMap; desc: string }[] = [
-    { mode: "internal", label: "Built-in", icon: "monitor", desc: "Expo video player" },
-    { mode: "vlc", label: "VLC", icon: "zap", desc: "All codecs supported" },
-  ];
-
-  return (
-    <View style={styles.playerSection}>
-      <View style={styles.playerHeader}>
-        <Feather name="sliders" size={13} color={Colors.dark.accent} />
-        <ThemedText style={styles.cardLabel}>Player Engine</ThemedText>
-      </View>
-
-      <View style={styles.playerOptions}>
-        {options.map((opt) => {
-          const active = playerMode === opt.mode;
-          return (
-            <Pressable
-              key={opt.mode}
-              style={[styles.playerOption, active && styles.playerOptionActive]}
-              onPress={() => setPlayerMode(opt.mode)}
-            >
-              {active ? (
-                <LinearGradient
-                  colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                />
-              ) : null}
-              <View style={[styles.playerIconWrap, active && styles.playerIconWrapActive]}>
-                <Feather
-                  name={opt.icon}
-                  size={18}
-                  color={active ? Colors.dark.accent : Colors.dark.textSecondary}
-                />
-              </View>
-              <View style={styles.playerOptionInfo}>
-                <ThemedText
-                  style={[styles.playerOptionLabel, active && styles.playerOptionLabelActive]}
-                >
-                  {opt.label}
-                </ThemedText>
-                <ThemedText style={styles.playerOptionDesc}>{opt.desc}</ThemedText>
-              </View>
-              {active ? (
-                <View style={styles.activeCheck}>
-                  <Feather name="check" size={12} color={Colors.dark.accent} />
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {Platform.OS === "android" ? (
-        <View style={styles.vlcNote}>
-          <Feather name="info" size={11} color={Colors.dark.textSecondary} />
-          <ThemedText style={styles.vlcNoteText}>
-            VLC engine is embedded in the APK and supports all audio/video codecs out of the box.
-          </ThemedText>
-        </View>
-      ) : (
-        <View style={styles.vlcNote}>
-          <Feather name="info" size={11} color={Colors.dark.textSecondary} />
-          <ThemedText style={styles.vlcNoteText}>
-            VLC engine is available in the Android APK build only.
-          </ThemedText>
-        </View>
-      )}
     </View>
   );
 }
@@ -126,9 +39,7 @@ export default function AccountInfoScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  useEffect(() => {
-    handleRefresh();
-  }, []);
+  useEffect(() => { handleRefresh(); }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -138,19 +49,11 @@ export default function AccountInfoScreen() {
 
   const formatDate = (ts: string) => {
     if (!ts || ts === "0") return "N/A";
-    return new Date(parseInt(ts) * 1000).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    return new Date(parseInt(ts) * 1000).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   };
 
   const statusColor = (s: string) =>
-    s?.toLowerCase() === "active"
-      ? Colors.dark.success
-      : s?.toLowerCase() === "expired"
-      ? Colors.dark.error
-      : Colors.dark.textSecondary;
+    s?.toLowerCase() === "active" ? Colors.dark.success : s?.toLowerCase() === "expired" ? Colors.dark.error : Colors.dark.textSecondary;
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -173,11 +76,9 @@ export default function AccountInfoScreen() {
           onPress={handleRefresh}
           disabled={isRefreshing}
         >
-          {isRefreshing ? (
-            <ActivityIndicator size="small" color={Colors.dark.accent} />
-          ) : (
-            <Feather name="refresh-cw" size={16} color={Colors.dark.textSecondary} />
-          )}
+          {isRefreshing
+            ? <ActivityIndicator size="small" color={Colors.dark.accent} />
+            : <Feather name="refresh-cw" size={16} color={Colors.dark.textSecondary} />}
         </Pressable>
       </View>
 
@@ -188,16 +89,7 @@ export default function AccountInfoScreen() {
           <ActivityIndicator size="large" color={Colors.dark.accent} />
         </View>
       ) : user ? (
-        <View
-          style={[
-            styles.body,
-            {
-              paddingHorizontal: padH,
-              paddingBottom: padB,
-              flexDirection: isLandscape ? "row" : "column",
-            },
-          ]}
-        >
+        <View style={[styles.body, { paddingHorizontal: padH, paddingBottom: padB, flexDirection: isLandscape ? "row" : "column" }]}>
           {/* User card */}
           <View style={[styles.userCard, isLandscape && styles.userCardLandscape]}>
             <LinearGradient
@@ -211,9 +103,7 @@ export default function AccountInfoScreen() {
                 <Feather name="user" size={26} color={Colors.dark.accent} />
               </View>
             </View>
-            <ThemedText style={styles.username} numberOfLines={1}>
-              {user.username}
-            </ThemedText>
+            <ThemedText style={styles.username} numberOfLines={1}>{user.username}</ThemedText>
             <View style={styles.statusBadge}>
               <View style={[styles.statusDot, { backgroundColor: statusColor(user.status) }]} />
               <ThemedText style={[styles.statusText, { color: statusColor(user.status) }]}>
@@ -222,23 +112,15 @@ export default function AccountInfoScreen() {
             </View>
           </View>
 
-          {/* Info + Player settings */}
+          {/* Info section */}
           <View style={styles.infoSection}>
             <View style={styles.infoGrid}>
               <View style={styles.infoCard}>
                 <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
                 <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
-                <InfoRow
-                  label="Connections"
-                  value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`}
-                  icon="users"
-                />
+                <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
                 <InfoRow label="Created" value={formatDate(user.created_at)} icon="clock" />
-                <InfoRow
-                  label="Trial"
-                  value={user.is_trial === "1" ? "Yes" : "No"}
-                  icon="flag"
-                />
+                <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
               </View>
               {server ? (
                 <View style={styles.infoCard}>
@@ -250,17 +132,9 @@ export default function AccountInfoScreen() {
               ) : null}
             </View>
 
-            {/* Player engine toggle */}
-            <PlayerToggle />
-
             <Pressable
-              style={({ pressed }) => [
-                styles.logoutBtn,
-                pressed && styles.logoutBtnPressed,
-              ]}
-              onPress={async () => {
-                await logout();
-              }}
+              style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
+              onPress={async () => { await logout(); }}
             >
               <Feather name="log-out" size={16} color={Colors.dark.error} />
               <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
@@ -381,6 +255,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   infoGrid: {
+    flex: 1,
     flexDirection: "row",
     gap: Spacing.md,
   },
@@ -420,97 +295,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.text,
     fontWeight: "500",
-  },
-  // Player toggle
-  playerSection: {
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    padding: Spacing.md,
-    gap: Spacing.sm,
-  },
-  playerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    marginBottom: Spacing.xs,
-  },
-  playerOptions: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  playerOption: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.dark.backgroundSecondary,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    padding: Spacing.sm,
-    gap: Spacing.sm,
-    overflow: "hidden",
-  },
-  playerOptionActive: {
-    borderColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  playerIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  playerIconWrapActive: {
-    backgroundColor: Colors.dark.accentDim,
-    borderColor: Colors.dark.accent,
-  },
-  playerOptionInfo: {
-    flex: 1,
-  },
-  playerOptionLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: Colors.dark.textSecondary,
-  },
-  playerOptionLabelActive: {
-    color: Colors.dark.accent,
-  },
-  playerOptionDesc: {
-    fontSize: 10,
-    color: Colors.dark.textSecondary,
-    marginTop: 1,
-  },
-  activeCheck: {
-    width: 20,
-    height: 20,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.accentDim,
-    borderWidth: 1,
-    borderColor: Colors.dark.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  vlcNote: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.xs,
-    paddingTop: Spacing.xs,
-  },
-  vlcNoteText: {
-    flex: 1,
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-    lineHeight: 15,
   },
   logoutBtn: {
     flexDirection: "row",

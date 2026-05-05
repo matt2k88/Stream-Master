@@ -1,17 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { xtreamApi, XtreamCredentials, AuthResponse } from "@/lib/xtream-api";
-
-export type PlayerMode = "internal" | "vlc";
-
-const PLAYER_MODE_KEY = "@ultracast_player_mode";
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   userInfo: AuthResponse | null;
-  playerMode: PlayerMode;
-  setPlayerMode: (mode: PlayerMode) => Promise<void>;
   login: (credentials: XtreamCredentials) => Promise<void>;
   logout: () => Promise<void>;
   refreshUserInfo: () => Promise<void>;
@@ -27,28 +20,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userInfo, setUserInfo] = useState<AuthResponse | null>(null);
-  const [playerMode, setPlayerModeState] = useState<PlayerMode>("internal");
 
   useEffect(() => {
     checkAuth();
-    loadPlayerMode();
   }, []);
-
-  const loadPlayerMode = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(PLAYER_MODE_KEY);
-      if (stored === "vlc" || stored === "internal") {
-        setPlayerModeState(stored);
-      }
-    } catch (_) {}
-  };
-
-  const setPlayerMode = async (mode: PlayerMode) => {
-    setPlayerModeState(mode);
-    try {
-      await AsyncStorage.setItem(PLAYER_MODE_KEY, mode);
-    } catch (_) {}
-  };
 
   const checkAuth = async () => {
     try {
@@ -93,8 +68,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         isAuthenticated,
         isLoading,
         userInfo,
-        playerMode,
-        setPlayerMode,
         login,
         logout,
         refreshUserInfo,
