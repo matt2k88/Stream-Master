@@ -5,7 +5,6 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
-  Alert,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,25 +41,20 @@ function ProfileAvatar({ icon, color, size = 64 }: { icon: string; color: string
 function ProfileCard({
   profile,
   onPress,
-  onDelete,
-  editMode,
   size,
 }: {
   profile: Profile;
   onPress: () => void;
-  onDelete: () => void;
-  editMode: boolean;
   size: number;
 }) {
   const [pressed, setPressed] = useState(false);
 
   return (
     <Pressable
-      style={[styles.profileCard, { width: size }, pressed && !editMode && styles.profileCardActive]}
-      onPress={editMode ? undefined : onPress}
+      style={[styles.profileCard, { width: size }, pressed && styles.profileCardActive]}
+      onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      onLongPress={() => onDelete()}
     >
       <View style={styles.avatarWrap}>
         <ProfileAvatar icon={profile.avatar_icon} color={profile.avatar_color} size={54} />
@@ -68,11 +62,6 @@ function ProfileCard({
           <View style={[styles.lockBadge, { backgroundColor: profile.avatar_color }]}>
             <Feather name="lock" size={9} color="#fff" />
           </View>
-        ) : null}
-        {editMode ? (
-          <Pressable style={styles.deleteBadge} onPress={onDelete} hitSlop={8}>
-            <Feather name="x" size={11} color="#fff" />
-          </Pressable>
         ) : null}
       </View>
       <ThemedText style={styles.profileName} numberOfLines={1}>
@@ -107,12 +96,6 @@ async function fetchProfiles(username: string): Promise<Profile[]> {
   return res.json();
 }
 
-async function deleteProfile(id: string): Promise<void> {
-  const url = new URL(`/api/profiles/${id}`, getApiUrl());
-  const res = await fetch(url.toString(), { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete profile");
-}
-
 export default function ProfilePickerScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -126,13 +109,11 @@ export default function ProfilePickerScreen() {
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editMode, setEditMode] = useState(false);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing["3xl"]);
   const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
   const padB = Math.max(insets.bottom + Spacing.sm, Spacing.lg);
 
-  // Card sizing: 4-5 per row landscape, 3 portrait
   const numCols = isLandscape ? 4 : 3;
   const gap = Spacing.lg;
   const cardSize = Math.floor((Math.min(width, 800) - padH * 2 - gap * (numCols - 1)) / numCols);
@@ -141,9 +122,9 @@ export default function ProfilePickerScreen() {
     useCallback(() => {
       let active = true;
       setLoading(true);
-      fetchProfiles(username).then((p) => {
-        if (active) { setProfiles(p); setLoading(false); }
-      }).catch(() => { if (active) setLoading(false); });
+      fetchProfiles(username)
+        .then((p) => { if (active) { setProfiles(p); setLoading(false); } })
+        .catch(() => { if (active) setLoading(false); });
       return () => { active = false; };
     }, [username])
   );
@@ -153,34 +134,15 @@ export default function ProfilePickerScreen() {
       navigation.navigate("PinEntry", { profile, fromHome });
     } else {
       setActiveProfile(profile);
-      if (fromHome) navigation.goBack();
+      if (fromHome) {
+        navigation.goBack();
+      } else {
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+      }
     }
   };
 
-  const handleDelete = (profile: Profile) => {
-    Alert.alert(
-      "Delete Profile",
-      `Remove "${profile.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteProfile(profile.id);
-              setProfiles((prev) => prev.filter((p) => p.id !== profile.id));
-            } catch {
-              Alert.alert("Error", "Failed to delete profile");
-            }
-          },
-        },
-      ]
-    );
-  };
-
   const canAddMore = profiles.length < 10;
-
   const items: Array<Profile | "add"> = canAddMore ? [...profiles, "add"] : profiles;
 
   return (
@@ -210,16 +172,7 @@ export default function ProfilePickerScreen() {
           <ThemedText style={styles.title}>Who's Watching?</ThemedText>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.iconBtn,
-            editMode && styles.iconBtnEdit,
-            pressed && styles.iconBtnActive,
-          ]}
-          onPress={() => setEditMode((e) => !e)}
-        >
-          <Feather name={editMode ? "check" : "edit-2"} size={16} color={editMode ? Colors.dark.accent : Colors.dark.textSecondary} />
-        </Pressable>
+        <View style={{ width: 40 }} />
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -234,10 +187,7 @@ export default function ProfilePickerScreen() {
           keyExtractor={(item) => (item === "add" ? "__add__" : (item as Profile).id)}
           numColumns={numCols}
           key={`profiles-${numCols}`}
-          contentContainerStyle={[
-            styles.grid,
-            { paddingHorizontal: padH, paddingBottom: padB, gap },
-          ]}
+          contentContainerStyle={[styles.grid, { paddingHorizontal: padH, paddingBottom: padB, gap }]}
           columnWrapperStyle={numCols > 1 ? { gap } : undefined}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
@@ -254,9 +204,7 @@ export default function ProfilePickerScreen() {
               <ProfileCard
                 profile={p}
                 size={cardSize}
-                editMode={editMode}
                 onPress={() => handleSelect(p)}
-                onDelete={() => handleDelete(p)}
               />
             );
           }}
@@ -276,18 +224,11 @@ export default function ProfilePickerScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingBottom: Spacing.md,
-    gap: Spacing.md,
+    flexDirection: "row", alignItems: "center",
+    paddingBottom: Spacing.md, gap: Spacing.md,
   },
   headerCenter: { flex: 1, alignItems: "center" },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: Colors.dark.text,
-    letterSpacing: 0.3,
-  },
+  title: { fontSize: 22, fontWeight: "700", color: Colors.dark.text, letterSpacing: 0.3 },
   iconBtn: {
     width: 40, height: 40, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
@@ -295,24 +236,14 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  iconBtnEdit: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xl },
   grid: { paddingTop: Spacing.sm },
-  profileCard: {
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-  },
+  profileCard: { alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm },
   profileCardActive: { opacity: 0.75 },
   avatarWrap: { position: "relative" },
   avatarRing: {
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
+    borderWidth: 2, justifyContent: "center", alignItems: "center",
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 6,
   },
   avatarInner: { justifyContent: "center", alignItems: "center" },
   lockBadge: {
@@ -321,30 +252,23 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     borderWidth: 2, borderColor: Colors.dark.backgroundRoot,
   },
-  deleteBadge: {
-    position: "absolute", top: -2, right: -2,
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: Colors.dark.error,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 2, borderColor: Colors.dark.backgroundRoot,
-  },
   profileName: {
     color: Colors.dark.text, fontSize: 13, fontWeight: "600",
     textAlign: "center", maxWidth: "90%",
   },
-  addCard: {
-    alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm,
-  },
+  addCard: { alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.sm },
   addCardActive: { opacity: 0.7 },
   addIconWrap: {
     width: 72, height: 72, borderRadius: 36,
-    borderWidth: 2, borderColor: Colors.dark.border,
-    borderStyle: "dashed",
+    borderWidth: 2, borderColor: Colors.dark.border, borderStyle: "dashed",
     justifyContent: "center", alignItems: "center",
     backgroundColor: Colors.dark.backgroundDefault,
   },
   addText: { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: "500" },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingTop: Spacing["4xl"] },
+  centered: {
+    flex: 1, justifyContent: "center", alignItems: "center",
+    gap: Spacing.md, paddingTop: Spacing["4xl"],
+  },
   emptyText: { color: Colors.dark.text, fontSize: 16, fontWeight: "600" },
   emptySubText: { color: Colors.dark.textSecondary, fontSize: 13 },
 });

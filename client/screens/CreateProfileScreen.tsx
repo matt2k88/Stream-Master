@@ -7,7 +7,6 @@ import {
   ScrollView,
   Switch,
   Alert,
-  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -19,6 +18,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -42,8 +42,8 @@ export default function CreateProfileScreen() {
   const route = useRoute<CreateProfileRouteProp>();
   const editing = route.params?.profile;
   const { userInfo } = useAuth();
+  const { setActiveProfile, clearProfile } = useProfile();
   const username = userInfo?.user_info?.username ?? "";
-  const { width } = useWindowDimensions();
 
   const [name, setName] = useState(editing?.name ?? "");
   const [icon, setIcon] = useState(editing?.avatar_icon ?? "user");
@@ -51,6 +51,7 @@ export default function CreateProfileScreen() {
   const [pinEnabled, setPinEnabled] = useState(!!editing?.pin);
   const [pin, setPin] = useState(editing?.pin ?? "");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -70,15 +71,11 @@ export default function CreateProfileScreen() {
         pin: pinEnabled && pin.length === 4 ? pin : null,
       };
       const baseUrl = getApiUrl();
-      let url: string;
-      let method: string;
-      if (editing) {
-        url = new URL(`/api/profiles/${editing.id}`, baseUrl).toString();
-        method = "PUT";
-      } else {
-        url = new URL("/api/profiles", baseUrl).toString();
-        method = "POST";
-      }
+      const url = editing
+        ? new URL(`/api/profiles/${editing.id}`, baseUrl).toString()
+        : new URL("/api/profiles", baseUrl).toString();
+      const method = editing ? "PUT" : "POST";
+
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -89,12 +86,50 @@ export default function CreateProfileScreen() {
         Alert.alert("Error", data.error ?? "Failed to save profile");
         return;
       }
-      navigation.goBack();
+
+      if (editing) {
+        // Update the active profile in context with new data
+        setActiveProfile(data);
+        navigation.goBack();
+      } else {
+        // New profile — set as active and go straight to Home
+        setActiveProfile(data);
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+      }
     } catch {
       Alert.alert("Error", "Failed to save profile");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDelete = () => {
+    if (!editing) return;
+    Alert.alert(
+      "Delete Profile",
+      `Are you sure you want to delete "${editing.name}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              const url = new URL(`/api/profiles/${editing.id}`, getApiUrl()).toString();
+              const res = await fetch(url, { method: "DELETE" });
+              if (!res.ok) throw new Error();
+              clearProfile();
+              navigation.reset({ index: 0, routes: [{ name: "ProfilePicker" }] });
+            } catch {
+              Alert.alert("Error", "Failed to delete profile");
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -230,17 +265,12 @@ export default function CreateProfileScreen() {
                     ]}
                     onPress={() => {
                       if (!k) return;
-                      if (k === "⌫") {
-                        setPin((p) => p.slice(0, -1));
-                      } else if (pin.length < 4) {
-                        setPin((p) => p + k);
-                      }
+                      if (k === "⌫") { setPin((p) => p.slice(0, -1)); }
+                      else if (pin.length < 4) { setPin((p) => p + k); }
                     }}
                     disabled={!k}
                   >
-                    <ThemedText style={[styles.pinKeyText, !k && { color: "transparent" }]}>
-                      {k}
-                    </ThemedText>
+                    <ThemedText style={[styles.pinKeyText, !k && { color: "transparent" }]}>{k}</ThemedText>
                   </Pressable>
                 ))}
               </View>
@@ -260,17 +290,24 @@ export default function CreateProfileScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           />
-          {saving ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: Spacing.sm }}>
-              <Feather name="loader" size={18} color="#fff" />
-              <ThemedText style={styles.saveBtnText}>Saving...</ThemedText>
-            </View>
-          ) : (
-            <ThemedText style={[styles.saveBtnText, !isValid && styles.saveBtnTextDisabled]}>
-              {editing ? "Save Changes" : "Create Profile"}
-            </ThemedText>
-          )}
+          <ThemedText style={[styles.saveBtnText, !isValid && styles.saveBtnTextDisabled]}>
+            {saving ? "Saving..." : editing ? "Save Changes" : "Create Profile"}
+          </ThemedText>
         </Pressable>
+
+        {/* Delete button — only when editing */}
+        {editing ? (
+          <Pressable
+            style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed, deleting && styles.saveBtnDisabled]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            <Feather name="trash-2" size={16} color={Colors.dark.error} />
+            <ThemedText style={styles.deleteBtnText}>
+              {deleting ? "Deleting..." : "Delete Profile"}
+            </ThemedText>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </ThemedView>
   );
@@ -278,10 +315,7 @@ export default function CreateProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingBottom: Spacing.md, gap: Spacing.md,
-  },
+  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.md },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: Colors.dark.text },
   iconBtn: {
     width: 40, height: 40, borderRadius: BorderRadius.full,
@@ -293,8 +327,8 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
   previewRow: { alignItems: "center", gap: Spacing.md, paddingVertical: Spacing.sm },
   avatarPreviewRing: {
-    width: 96, height: 96, borderRadius: 48,
-    borderWidth: 3, justifyContent: "center", alignItems: "center",
+    width: 96, height: 96, borderRadius: 48, borderWidth: 3,
+    justifyContent: "center", alignItems: "center",
     shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 16, elevation: 10,
   },
   avatarPreviewInner: { width: 80, height: 80, borderRadius: 40, justifyContent: "center", alignItems: "center" },
@@ -310,9 +344,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
     color: Colors.dark.text, fontSize: 16, fontWeight: "500",
   },
-  iconGrid: {
-    flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm,
-  },
+  iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
   iconOption: {
     width: 52, height: 52, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundDefault,
@@ -330,8 +362,7 @@ const styles = StyleSheet.create({
   pinToggleRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: Colors.dark.border,
-    padding: Spacing.md,
+    borderWidth: 1, borderColor: Colors.dark.border, padding: Spacing.md,
   },
   pinToggleLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md, flex: 1 },
   pinIconWrap: {
@@ -344,14 +375,8 @@ const styles = StyleSheet.create({
   pinInputSection: { gap: Spacing.md, alignItems: "center" },
   pinLabel: { color: Colors.dark.textSecondary, fontSize: 13 },
   pinDots: { flexDirection: "row", gap: Spacing.md },
-  pinDot: {
-    width: 18, height: 18, borderRadius: 9,
-    borderWidth: 2, backgroundColor: "transparent",
-  },
-  pinPad: {
-    flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm,
-    maxWidth: 220, justifyContent: "center",
-  },
+  pinDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, backgroundColor: "transparent" },
+  pinPad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 220, justifyContent: "center" },
   pinKey: {
     width: 64, height: 64, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundDefault,
@@ -362,13 +387,21 @@ const styles = StyleSheet.create({
   pinKeyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   pinKeyText: { color: Colors.dark.text, fontSize: 20, fontWeight: "600" },
   saveBtn: {
-    height: 52, borderRadius: BorderRadius.sm,
-    overflow: "hidden", justifyContent: "center", alignItems: "center",
-    marginTop: Spacing.sm,
+    height: 52, borderRadius: BorderRadius.sm, overflow: "hidden",
+    justifyContent: "center", alignItems: "center", marginTop: Spacing.sm,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 8,
   },
   saveBtnDisabled: { shadowOpacity: 0, elevation: 0 },
   saveBtnPressed: { opacity: 0.85 },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   saveBtnTextDisabled: { color: Colors.dark.textSecondary },
+  deleteBtn: {
+    height: 52, borderRadius: BorderRadius.sm,
+    justifyContent: "center", alignItems: "center",
+    flexDirection: "row", gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1, borderColor: "rgba(255,59,59,0.4)",
+  },
+  deleteBtnPressed: { backgroundColor: "rgba(255,59,59,0.08)", borderColor: Colors.dark.error },
+  deleteBtnText: { color: Colors.dark.error, fontWeight: "700", fontSize: 15 },
 });

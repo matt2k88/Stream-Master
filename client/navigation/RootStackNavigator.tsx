@@ -4,7 +4,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useData } from "@/contexts/DataContext";
-import { useProfile } from "@/contexts/ProfileContext";
 import { Profile } from "@/contexts/ProfileContext";
 import { Colors } from "@/constants/theme";
 import { SyncScreen } from "@/components/SyncScreen";
@@ -22,15 +21,15 @@ import PinEntryScreen from "@/screens/PinEntryScreen";
 
 export type RootStackParamList = {
   Login: undefined;
+  ProfilePicker: { fromHome?: boolean } | undefined;
+  CreateProfile: { profile?: Profile } | undefined;
+  PinEntry: { profile: Profile; fromHome?: boolean };
   Home: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string };
   Player: { streamUrl: string; title: string; type: "live" | "vod" | "series" };
   AccountInfo: undefined;
-  ProfilePicker: { fromHome?: boolean } | undefined;
-  CreateProfile: { profile?: Profile } | undefined;
-  PinEntry: { profile: Profile; fromHome?: boolean };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -39,7 +38,6 @@ export default function RootStackNavigator() {
   const screenOptions = useScreenOptions({ transparent: false });
   const { isAuthenticated, isLoading } = useAuth();
   const { isSyncing, syncProgress } = useData();
-  const { activeProfile } = useProfile();
 
   if (isLoading) {
     return <View style={styles.blank} />;
@@ -52,16 +50,12 @@ export default function RootStackNavigator() {
       >
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
-        ) : !activeProfile ? (
-          // Authenticated but no profile selected yet — must pick one
+        ) : (
+          // All authenticated screens in one stack — ProfilePicker is always the entry point
           <>
             <Stack.Screen name="ProfilePicker" component={ProfilePickerScreen} />
             <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
             <Stack.Screen name="PinEntry" component={PinEntryScreen} />
-          </>
-        ) : (
-          // Fully authenticated with active profile
-          <>
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Category" component={CategoryScreen} />
             <Stack.Screen name="ContentList" component={ContentListScreen} />
@@ -72,9 +66,6 @@ export default function RootStackNavigator() {
               options={{ animation: "fade", orientation: "landscape" }}
             />
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
-            <Stack.Screen name="ProfilePicker" component={ProfilePickerScreen} />
-            <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
-            <Stack.Screen name="PinEntry" component={PinEntryScreen} />
           </>
         )}
       </Stack.Navigator>

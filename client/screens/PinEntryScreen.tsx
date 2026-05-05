@@ -42,19 +42,12 @@ export default function PinEntryScreen() {
       Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
       Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
       Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
-    ]).start(() => {
-      setPin("");
-      setError(false);
-    });
+    ]).start(() => { setPin(""); setError(false); });
   };
 
   const handleKey = (key: string) => {
     if (!key) return;
-    if (key === "⌫") {
-      setPin((p) => p.slice(0, -1));
-      setError(false);
-      return;
-    }
+    if (key === "⌫") { setPin((p) => p.slice(0, -1)); setError(false); return; }
     if (pin.length >= 4) return;
     const next = pin + key;
     setPin(next);
@@ -63,7 +56,8 @@ export default function PinEntryScreen() {
         setActiveProfile(profile);
         if (fromHome) {
           navigation.goBack();
-          navigation.goBack();
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: "Home" }] });
         }
       } else {
         setTimeout(shake, 100);
@@ -73,7 +67,6 @@ export default function PinEntryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Back */}
       <View style={[styles.topBar, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
           style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
@@ -84,7 +77,6 @@ export default function PinEntryScreen() {
       </View>
 
       <View style={styles.body}>
-        {/* Profile avatar */}
         <View style={[styles.avatarRing, { borderColor: profile.avatar_color, shadowColor: profile.avatar_color }]}>
           <View style={[styles.avatarInner, { backgroundColor: profile.avatar_color + "33" }]}>
             <Feather name={profile.avatar_icon as any} size={32} color={profile.avatar_color} />
@@ -93,7 +85,6 @@ export default function PinEntryScreen() {
         <ThemedText style={styles.profileName}>{profile.name}</ThemedText>
         <ThemedText style={styles.subtitle}>Enter your PIN</ThemedText>
 
-        {/* Dots */}
         <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
           {[0,1,2,3].map((i) => (
             <View
@@ -101,12 +92,8 @@ export default function PinEntryScreen() {
               style={[
                 styles.dot,
                 {
-                  borderColor: error
-                    ? Colors.dark.error
-                    : pin.length > i ? profile.avatar_color : Colors.dark.border,
-                  backgroundColor: error
-                    ? Colors.dark.error
-                    : pin.length > i ? profile.avatar_color : "transparent",
+                  borderColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : Colors.dark.border,
+                  backgroundColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : "transparent",
                 },
               ]}
             />
@@ -119,7 +106,6 @@ export default function PinEntryScreen() {
           <View style={{ height: 20 }} />
         )}
 
-        {/* Number pad */}
         <View style={styles.pad}>
           {KEYS.map((key, idx) => (
             <Pressable
@@ -156,25 +142,22 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  body: { flex: 1, alignItems: "center", justifyContent: "center", gap: Spacing.lg, paddingHorizontal: Spacing["3xl"] },
+  body: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    gap: Spacing.lg, paddingHorizontal: Spacing["3xl"],
+  },
   avatarRing: {
-    width: 88, height: 88, borderRadius: 44,
-    borderWidth: 2, justifyContent: "center", alignItems: "center",
+    width: 88, height: 88, borderRadius: 44, borderWidth: 2,
+    justifyContent: "center", alignItems: "center",
     shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12, elevation: 8,
   },
   avatarInner: { width: 72, height: 72, borderRadius: 36, justifyContent: "center", alignItems: "center" },
   profileName: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
   subtitle: { fontSize: 14, color: Colors.dark.textSecondary },
   dotsRow: { flexDirection: "row", gap: Spacing.lg },
-  dot: {
-    width: 20, height: 20, borderRadius: 10,
-    borderWidth: 2,
-  },
+  dot: { width: 20, height: 20, borderRadius: 10, borderWidth: 2 },
   errorText: { color: Colors.dark.error, fontSize: 13, fontWeight: "500", height: 20 },
-  pad: {
-    flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm,
-    maxWidth: 260, justifyContent: "center",
-  },
+  pad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 260, justifyContent: "center" },
   key: {
     width: 78, height: 78, borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.backgroundDefault,
