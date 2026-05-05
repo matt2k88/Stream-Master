@@ -19,11 +19,12 @@ interface IntroPlayerProps {
 
 function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   const insets = useSafeAreaInsets();
-  // Fade overlay goes from transparent → black on dismiss
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const doneRef = useRef(false);
   const [showSkip, setShowSkip] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [debugStatus, setDebugStatus] = useState("initialising...");
+  const [debugError, setDebugError] = useState("");
 
   const dismiss = useCallback(() => {
     if (doneRef.current) return;
@@ -42,35 +43,45 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   });
 
   useEffect(() => {
-    const sub = player.addListener("statusChange", (e) => {
+    const sub = player.addListener("statusChange", (e: any) => {
+      setDebugStatus(e.status ?? "unknown");
       if (e.status === "readyToPlay") {
         setIsReady(true);
         setShowSkip(true);
+        setDebugError("");
+      } else if (e.status === "error") {
+        setDebugError(e.error?.message ?? e.error?.toString() ?? "unknown error");
+        // Auto-dismiss on error after 3s so app still opens
+        setTimeout(() => dismiss(), 3000);
       }
-    });
-    return () => sub.remove();
-  }, [player]);
-
-  useEffect(() => {
-    const sub = player.addListener("playingChange", (e) => {
-      if (e.isPlaying) {
-        setIsReady(true);
-        setShowSkip(true);
-      }
-    });
-    return () => sub.remove();
-  }, [player]);
-
-  useEffect(() => {
-    const sub = player.addListener("playToEnd", () => {
-      dismiss();
     });
     return () => sub.remove();
   }, [player, dismiss]);
 
+  useEffect(() => {
+    const sub = player.addListener("playingChange", (e: any) => {
+      if (e.isPlaying) {
+        setIsReady(true);
+        setShowSkip(true);
+        setDebugStatus("playing");
+      }
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  useEffect(() => {
+    const sub = player.addListener("playToEnd", () => dismiss());
+    return () => sub.remove();
+  }, [player, dismiss]);
+
+  // Safety timeout — always dismiss after 30s regardless
+  useEffect(() => {
+    const t = setTimeout(() => dismiss(), 30000);
+    return () => clearTimeout(t);
+  }, [dismiss]);
+
   return (
     <View style={styles.container}>
-      {/* Video sits in a plain View — not Animated — so native surface renders correctly */}
       <VideoView
         player={player}
         style={StyleSheet.absoluteFill}
@@ -80,14 +91,19 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
         allowsPictureInPicture={false}
       />
 
-      {/* Loading spinner until ready */}
+      {/* Loading spinner */}
       {!isReady ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
+          {/* Debug label — shows player state on device */}
+          <Text style={styles.debugText}>{debugStatus}</Text>
+          {debugError ? (
+            <Text style={styles.debugError}>{debugError}</Text>
+          ) : null}
+          <Text style={styles.debugUrl} numberOfLines={3}>{videoUrl}</Text>
         </View>
       ) : null}
 
-      {/* Skip button */}
       {showSkip ? (
         <Pressable
           style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
@@ -98,7 +114,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
         </Pressable>
       ) : null}
 
-      {/* Dismiss fade — black overlay animates in on exit */}
       <Animated.View
         style={[styles.fadeOverlay, { opacity: fadeAnim }]}
         pointerEvents="none"
@@ -143,10 +158,7 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
     if (videoUrl === false) onDone();
   }, [videoUrl, onDone]);
 
-  if (videoUrl === null) {
-    return <View style={styles.container} />;
-  }
-
+  if (videoUrl === null) return <View style={styles.container} />;
   if (videoUrl === false) return null;
 
   return <IntroPlayer videoUrl={videoUrl} onDone={onDone} />;
@@ -162,7 +174,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
+    gap: 10,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    paddingHorizontal: 24,
   },
   skipBtn: {
     position: "absolute",
@@ -182,5 +196,20 @@ const styles = StyleSheet.create({
   fadeOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#000",
+  },
+  debugText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  debugError: {
+    color: "#FF5555",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  debugUrl: {
+    color: "rgba(255,102,0,0.5)",
+    fontSize: 10,
+    textAlign: "center",
   },
 });
