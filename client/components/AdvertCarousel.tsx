@@ -107,7 +107,7 @@ export default function AdvertCarousel({ style }: { style?: any }) {
         <Image
           source={{ uri: current.image_url }}
           style={styles.image}
-          contentFit="cover"
+          contentFit="contain"
           transition={0}
         />
         {current.name ? (
