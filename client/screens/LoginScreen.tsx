@@ -139,7 +139,7 @@ export default function LoginScreen() {
     setError("");
     try {
       await login({
-        serverUrl: selectedServer.server_url,
+        serverUrl: selectedServer.url,
         username: username.trim(),
         password: password.trim(),
       });

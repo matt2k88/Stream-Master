@@ -6,9 +6,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/servers", async (req, res) => {
     try {
       const { data, error } = await supabase
-        .from("iptv_servers")
-        .select("id, name, server_url, logo_url, is_active")
-        .eq("is_active", true)
+        .from("server")
+        .select("id, name, url")
         .order("name");
 
       if (error) {

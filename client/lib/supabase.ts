@@ -3,9 +3,8 @@ import { getApiUrl } from "@/lib/query-client";
 export interface IptvServer {
   id: string;
   name: string;
-  server_url: string;
+  url: string;
   logo_url?: string;
-  is_active: boolean;
 }
 
 export async function fetchServers(): Promise<IptvServer[]> {
