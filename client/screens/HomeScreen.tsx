@@ -13,6 +13,7 @@ import { useData } from "@/contexts/DataContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useMessages } from "@/contexts/MessageContext";
 import AdvertCarousel from "@/components/AdvertCarousel";
+import AnnouncementTicker from "@/components/AnnouncementTicker";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,9 +23,10 @@ interface NavButtonProps {
   onPress: () => void;
   large?: boolean;
   tall?: boolean;
+  medium?: boolean;
 }
 
-function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
+function NavButton({ title, icon, onPress, large, tall, medium }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
@@ -35,6 +37,7 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
         styles.navButton,
         large && styles.navButtonLarge,
         tall && styles.navButtonTall,
+        medium && styles.navButtonMedium,
         isActive && styles.navButtonActive,
       ]}
       onPress={onPress}
@@ -54,7 +57,7 @@ function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
       <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
         <Feather
           name={icon}
-          size={large || tall ? 34 : 26}
+          size={large || tall ? 34 : medium ? 28 : 26}
           color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
         />
       </View>
@@ -238,6 +241,9 @@ export default function HomeScreen() {
 
       <View style={[styles.headerDivider, { marginHorizontal: padH }]} />
 
+      {/* Announcement Ticker */}
+      <AnnouncementTicker />
+
       {/* Body */}
       {isLandscape ? (
         // ── Landscape / TV ─────────────────────────────────────────────────
@@ -283,11 +289,13 @@ export default function HomeScreen() {
               title="Movies"
               icon="film"
               onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
+              medium
             />
             <NavButton
               title="Series"
               icon="grid"
               onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
+              medium
             />
           </View>
 
@@ -369,6 +377,7 @@ const styles = StyleSheet.create({
   },
   navButtonLarge: { minHeight: 110, padding: Spacing.xl },
   navButtonTall: { minHeight: 140, padding: Spacing.xl },
+  navButtonMedium: { minHeight: 115, padding: Spacing.xl },
   navButtonActive: {
     borderColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },

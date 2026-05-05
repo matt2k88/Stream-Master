@@ -134,6 +134,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Announcements ─────────────────────────────────────────────────────────
+  app.get("/api/announcements", async (req, res) => {
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("announcements")
+        .select("id, message")
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+        .order("created_at");
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch announcements" });
+    }
+  });
+
   // ── Adverts ───────────────────────────────────────────────────────────────
   app.get("/api/adverts", async (req, res) => {
     try {
