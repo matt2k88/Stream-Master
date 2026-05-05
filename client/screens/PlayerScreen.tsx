@@ -10,6 +10,7 @@ import {
   ScrollView,
   BackHandler,
   Animated,
+  useTVEventHandler,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -45,14 +46,17 @@ function SeekBar({
   duration,
   onSeek,
   onFocus,
+  onFocusChange,
 }: {
   currentTime: number;
   duration: number;
   onSeek: (time: number) => void;
   onFocus?: () => void;
+  onFocusChange?: (focused: boolean) => void;
 }) {
   const [barWidth, setBarWidth] = useState(1);
   const [localFrac, setLocalFrac] = useState<number | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
   const barWidthRef = useRef(1);
   const durationRef = useRef(duration);
   useEffect(() => { durationRef.current = duration; }, [duration]);
@@ -86,20 +90,41 @@ function SeekBar({
   ).current;
 
   return (
-    <View
-      style={styles.seekBarHitArea}
-      {...pan.panHandlers}
-      onLayout={(e) => {
-        const w = e.nativeEvent.layout.width;
-        barWidthRef.current = w;
-        setBarWidth(w);
+    <Pressable
+      style={[styles.seekBarWrapper, isFocused && styles.seekBarWrapperFocused]}
+      onFocus={() => {
+        setIsFocused(true);
+        onFocusChange?.(true);
+        onFocus?.();
+      }}
+      onBlur={() => {
+        setIsFocused(false);
+        onFocusChange?.(false);
       }}
     >
-      <View style={styles.seekBarTrack}>
-        <View style={[styles.seekBarFill, { width: frac * barWidth }]} />
+      <Feather
+        name="skip-forward"
+        size={isFocused ? 20 : 15}
+        color={isFocused ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
+      />
+      <View
+        style={styles.seekBarHitArea}
+        {...pan.panHandlers}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          barWidthRef.current = w;
+          setBarWidth(w);
+        }}
+      >
+        <View style={[styles.seekBarTrack, isFocused && styles.seekBarTrackFocused]}>
+          <View style={[styles.seekBarFill, { width: frac * barWidth }]} />
+        </View>
+        <View
+          style={[styles.seekBarThumb, { left: thumbLeft }, isFocused && styles.seekBarThumbFocused]}
+          pointerEvents="none"
+        />
       </View>
-      <View style={[styles.seekBarThumb, { left: thumbLeft }]} pointerEvents="none" />
-    </View>
+    </Pressable>
   );
 }
 
@@ -324,6 +349,17 @@ export default function PlayerScreen() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
 
+  // ── Seek bar TV remote — refs declared early so they're stable ───────────
+  const [seekBarFocused, setSeekBarFocused] = useState(false);
+  const seekBarFocusedRef = useRef(false);
+  const currentTimeRef = useRef(0);
+  const tvDurationRef = useRef(0);
+  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
+  useEffect(() => { tvDurationRef.current = duration; }, [duration]);
+  const seekHoldRef = useRef<{ dir: string | null; start: number; lastFire: number }>({
+    dir: null, start: 0, lastFire: 0,
+  });
+
   const player = useVideoPlayer(streamUrl, (p) => {
     p.loop = false;
     if (!isLive) p.timeUpdateEventInterval = 1;
@@ -345,6 +381,31 @@ export default function PlayerScreen() {
     setShowControls(true);
     resetTimer();
   }, [resetTimer]);
+
+  // ── TV remote: left/right when seek bar is focused ────────────────────────
+  useTVEventHandler(useCallback((evt: { eventType: string }) => {
+    if (!seekBarFocusedRef.current || isLive) return;
+    if (evt.eventType !== "left" && evt.eventType !== "right") return;
+    const now = Date.now();
+    const isSameDir = evt.eventType === seekHoldRef.current.dir;
+    if (!isSameDir || now - seekHoldRef.current.lastFire > 400) {
+      seekHoldRef.current.start = now;
+      seekHoldRef.current.dir = evt.eventType;
+    }
+    seekHoldRef.current.lastFire = now;
+    const held = now - seekHoldRef.current.start;
+    let step: number;
+    if (held > 4000) step = 60;
+    else if (held > 2000) step = 40;
+    else if (held > 1000) step = 20;
+    else if (held > 500) step = 10;
+    else step = 5;
+    const delta = evt.eventType === "left" ? -step : step;
+    const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+    player.currentTime = newTime;
+    setCurrentTime(newTime);
+    showAndReset();
+  }, [isLive, player, showAndReset]));
 
   // Bump key when controls go from hidden → visible so the play button remounts
   // and hasTVPreferredFocus re-fires, restoring D-pad focus
@@ -665,6 +726,10 @@ export default function PlayerScreen() {
                 duration={duration}
                 onSeek={handleSeek}
                 onFocus={showAndReset}
+                onFocusChange={(focused) => {
+                  seekBarFocusedRef.current = focused;
+                  setSeekBarFocused(focused);
+                }}
               />
 
               <ThemedText style={styles.timeText}>{formatTime(duration)}</ThemedText>
@@ -823,6 +888,26 @@ const styles = StyleSheet.create({
   timeText: { color: "rgba(255,255,255,0.8)", fontSize: 12, minWidth: 40 },
 
   // Seek bar
+  seekBarWrapper: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  seekBarWrapperFocused: {
+    borderColor: "rgba(255,102,0,0.45)",
+    backgroundColor: "rgba(255,102,0,0.06)",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 4,
+  },
   seekBarHitArea: {
     flex: 1,
     height: 28,
@@ -835,8 +920,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.22)",
     overflow: "hidden",
   },
+  seekBarTrackFocused: {
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.32)",
+  },
   seekBarFill: {
-    height: 3,
+    height: "100%",
     backgroundColor: Colors.dark.accent,
     borderRadius: 2,
   },
@@ -852,6 +941,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 5,
     elevation: 5,
+  },
+  seekBarThumbFocused: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    top: 6,
+    shadowRadius: 9,
+    elevation: 8,
   },
 
   // Track panels

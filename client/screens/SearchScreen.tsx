@@ -184,6 +184,9 @@ export default function SearchScreen() {
   const { liveStreams, vodStreams, seriesList } = useData();
   const { width, height } = useWindowDimensions();
   const [query, setQuery] = useState("");
+  const [backFocused, setBackFocused] = useState(false);
+  const [backPressed, setBackPressed] = useState(false);
+  const backActive = backFocused || backPressed;
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -235,12 +238,17 @@ export default function SearchScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnActive]}
+          style={[styles.backBtn, backActive && styles.backBtnActive]}
           onPress={() => navigation.goBack()}
+          onFocus={() => setBackFocused(true)}
+          onBlur={() => setBackFocused(false)}
+          onPressIn={() => setBackPressed(true)}
+          onPressOut={() => setBackPressed(false)}
         >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          {backActive ? <View style={StyleSheet.absoluteFill as any} /> : null}
+          <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
         </Pressable>
-        <View style={[styles.searchInputWrap, trimmed.length > 0 && styles.searchInputWrapActive]}>
+        <View style={[styles.searchInputWrap, (trimmed.length > 0) && styles.searchInputWrapActive]}>
           <Feather name="search" size={16} color={trimmed ? Colors.dark.accent : Colors.dark.textSecondary} />
           <TextInput
             style={styles.searchInput}
@@ -253,6 +261,7 @@ export default function SearchScreen() {
             clearButtonMode="while-editing"
             autoCapitalize="none"
             autoCorrect={false}
+            blurOnSubmit={false}
           />
           {query.length > 0 ? (
             <Pressable onPress={() => setQuery("")} hitSlop={8}>
