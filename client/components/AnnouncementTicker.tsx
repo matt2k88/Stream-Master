@@ -9,6 +9,7 @@ import {
   Platform,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { Colors, Spacing } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 
@@ -26,25 +27,29 @@ export default function AnnouncementTicker() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const base = getApiUrl();
-        const res = await fetch(new URL("/api/announcements", base).toString());
-        if (res.ok && !cancelled) {
-          const data: { id: string; message: string }[] = await res.json();
-          if (data.length > 0) {
-            const joined = data.map((a) => a.message).join("     •     ") + "     •     ";
-            setTicker(joined);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        try {
+          const base = getApiUrl();
+          const res = await fetch(new URL("/api/announcements", base).toString());
+          if (res.ok && !cancelled) {
+            const data: { id: string; message: string }[] = await res.json();
+            if (data.length > 0) {
+              const joined = data.map((a) => a.message).join("     •     ") + "     •     ";
+              setTicker(joined);
+            } else {
+              setTicker("");
+            }
           }
+        } catch {
+          // silently ignore
         }
-      } catch {
-        // silently ignore
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+      })();
+      return () => { cancelled = true; };
+    }, [])
+  );
 
   const startScroll = useCallback(() => {
     if (!mountedRef.current || textWidthRef.current === 0) return;
