@@ -453,16 +453,17 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  // Carousel — keeps correct 16:9 ratio for 1920×1080 images
+  // Carousel — flex-based in landscape so it doesn't overflow on small screens
   carouselFill: {
+    flex: 2,
     width: "100%",
-    aspectRatio: 16 / 9,
+    minHeight: 0,
   },
 
   // Recently Watched
   recentlyWatched: {
     flex: 1,          // fills leftover space in right panel below search
-    minHeight: 0,
+    minHeight: 80,
   },
   portraitRecent: {
     width: "100%",
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
   portraitLiveBtn: { minHeight: 90 },
   portraitSubRow: { height: 90, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
-  portraitCarousel: { width: "100%", aspectRatio: 16 / 9 },
+  portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
   navButton: {

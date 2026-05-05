@@ -135,9 +135,6 @@ export default function AdvertCarousel({ style }: { style?: any }) {
 
 const styles = StyleSheet.create({
   container: {
-    // 16:9 aspect ratio — width is set by parent, height derives from this
-    aspectRatio: 16 / 9,
-    width: "100%",
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     backgroundColor: Colors.dark.backgroundDefault,
