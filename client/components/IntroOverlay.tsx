@@ -11,16 +11,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getApiUrl } from "@/lib/query-client";
 import { Colors } from "@/constants/theme";
 
-interface IntroOverlayProps {
+interface IntroPlayerProps {
+  videoUrl: string;
   onDone: () => void;
 }
 
-export default function IntroOverlay({ onDone }: IntroOverlayProps) {
+function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   const insets = useSafeAreaInsets();
-  const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const doneRef = useRef(false);
+  const [showSkip, setShowSkip] = useState(false);
 
   const dismiss = useCallback(() => {
     if (doneRef.current) return;
@@ -32,58 +32,33 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
     }).start(() => onDone());
   }, [fadeAnim, onDone]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const base = getApiUrl();
-        const res = await fetch(new URL("/api/intros", base).toString());
-        if (res.ok && !cancelled) {
-          const data = await res.json();
-          if (data?.video_url) {
-            setVideoUrl(data.video_url);
-          } else {
-            onDone();
-          }
-        } else {
-          onDone();
-        }
-      } catch {
-        onDone();
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const player = useVideoPlayer(videoUrl ?? "", (p) => {
+  // Player is created with the real URL — same pattern as PlayerScreen
+  const player = useVideoPlayer(videoUrl, (p) => {
     p.muted = false;
     p.loop = false;
-    if (videoUrl) p.play();
+    p.play();
   });
 
   useEffect(() => {
-    if (!player || !videoUrl) return;
-    const sub = player.addListener("playingChange", (e) => {
-      if (e.isPlaying) setReady(true);
+    const sub = player.addListener("statusChange", (e) => {
+      if (e.status === "readyToPlay") setShowSkip(true);
     });
-    const subStatus = player.addListener("statusChange", (e) => {
-      if (e.status === "readyToPlay") setReady(true);
-    });
-    return () => {
-      sub.remove();
-      subStatus.remove();
-    };
-  }, [player, videoUrl]);
+    return () => sub.remove();
+  }, [player]);
 
   useEffect(() => {
-    if (!player || !videoUrl) return;
+    const sub = player.addListener("playingChange", (e) => {
+      if (e.isPlaying) setShowSkip(true);
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  useEffect(() => {
     const sub = player.addListener("playToEnd", () => {
       dismiss();
     });
     return () => sub.remove();
-  }, [player, videoUrl, dismiss]);
-
-  if (!videoUrl) return null;
+  }, [player, dismiss]);
 
   return (
     <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
@@ -96,7 +71,7 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
         allowsPictureInPicture={false}
       />
 
-      {ready ? (
+      {showSkip ? (
         <Pressable
           style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
           onPress={dismiss}
@@ -107,6 +82,53 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
       ) : null}
     </Animated.View>
   );
+}
+
+interface IntroOverlayProps {
+  onDone: () => void;
+}
+
+export default function IntroOverlay({ onDone }: IntroOverlayProps) {
+  const [videoUrl, setVideoUrl] = useState<string | null | false>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const base = getApiUrl();
+        const res = await fetch(new URL("/api/intros", base).toString());
+        if (!cancelled) {
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.video_url) {
+              setVideoUrl(data.video_url);
+            } else {
+              setVideoUrl(false);
+            }
+          } else {
+            setVideoUrl(false);
+          }
+        }
+      } catch {
+        if (!cancelled) setVideoUrl(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // false = no intro, skip straight through
+  useEffect(() => {
+    if (videoUrl === false) onDone();
+  }, [videoUrl, onDone]);
+
+  // null = still loading — black screen
+  if (videoUrl === null) {
+    return <View style={styles.overlay} />;
+  }
+
+  if (videoUrl === false) return null;
+
+  return <IntroPlayer videoUrl={videoUrl} onDone={onDone} />;
 }
 
 const styles = StyleSheet.create({
