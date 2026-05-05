@@ -18,11 +18,20 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Category } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
+import { useFavourites } from "@/contexts/FavouritesContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
 
-function FavouritesButton({ padH }: { padH: number }) {
+function FavouritesButton({
+  type,
+  count,
+  onPress,
+}: {
+  type: "live" | "movies" | "series";
+  count: number;
+  onPress: () => void;
+}) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
@@ -30,6 +39,7 @@ function FavouritesButton({ padH }: { padH: number }) {
   return (
     <Pressable
       style={[styles.favButton, isActive && styles.favButtonActive]}
+      onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
@@ -48,11 +58,12 @@ function FavouritesButton({ padH }: { padH: number }) {
         <ThemedText style={styles.favTitle}>Favourites</ThemedText>
       </View>
       <View style={styles.favRight}>
-        <View style={styles.comingSoonBadge}>
-          <Feather name="zap" size={11} color={Colors.dark.accent} />
-          <ThemedText style={styles.comingSoonText}>Coming Soon</ThemedText>
-        </View>
-        <Feather name="chevron-right" size={18} color="rgba(255,102,0,0.4)" />
+        {count > 0 ? (
+          <View style={styles.favCountBadge}>
+            <ThemedText style={styles.favCountText}>{count}</ThemedText>
+          </View>
+        ) : null}
+        <Feather name="chevron-right" size={18} color={Colors.dark.accent} />
       </View>
       <View style={styles.favBottomBar} />
     </Pressable>
@@ -78,11 +89,7 @@ function CategoryCard({
 
   return (
     <Pressable
-      style={[
-        styles.card,
-        { width: cardWidth, height: cardHeight },
-        isActive && styles.cardActive,
-      ]}
+      style={[styles.card, { width: cardWidth, height: cardHeight }, isActive && styles.cardActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -97,15 +104,8 @@ function CategoryCard({
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather
-        name={icon}
-        size={20}
-        color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
-      />
-      <ThemedText
-        style={[styles.cardText, isActive && styles.cardTextActive]}
-        numberOfLines={2}
-      >
+      <Feather name={icon} size={20} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+      <ThemedText style={[styles.cardText, isActive && styles.cardTextActive]} numberOfLines={2}>
         {item.category_name}
       </ThemedText>
       {isActive ? <View style={styles.cardGlow} /> : null}
@@ -121,13 +121,13 @@ export default function CategoryScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
+  const { getFavouritesByType } = useFavourites();
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.sm);
   const gap = Spacing.sm;
 
-  // 2 columns on landscape/TV, 2 min on portrait
   const numColumns = isLandscape ? 2 : Math.max(2, Math.floor(width / 170));
   const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
   const cardHeight = Math.max(72, Math.min(cardWidth * 0.42, 100));
@@ -146,6 +146,8 @@ export default function CategoryScreen() {
     }
   };
 
+  const favCount = getFavouritesByType(type).length;
+
   if (isSyncing && categories.length === 0) {
     return (
       <ThemedView style={styles.container}>
@@ -159,7 +161,6 @@ export default function CategoryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
@@ -179,13 +180,23 @@ export default function CategoryScreen() {
         numColumns={numColumns}
         key={`cat-${numColumns}`}
         ListHeaderComponent={
-          <FavouritesButton padH={0} />
+          <FavouritesButton
+            type={type}
+            count={favCount}
+            onPress={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "favourites",
+                categoryName: "Favourites",
+              })
+            }
+          />
         }
         contentContainerStyle={{
           paddingHorizontal: padH,
           paddingTop: Spacing.sm,
           paddingBottom: padB,
-          gap: gap,
+          gap,
         }}
         columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
         showsVerticalScrollIndicator={false}
@@ -193,11 +204,13 @@ export default function CategoryScreen() {
           <CategoryCard
             item={item}
             icon={getIcon()}
-            onPress={() => navigation.navigate("ContentList", {
-              type,
-              categoryId: item.category_id,
-              categoryName: item.category_name,
-            })}
+            onPress={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: item.category_id,
+                categoryName: item.category_name,
+              })
+            }
             width={cardWidth}
             height={cardHeight}
           />
@@ -208,172 +221,63 @@ export default function CategoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingBottom: Spacing.md,
-    gap: Spacing.md,
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.md },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.full,
+    width: 40, height: 40, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
   },
-  backBtnPressed: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accentDim,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
-    color: Colors.dark.text,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginBottom: Spacing.sm,
-  },
-  // Favourites button
+  backBtnPressed: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: Colors.dark.text },
+  divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.sm },
   favButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1.5,
-    borderColor: Colors.dark.accent,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-    overflow: "hidden",
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-    elevation: 8,
+    borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.dark.accent,
+    paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm, overflow: "hidden",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
-  favButtonActive: {
-    shadowOpacity: 0.8,
-    shadowRadius: 18,
-    elevation: 14,
-  },
-  favLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
+  favButtonActive: { shadowOpacity: 0.8, shadowRadius: 18, elevation: 14 },
+  favLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
   favIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.accentDim,
-    borderWidth: 1,
-    borderColor: Colors.dark.accent,
-    justifyContent: "center",
-    alignItems: "center",
+    width: 36, height: 36, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.accentDim, borderWidth: 1, borderColor: Colors.dark.accent,
+    justifyContent: "center", alignItems: "center",
   },
-  favTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: Colors.dark.accent,
-    letterSpacing: 0.3,
+  favTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.accent, letterSpacing: 0.3 },
+  favRight: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  favCountBadge: {
+    backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm, paddingVertical: 2, minWidth: 28, alignItems: "center",
   },
-  favRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  comingSoonBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: Colors.dark.accentDim,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: "rgba(255,102,0,0.25)",
-  },
-  comingSoonText: {
-    color: Colors.dark.accent,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
+  favCountText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   favBottomBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
+    position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
     backgroundColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
   },
-  // Category cards
   card: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.sm,
-    gap: Spacing.xs,
-    overflow: "hidden",
+    flex: 1, backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+    padding: Spacing.sm, gap: Spacing.xs, overflow: "hidden",
   },
   cardActive: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.backgroundSecondary,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 12,
-    elevation: 10,
+    borderColor: Colors.dark.accent, backgroundColor: Colors.dark.backgroundSecondary,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7, shadowRadius: 12, elevation: 10,
   },
-  cardText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 13,
-    fontWeight: "500",
-    textAlign: "center",
-  },
-  cardTextActive: {
-    color: Colors.dark.accent,
-    fontWeight: "600",
-  },
+  cardText: { color: Colors.dark.textSecondary, fontSize: 13, fontWeight: "500", textAlign: "center" },
+  cardTextActive: { color: Colors.dark.accent, fontWeight: "600" },
   cardGlow: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
+    position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
     backgroundColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 4,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
   },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing.md,
-  },
-  loadingText: {
-    color: Colors.dark.textSecondary,
-    fontSize: 14,
-  },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md },
+  loadingText: { color: Colors.dark.textSecondary, fontSize: 14 },
 });

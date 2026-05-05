@@ -15,6 +15,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { DataProvider } from "@/contexts/DataContext";
 import { ProfileProvider } from "@/contexts/ProfileContext";
+import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
@@ -28,16 +29,18 @@ export default function App() {
         <AuthProvider>
           <DataProvider>
             <ProfileProvider>
-              <SafeAreaProvider>
-                <GestureHandlerRootView style={styles.root}>
-                  <KeyboardProvider>
-                    <NavigationContainer>
-                      <RootStackNavigator />
-                    </NavigationContainer>
-                    <StatusBar style="light" hidden={false} />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
-              </SafeAreaProvider>
+              <FavouritesProvider>
+                <SafeAreaProvider>
+                  <GestureHandlerRootView style={styles.root}>
+                    <KeyboardProvider>
+                      <NavigationContainer>
+                        <RootStackNavigator />
+                      </NavigationContainer>
+                      <StatusBar style="light" hidden={false} />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </SafeAreaProvider>
+              </FavouritesProvider>
             </ProfileProvider>
           </DataProvider>
         </AuthProvider>

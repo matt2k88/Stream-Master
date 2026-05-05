@@ -88,6 +88,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Favourites ────────────────────────────────────────────────────────────
+  app.get("/api/favourites", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("favourites")
+        .select("*")
+        .eq("profile_id", profile_id)
+        .order("created_at");
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch favourites" });
+    }
+  });
+
+  app.post("/api/favourites", async (req, res) => {
+    const { profile_id, stream_id, stream_type, stream_name, stream_icon, category_id } = req.body;
+    if (!profile_id || stream_id === undefined || !stream_type) {
+      return res.status(400).json({ error: "profile_id, stream_id, stream_type required" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("favourites")
+        .insert({ profile_id, stream_id, stream_type, stream_name, stream_icon: stream_icon ?? null, category_id: category_id ?? null })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to add favourite" });
+    }
+  });
+
+  app.delete("/api/favourites/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { error } = await supabase.from("favourites").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to remove favourite" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

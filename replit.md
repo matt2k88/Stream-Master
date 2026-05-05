@@ -17,6 +17,7 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **Series Detail**: Season and episode navigation
 - **Video Player**: Full-screen video playback with play/pause controls
 - **Account Info**: Subscription details and logout
+- **Favourites**: Long-press any item (live/movies/series) to toggle favourite. Orange star badge shows on favourited cards. Each category screen has a Favourites button with live count that opens a filtered view of your favourited content for that type. Favourites are stored per profile in Supabase.
 
 ## Tech Stack
 
