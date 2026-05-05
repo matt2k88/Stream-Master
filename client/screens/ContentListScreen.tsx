@@ -23,6 +23,21 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
 type ContentItem = LiveStream | VodStream | Series;
 
+// Aspect ratios for each type
+// Movies/Series: portrait poster 2:3 → height = width * 1.5
+// Live TV: channel logos are often square-ish → height = width * 0.75
+function getImageRatio(type: string): number {
+  if (type === "movies" || type === "series") return 1.5;
+  return 0.75; // live TV
+}
+
+function getImageFit(type: string): "cover" | "contain" {
+  // Live TV logos vary wildly; contain shows the full logo without cropping
+  // Movies/Series posters: cover fills the portrait container cleanly
+  if (type === "live") return "contain";
+  return "cover";
+}
+
 function ContentCard({
   item,
   type,
@@ -46,7 +61,8 @@ function ContentCard({
       : null;
 
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
-  const imgH = Math.round(cardWidth * 0.56);
+  const imgH = Math.round(cardWidth * getImageRatio(type));
+  const imgFit = getImageFit(type);
 
   return (
     <Pressable
@@ -57,32 +73,39 @@ function ContentCard({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <View style={{ width: cardWidth, height: imgH, overflow: "hidden" }}>
+      {/* Thumbnail */}
+      <View style={[styles.cardThumb, { width: cardWidth, height: imgH }]}>
         {imageUrl ? (
           <Image
             source={{ uri: imageUrl }}
             style={styles.cardImage}
-            contentFit="cover"
+            contentFit={imgFit}
             transition={200}
           />
         ) : (
           <View style={styles.cardPlaceholder}>
-            <Feather name={iconName} size={22} color={Colors.dark.border} />
+            <Feather name={iconName} size={24} color={Colors.dark.border} />
           </View>
         )}
         {isActive ? <View style={styles.cardOverlay} /> : null}
       </View>
+
+      {/* Info */}
       <View style={styles.cardInfo}>
-        <ThemedText style={[styles.cardName, isActive && styles.cardNameActive]} numberOfLines={2}>
+        <ThemedText
+          style={[styles.cardName, isActive && styles.cardNameActive]}
+          numberOfLines={2}
+        >
           {item.name}
         </ThemedText>
         {"rating" in item && item.rating ? (
-          <View style={styles.rating}>
+          <View style={styles.ratingRow}>
             <Feather name="star" size={10} color={Colors.dark.accent} />
             <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
           </View>
         ) : null}
       </View>
+
       {isActive ? <View style={styles.activeBar} /> : null}
     </Pressable>
   );
@@ -93,14 +116,19 @@ export default function ContentListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, isSyncing } = useData();
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.sm);
   const gap = Spacing.sm;
-  const numColumns = Math.max(2, Math.floor(width / 155));
+
+  // More columns for live TV (shorter cards), fewer for movies/series (portrait cards)
+  const defaultCols = type === "live"
+    ? Math.max(3, Math.floor(width / 150))
+    : Math.max(3, Math.floor(width / 130));
+  const numColumns = defaultCols;
   const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
 
   const content: ContentItem[] = useMemo(() => {
@@ -119,13 +147,25 @@ export default function ContentListScreen() {
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
       const s = item as LiveStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), title: s.name, type: "live" });
+      navigation.navigate("Player", {
+        streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
+        title: s.name,
+        type: "live",
+      });
     } else if (type === "movies") {
       const s = item as VodStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod" });
+      navigation.navigate("Player", {
+        streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension),
+        title: s.name,
+        type: "vod",
+      });
     } else {
       const s = item as Series;
-      navigation.navigate("SeriesDetail", { seriesId: s.series_id, seriesName: s.name, cover: s.cover });
+      navigation.navigate("SeriesDetail", {
+        seriesId: s.series_id,
+        seriesName: s.name,
+        cover: s.cover,
+      });
     }
   };
 
@@ -148,6 +188,7 @@ export default function ContentListScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
           style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
@@ -155,8 +196,12 @@ export default function ContentListScreen() {
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText style={styles.headerTitle} numberOfLines={1}>{categoryName}</ThemedText>
-        <ThemedText style={styles.countBadge}>{content.length}</ThemedText>
+        <ThemedText style={styles.headerTitle} numberOfLines={1}>
+          {categoryName}
+        </ThemedText>
+        <View style={styles.countBadge}>
+          <ThemedText style={styles.countText}>{content.length}</ThemedText>
+        </View>
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -165,9 +210,14 @@ export default function ContentListScreen() {
         data={content}
         keyExtractor={getItemId}
         numColumns={numColumns}
-        key={`content-${numColumns}`}
-        contentContainerStyle={{ paddingHorizontal: padH, paddingTop: Spacing.sm, paddingBottom: padB }}
-        columnWrapperStyle={numColumns > 1 ? { gap, marginBottom: gap } : undefined}
+        key={`content-${type}-${numColumns}`}
+        contentContainerStyle={{
+          paddingHorizontal: padH,
+          paddingTop: Spacing.sm,
+          paddingBottom: padB,
+          gap,
+        }}
+        columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <ContentCard
@@ -220,15 +270,18 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
   },
   countBadge: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 3,
-    minWidth: 36,
+    minWidth: 38,
+    alignItems: "center",
+  },
+  countText: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
     textAlign: "center",
   },
   divider: {
@@ -236,7 +289,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.border,
     marginBottom: Spacing.sm,
   },
+  // Cards
   card: {
+    flex: 1,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm,
     overflow: "hidden",
@@ -250,6 +305,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 14,
     elevation: 10,
+  },
+  cardThumb: {
+    overflow: "hidden",
+    backgroundColor: Colors.dark.backgroundSecondary,
   },
   cardImage: {
     width: "100%",
@@ -268,24 +327,26 @@ const styles = StyleSheet.create({
   },
   cardInfo: {
     padding: Spacing.sm,
+    gap: 2,
   },
   cardName: {
     color: Colors.dark.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "500",
+    lineHeight: 15,
   },
   cardNameActive: {
     color: Colors.dark.text,
   },
-  rating: {
+  ratingRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    marginTop: 2,
+    marginTop: 1,
   },
   ratingText: {
     color: Colors.dark.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
   },
   activeBar: {
     height: 2,
