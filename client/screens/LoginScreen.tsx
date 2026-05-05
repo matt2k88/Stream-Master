@@ -92,9 +92,14 @@ export default function LoginScreen() {
   const [selectedServer, setSelectedServer] = useState<IptvServer | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [continueFocused, setContinueFocused] = useState(false);
+  const [connectFocused, setConnectFocused] = useState(false);
+
+  const hasUppercase = /[A-Z]/.test(username);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.xl);
   const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
@@ -250,14 +255,16 @@ export default function LoginScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.primaryBtn,
-                pressed && styles.primaryBtnPressed,
+                (pressed || continueFocused) && styles.primaryBtnFocused,
                 (!selectedServer || serversLoading) && styles.primaryBtnDisabled,
               ]}
               onPress={handleContinue}
+              onFocus={() => setContinueFocused(true)}
+              onBlur={() => setContinueFocused(false)}
               disabled={!selectedServer || serversLoading}
             >
               <LinearGradient
-                colors={["#FF8C1A", "#FF5500"]}
+                colors={continueFocused ? ["#FFA040", "#FF6600"] : ["#FF8C1A", "#FF5500"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
@@ -301,23 +308,44 @@ export default function LoginScreen() {
                 onFocus={() => setFocusedField("user")}
                 onBlur={() => setFocusedField(null)}
               />
+              {hasUppercase ? (
+                <View style={styles.capsWarning}>
+                  <Feather name="alert-triangle" size={13} color="#E6A817" />
+                  <ThemedText style={styles.capsWarningText}>
+                    Usernames are case-sensitive. Please ensure capitalisation is correct.
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.field}>
               <ThemedText style={styles.label}>Password</ThemedText>
-              <TextInput
-                style={inputStyle("pass")}
-                placeholder="Enter password"
-                placeholderTextColor={Colors.dark.border}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isLoading}
-                onFocus={() => setFocusedField("pass")}
-                onBlur={() => setFocusedField(null)}
-              />
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  style={[inputStyle("pass"), styles.passwordInput]}
+                  placeholder="Enter password"
+                  placeholderTextColor={Colors.dark.border}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!isLoading}
+                  onFocus={() => setFocusedField("pass")}
+                  onBlur={() => setFocusedField(null)}
+                />
+                <Pressable
+                  style={styles.eyeBtn}
+                  onPress={() => setShowPassword((v) => !v)}
+                  hitSlop={8}
+                >
+                  <Feather
+                    name={showPassword ? "eye-off" : "eye"}
+                    size={18}
+                    color={showPassword ? Colors.dark.accent : Colors.dark.textSecondary}
+                  />
+                </Pressable>
+              </View>
             </View>
 
             {error ? (
@@ -329,14 +357,16 @@ export default function LoginScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.primaryBtn,
-                pressed && styles.primaryBtnPressed,
+                (pressed || connectFocused) && styles.primaryBtnFocused,
                 isLoading && styles.primaryBtnDisabled,
               ]}
               onPress={handleLogin}
+              onFocus={() => setConnectFocused(true)}
+              onBlur={() => setConnectFocused(false)}
               disabled={isLoading}
             >
               <LinearGradient
-                colors={["#FF8C1A", "#FF5500"]}
+                colors={connectFocused ? ["#FFA040", "#FF6600"] : ["#FF8C1A", "#FF5500"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
@@ -648,9 +678,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  primaryBtnPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+  primaryBtnFocused: {
+    transform: [{ scale: 1.02 }],
+    shadowOpacity: 0.8,
+    shadowRadius: 18,
+    elevation: 12,
   },
   primaryBtnDisabled: {
     opacity: 0.4,
@@ -660,6 +692,37 @@ const styles = StyleSheet.create({
     fontSize: Typography.button.fontSize,
     fontWeight: "700",
     letterSpacing: 0.5,
+  },
+  capsWarning: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.xs,
+    backgroundColor: "rgba(230,168,23,0.1)",
+    borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+    borderColor: "rgba(230,168,23,0.35)",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  capsWarningText: {
+    flex: 1,
+    color: "#E6A817",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  passwordWrap: {
+    position: "relative",
+  },
+  passwordInput: {
+    paddingRight: 48,
+  },
+  eyeBtn: {
+    position: "absolute",
+    right: Spacing.md,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
   },
   backBtn: {
     flexDirection: "row",
