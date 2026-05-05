@@ -60,7 +60,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "./plugins/withCleartextTraffic"
     ],
     "experiments": {
       "reactCompiler": true
