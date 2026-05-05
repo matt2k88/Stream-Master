@@ -22,6 +22,72 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
 type ContentItem = LiveStream | VodStream | Series;
 
+function ContentCard({
+  item,
+  type,
+  onPress,
+  cardWidth,
+}: {
+  item: ContentItem;
+  type: string;
+  onPress: () => void;
+  cardWidth: number;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+
+  const imageUrl =
+    "stream_icon" in item && item.stream_icon
+      ? item.stream_icon
+      : "cover" in item && item.cover
+      ? item.cover
+      : null;
+
+  const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
+  const imgH = Math.round(cardWidth * 0.56);
+
+  return (
+    <Pressable
+      style={[styles.card, { width: cardWidth }, isActive && styles.cardActive]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <View style={{ width: cardWidth, height: imgH, overflow: "hidden" }}>
+        {imageUrl ? (
+          <Image
+            source={{ uri: imageUrl }}
+            style={styles.cardImage}
+            contentFit="cover"
+            placeholder={require("../../assets/images/icon.png")}
+            transition={200}
+          />
+        ) : (
+          <View style={styles.cardPlaceholder}>
+            <Feather name={iconName} size={22} color={Colors.dark.border} />
+          </View>
+        )}
+        {isActive ? <View style={styles.cardOverlay} /> : null}
+      </View>
+      <View style={styles.cardInfo}>
+        <ThemedText style={[styles.cardName, isActive && styles.cardNameActive]} numberOfLines={2}>
+          {item.name}
+        </ThemedText>
+        {"rating" in item && item.rating ? (
+          <View style={styles.rating}>
+            <Feather name="star" size={10} color={Colors.dark.accent} />
+            <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
+          </View>
+        ) : null}
+      </View>
+      {isActive ? <View style={styles.activeBar} /> : null}
+    </Pressable>
+  );
+}
+
 export default function ContentListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -33,18 +99,14 @@ export default function ContentListScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const padH = Math.max(insets.left + Spacing.sm, Spacing.md);
-  const padT = Math.max(insets.top + Spacing.sm, Spacing.md);
-  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.md);
-  const cardGap = Spacing.sm;
+  const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
+  const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
+  const padB = Math.max(insets.bottom + Spacing.xs, Spacing.sm);
+  const gap = Spacing.sm;
+  const numColumns = Math.max(2, Math.floor(width / 155));
+  const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
 
-  const numColumns = Math.max(2, Math.floor(width / 160));
-  const totalPad = padH * 2 + cardGap * (numColumns - 1);
-  const cardWidth = Math.floor((width - totalPad) / numColumns);
-
-  useEffect(() => {
-    loadContent();
-  }, [type, categoryId]);
+  useEffect(() => { loadContent(); }, [type, categoryId]);
 
   const loadContent = async () => {
     setIsLoading(true);
@@ -66,81 +128,21 @@ export default function ContentListScreen() {
 
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
-      const liveItem = item as LiveStream;
-      navigation.navigate("Player", {
-        streamUrl: xtreamApi.getLiveStreamUrl(liveItem.stream_id),
-        title: liveItem.name,
-        type: "live",
-      });
+      const s = item as LiveStream;
+      navigation.navigate("Player", { streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), title: s.name, type: "live" });
     } else if (type === "movies") {
-      const vodItem = item as VodStream;
-      navigation.navigate("Player", {
-        streamUrl: xtreamApi.getVodStreamUrl(vodItem.stream_id, vodItem.container_extension),
-        title: vodItem.name,
-        type: "vod",
-      });
-    } else if (type === "series") {
-      const seriesItem = item as Series;
-      navigation.navigate("SeriesDetail", {
-        seriesId: seriesItem.series_id,
-        seriesName: seriesItem.name,
-        cover: seriesItem.cover,
-      });
+      const s = item as VodStream;
+      navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod" });
+    } else {
+      const s = item as Series;
+      navigation.navigate("SeriesDetail", { seriesId: s.series_id, seriesName: s.name, cover: s.cover });
     }
   };
 
-  const getItemImage = (item: ContentItem): string | null => {
-    if ("stream_icon" in item && item.stream_icon) return item.stream_icon;
-    if ("cover" in item && item.cover) return item.cover;
-    return null;
-  };
-
-  const getItemId = (item: ContentItem): string => {
+  const getItemId = (item: ContentItem) => {
     if ("stream_id" in item) return String(item.stream_id);
     if ("series_id" in item) return String(item.series_id);
     return String(item.num);
-  };
-
-  const renderItem = ({ item }: { item: ContentItem }) => {
-    const imageUrl = getItemImage(item);
-    const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
-    return (
-      <Pressable
-        style={({ pressed }) => [
-          styles.contentCard,
-          { width: cardWidth },
-          pressed && styles.contentCardPressed,
-        ]}
-        onPress={() => handleItemPress(item)}
-      >
-        <View style={[styles.imageContainer, { width: cardWidth, height: cardWidth * 0.56 }]}>
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.contentImage}
-              contentFit="cover"
-              placeholder={require("../../assets/images/icon.png")}
-              transition={200}
-            />
-          ) : (
-            <View style={styles.placeholderImage}>
-              <Feather name={iconName} size={24} color={Colors.dark.textSecondary} />
-            </View>
-          )}
-        </View>
-        <View style={styles.contentInfo}>
-          <ThemedText style={styles.contentName} numberOfLines={2}>
-            {item.name}
-          </ThemedText>
-          {"rating" in item && item.rating ? (
-            <View style={styles.ratingContainer}>
-              <Feather name="star" size={11} color={Colors.dark.accent} />
-              <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
-            </View>
-          ) : null}
-        </View>
-      </Pressable>
-    );
   };
 
   if (isLoading) {
@@ -148,7 +150,7 @@ export default function ContentListScreen() {
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
-          <ThemedText style={styles.loadingText}>Loading content...</ThemedText>
+          <ThemedText style={styles.loadingText}>Loading...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -160,8 +162,8 @@ export default function ContentListScreen() {
         <View style={styles.centered}>
           <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
-          <Pressable style={styles.retryButton} onPress={loadContent}>
-            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          <Pressable style={styles.retryBtn} onPress={loadContent}>
+            <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
           </Pressable>
         </View>
       </ThemedView>
@@ -172,29 +174,33 @@ export default function ContentListScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
+          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={22} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText type="h3" style={styles.headerTitle} numberOfLines={1}>
-          {categoryName}
-        </ThemedText>
-        <View style={styles.headerSpacer} />
+        <ThemedText style={styles.headerTitle} numberOfLines={1}>{categoryName}</ThemedText>
+        <View style={{ width: 40 }} />
       </View>
+
+      <View style={[styles.divider, { marginHorizontal: padH }]} />
 
       <FlatList
         data={content}
-        renderItem={renderItem}
         keyExtractor={getItemId}
         numColumns={numColumns}
-        key={`cols-${numColumns}`}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: padB, paddingHorizontal: padH },
-        ]}
-        columnWrapperStyle={numColumns > 1 ? { gap: cardGap, marginBottom: cardGap } : undefined}
+        key={`content-${numColumns}`}
+        contentContainerStyle={{ paddingHorizontal: padH, paddingTop: Spacing.sm, paddingBottom: padB }}
+        columnWrapperStyle={numColumns > 1 ? { gap, marginBottom: gap } : undefined}
         showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => (
+          <ContentCard
+            item={item}
+            type={type}
+            onPress={() => handleItemPress(item)}
+            cardWidth={cardWidth}
+          />
+        )}
       />
     </ThemedView>
   );
@@ -211,70 +217,89 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     gap: Spacing.md,
   },
-  iconBtn: {
+  backBtn: {
     width: 40,
     height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
     justifyContent: "center",
     alignItems: "center",
   },
-  iconBtnPressed: {
-    opacity: 0.7,
-    backgroundColor: Colors.dark.backgroundSecondary,
+  backBtnPressed: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
   },
   headerTitle: {
     flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
     color: Colors.dark.text,
   },
-  headerSpacer: {
-    width: 40,
+  divider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginBottom: Spacing.sm,
   },
-  listContent: {
-    paddingTop: Spacing.sm,
-  },
-  contentCard: {
+  card: {
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
-  contentCardPressed: {
+  cardActive: {
     borderColor: Colors.dark.accent,
-    opacity: 0.9,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 14,
+    elevation: 10,
   },
-  imageContainer: {
-    overflow: "hidden",
-  },
-  contentImage: {
+  cardImage: {
     width: "100%",
     height: "100%",
   },
-  placeholderImage: {
+  cardPlaceholder: {
     width: "100%",
     height: "100%",
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
   },
-  contentInfo: {
+  cardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  cardInfo: {
     padding: Spacing.sm,
   },
-  contentName: {
-    color: Colors.dark.text,
-    fontSize: 13,
+  cardName: {
+    color: Colors.dark.textSecondary,
+    fontSize: 12,
     fontWeight: "500",
   },
-  ratingContainer: {
+  cardNameActive: {
+    color: Colors.dark.text,
+  },
+  rating: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing.xs,
-    gap: Spacing.xs,
+    gap: 3,
+    marginTop: 2,
   },
   ratingText: {
     color: Colors.dark.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
+  },
+  activeBar: {
+    height: 2,
+    backgroundColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
   },
   centered: {
     flex: 1,
@@ -284,19 +309,21 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: Colors.dark.textSecondary,
+    fontSize: 14,
   },
   errorText: {
     color: Colors.dark.error,
     textAlign: "center",
+    fontSize: 14,
   },
-  retryButton: {
+  retryBtn: {
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
   },
-  retryButtonText: {
-    color: Colors.dark.buttonText,
-    fontWeight: "600",
+  retryBtnText: {
+    color: "#fff",
+    fontWeight: "700",
   },
 });

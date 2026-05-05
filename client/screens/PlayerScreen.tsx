@@ -13,6 +13,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
@@ -28,75 +29,47 @@ export default function PlayerScreen() {
   const [error, setError] = useState("");
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const player = useVideoPlayer(streamUrl, (player) => {
-    player.loop = false;
-    player.play();
+  const player = useVideoPlayer(streamUrl, (p) => {
+    p.loop = false;
+    p.play();
   });
 
   useEffect(() => {
-    const subscription = player.addListener("statusChange", (status) => {
-      if (status.status === "readyToPlay") {
-        setIsLoading(false);
-        setError("");
-      } else if (status.status === "error") {
-        setIsLoading(false);
-        setError(status.error?.message || "Failed to load stream");
-      } else if (status.status === "loading") {
-        setIsLoading(true);
-      }
+    const sub = player.addListener("statusChange", (status) => {
+      if (status.status === "readyToPlay") { setIsLoading(false); setError(""); }
+      else if (status.status === "error") { setIsLoading(false); setError(status.error?.message || "Failed to load stream"); }
+      else if (status.status === "loading") { setIsLoading(true); }
     });
-
-    return () => {
-      subscription.remove();
-    };
+    return () => sub.remove();
   }, [player]);
 
   useEffect(() => {
-    const subscription = player.addListener("playingChange", (isPlaying) => {
-      setIsPlaying(isPlaying);
-    });
-
-    return () => {
-      subscription.remove();
-    };
+    const sub = player.addListener("playingChange", (playing) => setIsPlaying(playing));
+    return () => sub.remove();
   }, [player]);
 
   const resetControlsTimeout = useCallback(() => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
+    controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3500);
   }, []);
 
   useEffect(() => {
     resetControlsTimeout();
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
+    return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
   }, [resetControlsTimeout]);
 
   const handleScreenPress = () => {
     if (showControls) {
       setShowControls(false);
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     } else {
       resetControlsTimeout();
     }
   };
 
   const handlePlayPause = () => {
-    if (isPlaying) {
-      player.pause();
-    } else {
-      player.play();
-    }
+    isPlaying ? player.pause() : player.play();
     resetControlsTimeout();
   };
 
@@ -110,20 +83,23 @@ export default function PlayerScreen() {
       <View style={styles.container}>
         <StatusBar hidden />
         <View style={styles.errorContainer}>
-          <Feather name="alert-circle" size={64} color={Colors.dark.error} />
-          <ThemedText type="h3" style={styles.errorTitle}>
-            Playback Error
-          </ThemedText>
+          <View style={styles.errorIconRing}>
+            <Feather name="alert-circle" size={40} color={Colors.dark.error} />
+          </View>
+          <ThemedText style={styles.errorTitle}>Playback Error</ThemedText>
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <Pressable
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && styles.backButtonPressed,
-            ]}
+            style={({ pressed }) => [styles.errorBackBtn, pressed && { opacity: 0.8 }]}
             onPress={handleBack}
           >
-            <Feather name="arrow-left" size={20} color={Colors.dark.buttonText} />
-            <ThemedText style={styles.backButtonText}>Go Back</ThemedText>
+            <LinearGradient
+              colors={["#FF8C1A", "#FF5500"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            />
+            <Feather name="arrow-left" size={16} color="#fff" />
+            <ThemedText style={styles.errorBackBtnText}>Go Back</ThemedText>
           </Pressable>
         </View>
       </View>
@@ -149,39 +125,48 @@ export default function PlayerScreen() {
 
       {showControls ? (
         <View style={styles.controlsOverlay}>
-          <View style={styles.topControls}>
+          <LinearGradient
+            colors={["rgba(0,0,0,0.8)", "transparent"]}
+            style={styles.topGradient}
+            pointerEvents="none"
+          />
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.7)"]}
+            style={styles.bottomGradient}
+            pointerEvents="none"
+          />
+
+          <View style={styles.topBar}>
             <Pressable
-              style={({ pressed }) => [
-                styles.controlButton,
-                pressed && styles.controlButtonPressed,
-              ]}
+              style={({ pressed }) => [styles.ctrlBtn, pressed && styles.ctrlBtnPressed]}
               onPress={handleBack}
             >
-              <Feather name="arrow-left" size={28} color={Colors.dark.text} />
+              <Feather name="arrow-left" size={22} color="#fff" />
             </Pressable>
-            <ThemedText type="h4" style={styles.titleText} numberOfLines={1}>
-              {title}
-            </ThemedText>
-            <View style={styles.controlButtonPlaceholder} />
+            <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
+            <View style={{ width: 48 }} />
           </View>
 
           <View style={styles.centerControls}>
             <Pressable
-              style={({ pressed }) => [
-                styles.playPauseButton,
-                pressed && styles.playPauseButtonPressed,
-              ]}
+              style={({ pressed }) => [styles.playBtn, pressed && styles.playBtnPressed]}
               onPress={handlePlayPause}
             >
+              <LinearGradient
+                colors={["rgba(255,140,26,0.3)", "rgba(255,85,0,0.3)"]}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
               <Feather
                 name={isPlaying ? "pause" : "play"}
-                size={48}
-                color={Colors.dark.text}
+                size={36}
+                color="#fff"
               />
             </Pressable>
           </View>
 
-          <View style={styles.bottomControls} />
+          <View style={styles.bottomBar} />
         </View>
       ) : null}
     </Pressable>
@@ -200,95 +185,128 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0,0,0,0.75)",
+    gap: Spacing.md,
   },
   loadingText: {
-    marginTop: Spacing.lg,
-    color: Colors.dark.text,
+    color: Colors.dark.textSecondary,
+    fontSize: 14,
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "space-between",
   },
-  topControls: {
+  topGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  bottomGradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120,
+  },
+  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: Spacing["3xl"],
-    paddingHorizontal: Spacing.tvSafeZone,
+    paddingTop: Spacing["2xl"],
+    paddingHorizontal: Spacing["2xl"],
+    gap: Spacing.md,
   },
-  controlButton: {
-    width: 56,
-    height: 56,
+  ctrlBtn: {
+    width: 48,
+    height: 48,
     borderRadius: BorderRadius.full,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
     justifyContent: "center",
     alignItems: "center",
   },
-  controlButtonPressed: {
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
-  },
-  controlButtonPlaceholder: {
-    width: 56,
-    height: 56,
+  ctrlBtnPressed: {
+    backgroundColor: "rgba(255,102,0,0.3)",
+    borderColor: Colors.dark.accent,
   },
   titleText: {
     flex: 1,
-    color: Colors.dark.text,
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
     textAlign: "center",
-    marginHorizontal: Spacing.lg,
   },
   centerControls: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  playPauseButton: {
+  playBtn: {
     width: 80,
     height: 80,
     borderRadius: BorderRadius.full,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 2,
+    borderColor: "rgba(255,102,0,0.6)",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+    elevation: 12,
   },
-  playPauseButtonPressed: {
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
-    transform: [{ scale: 1.1 }],
+  playBtnPressed: {
+    transform: [{ scale: 0.92 }],
   },
-  bottomControls: {
-    height: Spacing.tvSafeZone,
+  bottomBar: {
+    height: Spacing["2xl"],
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing.tvSafeZone,
     backgroundColor: Colors.dark.backgroundRoot,
+    padding: Spacing["3xl"],
+    gap: Spacing.lg,
+  },
+  errorIconRing: {
+    width: 80,
+    height: 80,
+    borderRadius: BorderRadius.full,
+    borderWidth: 2,
+    borderColor: "rgba(255,59,59,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,59,59,0.08)",
   },
   errorTitle: {
+    fontSize: 20,
+    fontWeight: "700",
     color: Colors.dark.text,
-    marginTop: Spacing.xl,
   },
   errorText: {
     color: Colors.dark.textSecondary,
-    marginTop: Spacing.md,
     textAlign: "center",
+    fontSize: 13,
+    lineHeight: 18,
   },
-  backButton: {
+  errorBackBtn: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing["2xl"],
-    paddingHorizontal: Spacing["2xl"],
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.dark.accent,
+    gap: Spacing.sm,
     borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    overflow: "hidden",
+    marginTop: Spacing.sm,
   },
-  backButtonPressed: {
-    opacity: 0.8,
-  },
-  backButtonText: {
-    color: Colors.dark.buttonText,
-    marginLeft: Spacing.sm,
-    fontWeight: "600",
+  errorBackBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

@@ -1,42 +1,49 @@
 import { Platform } from "react-native";
 
-const tintColorLight = "#2196F3";
-const tintColorDark = "#2196F3";
-
 export const Colors = {
   light: {
     text: "#FFFFFF",
-    textSecondary: "#B0B3C1",
+    textSecondary: "#999999",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#687076",
-    tabIconSelected: tintColorLight,
-    link: "#2196F3",
-    backgroundRoot: "#0A0E27",
-    backgroundDefault: "#1A1F36",
-    backgroundSecondary: "#252A45",
-    backgroundTertiary: "#3A3F56",
-    accent: "#2196F3",
-    error: "#F44336",
-    success: "#4CAF50",
-    border: "#3A3F56",
-    overlay: "rgba(0, 0, 0, 0.8)",
+    tabIconDefault: "#555555",
+    tabIconSelected: "#FF6600",
+    link: "#FF6600",
+    backgroundRoot: "#080808",
+    backgroundDefault: "#0F0F0F",
+    backgroundSecondary: "#161616",
+    backgroundTertiary: "#1E1E1E",
+    accent: "#FF6600",
+    accentLight: "#FF8C1A",
+    accentDim: "rgba(255, 102, 0, 0.15)",
+    accentGlow: "rgba(255, 102, 0, 0.6)",
+    accentGlowSoft: "rgba(255, 102, 0, 0.25)",
+    error: "#FF3B3B",
+    success: "#00E676",
+    border: "#242424",
+    borderAccent: "#FF6600",
+    overlay: "rgba(0, 0, 0, 0.85)",
   },
   dark: {
     text: "#FFFFFF",
-    textSecondary: "#B0B3C1",
+    textSecondary: "#999999",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#9BA1A6",
-    tabIconSelected: tintColorDark,
-    link: "#2196F3",
-    backgroundRoot: "#0A0E27",
-    backgroundDefault: "#1A1F36",
-    backgroundSecondary: "#252A45",
-    backgroundTertiary: "#3A3F56",
-    accent: "#2196F3",
-    error: "#F44336",
-    success: "#4CAF50",
-    border: "#3A3F56",
-    overlay: "rgba(0, 0, 0, 0.8)",
+    tabIconDefault: "#555555",
+    tabIconSelected: "#FF6600",
+    link: "#FF6600",
+    backgroundRoot: "#080808",
+    backgroundDefault: "#0F0F0F",
+    backgroundSecondary: "#161616",
+    backgroundTertiary: "#1E1E1E",
+    accent: "#FF6600",
+    accentLight: "#FF8C1A",
+    accentDim: "rgba(255, 102, 0, 0.15)",
+    accentGlow: "rgba(255, 102, 0, 0.6)",
+    accentGlowSoft: "rgba(255, 102, 0, 0.25)",
+    error: "#FF3B3B",
+    success: "#00E676",
+    border: "#242424",
+    borderAccent: "#FF6600",
+    overlay: "rgba(0, 0, 0, 0.85)",
   },
 };
 
@@ -51,71 +58,54 @@ export const Spacing = {
   "4xl": 40,
   "5xl": 48,
   "6xl": 64,
-  inputHeight: 56,
-  buttonHeight: 56,
-  tvSafeZone: 48,
+  inputHeight: 52,
+  buttonHeight: 52,
+  tvSafeZone: 32,
 };
 
 export const BorderRadius = {
-  xs: 8,
-  sm: 12,
-  md: 18,
-  lg: 24,
-  xl: 30,
-  "2xl": 40,
-  "3xl": 50,
+  xs: 6,
+  sm: 10,
+  md: 14,
+  lg: 20,
+  xl: 28,
+  "2xl": 36,
+  "3xl": 48,
   full: 9999,
 };
 
 export const Typography = {
-  h1: {
-    fontSize: 36,
-    fontWeight: "700" as const,
-  },
-  h2: {
-    fontSize: 28,
-    fontWeight: "700" as const,
-  },
-  h3: {
-    fontSize: 24,
-    fontWeight: "600" as const,
-  },
-  h4: {
-    fontSize: 20,
-    fontWeight: "600" as const,
-  },
-  body: {
-    fontSize: 18,
-    fontWeight: "400" as const,
-  },
-  small: {
-    fontSize: 16,
-    fontWeight: "400" as const,
-  },
-  link: {
-    fontSize: 18,
-    fontWeight: "400" as const,
-  },
-  button: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-  },
+  h1: { fontSize: 34, fontWeight: "700" as const },
+  h2: { fontSize: 26, fontWeight: "700" as const },
+  h3: { fontSize: 22, fontWeight: "600" as const },
+  h4: { fontSize: 18, fontWeight: "600" as const },
+  body: { fontSize: 16, fontWeight: "400" as const },
+  small: { fontSize: 14, fontWeight: "400" as const },
+  link: { fontSize: 16, fontWeight: "400" as const },
+  button: { fontSize: 18, fontWeight: "700" as const },
 };
 
 export const Shadows = {
   card: {
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  focused: {
-    shadowColor: "#2196F3",
+  glow: {
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 20,
+    elevation: 14,
+  },
+  glowSoft: {
+    shadowColor: "#FF6600",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowRadius: 12,
+    elevation: 8,
   },
 };
 
@@ -135,8 +125,7 @@ export const Fonts = Platform.select({
   web: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
-    rounded:
-      "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
+    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
