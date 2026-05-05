@@ -305,22 +305,22 @@ export default function HomeScreen() {
             iconSize={34}
             textSize={20}
           />
-          <View style={styles.subRow}>
+          <View style={styles.portraitSubRow}>
             <NavButton
               title="Movies"
               icon="film"
               onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
               style={styles.portraitSubBtn}
-              iconSize={28}
-              textSize={15}
+              iconSize={22}
+              textSize={14}
             />
             <NavButton
               title="Series"
               icon="grid"
               onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
               style={styles.portraitSubBtn}
-              iconSize={28}
-              textSize={15}
+              iconSize={22}
+              textSize={14}
             />
           </View>
           <RecentlyWatchedCard
@@ -439,7 +439,8 @@ const styles = StyleSheet.create({
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
   portraitLiveBtn: { minHeight: 90 },
-  portraitSubBtn: { flex: 1, minHeight: 35 },
+  portraitSubRow: { height: 72, flexDirection: "row", gap: Spacing.sm },
+  portraitSubBtn: { flex: 1 },
   portraitCarousel: { flex: 1, width: "100%" },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
