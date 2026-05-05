@@ -378,15 +378,18 @@ export default function LivePreviewScreen() {
 
 function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
-  const isActive = focused || isFavourited;
   return (
     <Pressable
-      style={[styles.headerBtn, isActive && styles.headerBtnActive]}
+      style={[styles.headerBtn, (focused || isFavourited) && styles.headerBtnActive]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <Feather name="star" size={18} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+      <Feather
+        name="star"
+        size={18}
+        color={isFavourited ? Colors.dark.accent : Colors.dark.textSecondary}
+      />
     </Pressable>
   );
 }

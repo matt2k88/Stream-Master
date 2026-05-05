@@ -123,12 +123,13 @@ function CtrlBtn({
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed || active;
+  const isInteracting = focused || pressed;
+  const isHighlighted = isInteracting || active;
 
   if (primary) {
     return (
       <Pressable
-        style={[styles.playBtn, isActive && styles.playBtnActive]}
+        style={[styles.playBtn, isHighlighted && styles.playBtnActive]}
         onPress={onPress}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
@@ -137,7 +138,7 @@ function CtrlBtn({
         hasTVPreferredFocus={preferFocus}
       >
         <LinearGradient
-          colors={isActive ? ["rgba(255,140,26,0.55)", "rgba(255,85,0,0.55)"] : ["rgba(255,140,26,0.25)", "rgba(255,85,0,0.25)"]}
+          colors={isHighlighted ? ["rgba(255,140,26,0.55)", "rgba(255,85,0,0.55)"] : ["rgba(255,140,26,0.25)", "rgba(255,85,0,0.25)"]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -149,7 +150,7 @@ function CtrlBtn({
 
   return (
     <Pressable
-      style={[styles.ctrlBtn, isActive && styles.ctrlBtnActive]}
+      style={[styles.ctrlBtn, isHighlighted && styles.ctrlBtnActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -157,9 +158,9 @@ function CtrlBtn({
       onBlur={() => setFocused(false)}
       hasTVPreferredFocus={preferFocus}
     >
-      <Feather name={icon} size={label ? 14 : 20} color={isActive ? Colors.dark.accent : "#fff"} />
+      <Feather name={icon} size={label ? 14 : 20} color={active ? Colors.dark.accent : "#fff"} />
       {label ? (
-        <ThemedText style={[styles.ctrlLabel, isActive && styles.ctrlLabelActive]}>
+        <ThemedText style={[styles.ctrlLabel, active && styles.ctrlLabelActive]}>
           {label}
         </ThemedText>
       ) : null}
