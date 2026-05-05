@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
+  Text,
   StyleSheet,
   Pressable,
   Animated,
