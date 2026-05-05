@@ -3,8 +3,10 @@ import {
   View,
   StyleSheet,
   ScrollView,
+  FlatList,
   Pressable,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -13,7 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Colors, Spacing, BorderRadius, Shadows } from "@/constants/theme";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
 
@@ -25,11 +27,17 @@ export default function SeriesDetailScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<SeriesDetailRouteProp>();
   const { seriesId, seriesName, cover } = route.params;
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   const [seriesInfo, setSeriesInfo] = useState<SeriesInfo | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const padH = Math.max(insets.left + Spacing.sm, Spacing.md);
+  const padT = Math.max(insets.top + Spacing.sm, Spacing.md);
+  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.md);
 
   useEffect(() => {
     loadSeriesInfo();
@@ -42,9 +50,7 @@ export default function SeriesDetailScreen() {
       const data = await xtreamApi.getSeriesInfo(seriesId);
       setSeriesInfo(data);
       const seasons = Object.keys(data.episodes || {});
-      if (seasons.length > 0) {
-        setSelectedSeason(seasons[0]);
-      }
+      if (seasons.length > 0) setSelectedSeason(seasons[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load series info");
     } finally {
@@ -53,12 +59,8 @@ export default function SeriesDetailScreen() {
   };
 
   const handleEpisodePress = (episode: Episode) => {
-    const streamUrl = xtreamApi.getSeriesStreamUrl(
-      episode.id,
-      episode.container_extension
-    );
     navigation.navigate("Player", {
-      streamUrl,
+      streamUrl: xtreamApi.getSeriesStreamUrl(episode.id, episode.container_extension),
       title: `${seriesName} - ${episode.title}`,
       type: "series",
     });
@@ -72,7 +74,7 @@ export default function SeriesDetailScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
           <ThemedText style={styles.loadingText}>Loading series...</ThemedText>
         </View>
@@ -83,8 +85,8 @@ export default function SeriesDetailScreen() {
   if (error) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Feather name="alert-circle" size={48} color={Colors.dark.error} />
+        <View style={styles.centered}>
+          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <Pressable style={styles.retryButton} onPress={loadSeriesInfo}>
             <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
@@ -94,157 +96,109 @@ export default function SeriesDetailScreen() {
     );
   }
 
+  const renderEpisode = ({ item: episode }: { item: Episode }) => (
+    <Pressable
+      key={episode.id}
+      style={({ pressed }) => [styles.episodeCard, pressed && styles.episodeCardPressed]}
+      onPress={() => handleEpisodePress(episode)}
+    >
+      <View style={styles.episodeThumbnail}>
+        {episode.info?.movie_image ? (
+          <Image
+            source={{ uri: episode.info.movie_image }}
+            style={styles.episodeImage}
+            contentFit="cover"
+          />
+        ) : (
+          <View style={styles.episodePlaceholder}>
+            <Feather name="play" size={20} color={Colors.dark.textSecondary} />
+          </View>
+        )}
+      </View>
+      <View style={styles.episodeInfo}>
+        <ThemedText style={styles.episodeTitle} numberOfLines={1}>
+          {episode.episode_num}. {episode.title}
+        </ThemedText>
+        {episode.info?.duration ? (
+          <ThemedText style={styles.episodeMeta}>{episode.info.duration}</ThemedText>
+        ) : null}
+        {episode.info?.plot ? (
+          <ThemedText style={styles.episodePlot} numberOfLines={2}>
+            {episode.info.plot}
+          </ThemedText>
+        ) : null}
+      </View>
+      <Feather name="play-circle" size={28} color={Colors.dark.accent} style={styles.playIcon} />
+    </Pressable>
+  );
+
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + Spacing.lg,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText type="h2" style={styles.headerTitle} numberOfLines={1}>
+        <ThemedText type="h3" style={styles.headerTitle} numberOfLines={1}>
           {seriesName}
         </ThemedText>
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.seriesHeader}>
+      <View style={[styles.body, { paddingHorizontal: padH, flexDirection: isLandscape ? "row" : "column" }]}>
+        <View style={[styles.sidebar, isLandscape ? styles.sidebarLandscape : styles.sidebarPortrait]}>
           <View style={styles.coverContainer}>
             {cover ? (
-              <Image
-                source={{ uri: cover }}
-                style={styles.coverImage}
-                contentFit="cover"
-                transition={200}
-              />
+              <Image source={{ uri: cover }} style={styles.coverImage} contentFit="cover" transition={200} />
             ) : (
               <View style={styles.placeholderCover}>
-                <Feather name="grid" size={48} color={Colors.dark.textSecondary} />
+                <Feather name="grid" size={40} color={Colors.dark.textSecondary} />
               </View>
             )}
           </View>
-          <View style={styles.seriesInfoContainer}>
-            <ThemedText type="h2" style={styles.seriesTitle}>
-              {seriesName}
+          {seriesInfo?.info?.plot ? (
+            <ThemedText style={styles.plotText} numberOfLines={isLandscape ? 6 : 3}>
+              {seriesInfo.info.plot}
             </ThemedText>
-            {seriesInfo?.info?.plot ? (
-              <ThemedText style={styles.plotText} numberOfLines={4}>
-                {seriesInfo.info.plot}
-              </ThemedText>
-            ) : null}
-            {seriesInfo?.info?.genre ? (
-              <ThemedText style={styles.genreText}>
-                {seriesInfo.info.genre}
-              </ThemedText>
-            ) : null}
-          </View>
+          ) : null}
+          {seriesInfo?.info?.genre ? (
+            <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+          ) : null}
         </View>
 
-        {seasons.length > 0 ? (
-          <View style={styles.seasonsContainer}>
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Seasons
-            </ThemedText>
+        <View style={styles.episodesSection}>
+          {seasons.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.seasonsScroll}
+              style={styles.seasonsBar}
             >
               {seasons.map((season) => (
                 <Pressable
                   key={season}
-                  style={[
-                    styles.seasonButton,
-                    selectedSeason === season && styles.seasonButtonActive,
-                  ]}
+                  style={[styles.seasonButton, selectedSeason === season && styles.seasonButtonActive]}
                   onPress={() => setSelectedSeason(season)}
                 >
-                  <ThemedText
-                    style={[
-                      styles.seasonButtonText,
-                      selectedSeason === season && styles.seasonButtonTextActive,
-                    ]}
-                  >
+                  <ThemedText style={[styles.seasonButtonText, selectedSeason === season && styles.seasonButtonTextActive]}>
                     Season {season}
                   </ThemedText>
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
-        ) : null}
+          ) : null}
 
-        {currentEpisodes.length > 0 ? (
-          <View style={styles.episodesContainer}>
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Episodes
-            </ThemedText>
-            {currentEpisodes.map((episode) => (
-              <Pressable
-                key={episode.id}
-                style={({ pressed }) => [
-                  styles.episodeCard,
-                  pressed && styles.episodeCardPressed,
-                ]}
-                onPress={() => handleEpisodePress(episode)}
-              >
-                <View style={styles.episodeThumbnail}>
-                  {episode.info?.movie_image ? (
-                    <Image
-                      source={{ uri: episode.info.movie_image }}
-                      style={styles.episodeImage}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View style={styles.episodePlaceholder}>
-                      <Feather name="play" size={24} color={Colors.dark.textSecondary} />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.episodeInfo}>
-                  <ThemedText type="body" style={styles.episodeTitle}>
-                    Episode {episode.episode_num}: {episode.title}
-                  </ThemedText>
-                  {episode.info?.duration ? (
-                    <ThemedText style={styles.episodeDuration}>
-                      {episode.info.duration}
-                    </ThemedText>
-                  ) : null}
-                  {episode.info?.plot ? (
-                    <ThemedText style={styles.episodePlot} numberOfLines={2}>
-                      {episode.info.plot}
-                    </ThemedText>
-                  ) : null}
-                </View>
-                <View style={styles.playButton}>
-                  <Feather name="play-circle" size={32} color={Colors.dark.accent} />
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-      </ScrollView>
+          <FlatList
+            data={currentEpisodes}
+            renderItem={renderEpisode}
+            keyExtractor={(ep) => String(ep.id)}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: padB, gap: Spacing.sm }}
+          />
+        </View>
+      </View>
     </ThemedView>
   );
 }
@@ -257,18 +211,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
-  backButton: {
-    width: 48,
-    height: 48,
+  iconBtn: {
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: Spacing.lg,
   },
-  backButtonPressed: {
+  iconBtnPressed: {
     opacity: 0.7,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
@@ -277,64 +231,67 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
   },
   headerSpacer: {
-    width: 48,
+    width: 40,
   },
-  scrollContent: {
-    paddingTop: Spacing.lg,
+  body: {
+    flex: 1,
+    gap: Spacing.md,
   },
-  seriesHeader: {
+  sidebar: {
+    gap: Spacing.sm,
+  },
+  sidebarPortrait: {
     flexDirection: "row",
-    marginBottom: Spacing["2xl"],
+    alignItems: "flex-start",
+  },
+  sidebarLandscape: {
+    width: 160,
+    flexDirection: "column",
   },
   coverContainer: {
-    width: 200,
-    height: 280,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.sm,
     overflow: "hidden",
-    ...Shadows.card,
+    flexShrink: 0,
   },
   coverImage: {
-    width: "100%",
-    height: "100%",
+    width: 100,
+    height: 140,
   },
   placeholderCover: {
-    width: "100%",
-    height: "100%",
+    width: 100,
+    height: 140,
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
   },
-  seriesInfoContainer: {
-    flex: 1,
-    marginLeft: Spacing["2xl"],
-    justifyContent: "center",
-  },
-  seriesTitle: {
-    color: Colors.dark.text,
-    marginBottom: Spacing.md,
-  },
   plotText: {
+    flex: 1,
     color: Colors.dark.textSecondary,
-    marginBottom: Spacing.md,
+    fontSize: 13,
+    lineHeight: 18,
   },
   genreText: {
     color: Colors.dark.accent,
+    fontSize: 13,
+    fontWeight: "500",
   },
-  seasonsContainer: {
-    marginBottom: Spacing["2xl"],
+  episodesSection: {
+    flex: 1,
+    gap: Spacing.sm,
   },
-  sectionTitle: {
-    color: Colors.dark.text,
-    marginBottom: Spacing.md,
+  seasonsBar: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   seasonsScroll: {
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
   seasonButton: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm,
+    borderRadius: BorderRadius.xs,
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
@@ -344,31 +301,29 @@ const styles = StyleSheet.create({
   },
   seasonButtonText: {
     color: Colors.dark.text,
+    fontSize: 13,
   },
   seasonButtonTextActive: {
     color: Colors.dark.buttonText,
     fontWeight: "600",
   },
-  episodesContainer: {
-    marginBottom: Spacing["2xl"],
-  },
   episodeCard: {
     flexDirection: "row",
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.sm,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    ...Shadows.card,
+    alignItems: "center",
   },
   episodeCardPressed: {
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
   episodeThumbnail: {
-    width: 160,
-    height: 90,
+    width: 120,
+    height: 68,
+    flexShrink: 0,
   },
   episodeImage: {
     width: "100%",
@@ -383,51 +338,43 @@ const styles = StyleSheet.create({
   },
   episodeInfo: {
     flex: 1,
-    padding: Spacing.md,
-    justifyContent: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
   episodeTitle: {
     color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "500",
     marginBottom: Spacing.xs,
   },
-  episodeDuration: {
+  episodeMeta: {
     color: Colors.dark.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
     marginBottom: Spacing.xs,
   },
   episodePlot: {
     color: Colors.dark.textSecondary,
-    fontSize: 14,
+    fontSize: 12,
   },
-  playButton: {
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: Spacing.xl,
+  playIcon: {
+    paddingHorizontal: Spacing.md,
   },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: Spacing.md,
   },
   loadingText: {
-    marginTop: Spacing.lg,
     color: Colors.dark.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.tvSafeZone,
   },
   errorText: {
     color: Colors.dark.error,
-    marginTop: Spacing.lg,
     textAlign: "center",
   },
   retryButton: {
-    marginTop: Spacing.xl,
-    paddingHorizontal: Spacing["2xl"],
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
   },

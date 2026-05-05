@@ -5,7 +5,7 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
-  Image,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -13,7 +13,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Colors, Spacing, BorderRadius, Shadows } from "@/constants/theme";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, Category } from "@/lib/xtream-api";
 
@@ -25,10 +25,21 @@ export default function CategoryScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<CategoryRouteProp>();
   const { type, title } = route.params;
+  const { width, height } = useWindowDimensions();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const padH = Math.max(insets.left + Spacing.sm, Spacing.md);
+  const padT = Math.max(insets.top + Spacing.sm, Spacing.md);
+  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.md);
+  const cardGap = Spacing.sm;
+
+  const numColumns = Math.max(2, Math.floor(width / 180));
+  const totalPad = padH * 2 + cardGap * (numColumns - 1);
+  const cardWidth = Math.floor((width - totalPad) / numColumns);
+  const cardHeight = Math.max(80, Math.min(cardWidth * 0.55, 120));
 
   useEffect(() => {
     loadCategories();
@@ -40,15 +51,9 @@ export default function CategoryScreen() {
     try {
       let data: Category[] = [];
       switch (type) {
-        case "live":
-          data = await xtreamApi.getLiveCategories();
-          break;
-        case "movies":
-          data = await xtreamApi.getVodCategories();
-          break;
-        case "series":
-          data = await xtreamApi.getSeriesCategories();
-          break;
+        case "live": data = await xtreamApi.getLiveCategories(); break;
+        case "movies": data = await xtreamApi.getVodCategories(); break;
+        case "series": data = await xtreamApi.getSeriesCategories(); break;
       }
       setCategories(data);
     } catch (err) {
@@ -68,14 +73,10 @@ export default function CategoryScreen() {
 
   const getIcon = (): keyof typeof Feather.glyphMap => {
     switch (type) {
-      case "live":
-        return "tv";
-      case "movies":
-        return "film";
-      case "series":
-        return "grid";
-      default:
-        return "folder";
+      case "live": return "tv";
+      case "movies": return "film";
+      case "series": return "grid";
+      default: return "folder";
     }
   };
 
@@ -83,14 +84,13 @@ export default function CategoryScreen() {
     <Pressable
       style={({ pressed }) => [
         styles.categoryCard,
+        { width: cardWidth, height: cardHeight },
         pressed && styles.categoryCardPressed,
       ]}
       onPress={() => handleCategoryPress(item)}
     >
-      <View style={styles.categoryIconContainer}>
-        <Feather name={getIcon()} size={32} color={Colors.dark.accent} />
-      </View>
-      <ThemedText type="body" style={styles.categoryName} numberOfLines={2}>
+      <Feather name={getIcon()} size={22} color={Colors.dark.accent} />
+      <ThemedText style={styles.categoryName} numberOfLines={2}>
         {item.category_name}
       </ThemedText>
     </Pressable>
@@ -99,7 +99,7 @@ export default function CategoryScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
           <ThemedText style={styles.loadingText}>Loading categories...</ThemedText>
         </View>
@@ -110,8 +110,8 @@ export default function CategoryScreen() {
   if (error) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Feather name="alert-circle" size={48} color={Colors.dark.error} />
+        <View style={styles.centered}>
+          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <Pressable style={styles.retryButton} onPress={loadCategories}>
             <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
@@ -123,27 +123,14 @@ export default function CategoryScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + Spacing.lg,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText type="h2" style={styles.headerTitle}>
-          {title}
-        </ThemedText>
+        <ThemedText type="h3" style={styles.headerTitle}>{title}</ThemedText>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -151,15 +138,13 @@ export default function CategoryScreen() {
         data={categories}
         renderItem={renderCategory}
         keyExtractor={(item) => item.category_id}
-        numColumns={4}
+        numColumns={numColumns}
+        key={`cols-${numColumns}`}
         contentContainerStyle={[
           styles.listContent,
-          {
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
+          { paddingBottom: padB, paddingHorizontal: padH },
         ]}
-        columnWrapperStyle={styles.columnWrapper}
+        columnWrapperStyle={numColumns > 1 ? { gap: cardGap, marginBottom: cardGap } : undefined}
         showsVerticalScrollIndicator={false}
       />
     </ThemedView>
@@ -174,18 +159,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
-  backButton: {
-    width: 48,
-    height: 48,
+  iconBtn: {
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: Spacing.lg,
   },
-  backButtonPressed: {
+  iconBtnPressed: {
     opacity: 0.7,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
@@ -194,64 +179,47 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
   },
   headerSpacer: {
-    width: 48,
+    width: 40,
   },
   listContent: {
-    paddingTop: Spacing.lg,
-  },
-  columnWrapper: {
-    justifyContent: "flex-start",
-    gap: Spacing.lg,
-    marginBottom: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
   categoryCard: {
-    width: 200,
-    height: 120,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.sm,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    padding: Spacing.md,
-    ...Shadows.card,
+    padding: Spacing.sm,
+    gap: Spacing.xs,
   },
   categoryCardPressed: {
-    transform: [{ scale: 1.03 }],
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.backgroundSecondary,
-  },
-  categoryIconContainer: {
-    marginBottom: Spacing.sm,
   },
   categoryName: {
     color: Colors.dark.text,
     textAlign: "center",
+    fontSize: 13,
+    fontWeight: "500",
   },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: Spacing.md,
   },
   loadingText: {
-    marginTop: Spacing.lg,
     color: Colors.dark.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.tvSafeZone,
   },
   errorText: {
     color: Colors.dark.error,
-    marginTop: Spacing.lg,
     textAlign: "center",
   },
   retryButton: {
-    marginTop: Spacing.xl,
-    paddingHorizontal: Spacing["2xl"],
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
   },

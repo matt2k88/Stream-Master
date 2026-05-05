@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, Pressable, Image } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -15,9 +15,11 @@ interface CategoryBoxProps {
   title: string;
   icon: keyof typeof Feather.glyphMap;
   onPress: () => void;
+  isLandscape: boolean;
 }
 
-function CategoryBox({ title, icon, onPress }: CategoryBoxProps) {
+function CategoryBox({ title, icon, onPress, isLandscape }: CategoryBoxProps) {
+  const iconSize = isLandscape ? 48 : 40;
   return (
     <Pressable
       style={({ pressed }) => [
@@ -27,7 +29,7 @@ function CategoryBox({ title, icon, onPress }: CategoryBoxProps) {
       onPress={onPress}
     >
       <View style={styles.categoryIconContainer}>
-        <Feather name={icon} size={72} color={Colors.dark.text} />
+        <Feather name={icon} size={iconSize} color={Colors.dark.text} />
       </View>
       <ThemedText type="h3" style={styles.categoryTitle}>
         {title}
@@ -39,6 +41,11 @@ function CategoryBox({ title, icon, onPress }: CategoryBoxProps) {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
+  const safeH = Math.min(insets.left + Spacing.lg, Spacing["2xl"]);
+  const safeV = Math.min(insets.top + Spacing.sm, Spacing["2xl"]);
 
   return (
     <ThemedView style={styles.container}>
@@ -46,8 +53,8 @@ export default function HomeScreen() {
         style={[
           styles.header,
           {
-            paddingTop: insets.top + Spacing.lg,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
+            paddingTop: safeV,
+            paddingHorizontal: safeH,
           },
         ]}
       >
@@ -68,7 +75,7 @@ export default function HomeScreen() {
           ]}
           onPress={() => navigation.navigate("AccountInfo")}
         >
-          <Feather name="user" size={24} color={Colors.dark.text} />
+          <Feather name="user" size={20} color={Colors.dark.text} />
         </Pressable>
       </View>
 
@@ -76,28 +83,30 @@ export default function HomeScreen() {
         style={[
           styles.content,
           {
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
+            paddingBottom: Math.max(insets.bottom, Spacing.md),
+            paddingHorizontal: safeH,
+            flexDirection: isLandscape ? "row" : "column",
           },
         ]}
       >
-        <View style={styles.categoriesContainer}>
-          <CategoryBox
-            title="Live TV"
-            icon="tv"
-            onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
-          />
-          <CategoryBox
-            title="Movies"
-            icon="film"
-            onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
-          />
-          <CategoryBox
-            title="Series"
-            icon="grid"
-            onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
-          />
-        </View>
+        <CategoryBox
+          title="Live TV"
+          icon="tv"
+          onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
+          isLandscape={isLandscape}
+        />
+        <CategoryBox
+          title="Movies"
+          icon="film"
+          onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
+          isLandscape={isLandscape}
+        />
+        <CategoryBox
+          title="Series"
+          icon="grid"
+          onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
+          isLandscape={isLandscape}
+        />
       </View>
     </ThemedView>
   );
@@ -112,23 +121,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
   headerLeft: {
     flexDirection: "row",
     alignItems: "center",
   },
   headerLogo: {
-    width: 40,
-    height: 40,
-    marginRight: Spacing.md,
+    width: 32,
+    height: 32,
+    marginRight: Spacing.sm,
   },
   headerTitle: {
     color: Colors.dark.text,
   },
   accountButton: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     justifyContent: "center",
@@ -144,16 +153,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  categoriesContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: Spacing["3xl"],
+    gap: Spacing.lg,
   },
   categoryBox: {
-    width: 280,
-    height: 200,
+    flex: 1,
+    width: "100%",
+    maxHeight: 180,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.lg,
     justifyContent: "center",
@@ -163,12 +168,12 @@ const styles = StyleSheet.create({
     ...Shadows.card,
   },
   categoryBoxPressed: {
-    transform: [{ scale: 1.05 }],
+    transform: [{ scale: 1.03 }],
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
   categoryIconContainer: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   categoryTitle: {
     color: Colors.dark.text,

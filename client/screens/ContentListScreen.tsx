@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -13,13 +14,12 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Colors, Spacing, BorderRadius, Shadows } from "@/constants/theme";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
-
 type ContentItem = LiveStream | VodStream | Series;
 
 export default function ContentListScreen() {
@@ -27,10 +27,20 @@ export default function ContentListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
+  const { width } = useWindowDimensions();
 
   const [content, setContent] = useState<ContentItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const padH = Math.max(insets.left + Spacing.sm, Spacing.md);
+  const padT = Math.max(insets.top + Spacing.sm, Spacing.md);
+  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.md);
+  const cardGap = Spacing.sm;
+
+  const numColumns = Math.max(2, Math.floor(width / 160));
+  const totalPad = padH * 2 + cardGap * (numColumns - 1);
+  const cardWidth = Math.floor((width - totalPad) / numColumns);
 
   useEffect(() => {
     loadContent();
@@ -42,15 +52,9 @@ export default function ContentListScreen() {
     try {
       let data: ContentItem[] = [];
       switch (type) {
-        case "live":
-          data = await xtreamApi.getLiveStreams(categoryId);
-          break;
-        case "movies":
-          data = await xtreamApi.getVodStreams(categoryId);
-          break;
-        case "series":
-          data = await xtreamApi.getSeries(categoryId);
-          break;
+        case "live": data = await xtreamApi.getLiveStreams(categoryId); break;
+        case "movies": data = await xtreamApi.getVodStreams(categoryId); break;
+        case "series": data = await xtreamApi.getSeries(categoryId); break;
       }
       setContent(data);
     } catch (err) {
@@ -63,20 +67,15 @@ export default function ContentListScreen() {
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
       const liveItem = item as LiveStream;
-      const streamUrl = xtreamApi.getLiveStreamUrl(liveItem.stream_id);
       navigation.navigate("Player", {
-        streamUrl,
+        streamUrl: xtreamApi.getLiveStreamUrl(liveItem.stream_id),
         title: liveItem.name,
         type: "live",
       });
     } else if (type === "movies") {
       const vodItem = item as VodStream;
-      const streamUrl = xtreamApi.getVodStreamUrl(
-        vodItem.stream_id,
-        vodItem.container_extension
-      );
       navigation.navigate("Player", {
-        streamUrl,
+        streamUrl: xtreamApi.getVodStreamUrl(vodItem.stream_id, vodItem.container_extension),
         title: vodItem.name,
         type: "vod",
       });
@@ -91,41 +90,30 @@ export default function ContentListScreen() {
   };
 
   const getItemImage = (item: ContentItem): string | null => {
-    if ("stream_icon" in item && item.stream_icon) {
-      return item.stream_icon;
-    }
-    if ("cover" in item && item.cover) {
-      return item.cover;
-    }
+    if ("stream_icon" in item && item.stream_icon) return item.stream_icon;
+    if ("cover" in item && item.cover) return item.cover;
     return null;
   };
 
-  const getItemName = (item: ContentItem): string => {
-    return item.name;
-  };
-
   const getItemId = (item: ContentItem): string => {
-    if ("stream_id" in item) {
-      return String(item.stream_id);
-    }
-    if ("series_id" in item) {
-      return String(item.series_id);
-    }
+    if ("stream_id" in item) return String(item.stream_id);
+    if ("series_id" in item) return String(item.series_id);
     return String(item.num);
   };
 
   const renderItem = ({ item }: { item: ContentItem }) => {
     const imageUrl = getItemImage(item);
-
+    const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
     return (
       <Pressable
         style={({ pressed }) => [
           styles.contentCard,
+          { width: cardWidth },
           pressed && styles.contentCardPressed,
         ]}
         onPress={() => handleItemPress(item)}
       >
-        <View style={styles.imageContainer}>
+        <View style={[styles.imageContainer, { width: cardWidth, height: cardWidth * 0.56 }]}>
           {imageUrl ? (
             <Image
               source={{ uri: imageUrl }}
@@ -136,21 +124,17 @@ export default function ContentListScreen() {
             />
           ) : (
             <View style={styles.placeholderImage}>
-              <Feather
-                name={type === "live" ? "tv" : type === "movies" ? "film" : "grid"}
-                size={32}
-                color={Colors.dark.textSecondary}
-              />
+              <Feather name={iconName} size={24} color={Colors.dark.textSecondary} />
             </View>
           )}
         </View>
         <View style={styles.contentInfo}>
-          <ThemedText type="body" style={styles.contentName} numberOfLines={2}>
-            {getItemName(item)}
+          <ThemedText style={styles.contentName} numberOfLines={2}>
+            {item.name}
           </ThemedText>
           {"rating" in item && item.rating ? (
             <View style={styles.ratingContainer}>
-              <Feather name="star" size={14} color={Colors.dark.accent} />
+              <Feather name="star" size={11} color={Colors.dark.accent} />
               <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
             </View>
           ) : null}
@@ -162,7 +146,7 @@ export default function ContentListScreen() {
   if (isLoading) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.loadingContainer}>
+        <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
           <ThemedText style={styles.loadingText}>Loading content...</ThemedText>
         </View>
@@ -173,8 +157,8 @@ export default function ContentListScreen() {
   if (error) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Feather name="alert-circle" size={48} color={Colors.dark.error} />
+        <View style={styles.centered}>
+          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <Pressable style={styles.retryButton} onPress={loadContent}>
             <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
@@ -186,25 +170,14 @@ export default function ContentListScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + Spacing.lg,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText type="h2" style={styles.headerTitle} numberOfLines={1}>
+        <ThemedText type="h3" style={styles.headerTitle} numberOfLines={1}>
           {categoryName}
         </ThemedText>
         <View style={styles.headerSpacer} />
@@ -214,15 +187,13 @@ export default function ContentListScreen() {
         data={content}
         renderItem={renderItem}
         keyExtractor={getItemId}
-        numColumns={5}
+        numColumns={numColumns}
+        key={`cols-${numColumns}`}
         contentContainerStyle={[
           styles.listContent,
-          {
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
+          { paddingBottom: padB, paddingHorizontal: padH },
         ]}
-        columnWrapperStyle={styles.columnWrapper}
+        columnWrapperStyle={numColumns > 1 ? { gap: cardGap, marginBottom: cardGap } : undefined}
         showsVerticalScrollIndicator={false}
       />
     </ThemedView>
@@ -237,18 +208,18 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
-  backButton: {
-    width: 48,
-    height: 48,
+  iconBtn: {
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: Spacing.lg,
   },
-  backButtonPressed: {
+  iconBtnPressed: {
     opacity: 0.7,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
@@ -257,32 +228,24 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
   },
   headerSpacer: {
-    width: 48,
+    width: 40,
   },
   listContent: {
-    paddingTop: Spacing.lg,
-  },
-  columnWrapper: {
-    justifyContent: "flex-start",
-    gap: Spacing.lg,
-    marginBottom: Spacing.lg,
+    paddingTop: Spacing.sm,
   },
   contentCard: {
-    width: 180,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
+    borderRadius: BorderRadius.sm,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    ...Shadows.card,
   },
   contentCardPressed: {
-    transform: [{ scale: 1.03 }],
     borderColor: Colors.dark.accent,
+    opacity: 0.9,
   },
   imageContainer: {
-    width: "100%",
-    aspectRatio: 16 / 9,
+    overflow: "hidden",
   },
   contentImage: {
     width: "100%",
@@ -296,45 +259,39 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   contentInfo: {
-    padding: Spacing.md,
+    padding: Spacing.sm,
   },
   contentName: {
     color: Colors.dark.text,
+    fontSize: 13,
+    fontWeight: "500",
   },
   ratingContainer: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: Spacing.xs,
+    gap: Spacing.xs,
   },
   ratingText: {
     color: Colors.dark.textSecondary,
-    fontSize: 14,
-    marginLeft: Spacing.xs,
+    fontSize: 12,
   },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: Spacing.md,
   },
   loadingText: {
-    marginTop: Spacing.lg,
     color: Colors.dark.textSecondary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.tvSafeZone,
   },
   errorText: {
     color: Colors.dark.error,
-    marginTop: Spacing.lg,
     textAlign: "center",
   },
   retryButton: {
-    marginTop: Spacing.xl,
-    paddingHorizontal: Spacing["2xl"],
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
   },

@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
-  ScrollView,
   Pressable,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -12,7 +12,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
-import { Colors, Spacing, BorderRadius, Shadows } from "@/constants/theme";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -27,14 +27,10 @@ interface InfoRowProps {
 function InfoRow({ label, value, icon }: InfoRowProps) {
   return (
     <View style={styles.infoRow}>
-      <View style={styles.infoIconContainer}>
-        <Feather name={icon} size={20} color={Colors.dark.accent} />
-      </View>
+      <Feather name={icon} size={16} color={Colors.dark.accent} style={styles.infoIcon} />
       <View style={styles.infoContent}>
         <ThemedText style={styles.infoLabel}>{label}</ThemedText>
-        <ThemedText type="body" style={styles.infoValue}>
-          {value}
-        </ThemedText>
+        <ThemedText style={styles.infoValue} numberOfLines={1}>{value}</ThemedText>
       </View>
     </View>
   );
@@ -45,6 +41,8 @@ export default function AccountInfoScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
 
   useEffect(() => {
     handleRefresh();
@@ -65,181 +63,110 @@ export default function AccountInfoScreen() {
     const date = new Date(parseInt(timestamp) * 1000);
     return date.toLocaleDateString("en-US", {
       year: "numeric",
-      month: "long",
+      month: "short",
       day: "numeric",
     });
   };
 
   const getStatusColor = (status: string): string => {
     switch (status?.toLowerCase()) {
-      case "active":
-        return Colors.dark.success;
-      case "expired":
-        return Colors.dark.error;
-      default:
-        return Colors.dark.textSecondary;
+      case "active": return Colors.dark.success;
+      case "expired": return Colors.dark.error;
+      default: return Colors.dark.textSecondary;
     }
   };
 
   const user = userInfo?.user_info;
   const server = userInfo?.server_info;
 
+  const padH = Math.max(insets.left + Spacing.md, Spacing.lg);
+  const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
+  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.lg);
+
   return (
     <ThemedView style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + Spacing.lg,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-      >
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={24} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText type="h2" style={styles.headerTitle}>
-          Account Info
-        </ThemedText>
+        <ThemedText type="h3" style={styles.headerTitle}>Account Info</ThemedText>
         <Pressable
-          style={({ pressed }) => [
-            styles.refreshButton,
-            pressed && styles.refreshButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
           onPress={handleRefresh}
           disabled={isRefreshing}
         >
           {isRefreshing ? (
             <ActivityIndicator size="small" color={Colors.dark.text} />
           ) : (
-            <Feather name="refresh-cw" size={20} color={Colors.dark.text} />
+            <Feather name="refresh-cw" size={18} color={Colors.dark.text} />
           )}
         </Pressable>
       </View>
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingHorizontal: insets.left + Spacing.tvSafeZone,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.dark.accent} />
-          </View>
-        ) : user ? (
-          <>
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.userIconContainer}>
-                  <Feather name="user" size={32} color={Colors.dark.accent} />
-                </View>
-                <View style={styles.userInfo}>
-                  <ThemedText type="h3" style={styles.username}>
-                    {user.username}
-                  </ThemedText>
-                  <View style={styles.statusBadge}>
-                    <View
-                      style={[
-                        styles.statusDot,
-                        { backgroundColor: getStatusColor(user.status) },
-                      ]}
-                    />
-                    <ThemedText
-                      style={[
-                        styles.statusText,
-                        { color: getStatusColor(user.status) },
-                      ]}
-                    >
-                      {user.status || "Unknown"}
-                    </ThemedText>
-                  </View>
-                </View>
-              </View>
+      {isLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+        </View>
+      ) : user ? (
+        <View style={[styles.body, { paddingHorizontal: padH, paddingBottom: padB, flexDirection: isLandscape ? "row" : "column" }]}>
+          <View style={[styles.userCard, isLandscape && styles.userCardLandscape]}>
+            <View style={styles.userIconContainer}>
+              <Feather name="user" size={28} color={Colors.dark.accent} />
             </View>
-
-            <View style={styles.card}>
-              <ThemedText type="h4" style={styles.cardTitle}>
-                Subscription Details
+            <View style={styles.userMeta}>
+              <ThemedText type="h3" style={styles.username} numberOfLines={1}>
+                {user.username}
               </ThemedText>
-              <InfoRow
-                label="Expiration Date"
-                value={formatDate(user.exp_date)}
-                icon="calendar"
-              />
-              <InfoRow
-                label="Active Connections"
-                value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`}
-                icon="users"
-              />
-              <InfoRow
-                label="Account Created"
-                value={formatDate(user.created_at)}
-                icon="clock"
-              />
-              <InfoRow
-                label="Trial Account"
-                value={user.is_trial === "1" ? "Yes" : "No"}
-                icon="flag"
-              />
-            </View>
-
-            {server ? (
-              <View style={styles.card}>
-                <ThemedText type="h4" style={styles.cardTitle}>
-                  Server Info
+              <View style={styles.statusBadge}>
+                <View style={[styles.statusDot, { backgroundColor: getStatusColor(user.status) }]} />
+                <ThemedText style={[styles.statusText, { color: getStatusColor(user.status) }]}>
+                  {user.status || "Unknown"}
                 </ThemedText>
-                <InfoRow
-                  label="Server URL"
-                  value={server.url || "N/A"}
-                  icon="server"
-                />
-                <InfoRow
-                  label="Port"
-                  value={server.port || "N/A"}
-                  icon="hash"
-                />
-                <InfoRow
-                  label="Timezone"
-                  value={server.timezone || "N/A"}
-                  icon="globe"
-                />
               </View>
-            ) : null}
+            </View>
+          </View>
+
+          <View style={[styles.infoSection, isLandscape && styles.infoSectionLandscape]}>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoCard}>
+                <ThemedText style={styles.cardTitle}>Subscription</ThemedText>
+                <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
+                <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
+                <InfoRow label="Created" value={formatDate(user.created_at)} icon="clock" />
+                <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
+              </View>
+
+              {server ? (
+                <View style={styles.infoCard}>
+                  <ThemedText style={styles.cardTitle}>Server</ThemedText>
+                  <InfoRow label="URL" value={server.url || "N/A"} icon="server" />
+                  <InfoRow label="Port" value={server.port || "N/A"} icon="hash" />
+                  <InfoRow label="Timezone" value={server.timezone || "N/A"} icon="globe" />
+                </View>
+              ) : null}
+            </View>
 
             <Pressable
-              style={({ pressed }) => [
-                styles.logoutButton,
-                pressed && styles.logoutButtonPressed,
-              ]}
+              style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutButtonPressed]}
               onPress={handleLogout}
             >
-              <Feather name="log-out" size={20} color={Colors.dark.error} />
+              <Feather name="log-out" size={18} color={Colors.dark.error} />
               <ThemedText style={styles.logoutButtonText}>Logout</ThemedText>
             </Pressable>
-          </>
-        ) : (
-          <View style={styles.errorContainer}>
-            <Feather name="alert-circle" size={48} color={Colors.dark.error} />
-            <ThemedText style={styles.errorText}>
-              Failed to load account info
-            </ThemedText>
-            <Pressable style={styles.retryButton} onPress={handleRefresh}>
-              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
-            </Pressable>
           </View>
-        )}
-      </ScrollView>
+        </View>
+      ) : (
+        <View style={styles.centered}>
+          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
+          <ThemedText style={styles.errorText}>Failed to load account info</ThemedText>
+          <Pressable style={styles.retryButton} onPress={handleRefresh}>
+            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          </Pressable>
+        </View>
+      )}
     </ThemedView>
   );
 }
@@ -252,69 +179,64 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingBottom: Spacing.lg,
-  },
-  backButton: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundDefault,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: Spacing.lg,
-  },
-  backButtonPressed: {
-    opacity: 0.7,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
   },
   headerTitle: {
     flex: 1,
     color: Colors.dark.text,
   },
-  refreshButton: {
-    width: 48,
-    height: 48,
+  iconBtn: {
+    width: 40,
+    height: 40,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
-  refreshButtonPressed: {
+  iconBtnPressed: {
     opacity: 0.7,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
-  scrollContent: {
-    paddingTop: Spacing.lg,
-  },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingTop: Spacing["6xl"],
+    gap: Spacing.md,
   },
-  card: {
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
-    marginBottom: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    ...Shadows.card,
+  body: {
+    flex: 1,
+    gap: Spacing.md,
   },
-  cardHeader: {
+  userCard: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    gap: Spacing.md,
+  },
+  userCardLandscape: {
+    flex: 0,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 160,
+    paddingVertical: Spacing.xl,
   },
   userIconContainer: {
-    width: 64,
-    height: 64,
+    width: 52,
+    height: 52,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: Spacing.lg,
   },
-  userInfo: {
+  userMeta: {
     flex: 1,
   },
   username: {
@@ -324,47 +246,67 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
+    gap: Spacing.xs,
   },
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginRight: Spacing.sm,
   },
   statusText: {
     fontSize: 14,
     textTransform: "capitalize",
   },
+  infoSection: {
+    flex: 1,
+    gap: Spacing.md,
+  },
+  infoSectionLandscape: {
+    flex: 1,
+  },
+  infoGrid: {
+    flex: 1,
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  infoCard: {
+    flex: 1,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
   cardTitle: {
-    color: Colors.dark.text,
-    marginBottom: Spacing.lg,
+    color: Colors.dark.accent,
+    fontWeight: "600",
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
   },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.xs,
+    gap: Spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.border,
   },
-  infoIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.dark.backgroundSecondary,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: Spacing.md,
+  infoIcon: {
+    width: 20,
   },
   infoContent: {
     flex: 1,
   },
   infoLabel: {
     color: Colors.dark.textSecondary,
-    fontSize: 14,
-    marginBottom: Spacing.xs,
+    fontSize: 12,
   },
   infoValue: {
     color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "500",
   },
   logoutButton: {
     flexDirection: "row",
@@ -372,10 +314,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.dark.error,
-    marginTop: Spacing.xl,
+    gap: Spacing.sm,
   },
   logoutButtonPressed: {
     opacity: 0.8,
@@ -383,25 +325,16 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     color: Colors.dark.error,
-    marginLeft: Spacing.sm,
     fontWeight: "600",
-    fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: Spacing["6xl"],
+    fontSize: 15,
   },
   errorText: {
     color: Colors.dark.error,
-    marginTop: Spacing.lg,
     textAlign: "center",
   },
   retryButton: {
-    marginTop: Spacing.xl,
-    paddingHorizontal: Spacing["2xl"],
-    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
   },

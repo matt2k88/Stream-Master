@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/ThemedText";
@@ -16,6 +17,8 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const { login } = useAuth();
   const [serverUrl, setServerUrl] = useState("");
   const [username, setUsername] = useState("");
@@ -28,10 +31,8 @@ export default function LoginScreen() {
       setError("Please fill in all fields");
       return;
     }
-
     setIsLoading(true);
     setError("");
-
     try {
       await login({
         serverUrl: serverUrl.trim(),
@@ -45,32 +46,54 @@ export default function LoginScreen() {
     }
   };
 
+  const padH = Math.max(insets.left + Spacing.lg, Spacing.xl);
+  const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
+  const padB = Math.max(insets.bottom + Spacing.sm, Spacing.lg);
+
   return (
     <ThemedView style={styles.container}>
       <KeyboardAwareScrollViewCompat
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: insets.top + Spacing.tvSafeZone,
-            paddingBottom: insets.bottom + Spacing.tvSafeZone,
-            paddingLeft: insets.left + Spacing.tvSafeZone,
-            paddingRight: insets.right + Spacing.tvSafeZone,
+            paddingTop: padT,
+            paddingBottom: padB,
+            paddingHorizontal: padH,
+            flexDirection: isLandscape ? "row" : "column",
           },
         ]}
       >
-        <View style={styles.formContainer}>
-          <Image
-            source={require("../../assets/images/icon.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <ThemedText type="h1" style={styles.title}>
-            IPTV Player
-          </ThemedText>
-          <ThemedText style={styles.subtitle}>
-            Enter your Xtream Codes credentials
-          </ThemedText>
+        {isLandscape ? (
+          <View style={styles.brandSideLandscape}>
+            <Image
+              source={require("../../assets/images/icon.png")}
+              style={styles.logoLandscape}
+              resizeMode="contain"
+            />
+            <ThemedText type="h2" style={styles.title}>
+              IPTV Player
+            </ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Xtream Codes credentials
+            </ThemedText>
+          </View>
+        ) : (
+          <View style={styles.brandTopPortrait}>
+            <Image
+              source={require("../../assets/images/icon.png")}
+              style={styles.logoPortrait}
+              resizeMode="contain"
+            />
+            <ThemedText type="h2" style={styles.title}>
+              IPTV Player
+            </ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Enter your Xtream Codes credentials
+            </ThemedText>
+          </View>
+        )}
 
+        <View style={[styles.formContainer, isLandscape && styles.formContainerLandscape]}>
           <View style={styles.inputContainer}>
             <ThemedText style={styles.label}>Server URL</ThemedText>
             <TextInput
@@ -151,41 +174,58 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
+    gap: Spacing.xl,
   },
-  formContainer: {
-    width: "100%",
-    maxWidth: 500,
+  brandTopPortrait: {
     alignItems: "center",
-    padding: Spacing["3xl"],
   },
-  logo: {
-    width: 100,
-    height: 100,
-    marginBottom: Spacing.xl,
+  brandSideLandscape: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingRight: Spacing.xl,
+  },
+  logoPortrait: {
+    width: 64,
+    height: 64,
+    marginBottom: Spacing.sm,
+  },
+  logoLandscape: {
+    width: 72,
+    height: 72,
+    marginBottom: Spacing.md,
   },
   title: {
-    marginBottom: Spacing.sm,
     textAlign: "center",
+    marginBottom: Spacing.xs,
   },
   subtitle: {
     color: Colors.dark.textSecondary,
-    marginBottom: Spacing["3xl"],
     textAlign: "center",
+    fontSize: 14,
+  },
+  formContainer: {
+    width: "100%",
+    maxWidth: 480,
+  },
+  formContainerLandscape: {
+    flex: 1,
   },
   inputContainer: {
     width: "100%",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   label: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
     color: Colors.dark.textSecondary,
+    fontSize: 14,
   },
   input: {
     width: "100%",
-    height: Spacing.inputHeight,
+    height: 48,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     color: Colors.dark.text,
     fontSize: Typography.body.fontSize,
     borderWidth: 1,
@@ -195,21 +235,22 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "rgba(244, 67, 54, 0.1)",
     borderRadius: BorderRadius.xs,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   errorText: {
     color: Colors.dark.error,
     textAlign: "center",
+    fontSize: 14,
   },
   loginButton: {
     width: "100%",
-    height: Spacing.buttonHeight,
+    height: 48,
     backgroundColor: Colors.dark.accent,
     borderRadius: BorderRadius.sm,
     justifyContent: "center",
     alignItems: "center",
-    marginTop: Spacing.lg,
+    marginTop: Spacing.xs,
   },
   loginButtonPressed: {
     opacity: 0.8,
