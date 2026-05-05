@@ -20,6 +20,7 @@ import CreateProfileScreen from "@/screens/CreateProfileScreen";
 import PinEntryScreen from "@/screens/PinEntryScreen";
 import SearchScreen from "@/screens/SearchScreen";
 import MessagesScreen from "@/screens/MessagesScreen";
+import LivePreviewScreen from "@/screens/LivePreviewScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -33,6 +34,7 @@ export type RootStackParamList = {
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string };
   Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string };
+  LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string };
   AccountInfo: undefined;
 };
 
@@ -68,6 +70,11 @@ export default function RootStackNavigator() {
             <Stack.Screen
               name="Player"
               component={PlayerScreen}
+              options={{ animation: "fade", orientation: "landscape" }}
+            />
+            <Stack.Screen
+              name="LivePreview"
+              component={LivePreviewScreen}
               options={{ animation: "fade", orientation: "landscape" }}
             />
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />

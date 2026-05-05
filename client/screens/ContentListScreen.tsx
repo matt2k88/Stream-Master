@@ -15,6 +15,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -28,6 +29,8 @@ type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
 type ContentItem = LiveStream | VodStream | Series;
 
 const SEARCH_LIMIT = 150;
+const SIDEBAR_W = 170;
+const CONTENT_PAD = Spacing.md;
 
 function getImageRatio(type: string): number {
   if (type === "movies" || type === "series") return 1.5;
@@ -169,29 +172,113 @@ function ContentCard({
   );
 }
 
+interface SidebarCat {
+  category_id: string;
+  category_name: string;
+}
+
+function CategorySidebarItem({
+  item,
+  isSelected,
+  onPress,
+  isFav,
+}: {
+  item: SidebarCat;
+  isSelected: boolean;
+  onPress: () => void;
+  isFav?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  const highlight = isSelected || isActive;
+
+  return (
+    <Pressable
+      style={[
+        styles.sidebarItem,
+        isSelected && styles.sidebarItemSelected,
+        isActive && !isSelected && styles.sidebarItemHover,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isSelected ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.04)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        />
+      ) : isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.08)", "rgba(255,102,0,0.02)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+        />
+      ) : null}
+      {isFav ? (
+        <Feather
+          name="star"
+          size={10}
+          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+        />
+      ) : null}
+      <ThemedText
+        style={[styles.sidebarItemText, highlight && styles.sidebarItemTextActive]}
+        numberOfLines={3}
+      >
+        {item.category_name}
+      </ThemedText>
+      {isSelected ? <View style={styles.sidebarActiveBar} /> : null}
+    </Pressable>
+  );
+}
+
 export default function ContentListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
-  const { width, height } = useWindowDimensions();
-  const { liveStreams, vodStreams, seriesList, isSyncing } = useData();
+  const { width } = useWindowDimensions();
+  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
   const [query, setQuery] = useState("");
+  const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
+  const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
+  const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.sm);
   const gap = Spacing.sm;
 
-  const isFavouritesView = categoryId === "favourites";
+  const isFavouritesView = selectedCategoryId === "favourites";
   const trimmedQuery = query.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
   const numColumns = type === "live"
-    ? Math.max(3, Math.floor(width / 150))
-    : Math.max(3, Math.floor(width / 130));
-  const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
+    ? Math.max(2, Math.floor(contentWidth / 150))
+    : Math.max(2, Math.floor(contentWidth / 130));
+  const cardWidth = Math.floor((contentWidth - CONTENT_PAD * 2 - gap * (numColumns - 1)) / numColumns);
+
+  // Categories for the sidebar
+  const categories: SidebarCat[] = useMemo(() => {
+    switch (type) {
+      case "live": return liveCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      case "movies": return vodCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      case "series": return seriesCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      default: return [];
+    }
+  }, [type, liveCategories, vodCategories, seriesCategories]);
+
+  const sidebarData: SidebarCat[] = useMemo(() => {
+    return [{ category_id: "favourites", category_name: "Favourites" }, ...categories];
+  }, [categories]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -217,12 +304,12 @@ export default function ContentListScreen() {
       }
     }
     switch (type) {
-      case "live": return liveStreams.filter((s) => s.category_id === categoryId);
-      case "movies": return vodStreams.filter((s) => s.category_id === categoryId);
-      case "series": return seriesList.filter((s) => s.category_id === categoryId);
+      case "live": return liveStreams.filter((s) => s.category_id === selectedCategoryId);
+      case "movies": return vodStreams.filter((s) => s.category_id === selectedCategoryId);
+      case "series": return seriesList.filter((s) => s.category_id === selectedCategoryId);
       default: return [];
     }
-  }, [type, categoryId, isFavouritesView, liveStreams, vodStreams, seriesList, getFavouritesByType]);
+  }, [type, selectedCategoryId, isFavouritesView, liveStreams, vodStreams, seriesList, getFavouritesByType]);
 
   // Search results — searches entire section, not just current category
   const searchResults: ContentItem[] = useMemo(() => {
@@ -237,12 +324,12 @@ export default function ContentListScreen() {
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
       const s = item as LiveStream;
-      navigation.navigate("Player", {
+      navigation.navigate("LivePreview", {
+        streamId: s.stream_id,
+        name: s.name,
         streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
-        title: s.name,
-        type: "live",
         thumbnail: s.stream_icon ?? undefined,
-        streamId: String(s.stream_id),
+        streamIcon: s.stream_icon ?? undefined,
       });
     } else if (type === "movies") {
       const s = item as VodStream;
@@ -264,7 +351,7 @@ export default function ContentListScreen() {
   };
 
   const handleLongPress = (item: ContentItem) => {
-    if (isSearching) return; // disable long-press in search mode
+    if (isSearching) return;
     const streamId = getStreamId(item, type);
     toggleFavourite({
       streamId,
@@ -358,7 +445,7 @@ export default function ContentListScreen() {
             <Feather name="star" size={16} color={Colors.dark.accent} />
           ) : null}
           <ThemedText style={styles.headerTitle} numberOfLines={1}>
-            {isSearching ? "Search Results" : categoryName}
+            {isSearching ? "Search Results" : selectedCategoryName}
           </ThemedText>
         </View>
         <View style={[
@@ -373,61 +460,92 @@ export default function ContentListScreen() {
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
-      {isFavouritesView && !isSearching && categoryContent.length === 0 ? (
-        <View style={styles.centered}>
-          {searchBarHeader}
-          <Feather name="star" size={44} color={Colors.dark.border} />
-          <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
-          <ThemedText style={styles.emptyText}>
-            Hold any item to add it to your favourites
-          </ThemedText>
+      {/* Body: sidebar + main content */}
+      <View style={styles.body}>
+        {/* Category Sidebar */}
+        <View style={[styles.sidebar, { paddingLeft: Math.max(insets.left, Spacing.xs), paddingBottom: padB }]}>
+          <FlatList
+            data={sidebarData}
+            keyExtractor={(item) => item.category_id}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => (
+              <CategorySidebarItem
+                item={item}
+                isSelected={item.category_id === selectedCategoryId}
+                isFav={item.category_id === "favourites"}
+                onPress={() => {
+                  setSelectedCategoryId(item.category_id);
+                  setSelectedCategoryName(item.category_name);
+                }}
+              />
+            )}
+          />
         </View>
-      ) : (
-        <FlatList
-          data={displayContent}
-          keyExtractor={getItemId}
-          numColumns={numColumns}
-          key={`content-${type}-${numColumns}`}
-          contentContainerStyle={{
-            paddingHorizontal: padH,
-            paddingTop: Spacing.sm,
-            paddingBottom: padB,
-            gap,
-          }}
-          columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          initialNumToRender={24}
-          maxToRenderPerBatch={24}
-          windowSize={5}
-          removeClippedSubviews
-          ListHeaderComponent={searchBarHeader}
-          renderItem={({ item }) => (
-            <ContentCard
-              item={item}
-              type={type}
-              onPress={() => handleItemPress(item)}
-              onLongPress={() => handleLongPress(item)}
-              isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
-              cardWidth={cardWidth}
+
+        <View style={styles.sidebarDivider} />
+
+        {/* Main content */}
+        <View
+          style={styles.mainContent}
+          onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}
+        >
+          {isFavouritesView && !isSearching && categoryContent.length === 0 ? (
+            <View style={styles.centered}>
+              {searchBarHeader}
+              <Feather name="star" size={44} color={Colors.dark.border} />
+              <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
+              <ThemedText style={styles.emptyText}>
+                Hold any item to add it to your favourites
+              </ThemedText>
+            </View>
+          ) : (
+            <FlatList
+              data={displayContent}
+              keyExtractor={getItemId}
+              numColumns={numColumns}
+              key={`content-${type}-${numColumns}-${selectedCategoryId}`}
+              contentContainerStyle={{
+                paddingHorizontal: CONTENT_PAD,
+                paddingTop: Spacing.sm,
+                paddingBottom: padB,
+                gap,
+              }}
+              columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              initialNumToRender={24}
+              maxToRenderPerBatch={24}
+              windowSize={5}
+              removeClippedSubviews
+              ListHeaderComponent={searchBarHeader}
+              renderItem={({ item }) => (
+                <ContentCard
+                  item={item}
+                  type={type}
+                  onPress={() => handleItemPress(item)}
+                  onLongPress={() => handleLongPress(item)}
+                  isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
+                  cardWidth={cardWidth}
+                />
+              )}
+              ListEmptyComponent={
+                isSearching ? (
+                  <View style={styles.centeredInline}>
+                    <Feather name="search" size={36} color={Colors.dark.border} />
+                    <ThemedText style={styles.emptyText}>No matches found</ThemedText>
+                  </View>
+                ) : (
+                  <View style={styles.centeredInline}>
+                    <Feather name="inbox" size={36} color={Colors.dark.border} />
+                    <ThemedText style={styles.emptyText}>No content in this category</ThemedText>
+                  </View>
+                )
+              }
             />
           )}
-          ListEmptyComponent={
-            isSearching ? (
-              <View style={styles.centeredInline}>
-                <Feather name="search" size={36} color={Colors.dark.border} />
-                <ThemedText style={styles.emptyText}>No matches found</ThemedText>
-              </View>
-            ) : (
-              <View style={styles.centeredInline}>
-                <Feather name="inbox" size={36} color={Colors.dark.border} />
-                <ThemedText style={styles.emptyText}>No content in this category</ThemedText>
-              </View>
-            )
-          }
-        />
-      )}
+        </View>
+      </View>
     </ThemedView>
   );
 }
@@ -457,7 +575,63 @@ const styles = StyleSheet.create({
   countBadgeSearch: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   countText: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center" },
   countTextSearch: { color: Colors.dark.accent, fontWeight: "700" },
-  divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.sm },
+  divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
+
+  // Body layout
+  body: { flex: 1, flexDirection: "row" },
+
+  // Sidebar
+  sidebar: {
+    width: SIDEBAR_W,
+    paddingRight: Spacing.xs,
+    paddingTop: Spacing.xs,
+  },
+  sidebarDivider: {
+    width: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: Spacing.xs,
+  },
+  sidebarItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    marginBottom: 2,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  sidebarItemSelected: {
+    borderColor: "rgba(255,102,0,0.35)",
+  },
+  sidebarItemHover: {
+    borderColor: "rgba(255,102,0,0.15)",
+  },
+  sidebarItemText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "500",
+    color: Colors.dark.textSecondary,
+    lineHeight: 15,
+  },
+  sidebarItemTextActive: {
+    color: Colors.dark.accent,
+    fontWeight: "700",
+  },
+  sidebarActiveBar: {
+    position: "absolute",
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 2.5,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: 2,
+  },
+
+  // Main content
+  mainContent: { flex: 1 },
 
   // Search bar
   searchBarWrap: { marginBottom: Spacing.sm, gap: Spacing.xs },

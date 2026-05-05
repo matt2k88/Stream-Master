@@ -9,6 +9,7 @@ import {
   PanResponder,
   ScrollView,
   BackHandler,
+  Animated,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -21,6 +22,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useFavourites } from "@/contexts/FavouritesContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
@@ -291,7 +293,15 @@ export default function PlayerScreen() {
   const { streamUrl, title, type, thumbnail, streamId } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
+  const { isFavourite, toggleFavourite } = useFavourites();
   const savedRef = useRef(false);
+
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+  const favStreamType = type === "live" ? "live" : type === "series" ? "series" : "movies";
+  const favStreamId = streamId ? parseInt(streamId, 10) : 0;
+  const isFavourited = favStreamId > 0 ? isFavourite(favStreamId, favStreamType) : false;
 
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -329,6 +339,27 @@ export default function PlayerScreen() {
     setShowControls(true);
     resetTimer();
   }, [resetTimer]);
+
+  const handleToggleFavourite = useCallback(async () => {
+    if (!favStreamId) return;
+    const wasAdded = !isFavourited;
+    await toggleFavourite({
+      streamId: favStreamId,
+      streamType: favStreamType as "live" | "movies" | "series",
+      streamName: title,
+      streamIcon: thumbnail,
+      categoryId: null,
+    });
+    setToastMsg(wasAdded ? "Added to Favourites" : "Removed from Favourites");
+    setToastVisible(true);
+    toastAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToastVisible(false));
+    showAndReset();
+  }, [favStreamId, favStreamType, isFavourited, toggleFavourite, title, thumbnail, showAndReset, toastAnim]);
 
   useEffect(() => {
     resetTimer();
@@ -544,6 +575,14 @@ export default function PlayerScreen() {
         <View style={styles.topBar}>
           <CtrlBtn icon="arrow-left" onPress={handleBack} onFocus={showAndReset} />
           <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
+          {favStreamId > 0 ? (
+            <CtrlBtn
+              icon="star"
+              onPress={handleToggleFavourite}
+              onFocus={showAndReset}
+              active={isFavourited}
+            />
+          ) : null}
           {isLive ? (
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
@@ -632,6 +671,17 @@ export default function PlayerScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* Favourite toast */}
+      {toastVisible ? (
+        <Animated.View
+          style={[styles.toast, { opacity: toastAnim }]}
+          pointerEvents="none"
+        >
+          <Feather name="star" size={14} color={Colors.dark.accent} />
+          <ThemedText style={styles.toastText}>{toastMsg}</ThemedText>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -878,4 +928,28 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   errorBackBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+
+  toast: {
+    position: "absolute",
+    bottom: 80,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: "rgba(8,8,8,0.93)",
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 12,
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });

@@ -34,6 +34,8 @@ interface Props {
   style?: any;
   onPress?: (item: RecentlyWatched) => void;
   refreshKey?: number;
+  maxItems?: number;
+  onLayout?: (e: any) => void;
 }
 
 function RecentlyWatchedRow({
@@ -118,7 +120,7 @@ function RecentlyWatchedRow({
   );
 }
 
-export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Props) {
+export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout }: Props) {
   const { activeProfile } = useProfile();
   const [items, setItems] = useState<RecentlyWatched[] | undefined>(undefined);
 
@@ -139,11 +141,12 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Prop
     fetchItems();
   }, [fetchItems, refreshKey]);
 
-  const isEmpty = !items || items.length === 0;
+  const displayItems = maxItems && items ? items.slice(0, maxItems) : items;
+  const isEmpty = !displayItems || displayItems.length === 0;
   const isLoading = items === undefined;
 
   return (
-    <View style={[styles.card, style]}>
+    <View style={[styles.card, style]} onLayout={onLayout}>
       <View style={styles.labelRow}>
         <Feather name="clock" size={11} color={Colors.dark.accent} />
         <ThemedText style={styles.sectionLabel}>Previously Watched</ThemedText>
@@ -162,7 +165,7 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Prop
         </View>
       ) : (
         <View style={styles.itemsList}>
-          {items.map((item, index) => (
+          {(displayItems ?? []).map((item, index) => (
             <React.Fragment key={item.id}>
               {index > 0 ? <View style={styles.separator} /> : null}
               <RecentlyWatchedRow

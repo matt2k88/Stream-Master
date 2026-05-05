@@ -118,6 +118,21 @@ export interface Series {
   category_id: string;
 }
 
+export interface EpgListing {
+  id: string;
+  epg_id: string;
+  title: string;
+  lang: string;
+  start: string;
+  end: string;
+  description: string;
+  channel_id: string;
+  start_timestamp: number;
+  stop_timestamp: number;
+  now_playing: number;
+  has_archive: number;
+}
+
 export interface SeriesInfo {
   seasons: { [key: string]: { season_number: number; name: string; cover: string }[] };
   info: Series;
@@ -302,6 +317,18 @@ class XtreamAPI {
 
   getSeriesStreamUrl(streamId: string, containerExtension: string): string {
     return `${this.getBaseUrl()}/series/${this.credentials?.username}/${this.credentials?.password}/${streamId}.${containerExtension}`;
+  }
+
+  async getShortEpg(streamId: number, limit = 3): Promise<EpgListing[]> {
+    try {
+      const url = `${this.getBaseUrl()}/player_api.php?${this.getAuthParams()}&action=get_short_epg&stream_id=${streamId}&limit=${limit}`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data?.epg_listings) ? data.epg_listings : [];
+    } catch {
+      return [];
+    }
   }
 }
 

@@ -203,6 +203,7 @@ export default function HomeScreen() {
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
+  const [recentMaxItems, setRecentMaxItems] = useState(2);
 
   useFocusEffect(
     useCallback(() => {
@@ -303,15 +304,32 @@ export default function HomeScreen() {
             <RecentlyWatchedCard
               style={styles.recentlyWatched}
               refreshKey={recentRefreshKey}
+              maxItems={recentMaxItems}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                setRecentMaxItems(h >= 130 ? 2 : 1);
+              }}
               onPress={(item) => {
-                if (item.stream_url) {
-                  navigation.navigate("Player", {
-                    streamUrl: item.stream_url,
-                    title: item.name,
-                    type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
-                    thumbnail: item.thumbnail_url ?? undefined,
-                  });
+                if (!item.stream_url) return;
+                if (item.content_type === "live" && item.stream_id) {
+                  const sid = parseInt(item.stream_id, 10);
+                  if (!isNaN(sid)) {
+                    navigation.navigate("LivePreview", {
+                      streamId: sid,
+                      name: item.name,
+                      streamUrl: item.stream_url,
+                      thumbnail: item.thumbnail_url ?? undefined,
+                      streamIcon: item.thumbnail_url ?? undefined,
+                    });
+                    return;
+                  }
                 }
+                navigation.navigate("Player", {
+                  streamUrl: item.stream_url,
+                  title: item.name,
+                  type: item.content_type === "series" ? "series" : "vod",
+                  thumbnail: item.thumbnail_url ?? undefined,
+                });
               }}
             />
           </View>
@@ -351,14 +369,26 @@ export default function HomeScreen() {
             style={styles.portraitRecent}
             refreshKey={recentRefreshKey}
             onPress={(item) => {
-              if (item.stream_url) {
-                navigation.navigate("Player", {
-                  streamUrl: item.stream_url,
-                  title: item.name,
-                  type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
-                  thumbnail: item.thumbnail_url ?? undefined,
-                });
+              if (!item.stream_url) return;
+              if (item.content_type === "live" && item.stream_id) {
+                const sid = parseInt(item.stream_id, 10);
+                if (!isNaN(sid)) {
+                  navigation.navigate("LivePreview", {
+                    streamId: sid,
+                    name: item.name,
+                    streamUrl: item.stream_url,
+                    thumbnail: item.thumbnail_url ?? undefined,
+                    streamIcon: item.thumbnail_url ?? undefined,
+                  });
+                  return;
+                }
               }
+              navigation.navigate("Player", {
+                streamUrl: item.stream_url,
+                title: item.name,
+                type: item.content_type === "series" ? "series" : "vod",
+                thumbnail: item.thumbnail_url ?? undefined,
+              });
             }}
           />
           <SearchButton onPress={() => navigation.navigate("Search")} />

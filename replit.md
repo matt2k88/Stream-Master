@@ -20,6 +20,10 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **Video Player**: Full-screen video playback with play/pause controls
 - **Account Info**: Subscription details and logout
 - **Favourites**: Long-press any item (live/movies/series) to toggle favourite. Orange star badge shows on favourited cards. Each category screen has a Favourites button with live count that opens a filtered view of your favourited content for that type. Favourites are stored per profile in Supabase.
+- **ContentList Sidebar**: 170px left sidebar in ContentListScreen shows all categories (from DataContext cache) with full TV focus/hover states. "Favourites" is always pinned at the top. Selecting a category updates content instantly without leaving the screen.
+- **Live Preview Screen**: Tapping a live channel navigates to LivePreviewScreen — left side shows a mini VideoView (plays the stream), right side shows EPG (now + upcoming programmes from Xtream `get_short_epg` API, base64-decoded). "Watch Full Screen" button navigates to full PlayerScreen.
+- **Player Favourite Button**: Star button in the PlayerScreen top bar. Press it to add/remove the current stream from Favourites. An animated toast notification confirms the action. Works on TV remote.
+- **Previously Watched Adaptive**: RecentlyWatchedCard on HomeScreen measures its available height via onLayout and shows 2 items if space allows (≥130px), 1 item otherwise.
 
 ## Tech Stack
 
@@ -49,9 +53,10 @@ client/
 │   ├── LoginScreen.tsx         # 2-step: server picker → credentials
 │   ├── HomeScreen.tsx          # Main menu, refresh button, landscape layout
 │   ├── CategoryScreen.tsx      # Category listing (uses DataContext cache)
-│   ├── ContentListScreen.tsx   # Stream listing (uses DataContext cache)
+│   ├── ContentListScreen.tsx   # Stream listing + category sidebar (170px left panel)
+│   ├── LivePreviewScreen.tsx   # Live channel mini-player + EPG (now/next)
 │   ├── SeriesDetailScreen.tsx  # Series episodes
-│   ├── PlayerScreen.tsx        # Video player
+│   ├── PlayerScreen.tsx        # Full-screen player + favourite star button + toast
 │   └── AccountInfoScreen.tsx   # Account details
 ├── components/
 │   ├── SyncScreen.tsx          # Full-screen data sync overlay
