@@ -273,7 +273,9 @@ export default function HomeScreen() {
               </View>
             </View>
           </View>
-          <AdvertCarousel style={styles.rightPanelCarousel} />
+          <View style={styles.rightPanel}>
+            <AdvertCarousel style={styles.rightPanelCarousel} />
+          </View>
         </View>
       ) : (
         // ── Portrait / Mobile ───────────────────────────────────────────────
@@ -360,12 +362,13 @@ const styles = StyleSheet.create({
   // Body layouts
   bodyLandscape: { flex: 1, flexDirection: "row", gap: Spacing.lg, paddingTop: Spacing.md },
   leftPanel: { flex: 1, flexDirection: "column", gap: Spacing.md },
+  rightPanel: { flex: 1, justifyContent: "center", overflow: "hidden" },
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
 
   subRow: { flexDirection: "row", gap: Spacing.md },
   searchCol: { width: "32%", flexShrink: 0 },
 
-  rightPanelCarousel: { width: "100%" },
+  rightPanelCarousel: { width: "100%", aspectRatio: 16 / 9 },
   portraitCarousel: { width: "100%" },
 
   // Nav buttons
