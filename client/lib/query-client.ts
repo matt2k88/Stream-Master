@@ -5,24 +5,30 @@ import { Platform } from "react-native";
 /**
  * Gets the base URL for the Express API server.
  * Priority:
- *  1. EXPO_PUBLIC_DOMAIN env var (dev server injects this)
- *  2. Web: window.location.origin (same-domain production deployment)
- *  3. Native: various Expo manifest hostUri paths (set by build.js)
+ *  1. app.json extra.apiUrl  — hardcoded production URL (works in standalone APK builds)
+ *  2. EXPO_PUBLIC_DOMAIN env var — injected by npm run expo:dev (Replit dev)
+ *  3. Web: window.location.origin — same-domain production web deployment
+ *  4. Native: various Expo manifest hostUri paths — set by build.js for Expo Go
  */
 export function getApiUrl(): string {
-  // 1. Dev env var (injected by npm run expo:dev)
-  const envDomain = process.env.EXPO_PUBLIC_DOMAIN;
-  if (envDomain) {
-    return new URL(`https://${envDomain}`).href;
+  // 1. Hardcoded production URL from app.json extra (always available in APK builds)
+  const extraApiUrl = (Constants.expoConfig as any)?.extra?.apiUrl as string | undefined;
+  if (extraApiUrl) {
+    return extraApiUrl.endsWith("/") ? extraApiUrl.slice(0, -1) : extraApiUrl;
   }
 
-  // 2. Web browser — API is served from the same origin
+  // 2. Dev env var (injected by npm run expo:dev)
+  const envDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (envDomain) {
+    return new URL(`https://${envDomain}`).href.replace(/\/$/, "");
+  }
+
+  // 3. Web browser — API is served from the same origin
   if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin;
   }
 
-  // 3. Native: try every known path where Expo puts hostUri
-  // build.js writes: manifest.extra.expoClient.hostUri = "<domain>/<platform>"
+  // 4. Native: try every known path where Expo puts hostUri
   const candidates: unknown[] = [
     (Constants.expoConfig as any)?.hostUri,
     (Constants.expoConfig as any)?.extra?.expoClient?.hostUri,
@@ -35,7 +41,7 @@ export function getApiUrl(): string {
     if (candidate && typeof candidate === "string") {
       const domain = candidate.split("/")[0];
       if (domain) {
-        return new URL(`https://${domain}`).href;
+        return new URL(`https://${domain}`).href.replace(/\/$/, "");
       }
     }
   }
