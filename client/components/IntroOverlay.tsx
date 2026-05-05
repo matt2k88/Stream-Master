@@ -21,7 +21,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
   const insets = useSafeAreaInsets();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const doneRef = useRef(false);
-  const [showSkip, setShowSkip] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   const dismiss = useCallback(() => {
@@ -44,9 +43,8 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
     const sub = player.addListener("statusChange", (e: any) => {
       if (e.status === "readyToPlay") {
         setIsReady(true);
-        setShowSkip(true);
       } else if (e.status === "error") {
-        setTimeout(() => dismiss(), 3000);
+        dismiss();
       }
     });
     return () => sub.remove();
@@ -56,7 +54,6 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
     const sub = player.addListener("playingChange", (e: any) => {
       if (e.isPlaying) {
         setIsReady(true);
-        setShowSkip(true);
       }
     });
     return () => sub.remove();
@@ -84,22 +81,21 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
         allowsPictureInPicture={false}
       />
 
-      {/* Loading spinner */}
+      {/* Loading spinner while not yet playing */}
       {!isReady ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
         </View>
       ) : null}
 
-      {showSkip ? (
-        <Pressable
-          style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
-          onPress={dismiss}
-          hitSlop={12}
-        >
-          <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
-      ) : null}
+      {/* Skip button always visible */}
+      <Pressable
+        style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
+        onPress={dismiss}
+        hitSlop={12}
+      >
+        <Text style={styles.skipText}>Skip</Text>
+      </Pressable>
 
       <Animated.View
         style={[styles.fadeOverlay, { opacity: fadeAnim }]}

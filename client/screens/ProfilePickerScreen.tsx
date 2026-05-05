@@ -126,15 +126,23 @@ export default function ProfilePickerScreen() {
   const gap = Spacing.lg;
   const cardSize = Math.floor((Math.min(width, 800) - padH * 2 - gap * (numCols - 1)) / numCols);
 
+  const loadProfiles = useCallback(async (uname: string) => {
+    if (!uname) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const p = await fetchProfiles(uname);
+      setProfiles(p);
+    } catch {
+      // silently fail — show empty state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let active = true;
-      setLoading(true);
-      fetchProfiles(username)
-        .then((p) => { if (active) { setProfiles(p); setLoading(false); } })
-        .catch(() => { if (active) setLoading(false); });
-      return () => { active = false; };
-    }, [username])
+      loadProfiles(username);
+    }, [username, loadProfiles])
   );
 
   const handleSelect = (profile: Profile) => {
