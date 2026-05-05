@@ -7,7 +7,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useProfile } from "@/contexts/ProfileContext";
 
-interface RecentlyWatched {
+export interface RecentlyWatched {
   id: string;
   profile_id: string;
   content_type: "live" | "movie" | "series";
@@ -36,44 +36,27 @@ interface Props {
   refreshKey?: number;
 }
 
-export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Props) {
-  const { activeProfile } = useProfile();
-  const [item, setItem] = useState<RecentlyWatched | null | undefined>(undefined);
+function RecentlyWatchedRow({
+  item,
+  onPress,
+}: {
+  item: RecentlyWatched;
+  onPress: () => void;
+}) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
 
-  const fetchItem = useCallback(async () => {
-    if (!activeProfile) return;
-    try {
-      const url = new URL("/api/recently-watched", getApiUrl());
-      url.searchParams.set("profile_id", activeProfile.id);
-      const res = await fetch(url.toString());
-      const data = await res.json();
-      setItem(data ?? null);
-    } catch {
-      setItem(null);
-    }
-  }, [activeProfile]);
-
-  useEffect(() => {
-    fetchItem();
-  }, [fetchItem, refreshKey]);
-
-  const isEmpty = item === null || item === undefined;
-  const isLoading = item === undefined;
-
   return (
     <Pressable
-      style={[styles.card, isActive && !isEmpty && styles.cardActive, style]}
-      onPress={() => item && onPress?.(item)}
+      style={[styles.row, isActive && styles.rowActive]}
+      onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      disabled={isEmpty}
     >
-      {isActive && !isEmpty ? (
+      {isActive ? (
         <LinearGradient
           colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.04)"]}
           style={StyleSheet.absoluteFill}
@@ -82,7 +65,85 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Prop
         />
       ) : null}
 
-      {/* Section label */}
+      <View style={styles.thumbWrap}>
+        {item.thumbnail_url ? (
+          <Image
+            source={{ uri: item.thumbnail_url }}
+            style={styles.thumb}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.thumbFallback}>
+            <Feather
+              name={TYPE_ICON[item.content_type] ?? "play"}
+              size={18}
+              color={Colors.dark.textSecondary}
+            />
+          </View>
+        )}
+        {item.content_type === "live" ? (
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <ThemedText style={styles.liveText}>LIVE</ThemedText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.infoCol}>
+        <View style={styles.typePill}>
+          <Feather
+            name={TYPE_ICON[item.content_type] ?? "play"}
+            size={9}
+            color={Colors.dark.accent}
+          />
+          <ThemedText style={styles.typeText}>
+            {TYPE_LABEL[item.content_type] ?? item.content_type}
+          </ThemedText>
+        </View>
+        <ThemedText style={styles.contentName} numberOfLines={1}>
+          {item.name}
+        </ThemedText>
+      </View>
+
+      <View style={[styles.playIcon, isActive && styles.playIconActive]}>
+        <Feather
+          name="play"
+          size={12}
+          color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+        />
+      </View>
+
+      {isActive ? <View style={styles.activeBar} /> : null}
+    </Pressable>
+  );
+}
+
+export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Props) {
+  const { activeProfile } = useProfile();
+  const [items, setItems] = useState<RecentlyWatched[] | undefined>(undefined);
+
+  const fetchItems = useCallback(async () => {
+    if (!activeProfile) return;
+    try {
+      const url = new URL("/api/recently-watched", getApiUrl());
+      url.searchParams.set("profile_id", activeProfile.id);
+      const res = await fetch(url.toString());
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : data ? [data] : []);
+    } catch {
+      setItems([]);
+    }
+  }, [activeProfile]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems, refreshKey]);
+
+  const isEmpty = !items || items.length === 0;
+  const isLoading = items === undefined;
+
+  return (
+    <View style={[styles.card, style]}>
       <View style={styles.labelRow}>
         <Feather name="clock" size={11} color={Colors.dark.accent} />
         <ThemedText style={styles.sectionLabel}>Previously Watched</ThemedText>
@@ -95,69 +156,24 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey }: Prop
       ) : isEmpty ? (
         <View style={styles.emptyBody}>
           <View style={styles.emptyIconRing}>
-            <Feather name="play-circle" size={22} color={Colors.dark.textSecondary} />
+            <Feather name="play-circle" size={20} color={Colors.dark.textSecondary} />
           </View>
           <ThemedText style={styles.emptyText}>Start watching something</ThemedText>
-          <ThemedText style={styles.emptyHint}>Your last played content will appear here</ThemedText>
         </View>
       ) : (
-        <View style={styles.contentRow}>
-          {/* Thumbnail */}
-          <View style={styles.thumbWrap}>
-            {item.thumbnail_url ? (
-              <Image
-                source={{ uri: item.thumbnail_url }}
-                style={styles.thumb}
-                resizeMode="cover"
+        <View style={styles.itemsList}>
+          {items.map((item, index) => (
+            <React.Fragment key={item.id}>
+              {index > 0 ? <View style={styles.separator} /> : null}
+              <RecentlyWatchedRow
+                item={item}
+                onPress={() => onPress?.(item)}
               />
-            ) : (
-              <View style={styles.thumbFallback}>
-                <Feather
-                  name={TYPE_ICON[item.content_type] ?? "play"}
-                  size={20}
-                  color={Colors.dark.textSecondary}
-                />
-              </View>
-            )}
-            {/* Live badge overlay */}
-            {item.content_type === "live" ? (
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <ThemedText style={styles.liveText}>LIVE</ThemedText>
-              </View>
-            ) : null}
-          </View>
-
-          {/* Info */}
-          <View style={styles.infoCol}>
-            <View style={styles.typePill}>
-              <Feather
-                name={TYPE_ICON[item.content_type] ?? "play"}
-                size={10}
-                color={Colors.dark.accent}
-              />
-              <ThemedText style={styles.typeText}>
-                {TYPE_LABEL[item.content_type] ?? item.content_type}
-              </ThemedText>
-            </View>
-            <ThemedText style={styles.contentName} numberOfLines={2}>
-              {item.name}
-            </ThemedText>
-          </View>
-
-          {/* Play icon */}
-          <View style={[styles.playIcon, isActive && styles.playIconActive]}>
-            <Feather
-              name="play"
-              size={14}
-              color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
-            />
-          </View>
+            </React.Fragment>
+          ))}
         </View>
       )}
-
-      {isActive && !isEmpty ? <View style={styles.activeBar} /> : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -198,14 +214,6 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     gap: Spacing.xs,
   },
-  cardActive: {
-    borderColor: Colors.dark.accent,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
-  },
 
   labelRow: {
     flexDirection: "row",
@@ -226,11 +234,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.xs,
     paddingVertical: Spacing.sm,
+    flexDirection: "row",
   },
   emptyIconRing: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: Colors.dark.backgroundSecondary,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -239,29 +248,40 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: Colors.dark.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  emptyHint: {
-    color: Colors.dark.textMuted,
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: "500",
     textAlign: "center",
   },
 
-  contentRow: {
+  itemsList: {
+    gap: 0,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: 3,
+  },
+
+  row: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    overflow: "hidden",
   },
+  rowActive: {
+    backgroundColor: "rgba(255,102,0,0.06)",
+  },
+
   thumbWrap: {
-    width: 80,
-    height: 45,
+    width: 72,
+    height: 40,
     borderRadius: BorderRadius.sm,
     overflow: "hidden",
     backgroundColor: Colors.dark.backgroundSecondary,
     flexShrink: 0,
-    position: "relative",
   },
   thumb: {
     width: "100%",
@@ -274,22 +294,22 @@ const styles = StyleSheet.create({
   },
   liveBadge: {
     position: "absolute",
-    bottom: 3,
-    left: 3,
+    bottom: 2,
+    left: 2,
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: 2,
     backgroundColor: "rgba(220,30,30,0.85)",
-    borderRadius: 4,
-    paddingHorizontal: 4,
+    borderRadius: 3,
+    paddingHorizontal: 3,
     paddingVertical: 1,
   },
-  liveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#fff" },
-  liveText: { color: "#fff", fontSize: 8, fontWeight: "800", letterSpacing: 0.5 },
+  liveDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: "#fff" },
+  liveText: { color: "#fff", fontSize: 7, fontWeight: "800", letterSpacing: 0.4 },
 
   infoCol: {
     flex: 1,
-    gap: 3,
+    gap: 2,
   },
   typePill: {
     flexDirection: "row",
@@ -297,28 +317,28 @@ const styles = StyleSheet.create({
     gap: 3,
     alignSelf: "flex-start",
     backgroundColor: Colors.dark.accentDim,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
   },
   typeText: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: "700",
     color: Colors.dark.accent,
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
   contentName: {
     color: Colors.dark.text,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
-    lineHeight: 16,
+    lineHeight: 14,
   },
 
   playIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: Colors.dark.backgroundSecondary,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -334,9 +354,9 @@ const styles = StyleSheet.create({
   activeBar: {
     position: "absolute",
     bottom: 0,
-    left: "15%",
-    right: "15%",
-    height: 2,
+    left: 0,
+    right: 0,
+    height: 1.5,
     backgroundColor: Colors.dark.accent,
     borderRadius: 1,
   },

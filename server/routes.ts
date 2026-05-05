@@ -235,14 +235,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from("recently_watched")
         .select("*")
         .eq("profile_id", profile_id as string)
-        .single();
-      // PGRST116 = no rows; 42P01 = table doesn't exist yet
+        .order("updated_at", { ascending: false })
+        .limit(2);
       if (error && error.code !== "PGRST116" && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
         return res.status(500).json({ error: error.message });
       }
-      res.json(data ?? null);
+      res.json(data ?? []);
     } catch {
-      res.json(null);
+      res.json([]);
     }
   });
 
@@ -252,18 +252,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ error: "profile_id, content_type, and name required" });
     }
     try {
-      const { data, error } = await supabase
+      const now = new Date().toISOString();
+      const entry = { profile_id, content_type, stream_id: stream_id ?? null, name, thumbnail_url: thumbnail_url ?? null, stream_url: stream_url ?? null, updated_at: now };
+
+      // Get existing entries ordered oldest first (so we can replace the oldest if at limit)
+      const { data: existing } = await supabase
         .from("recently_watched")
-        .upsert(
-          { profile_id, content_type, stream_id: stream_id ?? null, name, thumbnail_url: thumbnail_url ?? null, stream_url: stream_url ?? null, updated_at: new Date().toISOString() },
-          { onConflict: "profile_id" }
-        )
-        .select()
-        .single();
-      if (error && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
-        return res.status(500).json({ error: error.message });
+        .select("id, updated_at")
+        .eq("profile_id", profile_id)
+        .order("updated_at", { ascending: true });
+
+      let result;
+      if (!existing || existing.length < 2) {
+        const { data } = await supabase.from("recently_watched").insert(entry).select().single();
+        result = data;
+      } else {
+        // Replace the oldest entry
+        const { data } = await supabase.from("recently_watched").update(entry).eq("id", existing[0].id).select().single();
+        result = data;
       }
-      res.json(data ?? null);
+      if (!result) return res.json(null);
+      res.json(result);
     } catch {
       res.json(null);
     }
@@ -274,22 +283,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { profile_id } = req.query;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     try {
-      const { data, error } = await supabase
-        .from("recently_watched")
-        .upsert(
-          {
-            profile_id: profile_id as string,
-            content_type: "movie",
-            stream_id: "99999",
-            name: "Test Movie — Previously Watched",
-            thumbnail_url: "https://image.tmdb.org/t/p/w500/3bhkrj58Vtu7enYsLMId5A5kUre.jpg",
-            stream_url: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "profile_id" }
-        )
-        .select()
-        .single();
+      // Delete existing seed entries for clean state
+      await supabase.from("recently_watched").delete().eq("profile_id", profile_id as string);
+      // Insert 2 test entries
+      const entries = [
+        { profile_id: profile_id as string, content_type: "movie", stream_id: "99998", name: "Furious 7", thumbnail_url: "https://image.tmdb.org/t/p/w500/3bhkrj58Vtu7enYsLMId5A5kUre.jpg", stream_url: null, updated_at: new Date(Date.now() - 60000).toISOString() },
+        { profile_id: profile_id as string, content_type: "live", stream_id: "99999", name: "BBC One HD", thumbnail_url: null, stream_url: null, updated_at: new Date().toISOString() },
+      ];
+      const { data, error } = await supabase.from("recently_watched").insert(entries).select();
       if (error && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
         return res.status(500).json({ error: error.message });
       }

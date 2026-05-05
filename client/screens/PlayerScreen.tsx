@@ -291,7 +291,7 @@ export default function PlayerScreen() {
     if (!IS_TV) {
       timerRef.current = setTimeout(() => {
         setShowControls(false);
-        setActivePanel(null);
+        // Don't auto-close the panel — let user dismiss it manually
       }, HIDE_DELAY);
     }
   }, []);
@@ -360,9 +360,13 @@ export default function PlayerScreen() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleBack = useCallback(() => {
+    if (activePanel) {
+      setActivePanel(null);
+      return;
+    }
     player.pause();
     navigation.goBack();
-  }, [player, navigation]);
+  }, [activePanel, player, navigation]);
 
   const handlePlayPause = useCallback(() => {
     isPlaying ? player.pause() : player.play();

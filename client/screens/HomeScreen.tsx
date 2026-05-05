@@ -104,15 +104,19 @@ function SearchButton({ onPress }: { onPress: () => void }) {
 function ProfileButton({ onPress }: { onPress: () => void }) {
   const { activeProfile } = useProfile();
   const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
 
   if (!activeProfile) return null;
 
   return (
     <Pressable
-      style={[styles.profileBtn, pressed && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
+      style={[styles.profileBtn, isActive && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     >
       <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
         <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
@@ -128,14 +132,17 @@ function ProfileButton({ onPress }: { onPress: () => void }) {
 function MessagesButton({ onPress }: { onPress: () => void }) {
   const { unreadCount } = useMessages();
   const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
   const hasUnread = unreadCount > 0;
 
   return (
     <Pressable
-      style={[styles.headerBtn, pressed && styles.headerBtnActive, hasUnread && styles.headerBtnAlert]}
+      style={[styles.headerBtn, (pressed || focused) && styles.headerBtnActive, hasUnread && styles.headerBtnAlert]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     >
       <Feather name="bell" size={18} color={hasUnread ? Colors.dark.accent : Colors.dark.textSecondary} />
       {hasUnread ? (
@@ -197,7 +204,7 @@ export default function HomeScreen() {
 
         <View style={styles.headerActions}>
           <Pressable
-            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
+            style={({ pressed, focused }) => [styles.headerBtn, (pressed || focused) && styles.headerBtnActive]}
             onPress={handleRefresh}
             disabled={refreshing}
           >
@@ -212,7 +219,7 @@ export default function HomeScreen() {
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
 
           <Pressable
-            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
+            style={({ pressed, focused }) => [styles.headerBtn, (pressed || focused) && styles.headerBtnActive]}
             onPress={() => navigation.navigate("AccountInfo")}
           >
             <Feather name="user" size={18} color={Colors.dark.accent} />
@@ -432,7 +439,7 @@ const styles = StyleSheet.create({
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
   portraitLiveBtn: { minHeight: 90 },
-  portraitSubBtn: { flex: 1, minHeight: 70 },
+  portraitSubBtn: { flex: 1, minHeight: 35 },
   portraitCarousel: { flex: 1, width: "100%" },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────

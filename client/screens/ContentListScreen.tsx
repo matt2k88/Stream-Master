@@ -8,6 +8,7 @@ import {
   Animated,
   TextInput,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -90,6 +91,8 @@ function ContentCard({
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
+  const longFiredRef = useRef(false);
+  const pressInTimeRef = useRef(0);
 
   const imageUrl = getIconUrl(item);
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
@@ -98,12 +101,34 @@ function ContentCard({
 
   return (
     <Pressable
-      style={[styles.card, { width: cardWidth }, isActive && styles.cardActive, isFavourited && styles.cardFavourited]}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={500}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
+      style={[
+        styles.card,
+        { width: cardWidth },
+        isActive && !isFavourited && styles.cardActive,
+        isFavourited && styles.cardFavourited,
+        isActive && isFavourited && styles.cardFavouritedActive,
+      ]}
+      onPress={() => {
+        if (longFiredRef.current) { longFiredRef.current = false; return; }
+        onPress();
+      }}
+      onLongPress={() => {
+        longFiredRef.current = true;
+        onLongPress();
+      }}
+      delayLongPress={Platform.isTV ? 700 : 500}
+      onPressIn={() => {
+        setPressed(true);
+        longFiredRef.current = false;
+        pressInTimeRef.current = Date.now();
+      }}
+      onPressOut={() => {
+        setPressed(false);
+        if (Platform.isTV && !longFiredRef.current && (Date.now() - pressInTimeRef.current) >= 600) {
+          longFiredRef.current = true;
+          onLongPress();
+        }
+      }}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
@@ -323,7 +348,7 @@ export default function ContentListScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+          style={({ pressed, focused }) => [styles.backBtn, (pressed || focused) && styles.backBtnPressed]}
           onPress={() => navigation.goBack()}
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
@@ -465,6 +490,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8, shadowRadius: 14, elevation: 10,
   },
   cardFavourited: { borderColor: "rgba(255,102,0,0.45)" },
+  cardFavouritedActive: {
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9, shadowRadius: 14, elevation: 10,
+  },
   cardThumb: { overflow: "hidden", backgroundColor: Colors.dark.backgroundSecondary },
   cardImage: { width: "100%", height: "100%" },
   cardPlaceholder: {

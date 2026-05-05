@@ -333,7 +333,7 @@ export default function CategoryScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+          style={({ pressed, focused }) => [styles.backBtn, (pressed || focused) && styles.backBtnPressed]}
           onPress={() => navigation.goBack()}
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
-  favButtonActive: { shadowOpacity: 0.8, shadowRadius: 18, elevation: 14 },
+  favButtonActive: { shadowOpacity: 0.8, shadowRadius: 18, elevation: 14, borderColor: "#FFD700" },
   favLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
   favIconWrap: {
     width: 36, height: 36, borderRadius: BorderRadius.full,
