@@ -344,6 +344,60 @@ export default function CategoryScreen() {
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
+      {/* Search bar — always rendered here so it never remounts when results appear */}
+      <View style={[styles.listHeader, { paddingHorizontal: padH }]}>
+        <View style={[styles.searchBar, isSearching && styles.searchBarActive]}>
+          <Feather
+            name="search"
+            size={15}
+            color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
+          />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={placeholder}
+            placeholderTextColor={Colors.dark.textSecondary}
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {query.length > 0 ? (
+            <Pressable onPress={() => setQuery("")} hitSlop={8}>
+              <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
+            </Pressable>
+          ) : null}
+        </View>
+        {!isSearching ? (
+          <FavouritesButton
+            type={type}
+            count={favCount}
+            onPress={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "favourites",
+                categoryName: "Favourites",
+              })
+            }
+          />
+        ) : (
+          <View style={styles.searchResultsHeader}>
+            <Feather name={getIcon()} size={13} color={Colors.dark.accent} />
+            <ThemedText style={styles.searchResultsText}>
+              {searchResults.length === 0
+                ? `No results for "${query}"`
+                : `${searchResults.length} results`}
+            </ThemedText>
+            {searchResults.length === SEARCH_LIMIT ? (
+              <ThemedText style={styles.searchResultsLimit}>
+                (showing first {SEARCH_LIMIT})
+              </ThemedText>
+            ) : null}
+          </View>
+        )}
+      </View>
+
       {isSearching ? (
         // ── Search results grid ──────────────────────────────────────────────
         <FlatList
@@ -351,10 +405,9 @@ export default function CategoryScreen() {
           data={searchResults}
           keyExtractor={getStreamKey}
           numColumns={numSearchCols}
-          ListHeaderComponent={ListHeader}
           contentContainerStyle={{
             paddingHorizontal: padH,
-            paddingTop: Spacing.sm,
+            paddingTop: Spacing.xs,
             paddingBottom: padB,
             gap,
           }}
@@ -384,7 +437,6 @@ export default function CategoryScreen() {
           data={categories}
           keyExtractor={(item) => item.category_id}
           numColumns={numCatCols}
-          ListHeaderComponent={ListHeader}
           contentContainerStyle={{
             paddingHorizontal: padH,
             paddingTop: Spacing.sm,
@@ -442,6 +494,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.dark.border,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md, height: 42,
+  },
+  searchBarActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 4,
   },
   searchInput: {
     flex: 1, color: Colors.dark.text, fontSize: 13,

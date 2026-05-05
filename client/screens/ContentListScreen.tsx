@@ -500,9 +500,13 @@ export default function ContentListScreen() {
           style={styles.mainContent}
           onLayout={(e) => setContentWidth(e.nativeEvent.layout.width)}
         >
+          {/* Search bar — always rendered here so it never remounts when results switch in */}
+          <View style={{ paddingHorizontal: CONTENT_PAD }}>
+            {searchBarHeader}
+          </View>
+
           {isFavouritesView && !isSearching && categoryContent.length === 0 ? (
             <View style={styles.centered}>
-              {searchBarHeader}
               <Feather name="star" size={44} color={Colors.dark.border} />
               <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
               <ThemedText style={styles.emptyText}>
@@ -517,7 +521,7 @@ export default function ContentListScreen() {
               key={`content-${type}-${numColumns}-${selectedCategoryId}`}
               contentContainerStyle={{
                 paddingHorizontal: CONTENT_PAD,
-                paddingTop: Spacing.sm,
+                paddingTop: Spacing.xs,
                 paddingBottom: padB,
                 gap,
               }}
@@ -529,7 +533,6 @@ export default function ContentListScreen() {
               maxToRenderPerBatch={24}
               windowSize={5}
               removeClippedSubviews
-              ListHeaderComponent={searchBarHeader}
               renderItem={({ item }) => (
                 <ContentCard
                   item={item}
