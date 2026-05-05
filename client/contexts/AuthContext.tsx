@@ -29,37 +29,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       const credentials = await xtreamApi.loadCredentials();
       if (credentials) {
-        try {
-          const info = await xtreamApi.getAccountInfo();
-          setUserInfo(info);
-        } catch (infoError) {
-          console.warn("getAccountInfo failed, using stored credentials:", infoError);
-          setUserInfo({
-            user_info: {
-              username: credentials.username,
-              password: credentials.password,
-              message: "",
-              auth: 1,
-              status: "Active",
-              exp_date: "",
-              is_trial: "0",
-              active_cons: "0",
-              created_at: "",
-              max_connections: "1",
-              allowed_output_formats: [],
-            },
-            server_info: {
-              url: credentials.serverUrl,
-              port: "",
-              https_port: "",
-              server_protocol: "http",
-              rtmp_port: "",
-              timezone: "",
-              timestamp_now: 0,
-              time_now: "",
-            },
-          });
-        }
+        const info = await xtreamApi.getAccountInfo();
+        setUserInfo(info);
         setIsAuthenticated(true);
       }
     } catch (error) {
