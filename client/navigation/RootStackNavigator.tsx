@@ -1,9 +1,11 @@
 import React from "react";
-import { ActivityIndicator, View, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuth } from "@/contexts/AuthContext";
+import { useData } from "@/contexts/DataContext";
 import { Colors } from "@/constants/theme";
+import { SyncScreen } from "@/components/SyncScreen";
 
 import LoginScreen from "@/screens/LoginScreen";
 import HomeScreen from "@/screens/HomeScreen";
@@ -40,58 +42,50 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-function LoadingScreen() {
-  return (
-    <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color={Colors.dark.accent} />
-    </View>
-  );
-}
-
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions({ transparent: false });
   const { isAuthenticated, isLoading } = useAuth();
+  const { isSyncing, syncProgress } = useData();
 
   if (isLoading) {
-    return <LoadingScreen />;
+    return <View style={styles.loadingContainer} />;
   }
 
   return (
-    <Stack.Navigator
-      screenOptions={{
-        ...screenOptions,
-        headerShown: false,
-        animation: "fade",
-      }}
-    >
-      {isAuthenticated ? (
-        <>
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Category" component={CategoryScreen} />
-          <Stack.Screen name="ContentList" component={ContentListScreen} />
-          <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />
-          <Stack.Screen
-            name="Player"
-            component={PlayerScreen}
-            options={{
-              animation: "fade",
-              orientation: "landscape",
-            }}
-          />
-          <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
-        </>
-      ) : (
-        <Stack.Screen name="Login" component={LoginScreen} />
-      )}
-    </Stack.Navigator>
+    <>
+      <Stack.Navigator
+        screenOptions={{
+          ...screenOptions,
+          headerShown: false,
+          animation: "fade",
+        }}
+      >
+        {isAuthenticated ? (
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Category" component={CategoryScreen} />
+            <Stack.Screen name="ContentList" component={ContentListScreen} />
+            <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />
+            <Stack.Screen
+              name="Player"
+              component={PlayerScreen}
+              options={{ animation: "fade", orientation: "landscape" }}
+            />
+            <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
+          </>
+        ) : (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
+      </Stack.Navigator>
+
+      {isSyncing ? <SyncScreen progress={syncProgress} /> : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
     backgroundColor: Colors.dark.backgroundRoot,
   },
 });

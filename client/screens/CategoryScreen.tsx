@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   StyleSheet,
@@ -15,7 +15,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { xtreamApi, Category } from "@/lib/xtream-api";
+import { Category } from "@/lib/xtream-api";
+import { useData } from "@/contexts/DataContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
@@ -72,10 +73,7 @@ export default function CategoryScreen() {
   const route = useRoute<CategoryRouteProp>();
   const { type, title } = route.params;
   const { width } = useWindowDimensions();
-
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -85,25 +83,10 @@ export default function CategoryScreen() {
   const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
   const cardHeight = Math.max(72, Math.min(cardWidth * 0.52, 110));
 
-  useEffect(() => { loadCategories(); }, [type]);
-
-  const loadCategories = async () => {
-    setIsLoading(true);
-    setError("");
-    try {
-      let data: Category[] = [];
-      switch (type) {
-        case "live": data = await xtreamApi.getLiveCategories(); break;
-        case "movies": data = await xtreamApi.getVodCategories(); break;
-        case "series": data = await xtreamApi.getSeriesCategories(); break;
-      }
-      setCategories(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load categories");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const categories: Category[] =
+    type === "live" ? liveCategories :
+    type === "movies" ? vodCategories :
+    seriesCategories;
 
   const getIcon = (): keyof typeof Feather.glyphMap => {
     switch (type) {
@@ -114,26 +97,12 @@ export default function CategoryScreen() {
     }
   };
 
-  if (isLoading) {
+  if (isSyncing && categories.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
           <ThemedText style={styles.loadingText}>Loading...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (error) {
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.centered}>
-          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
-          <ThemedText style={styles.errorText}>{error}</ThemedText>
-          <Pressable style={styles.retryBtn} onPress={loadCategories}>
-            <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-          </Pressable>
         </View>
       </ThemedView>
     );
@@ -267,20 +236,5 @@ const styles = StyleSheet.create({
   loadingText: {
     color: Colors.dark.textSecondary,
     fontSize: 14,
-  },
-  errorText: {
-    color: Colors.dark.error,
-    textAlign: "center",
-    fontSize: 14,
-  },
-  retryBtn: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: BorderRadius.sm,
-  },
-  retryBtnText: {
-    color: "#fff",
-    fontWeight: "700",
   },
 });

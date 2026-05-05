@@ -9,6 +9,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
+import { useData } from "@/contexts/DataContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -17,12 +18,12 @@ interface NavButtonProps {
   icon: keyof typeof Feather.glyphMap;
   onPress: () => void;
   large?: boolean;
+  tall?: boolean;
 }
 
-function NavButton({ title, icon, onPress, large }: NavButtonProps) {
+function NavButton({ title, icon, onPress, large, tall }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-
   const isActive = focused || pressed;
 
   return (
@@ -30,6 +31,7 @@ function NavButton({ title, icon, onPress, large }: NavButtonProps) {
       style={[
         styles.navButton,
         large && styles.navButtonLarge,
+        tall && styles.navButtonTall,
         isActive && styles.navButtonActive,
       ]}
       onPress={onPress}
@@ -50,23 +52,21 @@ function NavButton({ title, icon, onPress, large }: NavButtonProps) {
       <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
         <Feather
           name={icon}
-          size={large ? 38 : 26}
+          size={large || tall ? 34 : 26}
           color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
         />
       </View>
       <ThemedText
         style={[
           styles.navButtonText,
-          large && styles.navButtonTextLarge,
+          (large || tall) && styles.navButtonTextLarge,
           isActive && styles.navButtonTextActive,
         ]}
       >
         {title}
       </ThemedText>
 
-      {isActive ? (
-        <View style={styles.activeIndicator} />
-      ) : null}
+      {isActive ? <View style={styles.activeIndicator} /> : null}
     </Pressable>
   );
 }
@@ -76,10 +76,19 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  const { refresh } = useData();
+  const [refreshing, setRefreshing] = useState(false);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -97,13 +106,26 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [styles.accountBtn, pressed && styles.accountBtnPressed]}
-          onPress={() => navigation.navigate("AccountInfo")}
-          onFocus={() => {}}
-        >
-          <Feather name="user" size={18} color={Colors.dark.accent} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
+            onPress={handleRefresh}
+            disabled={refreshing}
+          >
+            <Feather
+              name="refresh-cw"
+              size={16}
+              color={refreshing ? Colors.dark.accent : Colors.dark.textSecondary}
+            />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.headerBtn, pressed && styles.headerBtnActive]}
+            onPress={() => navigation.navigate("AccountInfo")}
+          >
+            <Feather name="user" size={18} color={Colors.dark.accent} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Divider */}
@@ -112,7 +134,7 @@ export default function HomeScreen() {
       {/* Body */}
       {isLandscape ? (
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          {/* Left panel — navigation */}
+          {/* Left panel */}
           <View style={styles.leftPanel}>
             <NavButton
               title="Live TV"
@@ -125,16 +147,18 @@ export default function HomeScreen() {
                 title="Movies"
                 icon="film"
                 onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
+                tall
               />
               <NavButton
                 title="Series"
                 icon="grid"
                 onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
+                tall
               />
             </View>
           </View>
 
-          {/* Right panel — future content */}
+          {/* Right panel */}
           <View style={styles.rightPanel}>
             <View style={styles.futurePanel}>
               <LinearGradient
@@ -220,7 +244,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 1,
   },
-  accountBtn: {
+  headerActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    alignItems: "center",
+  },
+  headerBtn: {
     width: 38,
     height: 38,
     borderRadius: BorderRadius.full,
@@ -230,7 +259,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  accountBtnPressed: {
+  headerBtnActive: {
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.accentDim,
   },
@@ -291,6 +320,11 @@ const styles = StyleSheet.create({
   },
   navButtonLarge: {
     minHeight: 120,
+    padding: Spacing.xl,
+    flex: 2,
+  },
+  navButtonTall: {
+    minHeight: 160,
     padding: Spacing.xl,
   },
   navButtonActive: {

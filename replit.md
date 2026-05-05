@@ -1,91 +1,104 @@
-# IPTV Player
+# Ultra Cast v3
 
 A React Native (Expo) IPTV Player application with Xtream Codes API integration.
 
 ## Overview
 
-This is a mobile-first IPTV streaming application optimized for TV viewing. Users can stream Live TV, Movies, and Series content from their IPTV provider using Xtream Codes API credentials.
+TV-optimized IPTV streaming application with orange/black neon theme. Users can stream Live TV, Movies, and Series content from their IPTV provider using Xtream Codes API credentials. Server list is pulled from Supabase.
 
 ## Features
 
-- **Login Screen**: Authenticate with Xtream Codes server (URL, username, password)
-- **Home Screen**: Three main category boxes (Live TV, Movies, Series) + Account Info button
-- **Category Browse**: Browse content categories from the IPTV provider
-- **Content Lists**: View streams/content within each category with thumbnails
-- **Series Detail**: Season and episode navigation for TV series
+- **Login Screen**: Two-step login — pick server from Supabase DB list, then enter username/password
+- **Auto Login**: Credentials are persisted per device (SecureStore on native, AsyncStorage on web). App logs in automatically on next launch.
+- **Sync Screen**: On login/refresh, all categories and streams are fetched upfront. Shows an animated loading screen (LIVE TV / MOVIES / SERIES tiles) with progress bar.
+- **Home Screen**: Left 50% = large Live TV button + doubled-height Movies/Series row (landscape). Right 50% = Coming Soon panel. Refresh button + Account button in header.
+- **Category Browse**: Uses cached DataContext data — instant, no per-screen fetches
+- **Content Lists**: Filtered from cached streams by category_id — instant navigation
+- **Series Detail**: Season and episode navigation
 - **Video Player**: Full-screen video playback with play/pause controls
-- **Account Info**: View subscription details and logout
+- **Account Info**: Subscription details and logout
 
 ## Tech Stack
 
 - **Frontend**: React Native with Expo (SDK 54)
-- **Backend**: Express.js server
+- **Backend**: Express.js server (port 5000)
 - **Navigation**: React Navigation 7+
-- **State Management**: React Context (AuthContext)
-- **Data Fetching**: TanStack React Query
+- **State Management**: AuthContext (auth) + DataContext (all IPTV content cache)
+- **Data Fetching**: TanStack React Query + direct xtreamApi calls in DataContext
 - **Video Playback**: expo-video
-- **Styling**: React Native StyleSheet with dark theme
+- **Styling**: React Native StyleSheet, orange/black neon theme, expo-linear-gradient
+- **Database**: Supabase (server-side only via SUPABASE_URL + SUPABASE_ANON_KEY secrets)
 
 ## Project Structure
 
 ```
 client/
-├── App.tsx                 # Main app entry with providers
+├── App.tsx                    # Main entry: AuthProvider > DataProvider > nav
 ├── contexts/
-│   └── AuthContext.tsx     # Authentication state management
+│   ├── AuthContext.tsx         # Auth state, credential persistence
+│   └── DataContext.tsx         # All IPTV data cache + sync logic
 ├── lib/
-│   └── xtream-api.ts       # Xtream Codes API client
+│   ├── xtream-api.ts           # Xtream Codes API client
+│   └── supabase.ts             # Supabase fetch helper (via Express proxy)
 ├── navigation/
-│   └── RootStackNavigator.tsx  # Stack navigator with all routes
+│   └── RootStackNavigator.tsx  # Stack navigator + SyncScreen overlay
 ├── screens/
-│   ├── LoginScreen.tsx     # Server authentication
-│   ├── HomeScreen.tsx      # Main menu with category boxes
-│   ├── CategoryScreen.tsx  # Category listing
-│   ├── ContentListScreen.tsx # Content/stream listing
-│   ├── SeriesDetailScreen.tsx # Series episodes
-│   ├── PlayerScreen.tsx    # Video player
-│   └── AccountInfoScreen.tsx # Account details
+│   ├── LoginScreen.tsx         # 2-step: server picker → credentials
+│   ├── HomeScreen.tsx          # Main menu, refresh button, landscape layout
+│   ├── CategoryScreen.tsx      # Category listing (uses DataContext cache)
+│   ├── ContentListScreen.tsx   # Stream listing (uses DataContext cache)
+│   ├── SeriesDetailScreen.tsx  # Series episodes
+│   ├── PlayerScreen.tsx        # Video player
+│   └── AccountInfoScreen.tsx   # Account details
+├── components/
+│   ├── SyncScreen.tsx          # Full-screen data sync overlay
+│   └── ErrorBoundary.tsx       # App crash handler
 ├── constants/
-│   └── theme.ts            # Dark theme colors and spacing
-└── components/             # Reusable UI components
+│   └── theme.ts                # Orange/black neon theme, spacing, typography
+└── hooks/
 
 server/
-├── index.ts                # Express server entry
-└── routes.ts               # API routes
+├── index.ts                    # Express server entry
+└── routes.ts                   # /api/servers (Supabase), /api/auth proxy
 ```
+
+## Key Architecture
+
+### DataContext Sync Flow
+1. App starts → AuthContext loads saved credentials → sets `isAuthenticated=true`
+2. DataContext sees auth=true, hasData=false → triggers sync automatically
+3. SyncScreen overlay shown during sync (fetches live, movies, series sequentially)
+4. After sync: `hasData=true`, overlay removed, Home screen is fully usable
+5. Refresh button on Home → re-runs sync, shows overlay again
+
+### Supabase Integration
+- Server table: `server` (id, name, url, created_at)
+- Express route `/api/servers` queries Supabase server-side (secrets never exposed to client)
+- LoginScreen fetches server list via Express proxy
 
 ## Running the App
 
-The app is configured to run with:
 ```bash
 npm run all:dev
 ```
 
-This starts both the Expo development server (port 8081) and Express backend (port 5000).
+Starts Expo (port 8081) and Express (port 5000).
 
-### Testing on Device
-- Scan the QR code in the terminal with Expo Go (Android) or Camera app (iOS)
-- Web preview available at localhost:8081
+### Testing
+- Scan QR code in terminal with Expo Go (Android) or Camera app (iOS)
+- Web preview at localhost:8081
 
 ## Design
 
-- **Orientation**: Landscape (optimized for TV viewing)
-- **Theme**: Dark mode (#0A0E27 background)
-- **Touch Targets**: Large buttons suitable for remote/touch interaction
-- **Safe Zones**: TV-safe padding around content
-
-## API Integration
-
-The app uses Xtream Codes API for:
-- User authentication (`player_api.php?username=&password=`)
-- Live TV categories and streams
-- VOD (Movies) categories and streams
-- Series categories, seasons, and episodes
-- Stream URL generation for playback
+- **Orientation**: Landscape (locked, TV-optimized)
+- **Theme**: Dark black (#080808) with orange (#FF6600) neon glow accents
+- **Touch Targets**: Large buttons, TV remote compatible with focus/hover states
+- **Safe Zones**: TV-safe padding using insets
 
 ## User Preferences
 
-- Dark theme for comfortable TV viewing
+- No mock data — all content from real API
+- Remember login per device (no "remember me" toggle needed)
 - Landscape orientation by default
-- Auto-hiding controls in video player
-- No mock data - all content from real API
+- All content pre-fetched on login for lag-free navigation
+- Movies/Series buttons double-height in landscape/TV view

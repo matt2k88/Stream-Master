@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -17,6 +17,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
+import { useData } from "@/contexts/DataContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
@@ -62,7 +63,6 @@ function ContentCard({
             source={{ uri: imageUrl }}
             style={styles.cardImage}
             contentFit="cover"
-            placeholder={require("../../assets/images/icon.png")}
             transition={200}
           />
         ) : (
@@ -94,10 +94,7 @@ export default function ContentListScreen() {
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
   const { width } = useWindowDimensions();
-
-  const [content, setContent] = useState<ContentItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { liveStreams, vodStreams, seriesList, isSyncing } = useData();
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -106,25 +103,18 @@ export default function ContentListScreen() {
   const numColumns = Math.max(2, Math.floor(width / 155));
   const cardWidth = Math.floor((width - padH * 2 - gap * (numColumns - 1)) / numColumns);
 
-  useEffect(() => { loadContent(); }, [type, categoryId]);
-
-  const loadContent = async () => {
-    setIsLoading(true);
-    setError("");
-    try {
-      let data: ContentItem[] = [];
-      switch (type) {
-        case "live": data = await xtreamApi.getLiveStreams(categoryId); break;
-        case "movies": data = await xtreamApi.getVodStreams(categoryId); break;
-        case "series": data = await xtreamApi.getSeries(categoryId); break;
-      }
-      setContent(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load content");
-    } finally {
-      setIsLoading(false);
+  const content: ContentItem[] = useMemo(() => {
+    switch (type) {
+      case "live":
+        return liveStreams.filter((s) => s.category_id === categoryId);
+      case "movies":
+        return vodStreams.filter((s) => s.category_id === categoryId);
+      case "series":
+        return seriesList.filter((s) => s.category_id === categoryId);
+      default:
+        return [];
     }
-  };
+  }, [type, categoryId, liveStreams, vodStreams, seriesList]);
 
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
@@ -145,26 +135,12 @@ export default function ContentListScreen() {
     return String(item.num);
   };
 
-  if (isLoading) {
+  if (isSyncing && content.length === 0) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
-          <ThemedText style={styles.loadingText}>Loading...</ThemedText>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (error) {
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.centered}>
-          <Feather name="alert-circle" size={40} color={Colors.dark.error} />
-          <ThemedText style={styles.errorText}>{error}</ThemedText>
-          <Pressable style={styles.retryBtn} onPress={loadContent}>
-            <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-          </Pressable>
+          <ThemedText style={styles.loadingText}>Loading content...</ThemedText>
         </View>
       </ThemedView>
     );
@@ -180,7 +156,7 @@ export default function ContentListScreen() {
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle} numberOfLines={1}>{categoryName}</ThemedText>
-        <View style={{ width: 40 }} />
+        <ThemedText style={styles.countBadge}>{content.length}</ThemedText>
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -201,6 +177,12 @@ export default function ContentListScreen() {
             cardWidth={cardWidth}
           />
         )}
+        ListEmptyComponent={
+          <View style={styles.centered}>
+            <Feather name="inbox" size={36} color={Colors.dark.border} />
+            <ThemedText style={styles.emptyText}>No content in this category</ThemedText>
+          </View>
+        }
       />
     </ThemedView>
   );
@@ -236,6 +218,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: Colors.dark.text,
+  },
+  countBadge: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    minWidth: 36,
+    textAlign: "center",
   },
   divider: {
     height: 1,
@@ -306,24 +300,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: Spacing.md,
+    paddingTop: Spacing["4xl"],
   },
   loadingText: {
     color: Colors.dark.textSecondary,
     fontSize: 14,
   },
-  errorText: {
-    color: Colors.dark.error,
-    textAlign: "center",
+  emptyText: {
+    color: Colors.dark.textSecondary,
     fontSize: 14,
-  },
-  retryBtn: {
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: BorderRadius.sm,
-  },
-  retryBtnText: {
-    color: "#fff",
-    fontWeight: "700",
   },
 });
