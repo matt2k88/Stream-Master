@@ -72,61 +72,70 @@ export default function PinEntryScreen() {
           style={({ pressed, focused }) => [styles.iconBtn, (pressed || focused) && styles.iconBtnActive]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
       </View>
 
       <View style={styles.body}>
-        <View style={[styles.avatarRing, { borderColor: profile.avatar_color, shadowColor: profile.avatar_color }]}>
-          <View style={[styles.avatarInner, { backgroundColor: profile.avatar_color + "33" }]}>
-            <Feather name={profile.avatar_icon as any} size={32} color={profile.avatar_color} />
+        {/* Left: profile info */}
+        <View style={styles.infoPanel}>
+          <View style={[styles.avatarRing, { borderColor: profile.avatar_color, shadowColor: profile.avatar_color }]}>
+            <View style={[styles.avatarInner, { backgroundColor: profile.avatar_color + "33" }]}>
+              <Feather name={profile.avatar_icon as any} size={26} color={profile.avatar_color} />
+            </View>
           </View>
+          <ThemedText style={styles.profileName}>{profile.name}</ThemedText>
+          <ThemedText style={styles.subtitle}>Enter your PIN</ThemedText>
+
+          <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
+            {[0,1,2,3].map((i) => (
+              <View
+                key={i}
+                style={[
+                  styles.dot,
+                  {
+                    borderColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : Colors.dark.border,
+                    backgroundColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : "transparent",
+                  },
+                ]}
+              />
+            ))}
+          </Animated.View>
+
+          {error ? (
+            <ThemedText style={styles.errorText}>Incorrect PIN</ThemedText>
+          ) : (
+            <View style={{ height: 18 }} />
+          )}
         </View>
-        <ThemedText style={styles.profileName}>{profile.name}</ThemedText>
-        <ThemedText style={styles.subtitle}>Enter your PIN</ThemedText>
 
-        <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
-          {[0,1,2,3].map((i) => (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                {
-                  borderColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : Colors.dark.border,
-                  backgroundColor: error ? Colors.dark.error : pin.length > i ? profile.avatar_color : "transparent",
-                },
-              ]}
-            />
-          ))}
-        </Animated.View>
+        {/* Divider */}
+        <View style={styles.divider} />
 
-        {error ? (
-          <ThemedText style={styles.errorText}>Incorrect PIN</ThemedText>
-        ) : (
-          <View style={{ height: 20 }} />
-        )}
-
-        <View style={styles.pad}>
-          {KEYS.map((key, idx) => (
-            <Pressable
-              key={idx}
-              style={({ pressed, focused }) => [
-                styles.key,
-                !key && styles.keyEmpty,
-                (pressed || focused) && key && key !== "⌫" && styles.keyPressed,
-                key === "⌫" && styles.keyDelete,
-                (pressed || focused) && key === "⌫" && styles.keyDeleteActive,
-              ]}
-              onPress={() => handleKey(key)}
-              disabled={!key}
-            >
-              {key === "⌫" ? (
-                <Feather name="delete" size={18} color={Colors.dark.textSecondary} />
-              ) : (
-                <ThemedText style={styles.keyText}>{key}</ThemedText>
-              )}
-            </Pressable>
-          ))}
+        {/* Right: numpad */}
+        <View style={styles.padPanel}>
+          <View style={styles.pad}>
+            {KEYS.map((key, idx) => (
+              <Pressable
+                key={idx}
+                style={({ pressed, focused }) => [
+                  styles.key,
+                  !key && styles.keyEmpty,
+                  (pressed || focused) && key && key !== "⌫" && styles.keyPressed,
+                  key === "⌫" && styles.keyDelete,
+                  (pressed || focused) && key === "⌫" && styles.keyDeleteActive,
+                ]}
+                onPress={() => handleKey(key)}
+                disabled={!key}
+              >
+                {key === "⌫" ? (
+                  <Feather name="delete" size={16} color={Colors.dark.textSecondary} />
+                ) : (
+                  <ThemedText style={styles.keyText}>{key}</ThemedText>
+                )}
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
     </ThemedView>
@@ -135,32 +144,71 @@ export default function PinEntryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
-  topBar: { flexDirection: "row", paddingBottom: Spacing.sm },
+  topBar: {
+    flexDirection: "row",
+    paddingBottom: Spacing.xs,
+  },
   iconBtn: {
-    width: 40, height: 40, borderRadius: BorderRadius.full,
+    width: 36, height: 36, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+
   body: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    gap: Spacing.lg, paddingHorizontal: Spacing["3xl"],
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xl,
+  },
+
+  // Left panel — profile info
+  infoPanel: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
   },
   avatarRing: {
-    width: 88, height: 88, borderRadius: 44, borderWidth: 2,
+    width: 70, height: 70, borderRadius: 35, borderWidth: 2,
     justifyContent: "center", alignItems: "center",
-    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12, elevation: 8,
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 10, elevation: 8,
   },
-  avatarInner: { width: 72, height: 72, borderRadius: 36, justifyContent: "center", alignItems: "center" },
-  profileName: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
-  subtitle: { fontSize: 14, color: Colors.dark.textSecondary },
-  dotsRow: { flexDirection: "row", gap: Spacing.lg },
-  dot: { width: 20, height: 20, borderRadius: 10, borderWidth: 2 },
-  errorText: { color: Colors.dark.error, fontSize: 13, fontWeight: "500", height: 20 },
-  pad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 210, justifyContent: "center" },
+  avatarInner: {
+    width: 56, height: 56, borderRadius: 28,
+    justifyContent: "center", alignItems: "center",
+  },
+  profileName: { fontSize: 17, fontWeight: "700", color: Colors.dark.text },
+  subtitle: { fontSize: 13, color: Colors.dark.textSecondary },
+  dotsRow: { flexDirection: "row", gap: Spacing.md },
+  dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2 },
+  errorText: { color: Colors.dark.error, fontSize: 12, fontWeight: "500", height: 18 },
+
+  divider: {
+    width: 1,
+    height: "70%",
+    backgroundColor: Colors.dark.border,
+  },
+
+  // Right panel — numpad
+  padPanel: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pad: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    width: 3 * 50 + 2 * 6,
+    justifyContent: "center",
+  },
   key: {
-    width: 60, height: 60, borderRadius: BorderRadius.md,
+    width: 50, height: 50, borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
@@ -169,5 +217,5 @@ const styles = StyleSheet.create({
   keyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   keyDelete: { backgroundColor: "transparent", borderColor: "transparent" },
   keyDeleteActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
-  keyText: { color: Colors.dark.text, fontSize: 20, fontWeight: "600" },
+  keyText: { color: Colors.dark.text, fontSize: 18, fontWeight: "600" },
 });
