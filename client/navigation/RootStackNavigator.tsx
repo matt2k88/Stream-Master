@@ -64,7 +64,7 @@ export default function RootStackNavigator() {
           <>
             <Stack.Screen name="ProfilePicker" component={ProfilePickerScreen} />
             <Stack.Screen name="CreateProfile" component={CreateProfileScreen} />
-            <Stack.Screen name="PinEntry" component={PinEntryScreen} />
+            <Stack.Screen name="PinEntry" component={PinEntryScreen} options={{ presentation: "transparentModal", animation: "fade" }} />
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Messages" component={MessagesScreen} />

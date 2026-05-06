@@ -10,7 +10,6 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
-import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useProfile } from "@/contexts/ProfileContext";
@@ -24,15 +23,12 @@ export default function PinEntryScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PinEntryRouteProp>();
-  const { profile, fromHome } = route.params;
+  const { profile } = route.params;
   const { setActiveProfile } = useProfile();
 
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-
-  const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
-  const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
 
   const shake = () => {
     setError(true);
@@ -62,17 +58,19 @@ export default function PinEntryScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={[styles.topBar, { paddingTop: padT, paddingHorizontal: padH }]}>
+    <View style={styles.backdrop}>
+      {/* Dismiss on backdrop tap */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={() => navigation.goBack()} />
+
+      <View style={[styles.card, { marginBottom: insets.bottom }]}>
+        {/* Close button */}
         <Pressable
-          style={({ pressed, focused }) => [styles.iconBtn, (pressed || focused) && styles.iconBtnActive]}
+          style={({ pressed, focused }) => [styles.closeBtn, (pressed || focused) && styles.closeBtnActive]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={18} color={Colors.dark.text} />
+          <Feather name="x" size={16} color={Colors.dark.textSecondary} />
         </Pressable>
-      </View>
 
-      <View style={styles.body}>
         {/* Left: profile info */}
         <View style={styles.infoPanel}>
           <View style={[styles.avatarRing, { borderColor: profile.avatar_color, shadowColor: profile.avatar_color }]}>
@@ -84,7 +82,7 @@ export default function PinEntryScreen() {
           <ThemedText style={styles.subtitle}>Enter your PIN</ThemedText>
 
           <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
-            {[0,1,2,3].map((i) => (
+            {[0, 1, 2, 3].map((i) => (
               <View
                 key={i}
                 style={[
@@ -134,40 +132,59 @@ export default function PinEntryScreen() {
           </View>
         </View>
       </View>
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
-  topBar: {
-    flexDirection: "row",
-    paddingBottom: Spacing.xs,
-  },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1, borderColor: Colors.dark.border,
-    justifyContent: "center", alignItems: "center",
-  },
-  iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-
-  body: {
+  backdrop: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  card: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing["2xl"],
     gap: Spacing.xl,
+    // glow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 20,
+    position: "relative",
   },
+
+  closeBtn: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  closeBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
 
   // Left panel — profile info
   infoPanel: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.sm,
+    minWidth: 160,
   },
   avatarRing: {
     width: 70, height: 70, borderRadius: 35, borderWidth: 2,
@@ -180,19 +197,18 @@ const styles = StyleSheet.create({
   },
   profileName: { fontSize: 17, fontWeight: "700", color: Colors.dark.text },
   subtitle: { fontSize: 13, color: Colors.dark.textSecondary },
-  dotsRow: { flexDirection: "row", gap: Spacing.md },
+  dotsRow: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.xs },
   dot: { width: 16, height: 16, borderRadius: 8, borderWidth: 2 },
   errorText: { color: Colors.dark.error, fontSize: 12, fontWeight: "500", height: 18 },
 
   divider: {
     width: 1,
-    height: "70%",
+    height: 160,
     backgroundColor: Colors.dark.border,
   },
 
   // Right panel — numpad
   padPanel: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -205,7 +221,7 @@ const styles = StyleSheet.create({
   },
   key: {
     width: 50, height: 50, borderRadius: BorderRadius.md,
-    backgroundColor: Colors.dark.backgroundDefault,
+    backgroundColor: Colors.dark.backgroundRoot,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
