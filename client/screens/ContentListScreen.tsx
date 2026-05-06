@@ -746,18 +746,10 @@ export default function ContentListScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={type === "live" ? 24 : 16}
-              maxToRenderPerBatch={type === "live" ? 20 : 12}
-              updateCellsBatchingPeriod={50}
-              windowSize={10}
-              getItemLayout={(_data, index) => {
-                const rowIndex = Math.floor(index / numColumns);
-                return {
-                  length: cardTotalH,
-                  offset: Spacing.xs + rowIndex * (cardTotalH + gap),
-                  index,
-                };
-              }}
+              initialNumToRender={type === "live" ? 30 : 20}
+              maxToRenderPerBatch={type === "live" ? 30 : 20}
+              updateCellsBatchingPeriod={16}
+              windowSize={21}
               renderItem={({ item }) => {
                 const watchEntry =
                   type === "series"
