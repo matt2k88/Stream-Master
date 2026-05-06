@@ -167,7 +167,7 @@ export default function ProfilePickerScreen() {
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         {fromHome ? (
           <Pressable
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
+            style={({ pressed, focused }) => [styles.iconBtn, (pressed || focused) && styles.iconBtnActive]}
             onPress={() => navigation.goBack()}
           >
             <Feather name="arrow-left" size={20} color={Colors.dark.text} />
