@@ -119,75 +119,22 @@ function SeekBar({
     })
   ).current;
 
-  const isHighlighted = isFocused || isCaptured;
-
+  // On native we render a plain View so the TV remote / D-pad has NO target to
+  // focus. Pressable with focusable={false} still gets picked up by Android
+  // TV's focus engine when it has onPress/onFocus/onKeyDown — replacing it
+  // with View removes the bar from focus traversal entirely. Touch dragging
+  // still works via the inner View's pan handlers; web keyboard seeking
+  // (ArrowLeft/Right) is handled at PlayerScreen level via window.keydown.
   return (
-    <Pressable
+    <View
       ref={pressableRef as any}
-      // Disable D-pad focus entirely on the seek bar across all native
-      // platforms (including Android TV / Firestick). It doesn't navigate
-      // reliably and confuses remote navigation — users skip past CC/Audio.
-      // Touch / pan dragging still works on phones (bypasses focus), and on
-      // web ArrowLeft/Right always seek (handled separately).
-      focusable={false}
-      // While captured, trap D-pad left/right to self so arrows always seek.
-      // Pressing OK releases the trap so left/right can move to CC/Audio.
-      nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
-      nextFocusRight={isCaptured && selfTag ? selfTag : undefined}
-      style={[
-        styles.seekBarWrapper,
-        isHighlighted && styles.seekBarWrapperFocused,
-        isCaptured && styles.seekBarWrapperCaptured,
-      ]}
-      onPress={() => {
-        // Toggle the focus-trap so the user can reach CC/Audio with D-pad right.
-        setReleased((r) => !r);
-        onFocus?.();
-      }}
-      onFocus={() => {
-        setIsFocused(true);
-        onFocusChange?.(true);
-        onFocus?.();
-      }}
-      onBlur={() => {
-        setIsFocused(false);
-        onFocusChange?.(false);
-      }}
-      // Android native D-pad key handling — TVEventHandler is not available in
-      // standard (non-TV) APKs, so we catch left/right here directly.
-      // keyCode 21 = DPAD_LEFT, 22 = DPAD_RIGHT, 89 = MEDIA_REWIND, 90 = MEDIA_FAST_FORWARD
-      onKeyDown={Platform.OS === "android" ? ({ nativeEvent }: any) => {
-        if (!isCapturedRef.current) return; // Released mode — let focus move normally
-        const { keyCode } = nativeEvent;
-        const isLeft  = keyCode === 21 || keyCode === 89;
-        const isRight = keyCode === 22 || keyCode === 90;
-        if (!isLeft && !isRight) return;
-        onFocus?.();
-        const dir = isLeft ? "left" : "right";
-        const now = Date.now();
-        const hold = androidHoldRef.current;
-        if (dir !== hold.dir || now - hold.lastFire > 500) {
-          hold.start = now;
-          hold.dir = dir;
-        }
-        hold.lastFire = now;
-        const elapsed = now - hold.start;
-        let step: number;
-        if      (elapsed > 4000) step = 60;
-        else if (elapsed > 2000) step = 40;
-        else if (elapsed > 1000) step = 20;
-        else if (elapsed > 500)  step = 10;
-        else                     step = 5;
-        const delta = isLeft ? -step : step;
-        const newTime = Math.max(0, Math.min(durationRef.current, currentTimeRef.current + delta));
-        currentTimeRef.current = newTime; // Update immediately so rapid presses accumulate correctly
-        onSeek(newTime);
-      } : undefined}
+      style={styles.seekBarWrapper}
+      collapsable={false}
     >
       <Feather
-        name={isCaptured ? "move" : "skip-forward"}
-        size={isHighlighted ? 20 : 15}
-        color={isHighlighted ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
+        name="skip-forward"
+        size={15}
+        color="rgba(255,255,255,0.4)"
       />
       <View
         style={styles.seekBarHitArea}
@@ -198,26 +145,15 @@ function SeekBar({
           setBarWidth(w);
         }}
       >
-        <View style={[styles.seekBarTrack, isHighlighted && styles.seekBarTrackFocused]}>
+        <View style={styles.seekBarTrack}>
           <View style={[styles.seekBarFill, { width: frac * barWidth }]} />
         </View>
         <View
-          style={[
-            styles.seekBarThumb,
-            { left: thumbLeft },
-            isHighlighted && styles.seekBarThumbFocused,
-            isCaptured && styles.seekBarThumbCaptured,
-          ]}
+          style={[styles.seekBarThumb, { left: thumbLeft }]}
           pointerEvents="none"
         />
       </View>
-      {isCaptured ? (
-        <View style={styles.seekBarCapturedBadge}>
-          <Feather name="chevrons-left" size={11} color={Colors.dark.accent} />
-          <Feather name="chevrons-right" size={11} color={Colors.dark.accent} />
-        </View>
-      ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -545,11 +481,18 @@ export default function PlayerScreen() {
   const [largeStepFwd, setLargeStepFwd] = useState(60);
   const largeSkipResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const player = useVideoPlayer(streamUrl, (p) => {
+  // CRITICAL: setup fn MUST be stable. An inline arrow function gives expo-video
+  // a new reference every render, which causes useVideoPlayer to create a fresh
+  // player (and a fresh HLS connection) on every render. For series this added
+  // up to 3 simultaneous connections per episode because the next-episode
+  // prefetch effect triggers extra re-renders. We pin it via useRef so only
+  // ONE player is ever created per mount.
+  const playerSetupRef = useRef((p: any) => {
     p.loop = false;
     if (!isLive) p.timeUpdateEventInterval = 1;
     p.play();
   });
+  const player = useVideoPlayer(streamUrl, playerSetupRef.current);
 
   // ── Controls visibility ───────────────────────────────────────────────────
   const activePanelRef = useRef<"cc" | "audio" | null>(null);
@@ -671,10 +614,14 @@ export default function PlayerScreen() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [resetTimer]);
 
-  // Release player on unmount — kills the network stream connection instantly
+  // Release player on unmount — kills the network stream connection instantly.
+  // Also: if `player` ever changes mid-life (e.g. setup ref churn — should now
+  // be impossible thanks to the stable setupRef above), release the OLD one
+  // immediately so its HLS socket dies before a new one is even registered.
   useEffect(() => {
     return () => {
       try { player.pause(); } catch {}
+      try { player.replace(null as any); } catch {}
       try { player.release(); } catch {}
     };
   }, [player]);
@@ -1169,13 +1116,6 @@ export default function PlayerScreen() {
                 duration={duration}
                 onSeek={handleSeek}
                 onFocus={showAndReset}
-                onFocusChange={(focused) => {
-                  seekBarFocusedRef.current = focused;
-                  setSeekBarFocused(focused);
-                }}
-                onCapturedChange={(captured) => {
-                  seekBarCapturedRef.current = captured;
-                }}
               />
 
               <ThemedText style={styles.timeText}>{formatTime(duration)}</ThemedText>
