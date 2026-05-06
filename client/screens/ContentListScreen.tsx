@@ -470,12 +470,14 @@ export default function ContentListScreen() {
     if (type === "live") {
       const s = item as LiveStream;
       if (selectedCategoryId === "favourites") {
-        navigation.navigate("Player", {
+        // Favourites has no real category — go straight to fullscreen via LivePreview
+        navigation.navigate("LivePreview", {
+          streamId: s.stream_id,
+          name: s.name,
           streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
-          title: s.name,
-          type: "live",
           thumbnail: s.stream_icon ?? undefined,
-          streamId: String(s.stream_id),
+          streamIcon: s.stream_icon ?? undefined,
+          initialFullscreen: true,
         });
       } else {
         navigation.navigate("LivePreview", {

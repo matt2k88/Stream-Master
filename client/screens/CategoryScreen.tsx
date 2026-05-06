@@ -321,7 +321,7 @@ export default function CategoryScreen() {
   const handleStreamPress = (item: AnyStream) => {
     if (type === "live") {
       const s = item as LiveStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), title: s.name, type: "live", thumbnail: s.stream_icon ?? undefined, streamId: String(s.stream_id) });
+      navigation.navigate("LivePreview", { streamId: s.stream_id, name: s.name, streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), thumbnail: s.stream_icon ?? undefined, streamIcon: s.stream_icon ?? undefined, initialFullscreen: true });
     } else if (type === "movies") {
       const s = item as VodStream;
       navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod", thumbnail: s.stream_icon ?? undefined, streamId: String(s.stream_id) });

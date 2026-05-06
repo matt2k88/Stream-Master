@@ -7,6 +7,8 @@ import {
   FlatList,
   ActivityIndicator,
   Animated,
+  BackHandler,
+  Platform,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -137,7 +139,13 @@ export default function LivePreviewScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<LivePreviewRouteProp>();
-  const { streamId, name, streamUrl, thumbnail, streamIcon, categoryId } = route.params;
+  const { streamId, name, streamUrl, thumbnail, streamIcon, categoryId, initialFullscreen } = route.params;
+
+  // Fullscreen state — same player instance reused, no second connection
+  const [isFullscreen, setIsFullscreen] = useState(!!initialFullscreen);
+  const [showFsOverlay, setShowFsOverlay] = useState(true);
+  const fsHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameInFullscreenRef = useRef(!!initialFullscreen);
 
   const { liveStreams } = useData();
 
@@ -259,17 +267,56 @@ export default function LivePreviewScreen() {
     try { player.replace(newUrl); player.play(); } catch {}
   }, [player]);
 
+  const resetFsHideTimer = useCallback(() => {
+    if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+    fsHideTimerRef.current = setTimeout(() => setShowFsOverlay(false), 4000);
+  }, []);
+
   const handleFullScreen = useCallback(() => {
-    const currentUrl = xtreamApi.getLiveStreamUrl(selectedId);
-    try { player.pause(); } catch {}
-    navigation.navigate("Player", {
-      streamUrl: currentUrl,
-      title: selectedName,
-      type: "live",
-      thumbnail: selectedIcon,
-      streamId: String(selectedId),
+    setIsFullscreen(true);
+    setShowFsOverlay(true);
+    resetFsHideTimer();
+  }, [resetFsHideTimer]);
+
+  const exitFullscreen = useCallback(() => {
+    if (cameInFullscreenRef.current) {
+      // Came in directly fullscreen → leave the screen entirely
+      navigation.goBack();
+      return;
+    }
+    setIsFullscreen(false);
+    if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+  }, [navigation]);
+
+  // Hardware back: exit fullscreen first, otherwise let nav handle it
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (isFullscreen && !cameInFullscreenRef.current) {
+        setIsFullscreen(false);
+        if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+        return true;
+      }
+      return false;
     });
-  }, [navigation, selectedId, selectedName, selectedIcon, player]);
+    return () => sub.remove();
+  }, [isFullscreen]);
+
+  // Reset auto-hide whenever fullscreen turns on / overlay is re-shown
+  useEffect(() => {
+    if (isFullscreen && showFsOverlay) resetFsHideTimer();
+    return () => { if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current); };
+  }, [isFullscreen, showFsOverlay, resetFsHideTimer]);
+
+  const handlePlayerTap = useCallback(() => {
+    if (showFsOverlay) {
+      setShowFsOverlay(false);
+      if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+    } else {
+      setShowFsOverlay(true);
+      resetFsHideTimer();
+    }
+  }, [showFsOverlay, resetFsHideTimer]);
 
   const padT = insets.top + Spacing.sm;
   const padB = insets.bottom + Spacing.sm;
@@ -278,6 +325,7 @@ export default function LivePreviewScreen() {
   return (
     <ThemedView style={styles.container}>
       {/* Header */}
+      {!isFullscreen && (
       <View style={[styles.header, { paddingTop: padT, paddingLeft: padL, paddingRight: Spacing.md }]}>
         <Pressable
           style={[styles.headerBtn, backActive && styles.headerBtnActive]}
@@ -301,10 +349,14 @@ export default function LivePreviewScreen() {
 
         <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
       </View>
+      )}
 
-      <View style={[styles.divider, { marginLeft: padL, marginRight: Spacing.md }]} />
+      {!isFullscreen && (
+        <View style={[styles.divider, { marginLeft: padL, marginRight: Spacing.md }]} />
+      )}
 
       {/* Body */}
+      {!isFullscreen && (
       <View style={[styles.body, { paddingBottom: padB, paddingLeft: padL }]}>
 
         {/* Left: channel list sidebar */}
@@ -394,6 +446,52 @@ export default function LivePreviewScreen() {
           </View>
         </View>
       </View>
+      )}
+
+      {/* Fullscreen overlay — same player, no second connection */}
+      {isFullscreen && (
+        <View style={styles.fsRoot}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={handlePlayerTap}>
+            <VideoView
+              style={StyleSheet.absoluteFill}
+              player={player}
+              contentFit="contain"
+              nativeControls={false}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+            />
+          </Pressable>
+
+          {showFsOverlay && (
+            <>
+              <LinearGradient
+                colors={["rgba(0,0,0,0.85)", "transparent"]}
+                style={styles.fsTopGradient}
+                pointerEvents="none"
+              />
+              <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
+                <Pressable
+                  style={[styles.headerBtn, backActive && styles.headerBtnActive]}
+                  onPress={exitFullscreen}
+                  onFocus={() => setBackFocused(true)}
+                  onBlur={() => setBackFocused(false)}
+                  onPressIn={() => setBackPressed(true)}
+                  onPressOut={() => setBackPressed(false)}
+                  hasTVPreferredFocus
+                >
+                  <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
+                </Pressable>
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <ThemedText style={styles.liveText}>LIVE</ThemedText>
+                </View>
+                <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+              </View>
+            </>
+          )}
+        </View>
+      )}
 
       {/* Toast */}
       {toastVisible ? (
@@ -721,4 +819,30 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
   },
   toastText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+
+  // ── Fullscreen overlay ─────────────────────────────────────────────────────
+  fsRoot: {
+    position: "absolute",
+    top: 0, bottom: 0, left: 0, right: 0,
+    backgroundColor: "#000",
+  },
+  fsTopGradient: {
+    position: "absolute",
+    top: 0, left: 0, right: 0,
+    height: 120,
+  },
+  fsTopBar: {
+    position: "absolute",
+    top: 0, left: 0, right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  fsTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+  },
 });

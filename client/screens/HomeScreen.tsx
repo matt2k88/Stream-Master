@@ -362,10 +362,21 @@ export default function HomeScreen() {
               maxItems={2}
               onPress={(item) => {
                 if (!item.stream_url) return;
+                if (item.content_type === "live") {
+                  navigation.navigate("LivePreview", {
+                    streamId: Number(item.stream_id) || 0,
+                    name: item.name,
+                    streamUrl: item.stream_url,
+                    thumbnail: item.thumbnail_url ?? undefined,
+                    streamIcon: item.thumbnail_url ?? undefined,
+                    initialFullscreen: true,
+                  });
+                  return;
+                }
                 navigation.navigate("Player", {
                   streamUrl: item.stream_url,
                   title: item.name,
-                  type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
+                  type: item.content_type === "series" ? "series" : "vod",
                   thumbnail: item.thumbnail_url ?? undefined,
                   streamId: item.stream_id ?? undefined,
                   resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
@@ -437,10 +448,21 @@ export default function HomeScreen() {
             maxItems={2}
             onPress={(item) => {
               if (!item.stream_url) return;
+              if (item.content_type === "live") {
+                navigation.navigate("LivePreview", {
+                  streamId: Number(item.stream_id) || 0,
+                  name: item.name,
+                  streamUrl: item.stream_url,
+                  thumbnail: item.thumbnail_url ?? undefined,
+                  streamIcon: item.thumbnail_url ?? undefined,
+                  initialFullscreen: true,
+                });
+                return;
+              }
               navigation.navigate("Player", {
                 streamUrl: item.stream_url,
                 title: item.name,
-                type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
+                type: item.content_type === "series" ? "series" : "vod",
                 thumbnail: item.thumbnail_url ?? undefined,
                 streamId: item.stream_id ?? undefined,
                 resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),

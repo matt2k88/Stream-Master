@@ -786,8 +786,11 @@ export default function PlayerScreen() {
     }
   }, [currentTime, duration, isLive, nextEp]);
 
+  const nextFiredRef = useRef(false);
   const handleNextConfirm = useCallback(() => {
+    if (nextFiredRef.current) return;
     if (!nextEp || !seriesIdParam) { setShowNext(false); return; }
+    nextFiredRef.current = true;
     setShowNext(false);
     try { player.pause(); } catch {}
     try { player.release(); } catch {}
