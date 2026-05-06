@@ -445,9 +445,12 @@ export default function LivePreviewScreen() {
 
         {/* Right: player on top, EPG below */}
         <View style={[styles.rightPanel, isFullscreen && styles.rightPanelFullscreen]}>
-          {/* Player — playerWrap restyles to absoluteFill when fullscreen,
-              escaping the flex layout. VideoView NEVER unmounts. */}
-          <View style={[styles.playerWrap, isFullscreen && styles.playerWrapFullscreen]}>
+          {/* Player — playerWrap fills its parent via flex:1 when fullscreen
+              (since sidebar/EPG are hidden, the body→rightPanel→playerWrap
+              chain naturally stretches edge-to-edge). VideoView NEVER unmounts.
+              Using a ternary (not array merge) so the small-mode aspectRatio
+              and maxHeight are completely replaced rather than merged. */}
+          <View style={isFullscreen ? styles.playerWrapFullscreen : styles.playerWrap}>
             <VideoView
               style={styles.player}
               player={player}
@@ -868,6 +871,8 @@ const styles = StyleSheet.create({
   bodyFullscreen: {
     paddingBottom: 0,
     paddingLeft: 0,
+    paddingRight: 0,
+    gap: 0,
   },
   rightPanelFullscreen: {
     flex: 1,
@@ -875,16 +880,13 @@ const styles = StyleSheet.create({
     gap: 0,
   },
   playerWrapFullscreen: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    aspectRatio: undefined,
-    maxHeight: undefined,
+    flex: 1,
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#000",
+    overflow: "hidden",
     borderRadius: 0,
     borderWidth: 0,
-    zIndex: 50,
   },
   player: { width: "100%", height: "100%" },
   channelIconWrap: {
