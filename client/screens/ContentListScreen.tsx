@@ -35,6 +35,32 @@ const SEARCH_LIMIT = 150;
 const SIDEBAR_W = 170;
 const CONTENT_PAD = Spacing.md;
 
+function BackBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, isActive && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="arrow-left" size={20} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
+  );
+}
+
 function getImageRatio(type: string): number {
   if (type === "movies" || type === "series") return 1.5;
   return 0.75;
@@ -554,6 +580,7 @@ export default function ContentListScreen() {
           clearButtonMode="while-editing"
           blurOnSubmit={false}
           onSubmitEditing={() => setSubmittedQuery(query)}
+          focusable={!Platform.isTV}
         />
         {query.length > 0 ? (
           <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
@@ -637,14 +664,7 @@ export default function ContentListScreen() {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Pressable
-          style={({ pressed, focused }) => [styles.backBtn, (pressed || focused) && styles.backBtnPressed]}
-          onPress={() => navigation.goBack()}
-        >
-          {({ pressed, focused }) => (
-            <Feather name="arrow-left" size={20} color={(pressed || focused) ? Colors.dark.accent : Colors.dark.text} />
-          )}
-        </Pressable>
+        <BackBtn onPress={() => navigation.goBack()} />
         <View style={styles.headerTitleRow}>
           {isFavouritesView ? (
             <Feather name="star" size={16} color={Colors.dark.accent} />
@@ -802,8 +822,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
+    overflow: "hidden",
   },
-  backBtnPressed: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  backBtnActive: { borderColor: Colors.dark.accent },
   headerTitleRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: Spacing.xs },
   headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, flex: 1 },
   countBadge: {

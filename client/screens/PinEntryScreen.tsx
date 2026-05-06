@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -18,6 +19,65 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PinEntryRouteProp = RouteProp<RootStackParamList, "PinEntry">;
 
 const KEYS = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
+
+function KeyButton({ keyVal, onPress }: { keyVal: string; onPress: (k: string) => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+
+  if (!keyVal) {
+    return <View style={styles.keyEmpty} />;
+  }
+
+  const isDelete = keyVal === "⌫";
+
+  return (
+    <Pressable
+      style={[
+        styles.key,
+        isDelete && styles.keyDelete,
+        isActive && styles.keyActive,
+      ]}
+      onPress={() => onPress(keyVal)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.08)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      {isDelete ? (
+        <Feather name="delete" size={16} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+      ) : (
+        <ThemedText style={[styles.keyText, isActive && styles.keyTextActive]}>{keyVal}</ThemedText>
+      )}
+    </Pressable>
+  );
+}
+
+function CloseButton({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.closeBtn, isActive && styles.closeBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name="x" size={16} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
 
 export default function PinEntryScreen() {
   const insets = useSafeAreaInsets();
@@ -59,17 +119,10 @@ export default function PinEntryScreen() {
 
   return (
     <View style={styles.backdrop}>
-      {/* Dismiss on backdrop tap */}
       <Pressable style={StyleSheet.absoluteFill} onPress={() => navigation.goBack()} />
 
       <View style={[styles.card, { marginBottom: insets.bottom }]}>
-        {/* Close button */}
-        <Pressable
-          style={({ pressed, focused }) => [styles.closeBtn, (pressed || focused) && styles.closeBtnActive]}
-          onPress={() => navigation.goBack()}
-        >
-          <Feather name="x" size={16} color={Colors.dark.textSecondary} />
-        </Pressable>
+        <CloseButton onPress={() => navigation.goBack()} />
 
         {/* Left: profile info */}
         <View style={styles.infoPanel}>
@@ -110,24 +163,7 @@ export default function PinEntryScreen() {
         <View style={styles.padPanel}>
           <View style={styles.pad}>
             {KEYS.map((key, idx) => (
-              <Pressable
-                key={idx}
-                style={({ pressed, focused }) => [
-                  styles.key,
-                  !key && styles.keyEmpty,
-                  (pressed || focused) && key && key !== "⌫" && styles.keyPressed,
-                  key === "⌫" && styles.keyDelete,
-                  (pressed || focused) && key === "⌫" && styles.keyDeleteActive,
-                ]}
-                onPress={() => handleKey(key)}
-                disabled={!key}
-              >
-                {key === "⌫" ? (
-                  <Feather name="delete" size={16} color={Colors.dark.textSecondary} />
-                ) : (
-                  <ThemedText style={styles.keyText}>{key}</ThemedText>
-                )}
-              </Pressable>
+              <KeyButton key={idx} keyVal={key} onPress={handleKey} />
             ))}
           </View>
         </View>
@@ -154,7 +190,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xl,
     paddingHorizontal: Spacing["2xl"],
     gap: Spacing.xl,
-    // glow
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.6,
@@ -176,10 +211,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 10,
+    overflow: "hidden",
   },
   closeBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
 
-  // Left panel — profile info
   infoPanel: {
     alignItems: "center",
     justifyContent: "center",
@@ -207,7 +242,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.border,
   },
 
-  // Right panel — numpad
   padPanel: {
     alignItems: "center",
     justifyContent: "center",
@@ -224,10 +258,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundRoot,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
+    overflow: "hidden",
   },
-  keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
-  keyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
+  keyEmpty: { width: 50, height: 50 },
   keyDelete: { backgroundColor: "transparent", borderColor: "transparent" },
-  keyDeleteActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
+  keyActive: { borderColor: Colors.dark.accent },
   keyText: { color: Colors.dark.text, fontSize: 18, fontWeight: "600" },
+  keyTextActive: { color: Colors.dark.accent },
 });
