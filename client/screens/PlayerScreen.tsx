@@ -61,12 +61,14 @@ function SeekBar({
   const [barWidth, setBarWidth] = useState(1);
   const [localFrac, setLocalFrac] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  // When the bar is focused, arrows seek by default. Pressing OK toggles
+  // "released" mode so D-pad left/right can navigate past the bar to CC/Audio.
+  const [released, setReleased] = useState(false);
   const [selfTag, setSelfTag] = useState<number | null>(null);
   const pressableRef = useRef<View>(null);
   const barWidthRef = useRef(1);
   const durationRef = useRef(duration);
-  // Capture follows focus — as soon as the seek bar is focused, arrows seek.
-  const isCaptured = isFocused;
+  const isCaptured = isFocused && !released;
   useEffect(() => {
     if (pressableRef.current) {
       const tag = findNodeHandle(pressableRef.current);
@@ -74,7 +76,9 @@ function SeekBar({
     }
   }, []);
   useEffect(() => { durationRef.current = duration; }, [duration]);
-  useEffect(() => { onCapturedChange?.(isFocused); }, [isFocused, onCapturedChange]);
+  useEffect(() => { onCapturedChange?.(isCaptured); }, [isCaptured, onCapturedChange]);
+  // Re-arm capture whenever focus is regained
+  useEffect(() => { if (isFocused) setReleased(false); }, [isFocused]);
 
   const frac = localFrac !== null
     ? localFrac
@@ -109,17 +113,18 @@ function SeekBar({
   return (
     <Pressable
       ref={pressableRef as any}
-      // While focused, trap D-pad left/right to self so arrows always seek
-      // (and don't move focus away to neighbouring controls).
-      nextFocusLeft={isFocused && selfTag ? selfTag : undefined}
-      nextFocusRight={isFocused && selfTag ? selfTag : undefined}
+      // While captured, trap D-pad left/right to self so arrows always seek.
+      // Pressing OK releases the trap so left/right can move to CC/Audio.
+      nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
+      nextFocusRight={isCaptured && selfTag ? selfTag : undefined}
       style={[
         styles.seekBarWrapper,
         isHighlighted && styles.seekBarWrapperFocused,
         isCaptured && styles.seekBarWrapperCaptured,
       ]}
       onPress={() => {
-        // Tap simply confirms focus; arrow keys handle seeking.
+        // Toggle the focus-trap so the user can reach CC/Audio with D-pad right.
+        setReleased((r) => !r);
         onFocus?.();
       }}
       onFocus={() => {
@@ -133,7 +138,7 @@ function SeekBar({
       }}
     >
       <Feather
-        name="move"
+        name={isCaptured ? "move" : "skip-forward"}
         size={isHighlighted ? 20 : 15}
         color={isHighlighted ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
       />
