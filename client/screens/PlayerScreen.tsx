@@ -10,7 +10,6 @@ import {
   ScrollView,
   BackHandler,
   Animated,
-  useTVEventHandler,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -383,29 +382,49 @@ export default function PlayerScreen() {
   }, [resetTimer]);
 
   // ── TV remote: left/right when seek bar is focused ────────────────────────
-  useTVEventHandler(useCallback((evt: { eventType: string }) => {
-    if (!seekBarFocusedRef.current || isLive) return;
-    if (evt.eventType !== "left" && evt.eventType !== "right") return;
-    const now = Date.now();
-    const isSameDir = evt.eventType === seekHoldRef.current.dir;
-    if (!isSameDir || now - seekHoldRef.current.lastFire > 400) {
-      seekHoldRef.current.start = now;
-      seekHoldRef.current.dir = evt.eventType;
+  // Use class-based TVEventHandler (universally available, no hook import needed)
+  const playerRef = useRef(player);
+  const showAndResetRef = useRef(showAndReset);
+  const isLiveRef = useRef(isLive);
+  useEffect(() => { playerRef.current = player; }, [player]);
+  useEffect(() => { showAndResetRef.current = showAndReset; }, [showAndReset]);
+  useEffect(() => { isLiveRef.current = isLive; }, [isLive]);
+
+  useEffect(() => {
+    if (!Platform.isTV) return;
+    let tvHandler: any = null;
+    try {
+      const TVEventHandler = (require as any)("react-native").TVEventHandler;
+      if (!TVEventHandler) return;
+      tvHandler = new TVEventHandler();
+      tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
+        if (!seekBarFocusedRef.current || isLiveRef.current) return;
+        if (evt.eventType !== "left" && evt.eventType !== "right") return;
+        const now = Date.now();
+        const isSameDir = evt.eventType === seekHoldRef.current.dir;
+        if (!isSameDir || now - seekHoldRef.current.lastFire > 400) {
+          seekHoldRef.current.start = now;
+          seekHoldRef.current.dir = evt.eventType;
+        }
+        seekHoldRef.current.lastFire = now;
+        const held = now - seekHoldRef.current.start;
+        let step: number;
+        if (held > 4000) step = 60;
+        else if (held > 2000) step = 40;
+        else if (held > 1000) step = 20;
+        else if (held > 500) step = 10;
+        else step = 5;
+        const delta = evt.eventType === "left" ? -step : step;
+        const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+        playerRef.current.currentTime = newTime;
+        setCurrentTime(newTime);
+        showAndResetRef.current();
+      });
+    } catch {
+      // TVEventHandler not available on this platform/build
     }
-    seekHoldRef.current.lastFire = now;
-    const held = now - seekHoldRef.current.start;
-    let step: number;
-    if (held > 4000) step = 60;
-    else if (held > 2000) step = 40;
-    else if (held > 1000) step = 20;
-    else if (held > 500) step = 10;
-    else step = 5;
-    const delta = evt.eventType === "left" ? -step : step;
-    const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
-    player.currentTime = newTime;
-    setCurrentTime(newTime);
-    showAndReset();
-  }, [isLive, player, showAndReset]));
+    return () => { try { tvHandler?.disable(); } catch {} };
+  }, []); // empty deps — all values accessed via stable refs
 
   // Bump key when controls go from hidden → visible so the play button remounts
   // and hasTVPreferredFocus re-fires, restoring D-pad focus

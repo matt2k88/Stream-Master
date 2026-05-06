@@ -3,7 +3,7 @@ import React, {
 } from "react";
 import {
   View, StyleSheet, FlatList, Pressable, Animated,
-  PanResponder, useWindowDimensions,
+  PanResponder, useWindowDimensions, Platform, ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -14,7 +14,6 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
-import { ActivityIndicator } from "react-native";
 import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -31,7 +30,7 @@ const FUTURE_MINS = 300;
 const TOTAL_MINS = PAST_MINS + FUTURE_MINS;
 const GRID_W = TOTAL_MINS * PX_PER_MIN;
 const NOW_X = PAST_MINS * PX_PER_MIN;
-const SCROLL_STEP = 180; // 1 hour per button press
+const SCROLL_STEP = 180;
 
 function b64(s: string): string {
   if (!s) return "";
@@ -57,13 +56,12 @@ function buildTimeSlots(guideStart: number): { label: string; x: number }[] {
   return slots;
 }
 
-// ── EPG block ────────────────────────────────────────────────────────────────
+// ── EPG block — NOT focusable via TV remote (touch only) ─────────────────────
 function EpgBlock({ listing, guideStart, onPress }: {
   listing: EpgListing;
   guideStart: number;
   onPress: () => void;
 }) {
-  const [focused, setFocused] = useState(false);
   const isNow = listing.now_playing === 1;
   const left = ((listing.start_timestamp - guideStart) / 60) * PX_PER_MIN;
   const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 24);
@@ -71,22 +69,13 @@ function EpgBlock({ listing, guideStart, onPress }: {
 
   return (
     <Pressable
-      style={[styles.epgBlock, { left, width }, isNow && styles.epgBlockNow, focused && styles.epgBlockFocused]}
+      style={[styles.epgBlock, { left, width }, isNow && styles.epgBlockNow]}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      accessible={false}
     >
       {isNow ? (
         <LinearGradient
           colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.06)"]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-        />
-      ) : null}
-      {focused ? (
-        <LinearGradient
-          colors={["rgba(255,102,0,0.32)", "rgba(255,102,0,0.14)"]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
@@ -125,7 +114,7 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
         <ThemedText style={styles.channelName} numberOfLines={2}>{channel.name}</ThemedText>
       </Pressable>
 
-      <View style={styles.epgClip}>
+      <View style={styles.epgClip} accessible={false}>
         <Animated.View
           style={[styles.epgTrack, { transform: [{ translateX: Animated.multiply(scrollX, -1) }] }]}
         >
@@ -170,12 +159,9 @@ function CatItem({ name, selected, onPress }: {
   );
 }
 
-// ── Top bar icon button with hover/focus overlay ──────────────────────────────
+// ── Top bar button ────────────────────────────────────────────────────────────
 function TopBarBtn({
-  onPress,
-  disabled,
-  dimWhenDisabled,
-  children,
+  onPress, disabled, dimWhenDisabled, children,
 }: {
   onPress: () => void;
   disabled?: boolean;
@@ -208,7 +194,7 @@ function TopBarBtn({
   );
 }
 
-// ── Scroll button (TV remote + touch) ────────────────────────────────────────
+// ── Scroll button ─────────────────────────────────────────────────────────────
 function ScrollBtn({ icon, onPress }: { icon: "chevron-left" | "chevron-right"; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -232,10 +218,14 @@ export default function TvGuideScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { width } = useWindowDimensions();
-  const { liveCategories, liveStreams, epgData, refreshEpg, isEpgRefreshing } = useData();
+  const { liveCategories, liveStreams } = useData();
 
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [clockStr, setClockStr] = useState(fmtHHMM(new Date()));
+
+  // ── EPG local cache: catId → { streamId → EpgListing[] } ─────────────────
+  const [epgCache, setEpgCache] = useState<Record<string, Record<number, EpgListing[]>>>({});
+  const [isLoadingEpg, setIsLoadingEpg] = useState(false);
 
   const nowRef = useRef(Math.floor(Date.now() / 1000));
   const guideStart = nowRef.current - PAST_MINS * 60;
@@ -246,10 +236,10 @@ export default function TvGuideScreen() {
   const epgAreaWidth = width - CAT_W - CHANNEL_W;
   const maxScroll = Math.max(0, GRID_W - epgAreaWidth);
 
-  // Track horizontal panning so the vertical FlatList stays locked during swipe
   const [hPanning, setHPanning] = useState(false);
   const hPanningRef = useRef(false);
 
+  const doScrollToRef = useRef<(x: number, animated?: boolean) => void>(() => {});
   function doScrollTo(x: number, animated = false) {
     const clamped = Math.max(0, Math.min(x, maxScroll));
     scrollOffset.current = clamped;
@@ -259,26 +249,23 @@ export default function TvGuideScreen() {
       scrollX.setValue(clamped);
     }
   }
+  doScrollToRef.current = doScrollTo;
 
-  // PanResponder for horizontal swipe on the EPG content area.
-  // Uses Capture variants so the gesture is stolen from the FlatList before
-  // it can scroll vertically.
+  // PanResponder for horizontal swipe on the EPG area
   const dragStart = useRef(0);
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onStartShouldSetPanResponderCapture: () => false,
-      onMoveShouldSetPanResponder: (_, g) =>
-        Math.abs(g.dx) > Math.abs(g.dy) + 4,
-      onMoveShouldSetPanResponderCapture: (_, g) =>
-        Math.abs(g.dx) > Math.abs(g.dy) + 4,
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > Math.abs(g.dy) + 4,
+      onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > Math.abs(g.dy) + 4,
       onPanResponderGrant: () => {
         dragStart.current = scrollOffset.current;
         hPanningRef.current = true;
         setHPanning(true);
       },
       onPanResponderMove: (_, g) => {
-        doScrollTo(dragStart.current - g.dx);
+        doScrollToRef.current(dragStart.current - g.dx);
       },
       onPanResponderRelease: () => {
         dragStart.current = scrollOffset.current;
@@ -292,10 +279,30 @@ export default function TvGuideScreen() {
     })
   ).current;
 
-  // Time slots
+  // TV remote: left/right always scrolls the timeline — never jumps rows
+  useEffect(() => {
+    if (!Platform.isTV) return;
+    let tvHandler: any = null;
+    try {
+      const TVEventHandler = (require as any)("react-native").TVEventHandler;
+      if (!TVEventHandler) return;
+      tvHandler = new TVEventHandler();
+      tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
+        if (evt.eventType === "right") {
+          doScrollToRef.current(scrollOffset.current + SCROLL_STEP, true);
+        } else if (evt.eventType === "left") {
+          doScrollToRef.current(scrollOffset.current - SCROLL_STEP, true);
+        }
+      });
+    } catch {
+      // TVEventHandler not available
+    }
+    return () => { try { tvHandler?.disable(); } catch {} };
+  }, []);
+
   const timeSlots = useMemo(() => buildTimeSlots(guideStart), [guideStart]);
 
-  // Initial scroll to show NOW at ~20% from left
+  // Initial scroll to NOW at ~20% from left
   useEffect(() => {
     const target = Math.max(0, NOW_X - epgAreaWidth * 0.2);
     doScrollTo(target);
@@ -307,16 +314,48 @@ export default function TvGuideScreen() {
     return () => clearInterval(id);
   }, []);
 
-  // Categories — no "All Channels" pseudo-entry
   const cats = useMemo(() => liveCategories, [liveCategories]);
 
+  // Auto-select first category
   useEffect(() => {
     if (selectedCatId === null && cats.length > 0) {
       setSelectedCatId(cats[0].category_id);
     }
   }, [cats, selectedCatId]);
 
-  // Filtered channels
+  // ── Fetch EPG for all channels in the selected category ──────────────────
+  const fetchEpgForCategory = useCallback(async (catId: string, force = false) => {
+    if (!force && epgCache[catId]) return; // already cached
+    const channelsInCat = liveStreams.filter((s) => s.category_id === catId);
+    if (channelsInCat.length === 0) return;
+
+    setIsLoadingEpg(true);
+    try {
+      const results = await Promise.allSettled(
+        channelsInCat.map((ch) => xtreamApi.getShortEpg(ch.stream_id))
+      );
+      const catEpg: Record<number, EpgListing[]> = {};
+      results.forEach((r, i) => {
+        catEpg[channelsInCat[i].stream_id] =
+          r.status === "fulfilled" ? (r.value as EpgListing[]) : [];
+      });
+      setEpgCache((prev) => ({ ...prev, [catId]: catEpg }));
+    } catch {
+      // silently fail — channels will show "No programme data"
+    } finally {
+      setIsLoadingEpg(false);
+    }
+  }, [liveStreams, epgCache]);
+
+  // Fetch when category changes
+  useEffect(() => {
+    if (selectedCatId) fetchEpgForCategory(selectedCatId);
+  }, [selectedCatId]);
+
+  const handleCatSelect = useCallback((catId: string) => {
+    setSelectedCatId(catId);
+  }, []);
+
   const channels = useMemo(() => {
     if (!selectedCatId) return [];
     return liveStreams.filter((s) => s.category_id === selectedCatId);
@@ -326,8 +365,10 @@ export default function TvGuideScreen() {
   const padT = Math.max(insets.top, Spacing.xs);
   const padB = Math.max(insets.bottom, Spacing.xs);
 
+  const currentCatEpg = selectedCatId ? (epgCache[selectedCatId] ?? {}) : {};
+
   const renderChannel = useCallback(({ item }: { item: LiveStream }) => {
-    const epg = epgData[item.stream_id] ?? [];
+    const epg = currentCatEpg[item.stream_id] ?? [];
     return (
       <ChannelRow
         channel={item}
@@ -346,7 +387,7 @@ export default function TvGuideScreen() {
         }}
       />
     );
-  }, [epgData, guideStart, scrollX, navigation]);
+  }, [currentCatEpg, guideStart, scrollX, navigation]);
 
   return (
     <ThemedView style={[styles.container, { paddingTop: padT }]}>
@@ -358,13 +399,15 @@ export default function TvGuideScreen() {
         <Feather name="calendar" size={14} color={Colors.dark.accent} />
         <ThemedText style={styles.topBarTitle}>TV Guide</ThemedText>
         <View style={styles.topBarSpacer} />
-        {/* TV Guide refresh button */}
-        <TopBarBtn onPress={refreshEpg} disabled={isEpgRefreshing} dimWhenDisabled>
-          {isEpgRefreshing
+        <TopBarBtn
+          onPress={() => selectedCatId && fetchEpgForCategory(selectedCatId, true)}
+          disabled={isLoadingEpg || !selectedCatId}
+          dimWhenDisabled
+        >
+          {isLoadingEpg
             ? <ActivityIndicator size="small" color={Colors.dark.accent} />
             : <Feather name="refresh-cw" size={14} color={Colors.dark.textSecondary} />}
         </TopBarBtn>
-        {/* TV-remote scroll buttons */}
         <ScrollBtn icon="chevron-left" onPress={() => doScrollTo(scrollOffset.current - SCROLL_STEP, true)} />
         <ScrollBtn icon="chevron-right" onPress={() => doScrollTo(scrollOffset.current + SCROLL_STEP, true)} />
         <View style={styles.clockWrap}>
@@ -386,7 +429,7 @@ export default function TvGuideScreen() {
               <CatItem
                 name={item.category_name}
                 selected={item.category_id === selectedCatId}
-                onPress={() => setSelectedCatId(item.category_id)}
+                onPress={() => handleCatSelect(item.category_id)}
               />
             )}
           />
@@ -394,7 +437,7 @@ export default function TvGuideScreen() {
 
         {/* EPG area */}
         <View style={styles.epgArea}>
-          {/* Time header (translated by scrollX) */}
+          {/* Time header */}
           <View style={styles.timeHeaderRow}>
             <View style={styles.channelHeaderCell}>
               <ThemedText style={styles.channelHeaderText}>CHANNEL</ThemedText>
@@ -406,7 +449,6 @@ export default function TvGuideScreen() {
                   { width: GRID_W, transform: [{ translateX: Animated.multiply(scrollX, -1) }] },
                 ]}
               >
-                {/* NOW dot */}
                 <View style={[styles.nowDot, { left: NOW_X - 3 }]} />
                 {timeSlots.map((slot) => (
                   <View key={slot.x} style={[styles.timeSlot, { left: slot.x }]}>
@@ -418,8 +460,14 @@ export default function TvGuideScreen() {
             </View>
           </View>
 
-          {/* Channel rows — swipe-able via PanResponder */}
+          {/* Channel rows */}
           <View style={{ flex: 1 }} {...panResponder.panHandlers}>
+            {isLoadingEpg && channels.length > 0 ? (
+              <View style={styles.epgLoadingBar}>
+                <ActivityIndicator size="small" color={Colors.dark.accent} />
+                <ThemedText style={styles.epgLoadingText}>Loading guide data…</ThemedText>
+              </View>
+            ) : null}
             <FlatList
               data={channels}
               keyExtractor={(item) => String(item.stream_id)}
@@ -455,7 +503,6 @@ export default function TvGuideScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  // Top bar
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -499,10 +546,8 @@ const styles = StyleSheet.create({
   },
   clockText: { fontSize: 13, fontWeight: "600", color: Colors.dark.text },
 
-  // Body
   body: { flex: 1, flexDirection: "row" },
 
-  // Categories
   catPanel: {
     width: CAT_W,
     borderRightWidth: 1,
@@ -524,10 +569,8 @@ const styles = StyleSheet.create({
   catName: { fontSize: 11, color: Colors.dark.textSecondary, fontWeight: "500", marginLeft: Spacing.xs },
   catNameActive: { color: Colors.dark.accent, fontWeight: "700" },
 
-  // EPG area
   epgArea: { flex: 1, overflow: "hidden" },
 
-  // Time header
   timeHeaderRow: {
     height: HEADER_H,
     flexDirection: "row",
@@ -543,8 +586,7 @@ const styles = StyleSheet.create({
   timeHeaderClip: { flex: 1, overflow: "hidden" },
   timeHeaderContent: { height: HEADER_H, position: "relative" },
   nowDot: {
-    position: "absolute",
-    top: 6,
+    position: "absolute", top: 6,
     width: 6, height: 6, borderRadius: 3,
     backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
@@ -559,7 +601,14 @@ const styles = StyleSheet.create({
     width: 1, backgroundColor: Colors.dark.border,
   },
 
-  // Channel rows
+  epgLoadingBar: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
+  },
+  epgLoadingText: { fontSize: 11, color: Colors.dark.textSecondary },
+
   row: {
     height: ROW_H, flexDirection: "row",
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -577,7 +626,6 @@ const styles = StyleSheet.create({
   },
   channelName: { fontSize: 11, fontWeight: "600", color: Colors.dark.text, lineHeight: 15 },
 
-  // EPG content
   epgClip: { flex: 1, overflow: "hidden" },
   epgTrack: {
     position: "absolute", left: 0, top: 0, bottom: 0, width: GRID_W,
@@ -589,11 +637,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, justifyContent: "center", overflow: "hidden",
   },
   epgBlockNow: { borderColor: "rgba(255,102,0,0.45)" },
-  epgBlockFocused: {
-    borderColor: Colors.dark.accent,
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 6,
-    elevation: 6,
-  },
   epgBlockTitle: { fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary },
   epgBlockTitleNow: { color: Colors.dark.text },
   epgBlockTime: { fontSize: 9, color: Colors.dark.textSecondary, marginTop: 2 },
@@ -603,7 +646,6 @@ const styles = StyleSheet.create({
     lineHeight: ROW_H, top: 0,
   },
 
-  // NOW line
   nowLine: {
     position: "absolute", top: HEADER_H, bottom: 0, width: 2,
     backgroundColor: Colors.dark.accent,

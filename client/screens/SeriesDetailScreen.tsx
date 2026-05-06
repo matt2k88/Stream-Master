@@ -22,6 +22,43 @@ import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SeriesDetailRouteProp = RouteProp<RootStackParamList, "SeriesDetail">;
 
+function BackBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, isActive && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? <View style={styles.backBtnOverlay} /> : null}
+      <Feather name="arrow-left" size={20} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
+  );
+}
+
+function SeasonBtn({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = active || focused || pressed;
+  return (
+    <Pressable
+      style={[styles.seasonBtn, isActive && styles.seasonBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <ThemedText style={[styles.seasonText, isActive && styles.seasonTextActive]}>{label}</ThemedText>
+    </Pressable>
+  );
+}
+
 function EpisodeCard({ episode, onPress }: { episode: Episode; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -144,12 +181,7 @@ export default function SeriesDetailScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Pressable
-          style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
-          onPress={() => navigation.goBack()}
-        >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
-        </Pressable>
+        <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle} numberOfLines={1}>{seriesName}</ThemedText>
         <View style={{ width: 40 }} />
       </View>
@@ -188,15 +220,12 @@ export default function SeriesDetailScreen() {
               style={styles.seasonsBar}
             >
               {seasons.map((s) => (
-                <Pressable
+                <SeasonBtn
                   key={s}
-                  style={[styles.seasonBtn, selectedSeason === s && styles.seasonBtnActive]}
+                  label={`S${s}`}
+                  active={selectedSeason === s}
                   onPress={() => setSelectedSeason(s)}
-                >
-                  <ThemedText style={[styles.seasonText, selectedSeason === s && styles.seasonTextActive]}>
-                    S{s}
-                  </ThemedText>
-                </Pressable>
+                />
               ))}
             </ScrollView>
           ) : null}
@@ -236,10 +265,19 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
   },
-  backBtnPressed: {
+  backBtnActive: {
     borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accentDim,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  backBtnOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,102,0,0.18)",
   },
   headerTitle: {
     flex: 1,
