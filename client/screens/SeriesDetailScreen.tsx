@@ -163,7 +163,7 @@ export default function SeriesDetailScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<SeriesDetailRouteProp>();
-  const { seriesId, seriesName, cover } = route.params;
+  const { seriesId, seriesName, cover, initialSeason } = route.params;
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
@@ -205,7 +205,14 @@ export default function SeriesDetailScreen() {
       const data = await xtreamApi.getSeriesInfo(seriesId);
       setSeriesInfo(data);
       const seasons = Object.keys(data.episodes || {});
-      if (seasons.length > 0) setSelectedSeason(seasons[0]);
+      if (seasons.length > 0) {
+        const target = initialSeason != null ? String(initialSeason) : null;
+        if (target && seasons.includes(target)) {
+          setSelectedSeason(target);
+        } else {
+          setSelectedSeason(seasons[0]);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load series info");
     } finally {

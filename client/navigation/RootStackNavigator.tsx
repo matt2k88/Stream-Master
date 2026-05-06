@@ -34,7 +34,7 @@ export type RootStackParamList = {
   TvGuide: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
-  SeriesDetail: { seriesId: number; seriesName: string; cover: string };
+  SeriesDetail: { seriesId: number; seriesName: string; cover: string; initialSeason?: number };
   Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number };
   LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string; categoryId?: string };
   AccountInfo: undefined;

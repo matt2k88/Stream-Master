@@ -212,11 +212,13 @@ function CategorySidebarItem({
   isSelected,
   onPress,
   isFav,
+  isRecent,
 }: {
   item: SidebarCat;
   isSelected: boolean;
   onPress: () => void;
   isFav?: boolean;
+  isRecent?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -257,6 +259,12 @@ function CategorySidebarItem({
           size={10}
           color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
         />
+      ) : isRecent ? (
+        <Feather
+          name="clock"
+          size={10}
+          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+        />
       ) : null}
       <ThemedText
         style={[styles.sidebarItemText, highlight && styles.sidebarItemTextActive]}
@@ -277,7 +285,7 @@ export default function ContentListScreen() {
   const { width } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
-  const { getByStreamId, getBySeriesId, refetch: refetchHistory } = useWatchHistory();
+  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory } = useWatchHistory();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
@@ -290,6 +298,8 @@ export default function ContentListScreen() {
   const gap = Spacing.sm;
 
   const isFavouritesView = selectedCategoryId === "favourites";
+  const isRecentlyView = selectedCategoryId === "recently";
+  const isSpecialView = isFavouritesView || isRecentlyView;
   const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
@@ -311,8 +321,13 @@ export default function ContentListScreen() {
   }, [type, liveCategories, vodCategories, seriesCategories]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
-    return [{ category_id: "favourites", category_name: "Favourites" }, ...categories];
-  }, [categories]);
+    const pinned: SidebarCat[] = [];
+    if (type !== "live") {
+      pinned.push({ category_id: "recently", category_name: "Recently Watched" });
+    }
+    pinned.push({ category_id: "favourites", category_name: "Favourites" });
+    return [...pinned, ...categories];
+  }, [categories, type]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -324,7 +339,7 @@ export default function ContentListScreen() {
     }
   }, [type, liveStreams, vodStreams, seriesList]);
 
-  // Category-filtered or favourites content (shown when not searching)
+  // Category-filtered, favourites, or recently-watched content (shown when not searching)
   const categoryContent: ContentItem[] = useMemo(() => {
     if (isFavouritesView) {
       const favIds = new Set(
@@ -337,13 +352,45 @@ export default function ContentListScreen() {
         default: return [];
       }
     }
+    if (isRecentlyView) {
+      // Walk watchEntries (newest-first), dedup, hydrate against full lists
+      if (type === "movies") {
+        const out: VodStream[] = [];
+        const seen = new Set<string>();
+        const idx = new Map<string, VodStream>();
+        for (const v of vodStreams) idx.set(String(v.stream_id), v);
+        for (const e of watchEntries) {
+          if (e.content_type !== "movie" || !e.stream_id) continue;
+          const k = String(e.stream_id);
+          if (seen.has(k)) continue;
+          const v = idx.get(k);
+          if (v) { out.push(v); seen.add(k); }
+        }
+        return out;
+      }
+      if (type === "series") {
+        const out: Series[] = [];
+        const seen = new Set<string>();
+        const idx = new Map<string, Series>();
+        for (const s of seriesList) idx.set(String(s.series_id), s);
+        for (const e of watchEntries) {
+          if (e.content_type !== "series" || !e.series_id) continue;
+          const k = String(e.series_id);
+          if (seen.has(k)) continue;
+          const s = idx.get(k);
+          if (s) { out.push(s); seen.add(k); }
+        }
+        return out;
+      }
+      return [];
+    }
     switch (type) {
       case "live": return liveStreams.filter((s) => s.category_id === selectedCategoryId);
       case "movies": return vodStreams.filter((s) => s.category_id === selectedCategoryId);
       case "series": return seriesList.filter((s) => s.category_id === selectedCategoryId);
       default: return [];
     }
-  }, [type, selectedCategoryId, isFavouritesView, liveStreams, vodStreams, seriesList, getFavouritesByType]);
+  }, [type, selectedCategoryId, isFavouritesView, isRecentlyView, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
 
   // Search results — searches entire section, not just current category
   const searchResults: ContentItem[] = useMemo(() => {
@@ -390,10 +437,14 @@ export default function ContentListScreen() {
       });
     } else {
       const s = item as Series;
+      const watch = getBySeriesId(s.series_id);
+      const initialSeason =
+        watch && watch.season_num != null ? Number(watch.season_num) : undefined;
       navigation.navigate("SeriesDetail", {
         seriesId: s.series_id,
         seriesName: s.name,
         cover: s.cover,
+        initialSeason,
       });
     }
   };
@@ -476,7 +527,7 @@ export default function ContentListScreen() {
     </View>
   );
 
-  if (isSyncing && categoryContent.length === 0 && !isFavouritesView) {
+  if (isSyncing && categoryContent.length === 0 && !isSpecialView) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.centered}>
@@ -500,6 +551,8 @@ export default function ContentListScreen() {
         <View style={styles.headerTitleRow}>
           {isFavouritesView ? (
             <Feather name="star" size={16} color={Colors.dark.accent} />
+          ) : isRecentlyView ? (
+            <Feather name="clock" size={16} color={Colors.dark.accent} />
           ) : null}
           <ThemedText style={styles.headerTitle} numberOfLines={1}>
             {isSearching ? "Search Results" : selectedCategoryName}
@@ -530,6 +583,7 @@ export default function ContentListScreen() {
                 item={item}
                 isSelected={item.category_id === selectedCategoryId}
                 isFav={item.category_id === "favourites"}
+                isRecent={item.category_id === "recently"}
                 onPress={() => {
                   setSelectedCategoryId(item.category_id);
                   setSelectedCategoryName(item.category_name);
@@ -557,6 +611,16 @@ export default function ContentListScreen() {
               <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
               <ThemedText style={styles.emptyText}>
                 Hold any item to add it to your favourites
+              </ThemedText>
+            </View>
+          ) : isRecentlyView && !isSearching && categoryContent.length === 0 ? (
+            <View style={styles.centered}>
+              <Feather name="clock" size={44} color={Colors.dark.border} />
+              <ThemedText style={styles.emptyTitle}>Nothing Watched Yet</ThemedText>
+              <ThemedText style={styles.emptyText}>
+                {type === "movies"
+                  ? "Movies you watch will show up here"
+                  : "Series you watch will show up here"}
               </ThemedText>
             </View>
           ) : (

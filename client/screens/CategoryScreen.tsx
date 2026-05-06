@@ -21,6 +21,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Category, xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
@@ -54,12 +55,14 @@ function BackBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
-function FavouritesButton({
-  type,
+function PillButton({
+  icon,
+  label,
   count,
   onPress,
 }: {
-  type: "live" | "movies" | "series";
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
   count: number;
   onPress: () => void;
 }) {
@@ -69,7 +72,7 @@ function FavouritesButton({
 
   return (
     <Pressable
-      style={[styles.favButton, isActive && styles.favButtonActive]}
+      style={[styles.pillButton, isActive && styles.pillButtonActive]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -84,22 +87,49 @@ function FavouritesButton({
           end={{ x: 1, y: 0 }}
         />
       ) : null}
-      <View style={styles.favLeft}>
-        <View style={[styles.favIconWrap, isActive && styles.favIconWrapActive]}>
-          <Feather name="star" size={18} color={Colors.dark.accent} />
+      <View style={styles.pillLeft}>
+        <View style={[styles.pillIconWrap, isActive && styles.pillIconWrapActive]}>
+          <Feather name={icon} size={16} color={Colors.dark.accent} />
         </View>
-        <ThemedText style={[styles.favTitle, isActive && styles.favTitleActive]}>Favourites</ThemedText>
+        <ThemedText style={[styles.pillTitle, isActive && styles.pillTitleActive]} numberOfLines={1}>
+          {label}
+        </ThemedText>
       </View>
-      <View style={styles.favRight}>
+      <View style={styles.pillRight}>
         {count > 0 ? (
-          <View style={styles.favCountBadge}>
-            <ThemedText style={styles.favCountText}>{count}</ThemedText>
+          <View style={styles.pillCountBadge}>
+            <ThemedText style={styles.pillCountText}>{count}</ThemedText>
           </View>
         ) : null}
-        <Feather name="chevron-right" size={18} color={isActive ? "#FFD700" : Colors.dark.accent} />
+        <Feather name="chevron-right" size={16} color={isActive ? "#FFD700" : Colors.dark.accent} />
       </View>
-      {isActive ? <View style={styles.favBottomBar} /> : null}
+      {isActive ? <View style={styles.pillBottomBar} /> : null}
     </Pressable>
+  );
+}
+
+function FavRecentRow({
+  type,
+  favCount,
+  recentCount,
+  onPressFav,
+  onPressRecent,
+}: {
+  type: "live" | "movies" | "series";
+  favCount: number;
+  recentCount: number;
+  onPressFav: () => void;
+  onPressRecent: () => void;
+}) {
+  return (
+    <View style={styles.favRecentRow}>
+      <View style={styles.favRecentCell}>
+        <PillButton icon="clock" label="Recently Watched" count={recentCount} onPress={onPressRecent} />
+      </View>
+      <View style={styles.favRecentCell}>
+        <PillButton icon="star" label="Favourites" count={favCount} onPress={onPressFav} />
+      </View>
+    </View>
   );
 }
 
@@ -212,6 +242,7 @@ export default function CategoryScreen() {
   const isLandscape = width > height;
   const { liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, isSyncing } = useData();
   const { getFavouritesByType } = useFavourites();
+  const { entries: watchEntries } = useWatchHistory();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
 
@@ -246,6 +277,22 @@ export default function CategoryScreen() {
   };
 
   const favCount = getFavouritesByType(type).length;
+  const recentCount = useMemo(() => {
+    if (type === "live") return 0;
+    const wantType = type === "movies" ? "movie" : "series";
+    if (wantType === "movie") {
+      const seen = new Set<string>();
+      for (const e of watchEntries) {
+        if (e.content_type === "movie" && e.stream_id) seen.add(String(e.stream_id));
+      }
+      return seen.size;
+    }
+    const seen = new Set<string>();
+    for (const e of watchEntries) {
+      if (e.content_type === "series" && e.series_id) seen.add(String(e.series_id));
+    }
+    return seen.size;
+  }, [type, watchEntries]);
   const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
@@ -317,19 +364,42 @@ export default function CategoryScreen() {
         ) : null}
       </View>
 
-      {/* Favourites button — hidden while searching */}
+      {/* Favourites + Recently row — hidden while searching */}
       {!isSearching ? (
-        <FavouritesButton
-          type={type}
-          count={favCount}
-          onPress={() =>
-            navigation.navigate("ContentList", {
-              type,
-              categoryId: "favourites",
-              categoryName: "Favourites",
-            })
-          }
-        />
+        type === "live" ? (
+          <PillButton
+            icon="star"
+            label="Favourites"
+            count={favCount}
+            onPress={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "favourites",
+                categoryName: "Favourites",
+              })
+            }
+          />
+        ) : (
+          <FavRecentRow
+            type={type}
+            favCount={favCount}
+            recentCount={recentCount}
+            onPressFav={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "favourites",
+                categoryName: "Favourites",
+              })
+            }
+            onPressRecent={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "recently",
+                categoryName: "Recently Watched",
+              })
+            }
+          />
+        )
       ) : (
         // Results count when searching
         <View style={styles.searchResultsHeader}>
@@ -398,17 +468,40 @@ export default function CategoryScreen() {
           ) : null}
         </View>
         {!isSearching ? (
-          <FavouritesButton
-            type={type}
-            count={favCount}
-            onPress={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "favourites",
-                categoryName: "Favourites",
-              })
-            }
-          />
+          type === "live" ? (
+            <PillButton
+              icon="star"
+              label="Favourites"
+              count={favCount}
+              onPress={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "favourites",
+                  categoryName: "Favourites",
+                })
+              }
+            />
+          ) : (
+            <FavRecentRow
+              type={type}
+              favCount={favCount}
+              recentCount={recentCount}
+              onPressFav={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "favourites",
+                  categoryName: "Favourites",
+                })
+              }
+              onPressRecent={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "recently",
+                  categoryName: "Recently Watched",
+                })
+              }
+            />
+          )
         ) : (
           <View style={styles.searchResultsHeader}>
             <Feather name={getIcon()} size={13} color={Colors.dark.accent} />
@@ -542,37 +635,41 @@ const styles = StyleSheet.create({
   searchResultsText: { color: Colors.dark.accent, fontSize: 12, fontWeight: "600", flex: 1 },
   searchResultsLimit: { color: Colors.dark.textSecondary, fontSize: 11 },
 
-  // Favourites button
-  favButton: {
+  // Favourites + Recently row (50/50)
+  favRecentRow: { flexDirection: "row", gap: Spacing.sm },
+  favRecentCell: { flex: 1 },
+
+  // Pill buttons (Favourites / Recently Watched)
+  pillButton: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: Colors.dark.border,
-    paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
     overflow: "hidden",
   },
-  favButtonActive: {
+  pillButtonActive: {
     borderColor: "#FFD700",
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.7, shadowRadius: 14, elevation: 10,
   },
-  favLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
-  favIconWrap: {
-    width: 36, height: 36, borderRadius: BorderRadius.full,
+  pillLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexShrink: 1 },
+  pillIconWrap: {
+    width: 30, height: 30, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundSecondary, borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
-  favIconWrapActive: {
+  pillIconWrapActive: {
     backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent,
   },
-  favTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
-  favTitleActive: { color: Colors.dark.accent },
-  favRight: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
-  favCountBadge: {
+  pillTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3, flexShrink: 1 },
+  pillTitleActive: { color: Colors.dark.accent },
+  pillRight: { flexDirection: "row", alignItems: "center", gap: Spacing.xs },
+  pillCountBadge: {
     backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.sm, paddingVertical: 2, minWidth: 28, alignItems: "center",
+    paddingHorizontal: Spacing.sm, paddingVertical: 1, minWidth: 24, alignItems: "center",
   },
-  favCountText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  favBottomBar: {
+  pillCountText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  pillBottomBar: {
     position: "absolute", bottom: 0, left: 0, right: 0, height: 2,
     backgroundColor: "#FFD700",
     shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
