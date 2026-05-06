@@ -27,6 +27,8 @@ import { xtreamApi, EpgListing } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useData } from "@/contexts/DataContext";
+import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import type { LiveStream } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -167,7 +169,11 @@ export default function LivePreviewScreen() {
 
   const { isFavourite, toggleFavourite } = useFavourites();
   const { activeProfile } = useProfile();
+  const { upsertLocal } = useWatchHistory();
   const isFavourited = isFavourite(selectedId, "live");
+
+  // Track which channel id we've already logged so we re-log on channel change
+  const savedChannelRef = useRef<number | null>(null);
 
   // ── Report content ────────────────────────────────────────────────────────
   const [showReport, setShowReport] = useState(false);
@@ -312,11 +318,31 @@ export default function LivePreviewScreen() {
   const handleChannelPress = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
     currentStreamUrlRef.current = newUrl;
+    savedChannelRef.current = null; // re-log new channel on next readyToPlay
     setSelectedId(s.stream_id);
     setSelectedName(s.name);
     setSelectedIcon(s.stream_icon ?? undefined);
     try { player.replace(newUrl); player.play(); } catch {}
   }, [player]);
+
+  // ── Log to recently_watched on readyToPlay (per channel) ───────────────────
+  useEffect(() => {
+    const sub = player.addListener("statusChange", (e) => {
+      if (e.status !== "readyToPlay") return;
+      if (!activeProfile) return;
+      if (savedChannelRef.current === selectedId) return;
+      savedChannelRef.current = selectedId;
+      saveRecentlyWatched({
+        profileId: activeProfile.id,
+        contentType: "live",
+        streamId: String(selectedId),
+        name: selectedName,
+        thumbnailUrl: selectedIcon,
+        streamUrl: currentStreamUrlRef.current,
+      }).then((entry) => { if (entry) upsertLocal(entry); });
+    });
+    return () => sub.remove();
+  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal]);
 
   const resetFsHideTimer = useCallback(() => {
     if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
