@@ -69,7 +69,7 @@ export default function PinEntryScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.topBar, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
+          style={({ pressed, focused }) => [styles.iconBtn, (pressed || focused) && styles.iconBtnActive]}
           onPress={() => navigation.goBack()}
         >
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
@@ -110,11 +110,12 @@ export default function PinEntryScreen() {
           {KEYS.map((key, idx) => (
             <Pressable
               key={idx}
-              style={({ pressed }) => [
+              style={({ pressed, focused }) => [
                 styles.key,
                 !key && styles.keyEmpty,
-                pressed && key && key !== "⌫" && styles.keyPressed,
+                (pressed || focused) && key && key !== "⌫" && styles.keyPressed,
                 key === "⌫" && styles.keyDelete,
+                (pressed || focused) && key === "⌫" && styles.keyDeleteActive,
               ]}
               onPress={() => handleKey(key)}
               disabled={!key}
@@ -167,5 +168,6 @@ const styles = StyleSheet.create({
   keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
   keyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   keyDelete: { backgroundColor: "transparent", borderColor: "transparent" },
+  keyDeleteActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   keyText: { color: Colors.dark.text, fontSize: 24, fontWeight: "600" },
 });

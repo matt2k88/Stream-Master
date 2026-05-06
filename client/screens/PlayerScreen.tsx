@@ -124,6 +124,10 @@ function SeekBar({
   return (
     <Pressable
       ref={pressableRef as any}
+      // On standard Android APKs (non-TV), disable D-pad focus entirely on the
+      // seek bar — it doesn't work reliably and confuses navigation. Touch /
+      // pan dragging still works because that bypasses focus.
+      focusable={Platform.OS !== "android" || IS_TV}
       // While captured, trap D-pad left/right to self so arrows always seek.
       // Pressing OK releases the trap so left/right can move to CC/Audio.
       nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
@@ -537,6 +541,7 @@ export default function PlayerScreen() {
   });
   const [largeStepBack, setLargeStepBack] = useState(60);
   const [largeStepFwd, setLargeStepFwd] = useState(60);
+  const largeSkipResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const player = useVideoPlayer(streamUrl, (p) => {
     p.loop = false;
@@ -854,6 +859,16 @@ export default function PlayerScreen() {
     showAndReset();
   }, [showAndReset]);
 
+  const resetLargeSkipAccel = useCallback(() => {
+    if (largeSkipResetTimerRef.current) clearTimeout(largeSkipResetTimerRef.current);
+    largeSkipResetTimerRef.current = setTimeout(() => {
+      largeSkipAccelRef.current.count = 0;
+      largeSkipAccelRef.current.dir = null;
+      setLargeStepBack(60);
+      setLargeStepFwd(60);
+    }, 1500);
+  }, []);
+
   const handleSkipBackLarge = useCallback(() => {
     const accel = largeSkipAccelRef.current;
     const now = Date.now();
@@ -866,11 +881,13 @@ export default function PlayerScreen() {
     accel.lastTime = now;
     const step = accel.count >= 5 ? 300 : accel.count >= 3 ? 120 : 60;
     setLargeStepBack(step);
+    setLargeStepFwd(60);
     const newTime = Math.max(0, currentTimeRef.current - step);
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    resetLargeSkipAccel();
     showAndReset();
-  }, [showAndReset]);
+  }, [showAndReset, resetLargeSkipAccel]);
 
   const handleSkipForwardLarge = useCallback(() => {
     const accel = largeSkipAccelRef.current;
@@ -884,11 +901,13 @@ export default function PlayerScreen() {
     accel.lastTime = now;
     const step = accel.count >= 5 ? 300 : accel.count >= 3 ? 120 : 60;
     setLargeStepFwd(step);
+    setLargeStepBack(60);
     const newTime = Math.min(tvDurationRef.current, currentTimeRef.current + step);
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    resetLargeSkipAccel();
     showAndReset();
-  }, [showAndReset]);
+  }, [showAndReset, resetLargeSkipAccel]);
 
   const handleSeek = useCallback((time: number) => {
     player.currentTime = time;
@@ -1263,7 +1282,7 @@ export default function PlayerScreen() {
                 ) : null}
                 <View style={styles.reportBtnRow}>
                   <Pressable
-                    style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && { opacity: 0.75 }]}
+                    style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && styles.reportCancelBtnHover]}
                     onPress={() => {
                       setShowReportWithRef(false);
                       setReportReason(null);
@@ -1774,6 +1793,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  reportCancelBtnHover: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
   reportCancelText: {
     color: Colors.dark.textSecondary,
     fontWeight: "600",
@@ -1792,7 +1815,12 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   reportSubmitBtnHover: {
-    opacity: 0.85,
+    backgroundColor: "#ff5555",
+    shadowColor: "#FF3B3B",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 8,
+    elevation: 6,
   },
   reportSubmitText: {
     color: "#fff",

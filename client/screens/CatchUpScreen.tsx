@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center", overflow: "hidden",
   },
-  backBtnActive: { borderColor: Colors.dark.accent },
+  backBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   channelHeaderIcon: { width: 48, height: 28, justifyContent: "center", alignItems: "center" },
   headerChannelImg: { width: 48, height: 28 },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },

@@ -680,9 +680,9 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  colATop: { flex: 3, minHeight: 0 },
-  catchUpBtn: { height: 44, minHeight: 0 },
-  colABot: { flex: 2, minHeight: 0 },
+  colATop: { flex: 2, minHeight: 0 },
+  catchUpBtn: { flex: 1, minHeight: 0 },
+  colABot: { flex: 1, minHeight: 0 },
   // Sub-column B: Movies | Series 50/50
   colB: {
     flex: 1,
