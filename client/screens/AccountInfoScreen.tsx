@@ -7,6 +7,8 @@ import {
   useWindowDimensions,
   ScrollView,
   Alert,
+  BackHandler,
+  Platform,
 } from "react-native";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -325,6 +327,31 @@ export default function AccountInfoScreen() {
                   {updateChecking ? "Checking..." : "Check for Updates"}
                 </ThemedText>
               </HoverBtn>
+              <HoverBtn
+                style={styles.exitAppBtn}
+                activeStyle={styles.exitAppBtnActive}
+                onPress={() => {
+                  Alert.alert(
+                    "Exit Ultra Cast?",
+                    "Are you sure you want to close the app?",
+                    [
+                      { text: "No", style: "cancel" },
+                      {
+                        text: "Yes, Exit",
+                        style: "destructive",
+                        onPress: () => {
+                          if (Platform.OS !== "web") {
+                            try { BackHandler.exitApp(); } catch {}
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Feather name="log-out" size={13} color={Colors.dark.error} />
+                <ThemedText style={styles.exitAppBtnText}>Exit App</ThemedText>
+              </HoverBtn>
             </View>
           </View>
 
@@ -505,6 +532,27 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md, borderWidth: 1, borderColor: "rgba(255,59,59,0.4)", gap: Spacing.sm,
   },
   logoutBtnPressed: { backgroundColor: "rgba(255,59,59,0.08)", borderColor: Colors.dark.error },
+  exitAppBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: "transparent",
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,59,59,0.45)",
+  },
+  exitAppBtnActive: {
+    backgroundColor: "rgba(255,59,59,0.12)",
+    borderColor: Colors.dark.error,
+    shadowColor: "#FF3B3B",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  exitAppBtnText: { color: Colors.dark.error, fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
   logoutText: { color: Colors.dark.error, fontWeight: "700", fontSize: 14 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md },
   errorText: { color: Colors.dark.error, textAlign: "center" },

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -204,6 +204,7 @@ export default function HomeScreen() {
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
+  const [exitConfirmVisible, setExitConfirmVisible] = useState(false);
 
   const { refetch: refetchHistory } = useWatchHistory();
   useFocusEffect(
@@ -215,6 +216,24 @@ export default function HomeScreen() {
       return () => setOnDashboard(false);
     }, [setOnDashboard, refetchHistory])
   );
+
+  // Hardware back button on dashboard → confirm exit
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        setExitConfirmVisible(true);
+        return true; // prevent default exit
+      });
+      return () => sub.remove();
+    }, [])
+  );
+
+  const handleConfirmExit = useCallback(() => {
+    setExitConfirmVisible(false);
+    if (Platform.OS !== "web") {
+      try { BackHandler.exitApp(); } catch {}
+    }
+  }, []);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -403,11 +422,173 @@ export default function HomeScreen() {
           </View>
         </View>
       )}
+      <ExitConfirmModal
+        visible={exitConfirmVisible}
+        onCancel={() => setExitConfirmVisible(false)}
+        onConfirm={handleConfirmExit}
+      />
     </ThemedView>
   );
 }
 
+function ExitConfirmModal({
+  visible,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.exitBackdrop}>
+        <View style={styles.exitDialog}>
+          <View style={styles.exitIconWrap}>
+            <Feather name="log-out" size={28} color={Colors.dark.accent} />
+          </View>
+          <ThemedText style={styles.exitTitle}>Exit Ultra Cast?</ThemedText>
+          <ThemedText style={styles.exitMsg}>
+            Are you sure you want to close the app?
+          </ThemedText>
+          <View style={styles.exitBtnRow}>
+            <ExitDialogBtn label="No" onPress={onCancel} variant="secondary" autoFocus />
+            <ExitDialogBtn label="Yes, Exit" onPress={onConfirm} variant="primary" />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ExitDialogBtn({
+  label,
+  onPress,
+  variant,
+  autoFocus,
+}: {
+  label: string;
+  onPress: () => void;
+  variant: "primary" | "secondary";
+  autoFocus?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  const isPrimary = variant === "primary";
+  return (
+    <Pressable
+      hasTVPreferredFocus={autoFocus}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.exitBtn,
+        isPrimary ? styles.exitBtnPrimary : styles.exitBtnSecondary,
+        isActive && (isPrimary ? styles.exitBtnPrimaryActive : styles.exitBtnSecondaryActive),
+      ]}
+    >
+      <ThemedText
+        style={[
+          styles.exitBtnText,
+          isPrimary ? styles.exitBtnTextPrimary : styles.exitBtnTextSecondary,
+          isActive && isPrimary && styles.exitBtnTextPrimaryActive,
+        ]}
+      >
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  // ── Exit confirmation modal ─────────────────────────────────────────────
+  exitBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  exitDialog: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: Colors.dark.accent,
+    padding: Spacing.xl,
+    alignItems: "center",
+    gap: Spacing.md,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  exitIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,102,0,0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  exitTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: Colors.dark.text,
+    letterSpacing: 0.5,
+  },
+  exitMsg: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+  },
+  exitBtnRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    width: "100%",
+    marginTop: Spacing.sm,
+  },
+  exitBtn: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+  },
+  exitBtnSecondary: {
+    backgroundColor: "transparent",
+    borderColor: Colors.dark.border,
+  },
+  exitBtnSecondaryActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  exitBtnPrimary: {
+    backgroundColor: "rgba(255,102,0,0.15)",
+    borderColor: Colors.dark.accent,
+  },
+  exitBtnPrimaryActive: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  exitBtnText: { fontSize: 14, fontWeight: "700", letterSpacing: 0.5 },
+  exitBtnTextSecondary: { color: Colors.dark.textSecondary },
+  exitBtnTextPrimary: { color: Colors.dark.accent },
+  exitBtnTextPrimaryActive: { color: "#fff" },
+
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
   // ── Header ──────────────────────────────────────────────────────────────
