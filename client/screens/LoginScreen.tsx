@@ -161,9 +161,12 @@ export default function LoginScreen() {
   const handleBack = () => {
     setStep("server");
     setError("");
-    setUsername("");
-    setPassword("");
+    // Intentionally preserve username/password so going back doesn't wipe input
   };
+
+  const credsReady = username.trim().length > 0 && password.trim().length > 0;
+  const connectHighlighted =
+    connectFocused || (credsReady && focusedField === null && !isLoading);
 
   const inputStyle = (field: string) => [
     styles.input,
@@ -279,8 +282,8 @@ export default function LoginScreen() {
         ) : (
           /* Step: Credentials */
           <View style={[styles.panel, isLandscape && styles.panelLandscape]}>
-            {/* Selected server indicator */}
-            <Pressable style={styles.selectedServerRow} onPress={handleBack}>
+            {/* Selected server indicator (display only — use the Back button below to change) */}
+            <View style={styles.selectedServerRow}>
               {selectedServer?.logo_url ? (
                 <Image source={{ uri: selectedServer.logo_url }} style={styles.selectedServerLogo} resizeMode="contain" />
               ) : (
@@ -291,8 +294,7 @@ export default function LoginScreen() {
               <ThemedText style={styles.selectedServerName} numberOfLines={1}>
                 {selectedServer?.name}
               </ThemedText>
-              <Feather name="chevron-down" size={14} color={Colors.dark.textSecondary} />
-            </Pressable>
+            </View>
 
             <ThemedText style={styles.panelTitle}>Sign In</ThemedText>
             <ThemedText style={styles.panelSubtitle}>Enter your credentials for {selectedServer?.name}</ThemedText>
@@ -374,7 +376,7 @@ export default function LoginScreen() {
               ref={connectBtnRef as any}
               style={({ pressed }) => [
                 styles.primaryBtn,
-                (pressed || connectFocused) && styles.primaryBtnFocused,
+                (pressed || connectHighlighted) && styles.primaryBtnFocused,
                 isLoading && styles.primaryBtnDisabled,
               ]}
               onPress={handleLogin}
@@ -383,7 +385,7 @@ export default function LoginScreen() {
               disabled={isLoading}
             >
               <LinearGradient
-                colors={connectFocused ? ["#FFA040", "#FF6600"] : ["#FF8C1A", "#FF5500"]}
+                colors={connectHighlighted ? ["#FFA040", "#FF6600"] : ["#FF8C1A", "#FF5500"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
