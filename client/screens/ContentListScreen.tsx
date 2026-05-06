@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -294,6 +294,7 @@ export default function ContentListScreen() {
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
+  const flatListRef = useRef<FlatList<ContentItem>>(null);
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -342,8 +343,30 @@ export default function ContentListScreen() {
     }
   }, [type, liveStreams, vodStreams, seriesList]);
 
-  // Category-filtered, favourites, or recently-watched content (shown when not searching)
-  const categoryContent: ContentItem[] = useMemo(() => {
+  // Pre-build a category_id → items[] index once per stream list change.
+  // Category switches become an O(1) Map lookup instead of an O(n) filter.
+  const categoryIndex = useMemo(() => {
+    const map = new Map<string, ContentItem[]>();
+    for (const s of allSectionStreams) {
+      const cid = (s as any).category_id as string;
+      if (!cid) continue;
+      let bucket = map.get(cid);
+      if (!bucket) { bucket = []; map.set(cid, bucket); }
+      bucket.push(s);
+    }
+    return map;
+  }, [allSectionStreams]);
+
+  // Normal category content — O(1) lookup, no dependency on watchEntries.
+  // This memo only re-runs when streams or selected category actually changes.
+  const normalContent: ContentItem[] = useMemo(() => {
+    if (isSpecialView) return [];
+    return categoryIndex.get(selectedCategoryId) ?? [];
+  }, [isSpecialView, selectedCategoryId, categoryIndex]);
+
+  // Special views (Favourites / Recently Watched) — allowed to depend on watchEntries.
+  const specialContent: ContentItem[] = useMemo(() => {
+    if (!isSpecialView) return [];
     if (isFavouritesView) {
       const favIds = new Set(
         getFavouritesByType(type as "live" | "movies" | "series").map((f) => f.stream_id)
@@ -355,45 +378,44 @@ export default function ContentListScreen() {
         default: return [];
       }
     }
-    if (isRecentlyView) {
-      // Walk watchEntries (newest-first), dedup, hydrate against full lists
-      if (type === "movies") {
-        const out: VodStream[] = [];
-        const seen = new Set<string>();
-        const idx = new Map<string, VodStream>();
-        for (const v of vodStreams) idx.set(String(v.stream_id), v);
-        for (const e of watchEntries) {
-          if (e.content_type !== "movie" || !e.stream_id) continue;
-          const k = String(e.stream_id);
-          if (seen.has(k)) continue;
-          const v = idx.get(k);
-          if (v) { out.push(v); seen.add(k); }
-        }
-        return out;
+    // Recently Watched — walk watchEntries (newest-first), dedup, hydrate
+    if (type === "movies") {
+      const out: VodStream[] = [];
+      const seen = new Set<string>();
+      const idx = new Map<string, VodStream>();
+      for (const v of vodStreams) idx.set(String(v.stream_id), v);
+      for (const e of watchEntries) {
+        if (e.content_type !== "movie" || !e.stream_id) continue;
+        const k = String(e.stream_id);
+        if (seen.has(k)) continue;
+        const v = idx.get(k);
+        if (v) { out.push(v); seen.add(k); }
       }
-      if (type === "series") {
-        const out: Series[] = [];
-        const seen = new Set<string>();
-        const idx = new Map<string, Series>();
-        for (const s of seriesList) idx.set(String(s.series_id), s);
-        for (const e of watchEntries) {
-          if (e.content_type !== "series" || !e.series_id) continue;
-          const k = String(e.series_id);
-          if (seen.has(k)) continue;
-          const s = idx.get(k);
-          if (s) { out.push(s); seen.add(k); }
-        }
-        return out;
+      return out;
+    }
+    if (type === "series") {
+      const out: Series[] = [];
+      const seen = new Set<string>();
+      const idx = new Map<string, Series>();
+      for (const s of seriesList) idx.set(String(s.series_id), s);
+      for (const e of watchEntries) {
+        if (e.content_type !== "series" || !e.series_id) continue;
+        const k = String(e.series_id);
+        if (seen.has(k)) continue;
+        const s = idx.get(k);
+        if (s) { out.push(s); seen.add(k); }
       }
-      return [];
+      return out;
     }
-    switch (type) {
-      case "live": return liveStreams.filter((s) => s.category_id === selectedCategoryId);
-      case "movies": return vodStreams.filter((s) => s.category_id === selectedCategoryId);
-      case "series": return seriesList.filter((s) => s.category_id === selectedCategoryId);
-      default: return [];
-    }
-  }, [type, selectedCategoryId, isFavouritesView, isRecentlyView, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
+    return [];
+  }, [isSpecialView, isFavouritesView, isRecentlyView, type, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
+
+  const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
+
+  // Scroll to top whenever the selected category changes (without remounting FlatList)
+  useEffect(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [selectedCategoryId]);
 
   // Search results — searches entire section, not just current category
   const searchResults: ContentItem[] = useMemo(() => {
@@ -694,10 +716,11 @@ export default function ContentListScreen() {
             </View>
           ) : (
             <FlatList
+              ref={flatListRef}
               data={displayContent}
               keyExtractor={getItemId}
               numColumns={numColumns}
-              key={`content-${type}-${numColumns}-${selectedCategoryId}`}
+              key={`content-${type}-${numColumns}`}
               contentContainerStyle={{
                 paddingHorizontal: CONTENT_PAD,
                 paddingTop: Spacing.xs,
@@ -708,11 +731,19 @@ export default function ContentListScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={type === "live" ? 30 : 16}
-              maxToRenderPerBatch={type === "live" ? 24 : 10}
-              updateCellsBatchingPeriod={type === "live" ? 50 : 80}
-              windowSize={type === "live" ? 5 : 3}
+              initialNumToRender={type === "live" ? 20 : 12}
+              maxToRenderPerBatch={type === "live" ? 16 : 8}
+              updateCellsBatchingPeriod={30}
+              windowSize={3}
               removeClippedSubviews
+              getItemLayout={(_data, index) => {
+                const rowIndex = Math.floor(index / numColumns);
+                return {
+                  length: cardTotalH,
+                  offset: rowIndex * (cardTotalH + gap),
+                  index,
+                };
+              }}
               renderItem={({ item }) => {
                 const watchEntry =
                   type === "series"
