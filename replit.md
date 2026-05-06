@@ -34,7 +34,9 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **App Version + Update Check**: Profile screen shows `v{expo.version}` under Switch Profile plus a "Check for Updates" button. Hits `GET /api/app-version` (Supabase `app_version` table) and alerts the user with the downloader code if a newer version is available.
 
 ## Database Migrations
-SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending: `migrations/001_continue_watching.sql` (adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`).
+SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending:
+- `migrations/001_continue_watching.sql` — adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`
+- `migrations/002_content_reports.sql` — creates `content_reports` table (id, profile_id, stream_id, stream_name, stream_type, reason, other_text, created_at)
 
 ## Tech Stack
 

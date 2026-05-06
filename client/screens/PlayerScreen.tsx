@@ -10,6 +10,8 @@ import {
   ScrollView,
   BackHandler,
   Animated,
+  Modal,
+  TextInput,
   findNodeHandle,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -382,6 +384,56 @@ export default function PlayerScreen() {
     : streamId ? parseInt(streamId, 10) : 0;
   const favStreamName = type === "series" && seriesNameParam ? seriesNameParam : title;
   const isFavourited = favStreamId > 0 ? isFavourite(favStreamId, favStreamType) : false;
+
+  // ── Report content ────────────────────────────────────────────────────────
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState<string | null>(null);
+  const [reportOther, setReportOther] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
+
+  const REPORT_REASONS = [
+    "Constant buffering",
+    "Does not load",
+    "Wrong language",
+    "Jittery / stuttering",
+    "Wrong content",
+    "Other",
+  ] as const;
+
+  const handleSubmitReport = useCallback(async () => {
+    if (!reportReason || (!activeProfile)) return;
+    if (reportReason === "Other" && !reportOther.trim()) return;
+    setReportSubmitting(true);
+    try {
+      const { getApiUrl } = await import("@/lib/query-client");
+      const url = new URL("/api/content-reports", getApiUrl());
+      await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_id: activeProfile.id,
+          stream_id: streamId ?? null,
+          stream_name: title,
+          stream_type: type,
+          reason: reportReason === "Other" ? "Other" : reportReason,
+          other_text: reportReason === "Other" ? reportOther.trim() : null,
+        }),
+      });
+      setReportDone(true);
+      setTimeout(() => {
+        setShowReport(false);
+        setReportDone(false);
+        setReportReason(null);
+        setReportOther("");
+      }, 1800);
+    } catch {
+      // silent failure — report is best-effort
+      setShowReport(false);
+    } finally {
+      setReportSubmitting(false);
+    }
+  }, [reportReason, reportOther, activeProfile, streamId, title, type]);
 
   const [showControls, setShowControls] = useState(true);
   const [ctrlsKey, setCtrlsKey] = useState(0);
@@ -858,6 +910,13 @@ export default function PlayerScreen() {
         <View style={styles.topBar}>
           <CtrlBtn icon="arrow-left" onPress={handleBack} onFocus={showAndReset} />
           <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
+          {/* Report content button — red flag */}
+          <CtrlBtn
+            icon="flag"
+            onPress={() => { setShowReport(true); showAndReset(); }}
+            onFocus={showAndReset}
+            active={false}
+          />
           {favStreamId > 0 ? (
             <CtrlBtn
               icon="star"
@@ -997,6 +1056,104 @@ export default function PlayerScreen() {
           <ThemedText style={styles.toastText}>{toastMsg}</ThemedText>
         </Animated.View>
       ) : null}
+
+      {/* Report content modal */}
+      <Modal
+        visible={showReport}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!reportSubmitting) {
+            setShowReport(false);
+            setReportReason(null);
+            setReportOther("");
+            setReportDone(false);
+          }
+        }}
+      >
+        <View style={styles.reportBackdrop}>
+          <View style={styles.reportCard}>
+            {reportDone ? (
+              <>
+                <Feather name="check-circle" size={36} color={Colors.dark.accent} />
+                <ThemedText style={styles.reportTitle}>Report Submitted</ThemedText>
+                <ThemedText style={styles.reportSubtitle}>
+                  Thank you — we will look into this.
+                </ThemedText>
+              </>
+            ) : (
+              <>
+                <View style={styles.reportHeader}>
+                  <Feather name="flag" size={18} color={Colors.dark.error} />
+                  <ThemedText style={styles.reportTitle}>Report Content</ThemedText>
+                </View>
+                <ThemedText style={styles.reportSubtitle} numberOfLines={1}>
+                  {title}
+                </ThemedText>
+                <View style={styles.reportReasons}>
+                  {REPORT_REASONS.map((r) => (
+                    <Pressable
+                      key={r}
+                      style={({ pressed, focused }) => [
+                        styles.reportReasonBtn,
+                        reportReason === r && styles.reportReasonBtnSelected,
+                        (pressed || focused) && styles.reportReasonBtnHover,
+                      ]}
+                      onPress={() => setReportReason(r)}
+                    >
+                      <View style={[styles.reportRadio, reportReason === r && styles.reportRadioSelected]}>
+                        {reportReason === r ? <View style={styles.reportRadioDot} /> : null}
+                      </View>
+                      <ThemedText style={[styles.reportReasonText, reportReason === r && styles.reportReasonTextSelected]}>
+                        {r}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+                {reportReason === "Other" ? (
+                  <TextInput
+                    style={styles.reportOtherInput}
+                    placeholder="Describe the issue..."
+                    placeholderTextColor={Colors.dark.border}
+                    value={reportOther}
+                    onChangeText={setReportOther}
+                    multiline
+                    numberOfLines={3}
+                    maxLength={500}
+                    autoFocus
+                  />
+                ) : null}
+                <View style={styles.reportBtnRow}>
+                  <Pressable
+                    style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && { opacity: 0.75 }]}
+                    onPress={() => {
+                      setShowReport(false);
+                      setReportReason(null);
+                      setReportOther("");
+                    }}
+                    disabled={reportSubmitting}
+                  >
+                    <ThemedText style={styles.reportCancelText}>Cancel</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed, focused }) => [
+                      styles.reportSubmitBtn,
+                      (!reportReason || (reportReason === "Other" && !reportOther.trim())) && styles.reportSubmitBtnDisabled,
+                      (pressed || focused) && styles.reportSubmitBtnHover,
+                    ]}
+                    onPress={handleSubmitReport}
+                    disabled={reportSubmitting || !reportReason || (reportReason === "Other" && !reportOther.trim())}
+                  >
+                    {reportSubmitting
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <ThemedText style={styles.reportSubmitText}>Submit Report</ThemedText>}
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1365,5 +1522,143 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+
+  // Report modal
+  reportBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  reportCard: {
+    width: 400,
+    maxWidth: "95%",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    alignItems: "center",
+  },
+  reportHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  reportTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  reportSubtitle: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    maxWidth: "90%",
+  },
+  reportReasons: {
+    width: "100%",
+    gap: Spacing.xs,
+  },
+  reportReasonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  reportReasonBtnSelected: {
+    borderColor: Colors.dark.error,
+    backgroundColor: "rgba(255,59,59,0.1)",
+  },
+  reportReasonBtnHover: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  reportRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: BorderRadius.full,
+    borderWidth: 2,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  reportRadioSelected: {
+    borderColor: Colors.dark.error,
+  },
+  reportRadioDot: {
+    width: 9,
+    height: 9,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.error,
+  },
+  reportReasonText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    flex: 1,
+  },
+  reportReasonTextSelected: {
+    color: Colors.dark.text,
+    fontWeight: "600",
+  },
+  reportOtherInput: {
+    width: "100%",
+    minHeight: 70,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    color: Colors.dark.text,
+    fontSize: 14,
+    padding: Spacing.md,
+    textAlignVertical: "top",
+  },
+  reportBtnRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    width: "100%",
+    marginTop: Spacing.xs,
+  },
+  reportCancelBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reportCancelText: {
+    color: Colors.dark.textSecondary,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  reportSubmitBtn: {
+    flex: 2,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.error,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 42,
+  },
+  reportSubmitBtnDisabled: {
+    opacity: 0.4,
+  },
+  reportSubmitBtnHover: {
+    opacity: 0.85,
+  },
+  reportSubmitText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
   },
 });

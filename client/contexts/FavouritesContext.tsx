@@ -27,6 +27,7 @@ interface FavouritesContextType {
   isFavourite: (streamId: number, streamType: string) => boolean;
   toggleFavourite: (params: ToggleParams) => Promise<void>;
   getFavouritesByType: (type: "live" | "movies" | "series") => Favourite[];
+  clearAllFavourites: (streamType: "live" | "movies" | "series") => Promise<void>;
 }
 
 const FavouritesContext = createContext<FavouritesContextType | undefined>(undefined);
@@ -134,9 +135,27 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
     [favourites]
   );
 
+  const clearAllFavourites = useCallback(
+    async (streamType: "live" | "movies" | "series") => {
+      if (!activeProfile?.id) return;
+      // Optimistic clear
+      setFavourites((prev) => prev.filter((f) => f.stream_type !== streamType));
+      try {
+        const url = new URL("/api/favourites", getApiUrl());
+        url.searchParams.set("profile_id", activeProfile.id);
+        url.searchParams.set("stream_type", streamType);
+        await fetch(url.toString(), { method: "DELETE" });
+      } catch {
+        // Re-load on failure
+        load(activeProfile.id);
+      }
+    },
+    [activeProfile?.id, load]
+  );
+
   return (
     <FavouritesContext.Provider
-      value={{ favourites, isLoading, isFavourite, toggleFavourite, getFavouritesByType }}
+      value={{ favourites, isLoading, isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites }}
     >
       {children}
     </FavouritesContext.Provider>

@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Animated,
   TextInput,
+  Modal,
   useWindowDimensions,
   Platform,
 } from "react-native";
@@ -284,8 +285,10 @@ export default function ContentListScreen() {
   const { type, categoryId, categoryName } = route.params;
   const { width } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
-  const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
-  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory } = useWatchHistory();
+  const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
+  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory } = useWatchHistory();
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
@@ -456,6 +459,21 @@ export default function ContentListScreen() {
     }, [refetchHistory])
   );
 
+  const handleClearAll = useCallback(async () => {
+    setClearing(true);
+    try {
+      if (isFavouritesView) {
+        await clearAllFavourites(type as "live" | "movies" | "series");
+      } else if (isRecentlyView) {
+        const ct = type === "movies" ? "movie" : "series";
+        await clearHistory(ct as "movie" | "series");
+      }
+    } finally {
+      setClearing(false);
+      setShowClearConfirm(false);
+    }
+  }, [isFavouritesView, isRecentlyView, type, clearAllFavourites, clearHistory]);
+
   const handleLongPress = (item: ContentItem) => {
     if (isSearching) return;
     const streamId = getStreamId(item, type);
@@ -540,6 +558,48 @@ export default function ContentListScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Confirm Clear All modal */}
+      <Modal
+        visible={showClearConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClearConfirm(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Feather
+              name={isFavouritesView ? "star" : "clock"}
+              size={28}
+              color={Colors.dark.accent}
+            />
+            <ThemedText style={styles.modalTitle}>Clear All?</ThemedText>
+            <ThemedText style={styles.modalBody}>
+              {isFavouritesView
+                ? `Remove all ${type} favourites for this profile?`
+                : `Remove all ${type === "movies" ? "movie" : "series"} watch history for this profile?`}
+            </ThemedText>
+            <View style={styles.modalBtnRow}>
+              <Pressable
+                style={({ pressed, focused }) => [styles.modalBtnCancel, (pressed || focused) && styles.modalBtnCancelActive]}
+                onPress={() => setShowClearConfirm(false)}
+                disabled={clearing}
+              >
+                <ThemedText style={styles.modalBtnCancelText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                style={({ pressed, focused }) => [styles.modalBtnConfirm, (pressed || focused) && styles.modalBtnConfirmActive]}
+                onPress={handleClearAll}
+                disabled={clearing}
+              >
+                {clearing
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <ThemedText style={styles.modalBtnConfirmText}>Clear All</ThemedText>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <Pressable
@@ -566,6 +626,15 @@ export default function ContentListScreen() {
             {countDisplay}
           </ThemedText>
         </View>
+        {isSpecialView && !isSearching ? (
+          <Pressable
+            style={({ pressed, focused }) => [styles.clearAllBtn, (pressed || focused) && styles.clearAllBtnActive]}
+            onPress={() => setShowClearConfirm(true)}
+          >
+            <Feather name="trash-2" size={13} color={Colors.dark.error} />
+            <ThemedText style={styles.clearAllText}>Clear All</ThemedText>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -710,6 +779,48 @@ const styles = StyleSheet.create({
   countBadgeSearch: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   countText: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center" },
   countTextSearch: { color: Colors.dark.accent, fontWeight: "700" },
+  clearAllBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: "rgba(255,59,59,0.35)",
+    backgroundColor: "rgba(255,59,59,0.08)",
+  },
+  clearAllBtnActive: {
+    borderColor: Colors.dark.error,
+    backgroundColor: "rgba(255,59,59,0.18)",
+  },
+  clearAllText: { fontSize: 12, fontWeight: "700", color: Colors.dark.error },
+  // Confirm modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "center", alignItems: "center",
+  },
+  modalCard: {
+    width: 340, maxWidth: "90%",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.xl,
+    alignItems: "center", gap: Spacing.md,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text },
+  modalBody: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
+  modalBtnRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.xs, width: "100%" },
+  modalBtnCancel: {
+    flex: 1, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  modalBtnCancelActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  modalBtnCancelText: { color: Colors.dark.text, fontWeight: "600", fontSize: 14 },
+  modalBtnConfirm: {
+    flex: 1, paddingVertical: Spacing.sm, borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.error, alignItems: "center", justifyContent: "center",
+    minHeight: 40,
+  },
+  modalBtnConfirmActive: { opacity: 0.8 },
+  modalBtnConfirmText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
   // Body layout

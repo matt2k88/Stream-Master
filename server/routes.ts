@@ -134,6 +134,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/favourites", async (req, res) => {
+    const { profile_id, stream_type } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      let q = supabase.from("favourites").delete().eq("profile_id", profile_id as string);
+      if (stream_type) q = q.eq("stream_type", stream_type as string);
+      const { error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to clear favourites" });
+    }
+  });
+
   // ── Announcements ─────────────────────────────────────────────────────────
   app.get("/api/announcements", async (req, res) => {
     try {
@@ -344,6 +358,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("[recently-watched] POST exception:", e?.message);
       res.json(null);
+    }
+  });
+
+  // ── Recently Watched — clear all for profile/type ────────────────────────
+  app.delete("/api/recently-watched", async (req, res) => {
+    const { profile_id, content_type } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      let q = supabase.from("recently_watched").delete().eq("profile_id", profile_id as string);
+      if (content_type) q = q.eq("content_type", content_type as string);
+      const { error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to clear watch history" });
+    }
+  });
+
+  // ── Content Reports ───────────────────────────────────────────────────────
+  app.post("/api/content-reports", async (req, res) => {
+    const { profile_id, stream_id, stream_name, stream_type, reason, other_text } = req.body;
+    if (!profile_id || !reason) {
+      return res.status(400).json({ error: "profile_id and reason required" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("content_reports")
+        .insert({
+          profile_id,
+          stream_id: stream_id ?? null,
+          stream_name: stream_name ?? null,
+          stream_type: stream_type ?? null,
+          reason,
+          other_text: other_text ?? null,
+        })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to submit report" });
     }
   });
 
