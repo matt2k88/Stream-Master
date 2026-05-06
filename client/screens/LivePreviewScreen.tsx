@@ -170,14 +170,25 @@ export default function LivePreviewScreen() {
     p.play();
   });
 
+  // Track current stream URL so we can reload it on focus return
+  const currentStreamUrlRef = useRef(streamUrl);
+  const hasMountedRef = useRef(false);
+
   useEffect(() => {
     return () => { try { player.pause(); } catch {} };
   }, [player]);
 
-  // Resume playback whenever screen regains focus (e.g. returning from PlayerScreen)
+  // When returning from PlayerScreen, force a fresh stream connection at live edge
   useFocusEffect(
     useCallback(() => {
-      try { player.play(); } catch {}
+      if (hasMountedRef.current) {
+        // Returning from full-screen — reload stream from live edge
+        try {
+          player.replace(currentStreamUrlRef.current);
+          player.play();
+        } catch {}
+      }
+      hasMountedRef.current = true;
     }, [player])
   );
 
@@ -229,6 +240,7 @@ export default function LivePreviewScreen() {
 
   const handleChannelPress = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
+    currentStreamUrlRef.current = newUrl;
     setSelectedId(s.stream_id);
     setSelectedName(s.name);
     setSelectedIcon(s.stream_icon ?? undefined);

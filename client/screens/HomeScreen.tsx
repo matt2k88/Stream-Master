@@ -471,17 +471,16 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  // Carousel — flex-based in landscape so it doesn't overflow on small screens
+  // Carousel — grows to fill all available space, pushing search+recent to bottom
   carouselFill: {
-    flex: 2,
+    flex: 1,
     width: "100%",
     minHeight: 0,
   },
 
-  // Recently Watched
+  // Recently Watched — content-height only, no flex growth
   recentlyWatched: {
-    flex: 1,          // fills leftover space in right panel below search
-    minHeight: 80,
+    flexShrink: 0,
   },
   portraitRecent: {
     width: "100%",
