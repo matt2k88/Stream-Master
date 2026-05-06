@@ -669,6 +669,14 @@ export default function PlayerScreen() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [resetTimer]);
 
+  // Release player on unmount — kills the network stream connection instantly
+  useEffect(() => {
+    return () => {
+      try { player.pause(); } catch {}
+      try { player.release(); } catch {}
+    };
+  }, [player]);
+
   // ── Player event listeners ────────────────────────────────────────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {

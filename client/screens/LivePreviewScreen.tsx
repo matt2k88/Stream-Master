@@ -176,11 +176,17 @@ export default function LivePreviewScreen() {
   const currentStreamUrlRef = useRef(streamUrl);
   const hasMountedRef = useRef(false);
 
+  // Release player fully on unmount — kills the network connection immediately
   useEffect(() => {
-    return () => { try { player.pause(); } catch {} };
+    return () => {
+      try { player.pause(); } catch {}
+      try { player.release(); } catch {}
+    };
   }, [player]);
 
-  // When returning from PlayerScreen, force a fresh stream connection at live edge
+  // When returning from PlayerScreen, force a fresh stream connection at live edge.
+  // The blur cleanup (return value) pauses the mini-player the instant we leave this
+  // screen, so it never streams in the background behind PlayerScreen.
   useFocusEffect(
     useCallback(() => {
       if (hasMountedRef.current) {
@@ -191,6 +197,10 @@ export default function LivePreviewScreen() {
         } catch {}
       }
       hasMountedRef.current = true;
+      return () => {
+        // Screen lost focus (navigating away) — stop streaming immediately
+        try { player.pause(); } catch {}
+      };
     }, [player])
   );
 
