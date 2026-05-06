@@ -213,6 +213,7 @@ export default function CategoryScreen() {
   const { liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, isSyncing } = useData();
   const { getFavouritesByType } = useFavourites();
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -245,7 +246,7 @@ export default function CategoryScreen() {
   };
 
   const favCount = getFavouritesByType(type).length;
-  const trimmedQuery = query.trim().toLowerCase();
+  const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
   const allStreams: AnyStream[] = useMemo(() => {
@@ -306,9 +307,11 @@ export default function CategoryScreen() {
           autoCorrect={false}
           returnKeyType="search"
           clearButtonMode="while-editing"
+          blurOnSubmit={false}
+          onSubmitEditing={() => setSubmittedQuery(query)}
         />
         {query.length > 0 ? (
-          <Pressable onPress={() => setQuery("")} hitSlop={8}>
+          <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
             <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
           </Pressable>
         ) : null}
@@ -333,7 +336,7 @@ export default function CategoryScreen() {
           <Feather name={getIcon()} size={13} color={Colors.dark.accent} />
           <ThemedText style={styles.searchResultsText}>
             {searchResults.length === 0
-              ? `No results for "${query}"`
+              ? `No results for "${submittedQuery}"`
               : `${searchResults.length} results`}
           </ThemedText>
           {searchResults.length === SEARCH_LIMIT ? (
@@ -385,9 +388,11 @@ export default function CategoryScreen() {
             autoCorrect={false}
             returnKeyType="search"
             clearButtonMode="while-editing"
+            blurOnSubmit={false}
+            onSubmitEditing={() => setSubmittedQuery(query)}
           />
           {query.length > 0 ? (
-            <Pressable onPress={() => setQuery("")} hitSlop={8}>
+            <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
               <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
             </Pressable>
           ) : null}
@@ -409,7 +414,7 @@ export default function CategoryScreen() {
             <Feather name={getIcon()} size={13} color={Colors.dark.accent} />
             <ThemedText style={styles.searchResultsText}>
               {searchResults.length === 0
-                ? `No results for "${query}"`
+                ? `No results for "${submittedQuery}"`
                 : `${searchResults.length} results`}
             </ThemedText>
             {searchResults.length === SEARCH_LIMIT ? (

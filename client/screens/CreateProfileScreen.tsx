@@ -36,6 +36,97 @@ const AVATAR_COLORS = [
   "#F44336", "#009688", "#795548", "#607D8B",
 ];
 
+// ─── Focusable wrappers with hover/focus overlays ────────────────────────────
+function IconBtn({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.iconBtn, isActive && styles.iconBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
+function IconOption({
+  ic, isSelected, color, onPress,
+}: { ic: keyof typeof Feather.glyphMap; isSelected: boolean; color: string; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.iconOption,
+        { borderColor: isSelected ? color : Colors.dark.border },
+        isSelected && { backgroundColor: color + "22" },
+        isActive && styles.iconOptionActive,
+        isActive && { borderColor: color, backgroundColor: color + "33" },
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name={ic} size={isActive ? 24 : 22} color={isSelected || isActive ? color : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
+function ColorSwatch({ c, isSelected, onPress }: { c: string; isSelected: boolean; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.colorSwatch,
+        { backgroundColor: c },
+        isSelected && styles.colorSwatchSelected,
+        isActive && styles.colorSwatchActive,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isSelected ? <Feather name="check" size={14} color="#fff" /> : null}
+    </Pressable>
+  );
+}
+
+function PinKey({ k, onPress }: { k: string; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.pinKey,
+        !k && styles.pinKeyEmpty,
+        k && isActive && styles.pinKeyPressed,
+      ]}
+      onPress={onPress}
+      onFocus={() => k ? setFocused(true) : undefined}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={!k}
+    >
+      <ThemedText style={[styles.pinKeyText, !k && { color: "transparent" }, isActive && k && styles.pinKeyTextActive]}>{k}</ThemedText>
+    </Pressable>
+  );
+}
+
 export default function CreateProfileScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -52,6 +143,9 @@ export default function CreateProfileScreen() {
   const [pin, setPin] = useState(editing?.pin ?? "");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [saveFocused, setSaveFocused] = useState(false);
+  const [deleteFocused, setDeleteFocused] = useState(false);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -136,12 +230,9 @@ export default function CreateProfileScreen() {
     <ThemedView style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Pressable
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnActive]}
-          onPress={() => navigation.goBack()}
-        >
+        <IconBtn onPress={() => navigation.goBack()}>
           <Feather name="arrow-left" size={20} color={Colors.dark.text} />
-        </Pressable>
+        </IconBtn>
         <ThemedText style={styles.headerTitle}>
           {editing ? "Edit Profile" : "New Profile"}
         </ThemedText>
@@ -169,13 +260,15 @@ export default function CreateProfileScreen() {
         <View style={styles.section}>
           <ThemedText style={styles.sectionLabel}>Profile Name</ThemedText>
           <TextInput
-            style={styles.textInput}
+            style={[styles.textInput, nameFocused && styles.textInputFocused]}
             value={name}
             onChangeText={setName}
             placeholder="Enter a name"
             placeholderTextColor={Colors.dark.border}
             maxLength={24}
             autoCorrect={false}
+            onFocus={() => setNameFocused(true)}
+            onBlur={() => setNameFocused(false)}
           />
         </View>
 
@@ -184,17 +277,13 @@ export default function CreateProfileScreen() {
           <ThemedText style={styles.sectionLabel}>Avatar</ThemedText>
           <View style={styles.iconGrid}>
             {AVATAR_ICONS.map((ic) => (
-              <Pressable
+              <IconOption
                 key={ic}
-                style={[
-                  styles.iconOption,
-                  { borderColor: ic === icon ? color : Colors.dark.border },
-                  ic === icon && { backgroundColor: color + "22" },
-                ]}
+                ic={ic}
+                isSelected={ic === icon}
+                color={color}
                 onPress={() => setIcon(ic)}
-              >
-                <Feather name={ic} size={22} color={ic === icon ? color : Colors.dark.textSecondary} />
-              </Pressable>
+              />
             ))}
           </View>
         </View>
@@ -204,17 +293,12 @@ export default function CreateProfileScreen() {
           <ThemedText style={styles.sectionLabel}>Color</ThemedText>
           <View style={styles.colorGrid}>
             {AVATAR_COLORS.map((c) => (
-              <Pressable
+              <ColorSwatch
                 key={c}
-                style={[
-                  styles.colorSwatch,
-                  { backgroundColor: c },
-                  c === color && styles.colorSwatchSelected,
-                ]}
+                c={c}
+                isSelected={c === color}
                 onPress={() => setColor(c)}
-              >
-                {c === color ? <Feather name="check" size={14} color="#fff" /> : null}
-              </Pressable>
+              />
             ))}
           </View>
         </View>
@@ -256,22 +340,15 @@ export default function CreateProfileScreen() {
               </View>
               <View style={styles.pinPad}>
                 {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) => (
-                  <Pressable
+                  <PinKey
                     key={idx}
-                    style={({ pressed }) => [
-                      styles.pinKey,
-                      !k && styles.pinKeyEmpty,
-                      pressed && k && styles.pinKeyPressed,
-                    ]}
+                    k={k}
                     onPress={() => {
                       if (!k) return;
                       if (k === "⌫") { setPin((p) => p.slice(0, -1)); }
                       else if (pin.length < 4) { setPin((p) => p + k); }
                     }}
-                    disabled={!k}
-                  >
-                    <ThemedText style={[styles.pinKeyText, !k && { color: "transparent" }]}>{k}</ThemedText>
-                  </Pressable>
+                  />
                 ))}
               </View>
             </View>
@@ -280,12 +357,18 @@ export default function CreateProfileScreen() {
 
         {/* Save button */}
         <Pressable
-          style={({ pressed }) => [styles.saveBtn, !isValid && styles.saveBtnDisabled, pressed && isValid && styles.saveBtnPressed]}
+          style={({ pressed }) => [
+            styles.saveBtn,
+            !isValid && styles.saveBtnDisabled,
+            (pressed || saveFocused) && isValid && styles.saveBtnPressed,
+          ]}
           onPress={handleSave}
           disabled={!isValid || saving}
+          onFocus={() => setSaveFocused(true)}
+          onBlur={() => setSaveFocused(false)}
         >
           <LinearGradient
-            colors={isValid ? ["#FF8C1A", "#FF5500"] : [Colors.dark.backgroundDefault, Colors.dark.backgroundDefault]}
+            colors={isValid ? (saveFocused ? ["#FFA040", "#FF6600"] : ["#FF8C1A", "#FF5500"]) : [Colors.dark.backgroundDefault, Colors.dark.backgroundDefault]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
@@ -298,9 +381,15 @@ export default function CreateProfileScreen() {
         {/* Delete button — only when editing */}
         {editing ? (
           <Pressable
-            style={({ pressed }) => [styles.deleteBtn, pressed && styles.deleteBtnPressed, deleting && styles.saveBtnDisabled]}
+            style={({ pressed }) => [
+              styles.deleteBtn,
+              (pressed || deleteFocused) && styles.deleteBtnPressed,
+              deleting && styles.saveBtnDisabled,
+            ]}
             onPress={handleDelete}
             disabled={deleting}
+            onFocus={() => setDeleteFocused(true)}
+            onBlur={() => setDeleteFocused(false)}
           >
             <Feather name="trash-2" size={16} color={Colors.dark.error} />
             <ThemedText style={styles.deleteBtnText}>
@@ -344,11 +433,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md,
     color: Colors.dark.text, fontSize: 16, fontWeight: "500",
   },
+  textInputFocused: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.08)",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
+  },
   iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
   iconOption: {
     width: 52, height: 52, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1.5, justifyContent: "center", alignItems: "center",
+  },
+  iconOptionActive: {
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7, shadowRadius: 10, elevation: 6,
+    transform: [{ scale: 1.08 }],
   },
   colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
   colorSwatch: {
@@ -358,6 +458,12 @@ const styles = StyleSheet.create({
   colorSwatchSelected: {
     borderWidth: 3, borderColor: "#fff",
     shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 6,
+  },
+  colorSwatchActive: {
+    borderWidth: 3, borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1, shadowRadius: 12, elevation: 8,
+    transform: [{ scale: 1.12 }],
   },
   pinToggleRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -386,6 +492,7 @@ const styles = StyleSheet.create({
   pinKeyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
   pinKeyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   pinKeyText: { color: Colors.dark.text, fontSize: 20, fontWeight: "600" },
+  pinKeyTextActive: { color: Colors.dark.accent },
   saveBtn: {
     height: 52, borderRadius: BorderRadius.sm, overflow: "hidden",
     justifyContent: "center", alignItems: "center", marginTop: Spacing.sm,

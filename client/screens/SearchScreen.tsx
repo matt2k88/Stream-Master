@@ -184,6 +184,7 @@ export default function SearchScreen() {
   const { liveStreams, vodStreams, seriesList } = useData();
   const { width, height } = useWindowDimensions();
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [backFocused, setBackFocused] = useState(false);
   const [backPressed, setBackPressed] = useState(false);
   const backActive = backFocused || backPressed;
@@ -207,7 +208,7 @@ export default function SearchScreen() {
   const desktopMovieCardW = Math.floor((width - padH * 2 - gap * (desktopMovieCols - 1)) / desktopMovieCols);
   const desktopLiveCardW = Math.floor((width - padH * 2 - gap * (desktopLiveCols - 1)) / desktopLiveCols);
 
-  const trimmed = query.trim().toLowerCase();
+  const trimmed = submittedQuery.trim().toLowerCase();
 
   const results = useMemo(() => {
     if (!trimmed) return { live: [], movies: [], series: [] };
@@ -252,7 +253,7 @@ export default function SearchScreen() {
           <Feather name="search" size={16} color={trimmed ? Colors.dark.accent : Colors.dark.textSecondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search channels, movies, series..."
+            placeholder="Type then press Enter to search..."
             placeholderTextColor={Colors.dark.textSecondary}
             value={query}
             onChangeText={setQuery}
@@ -262,9 +263,10 @@ export default function SearchScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             blurOnSubmit={false}
+            onSubmitEditing={() => setSubmittedQuery(query)}
           />
           {query.length > 0 ? (
-            <Pressable onPress={() => setQuery("")} hitSlop={8}>
+            <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
               <Feather name="x-circle" size={16} color={Colors.dark.textSecondary} />
             </Pressable>
           ) : null}

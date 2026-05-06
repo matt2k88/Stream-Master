@@ -12,6 +12,29 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getApiUrl } from "@/lib/query-client";
 import { Colors } from "@/constants/theme";
 
+function SkipButton({ onPress, top, right }: { onPress: () => void; top: number; right: number }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.skipBtn,
+        { top, right },
+        isActive && styles.skipBtnActive,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hitSlop={12}
+    >
+      <Text style={[styles.skipText, isActive && styles.skipTextActive]}>Skip</Text>
+    </Pressable>
+  );
+}
+
 interface IntroPlayerProps {
   videoUrl: string;
   onDone: () => void;
@@ -92,13 +115,7 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
       ) : null}
 
       {showSkip ? (
-        <Pressable
-          style={[styles.skipBtn, { top: insets.top + 12, right: insets.right + 16 }]}
-          onPress={dismiss}
-          hitSlop={12}
-        >
-          <Text style={styles.skipText}>Skip</Text>
-        </Pressable>
+        <SkipButton onPress={dismiss} top={insets.top + 12} right={insets.right + 16} />
       ) : null}
 
       <Animated.View
@@ -174,11 +191,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
+  skipBtnActive: {
+    backgroundColor: "rgba(255,102,0,0.85)",
+    borderColor: "#FF6600",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 8,
+    transform: [{ scale: 1.06 }],
+  },
   skipText: {
     color: Colors.dark.text,
     fontSize: 13,
     fontWeight: "600",
     opacity: 0.9,
+  },
+  skipTextActive: {
+    color: "#fff",
+    opacity: 1,
   },
   fadeOverlay: {
     ...StyleSheet.absoluteFillObject,

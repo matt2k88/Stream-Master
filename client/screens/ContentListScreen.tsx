@@ -250,6 +250,7 @@ export default function ContentListScreen() {
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
   const [query, setQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
@@ -260,7 +261,7 @@ export default function ContentListScreen() {
   const gap = Spacing.sm;
 
   const isFavouritesView = selectedCategoryId === "favourites";
-  const trimmedQuery = query.trim().toLowerCase();
+  const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
   const numColumns = type === "live"
@@ -408,9 +409,11 @@ export default function ContentListScreen() {
           autoCorrect={false}
           returnKeyType="search"
           clearButtonMode="while-editing"
+          blurOnSubmit={false}
+          onSubmitEditing={() => setSubmittedQuery(query)}
         />
         {query.length > 0 ? (
-          <Pressable onPress={() => setQuery("")} hitSlop={8}>
+          <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
             <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
           </Pressable>
         ) : null}
@@ -419,7 +422,7 @@ export default function ContentListScreen() {
         <View style={styles.searchMeta}>
           <ThemedText style={styles.searchMetaText}>
             {searchResults.length === 0
-              ? `No results for "${query}"`
+              ? `No results for "${submittedQuery}"`
               : `${searchResults.length} results across all ${
                   type === "live" ? "channels" : type === "movies" ? "movies" : "series"
                 }`}

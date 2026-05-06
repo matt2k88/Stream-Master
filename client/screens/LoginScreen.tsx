@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -98,6 +98,9 @@ export default function LoginScreen() {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [continueFocused, setContinueFocused] = useState(false);
   const [connectFocused, setConnectFocused] = useState(false);
+
+  const passwordRef = useRef<TextInput>(null);
+  const connectBtnRef = useRef<View>(null);
 
   const hasUppercase = /[A-Z]/.test(username);
 
@@ -307,6 +310,9 @@ export default function LoginScreen() {
                 editable={!isLoading}
                 onFocus={() => setFocusedField("user")}
                 onBlur={() => setFocusedField(null)}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => passwordRef.current?.focus()}
               />
               {hasUppercase ? (
                 <View style={styles.capsWarning}>
@@ -322,6 +328,7 @@ export default function LoginScreen() {
               <ThemedText style={styles.label}>Password</ThemedText>
               <View style={styles.passwordWrap}>
                 <TextInput
+                  ref={passwordRef}
                   style={[inputStyle("pass"), styles.passwordInput]}
                   placeholder="Enter password"
                   placeholderTextColor={Colors.dark.border}
@@ -333,6 +340,15 @@ export default function LoginScreen() {
                   editable={!isLoading}
                   onFocus={() => setFocusedField("pass")}
                   onBlur={() => setFocusedField(null)}
+                  returnKeyType="next"
+                  blurOnSubmit={true}
+                  onSubmitEditing={() => {
+                    // Always advance focus to Connect button (user must press it explicitly)
+                    requestAnimationFrame(() => {
+                      // @ts-ignore - focus exists on Pressable host across platforms
+                      connectBtnRef.current?.focus?.();
+                    });
+                  }}
                 />
                 <Pressable
                   style={styles.eyeBtn}
@@ -355,6 +371,7 @@ export default function LoginScreen() {
             ) : null}
 
             <Pressable
+              ref={connectBtnRef as any}
               style={({ pressed }) => [
                 styles.primaryBtn,
                 (pressed || connectFocused) && styles.primaryBtnFocused,

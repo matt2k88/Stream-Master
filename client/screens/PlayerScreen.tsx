@@ -10,6 +10,7 @@ import {
   ScrollView,
   BackHandler,
   Animated,
+  findNodeHandle,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -46,19 +47,38 @@ function SeekBar({
   onSeek,
   onFocus,
   onFocusChange,
+  onCapturedChange,
 }: {
   currentTime: number;
   duration: number;
   onSeek: (time: number) => void;
   onFocus?: () => void;
   onFocusChange?: (focused: boolean) => void;
+  onCapturedChange?: (captured: boolean) => void;
 }) {
   const [barWidth, setBarWidth] = useState(1);
   const [localFrac, setLocalFrac] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
+  const [isCaptured, setIsCaptured] = useState(false);
+  const [selfTag, setSelfTag] = useState<number | null>(null);
+  const pressableRef = useRef<View>(null);
   const barWidthRef = useRef(1);
   const durationRef = useRef(duration);
+  useEffect(() => {
+    if (pressableRef.current) {
+      const tag = findNodeHandle(pressableRef.current);
+      if (tag) setSelfTag(tag);
+    }
+  }, []);
   useEffect(() => { durationRef.current = duration; }, [duration]);
+
+  // Auto-release capture if focus is lost
+  useEffect(() => {
+    if (!isFocused && isCaptured) {
+      setIsCaptured(false);
+      onCapturedChange?.(false);
+    }
+  }, [isFocused, isCaptured, onCapturedChange]);
 
   const frac = localFrac !== null
     ? localFrac
@@ -88,9 +108,28 @@ function SeekBar({
     })
   ).current;
 
+  const isHighlighted = isFocused || isCaptured;
+
   return (
     <Pressable
-      style={[styles.seekBarWrapper, isFocused && styles.seekBarWrapperFocused]}
+      ref={pressableRef as any}
+      // While captured, trap D-pad left/right/up/down to self so arrows only seek
+      // and don't move focus to adjacent controls (which would auto-release capture).
+      nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
+      nextFocusRight={isCaptured && selfTag ? selfTag : undefined}
+      nextFocusUp={isCaptured && selfTag ? selfTag : undefined}
+      nextFocusDown={isCaptured && selfTag ? selfTag : undefined}
+      style={[
+        styles.seekBarWrapper,
+        isHighlighted && styles.seekBarWrapperFocused,
+        isCaptured && styles.seekBarWrapperCaptured,
+      ]}
+      onPress={() => {
+        const next = !isCaptured;
+        setIsCaptured(next);
+        onCapturedChange?.(next);
+        onFocus?.();
+      }}
       onFocus={() => {
         setIsFocused(true);
         onFocusChange?.(true);
@@ -102,9 +141,9 @@ function SeekBar({
       }}
     >
       <Feather
-        name="skip-forward"
-        size={isFocused ? 20 : 15}
-        color={isFocused ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
+        name={isCaptured ? "move" : "skip-forward"}
+        size={isHighlighted ? 20 : 15}
+        color={isHighlighted ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
       />
       <View
         style={styles.seekBarHitArea}
@@ -115,14 +154,25 @@ function SeekBar({
           setBarWidth(w);
         }}
       >
-        <View style={[styles.seekBarTrack, isFocused && styles.seekBarTrackFocused]}>
+        <View style={[styles.seekBarTrack, isHighlighted && styles.seekBarTrackFocused]}>
           <View style={[styles.seekBarFill, { width: frac * barWidth }]} />
         </View>
         <View
-          style={[styles.seekBarThumb, { left: thumbLeft }, isFocused && styles.seekBarThumbFocused]}
+          style={[
+            styles.seekBarThumb,
+            { left: thumbLeft },
+            isHighlighted && styles.seekBarThumbFocused,
+            isCaptured && styles.seekBarThumbCaptured,
+          ]}
           pointerEvents="none"
         />
       </View>
+      {isCaptured ? (
+        <View style={styles.seekBarCapturedBadge}>
+          <Feather name="chevrons-left" size={11} color={Colors.dark.accent} />
+          <Feather name="chevrons-right" size={11} color={Colors.dark.accent} />
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -351,6 +401,7 @@ export default function PlayerScreen() {
   // ── Seek bar TV remote — refs declared early so they're stable ───────────
   const [seekBarFocused, setSeekBarFocused] = useState(false);
   const seekBarFocusedRef = useRef(false);
+  const seekBarCapturedRef = useRef(false);
   const currentTimeRef = useRef(0);
   const tvDurationRef = useRef(0);
   useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
@@ -398,7 +449,7 @@ export default function PlayerScreen() {
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
-        if (!seekBarFocusedRef.current || isLiveRef.current) return;
+        if (!seekBarCapturedRef.current || isLiveRef.current) return;
         if (evt.eventType !== "left" && evt.eventType !== "right") return;
         const now = Date.now();
         const isSameDir = evt.eventType === seekHoldRef.current.dir;
@@ -749,6 +800,9 @@ export default function PlayerScreen() {
                   seekBarFocusedRef.current = focused;
                   setSeekBarFocused(focused);
                 }}
+                onCapturedChange={(captured) => {
+                  seekBarCapturedRef.current = captured;
+                }}
               />
 
               <ThemedText style={styles.timeText}>{formatTime(duration)}</ThemedText>
@@ -926,6 +980,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 8,
     elevation: 4,
+  },
+  seekBarWrapperCaptured: {
+    borderColor: "#FF6600",
+    backgroundColor: "rgba(255,102,0,0.18)",
+    shadowOpacity: 1,
+    shadowRadius: 14,
+  },
+  seekBarCapturedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,102,0,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.5)",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 4,
+  },
+  seekBarThumbCaptured: {
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#FF6600",
   },
   seekBarHitArea: {
     flex: 1,
