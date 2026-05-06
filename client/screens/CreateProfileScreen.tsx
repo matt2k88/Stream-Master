@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   ScrollView,
-  Switch,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -100,6 +99,48 @@ function ColorSwatch({ c, isSelected, onPress }: { c: string; isSelected: boolea
       onPressOut={() => setPressed(false)}
     >
       {isSelected ? <Feather name="check" size={14} color="#fff" /> : null}
+    </Pressable>
+  );
+}
+
+function PinToggleRow({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.pinToggleRow,
+        isActive && styles.pinToggleRowActive,
+        enabled && styles.pinToggleRowEnabled,
+      ]}
+      onPress={onToggle}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: enabled }}
+    >
+      <View style={styles.pinToggleLeft}>
+        <View style={[styles.pinIconWrap, enabled && styles.pinIconWrapEnabled]}>
+          <Feather
+            name="lock"
+            size={16}
+            color={enabled ? Colors.dark.accent : Colors.dark.textSecondary}
+          />
+        </View>
+        <View>
+          <ThemedText style={styles.pinToggleTitle}>PIN Protection</ThemedText>
+          <ThemedText style={styles.pinToggleSubtitle}>
+            Require a 4-digit PIN to access
+          </ThemedText>
+        </View>
+      </View>
+      {/* Custom toggle pill — no Switch, fully TV-remote focusable */}
+      <View style={[styles.toggleTrack, enabled && styles.toggleTrackOn]}>
+        <View style={[styles.toggleThumb, enabled && styles.toggleThumbOn]} />
+      </View>
     </Pressable>
   );
 }
@@ -305,23 +346,10 @@ export default function CreateProfileScreen() {
 
         {/* PIN protection */}
         <View style={styles.section}>
-          <View style={styles.pinToggleRow}>
-            <View style={styles.pinToggleLeft}>
-              <View style={styles.pinIconWrap}>
-                <Feather name="lock" size={16} color={pinEnabled ? Colors.dark.accent : Colors.dark.textSecondary} />
-              </View>
-              <View>
-                <ThemedText style={styles.pinToggleTitle}>PIN Protection</ThemedText>
-                <ThemedText style={styles.pinToggleSubtitle}>Require a 4-digit PIN to access</ThemedText>
-              </View>
-            </View>
-            <Switch
-              value={pinEnabled}
-              onValueChange={(v) => { setPinEnabled(v); if (!v) setPin(""); }}
-              trackColor={{ false: Colors.dark.border, true: Colors.dark.accent }}
-              thumbColor={pinEnabled ? "#fff" : Colors.dark.textSecondary}
-            />
-          </View>
+          <PinToggleRow
+            enabled={pinEnabled}
+            onToggle={() => { setPinEnabled((v) => { if (v) setPin(""); return !v; }); }}
+          />
 
           {pinEnabled ? (
             <View style={styles.pinInputSection}>
@@ -470,14 +498,44 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
     borderWidth: 1, borderColor: Colors.dark.border, padding: Spacing.md,
   },
+  pinToggleRowActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.08)",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
+  },
+  pinToggleRowEnabled: {
+    borderColor: "rgba(255,102,0,0.4)",
+  },
   pinToggleLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md, flex: 1 },
   pinIconWrap: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center", alignItems: "center",
   },
+  pinIconWrapEnabled: {
+    backgroundColor: "rgba(255,102,0,0.15)",
+  },
   pinToggleTitle: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   pinToggleSubtitle: { fontSize: 12, color: Colors.dark.textSecondary },
+  toggleTrack: {
+    width: 48, height: 28, borderRadius: 14,
+    backgroundColor: Colors.dark.border,
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  toggleTrackOn: {
+    backgroundColor: Colors.dark.accent,
+  },
+  toggleThumb: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.dark.textSecondary,
+    alignSelf: "flex-start",
+  },
+  toggleThumbOn: {
+    backgroundColor: "#fff",
+    alignSelf: "flex-end",
+  },
   pinInputSection: { gap: Spacing.md, alignItems: "center" },
   pinLabel: { color: Colors.dark.textSecondary, fontSize: 13 },
   pinDots: { flexDirection: "row", gap: Spacing.md },
