@@ -9,6 +9,8 @@ import {
   Animated,
   BackHandler,
   Platform,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -23,6 +25,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, EpgListing } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import { useData } from "@/contexts/DataContext";
 import type { LiveStream } from "@/lib/xtream-api";
 
@@ -163,7 +166,55 @@ export default function LivePreviewScreen() {
   const [epgLoading, setEpgLoading] = useState(true);
 
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { activeProfile } = useProfile();
   const isFavourited = isFavourite(selectedId, "live");
+
+  // ── Report content ────────────────────────────────────────────────────────
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState<string | null>(null);
+  const [reportOther, setReportOther] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportDone, setReportDone] = useState(false);
+  const REPORT_REASONS = [
+    "Constant buffering",
+    "Does not load",
+    "Wrong language",
+    "Jittery / stuttering",
+    "Wrong content",
+    "Other",
+  ] as const;
+  const handleSubmitReport = useCallback(async () => {
+    if (!reportReason || !activeProfile) return;
+    if (reportReason === "Other" && !reportOther.trim()) return;
+    setReportSubmitting(true);
+    try {
+      const { getApiUrl } = await import("@/lib/query-client");
+      const url = new URL("/api/content-reports", getApiUrl());
+      await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile_id: activeProfile.id,
+          stream_id: selectedId,
+          stream_name: selectedName,
+          stream_type: "live",
+          reason: reportReason === "Other" ? "Other" : reportReason,
+          other_text: reportReason === "Other" ? reportOther.trim() : null,
+        }),
+      });
+      setReportDone(true);
+      setTimeout(() => {
+        setShowReport(false);
+        setReportDone(false);
+        setReportReason(null);
+        setReportOther("");
+      }, 1800);
+    } catch {
+      setShowReport(false);
+    } finally {
+      setReportSubmitting(false);
+    }
+  }, [reportReason, reportOther, activeProfile, selectedId, selectedName]);
 
   const toastAnim = useRef(new Animated.Value(0)).current;
   const [toastMsg, setToastMsg] = useState("");
@@ -448,48 +499,72 @@ export default function LivePreviewScreen() {
       </View>
       )}
 
-      {/* Fullscreen overlay — same player, no second connection */}
+      {/* Fullscreen overlay — same player, no second connection.
+          Layered so taps on the screen reliably re-show the controls on
+          mobile (wrapping the VideoView in a Pressable was being absorbed
+          by the native video surface on phones — same fix as PlayerScreen). */}
       {isFullscreen && (
         <View style={styles.fsRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={handlePlayerTap}>
-            <VideoView
-              style={StyleSheet.absoluteFill}
-              player={player}
-              contentFit="contain"
-              nativeControls={false}
-              allowsFullscreen={false}
-              allowsPictureInPicture={false}
-            />
-          </Pressable>
+          {/* 1. Video underneath */}
+          <VideoView
+            style={StyleSheet.absoluteFill}
+            player={player}
+            contentFit="contain"
+            nativeControls={false}
+            allowsFullscreen={false}
+            allowsPictureInPicture={false}
+          />
 
-          {showFsOverlay && (
-            <>
-              <LinearGradient
-                colors={["rgba(0,0,0,0.85)", "transparent"]}
-                style={styles.fsTopGradient}
-                pointerEvents="none"
-              />
-              <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
-                <Pressable
-                  style={[styles.headerBtn, backActive && styles.headerBtnActive]}
-                  onPress={exitFullscreen}
-                  onFocus={() => setBackFocused(true)}
-                  onBlur={() => setBackFocused(false)}
-                  onPressIn={() => setBackPressed(true)}
-                  onPressOut={() => setBackPressed(false)}
-                  hasTVPreferredFocus
-                >
-                  <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
-                </Pressable>
-                <View style={styles.liveBadge}>
-                  <View style={styles.liveDot} />
-                  <ThemedText style={styles.liveText}>LIVE</ThemedText>
+          {/* 2. Background tap target — sits above the video, below the controls.
+                Always mounted so even when controls are hidden, taps anywhere
+                on the screen toggle them back on. */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={handlePlayerTap} />
+
+          {/* 3. Controls overlay — always mounted but pointerEvents="none" when
+                hidden so taps fall through to the background Pressable. */}
+          <View
+            style={StyleSheet.absoluteFill}
+            pointerEvents={showFsOverlay ? "box-none" : "none"}
+          >
+            {showFsOverlay && (
+              <>
+                <LinearGradient
+                  colors={["rgba(0,0,0,0.85)", "transparent"]}
+                  style={styles.fsTopGradient}
+                  pointerEvents="none"
+                />
+                <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
+                  <Pressable
+                    style={[styles.headerBtn, backActive && styles.headerBtnActive]}
+                    onPress={exitFullscreen}
+                    onFocus={() => setBackFocused(true)}
+                    onBlur={() => setBackFocused(false)}
+                    onPressIn={() => setBackPressed(true)}
+                    onPressOut={() => setBackPressed(false)}
+                    hasTVPreferredFocus
+                  >
+                    <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
+                  </Pressable>
+                  <View style={styles.liveBadge}>
+                    <View style={styles.liveDot} />
+                    <ThemedText style={styles.liveText}>LIVE</ThemedText>
+                  </View>
+                  <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                  {/* Report content button */}
+                  <Pressable
+                    style={({ pressed, focused }) => [
+                      styles.headerBtn,
+                      (pressed || focused) && styles.headerBtnActive,
+                    ]}
+                    onPress={() => { setShowReport(true); resetFsHideTimer(); }}
+                  >
+                    <Feather name="flag" size={18} color={Colors.dark.text} />
+                  </Pressable>
+                  <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
                 </View>
-                <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
-                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
-              </View>
-            </>
-          )}
+              </>
+            )}
+          </View>
         </View>
       )}
 
@@ -503,6 +578,104 @@ export default function LivePreviewScreen() {
           <ThemedText style={styles.toastText}>{toastMsg}</ThemedText>
         </Animated.View>
       ) : null}
+
+      {/* Report content modal */}
+      <Modal
+        visible={showReport}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!reportSubmitting) {
+            setShowReport(false);
+            setReportReason(null);
+            setReportOther("");
+            setReportDone(false);
+          }
+        }}
+      >
+        <View style={styles.reportBackdrop}>
+          <View style={styles.reportCard}>
+            {reportDone ? (
+              <>
+                <Feather name="check-circle" size={36} color={Colors.dark.accent} />
+                <ThemedText style={styles.reportTitle}>Report Submitted</ThemedText>
+                <ThemedText style={styles.reportSubtitle}>
+                  Thank you — we will look into this.
+                </ThemedText>
+              </>
+            ) : (
+              <>
+                <View style={styles.reportHeader}>
+                  <Feather name="flag" size={18} color={Colors.dark.error} />
+                  <ThemedText style={styles.reportTitle}>Report Content</ThemedText>
+                </View>
+                <ThemedText style={styles.reportSubtitle} numberOfLines={1}>
+                  {selectedName}
+                </ThemedText>
+                <View style={styles.reportReasons}>
+                  {REPORT_REASONS.map((r) => (
+                    <Pressable
+                      key={r}
+                      style={({ pressed, focused }) => [
+                        styles.reportReasonBtn,
+                        reportReason === r && styles.reportReasonBtnSelected,
+                        (pressed || focused) && styles.reportReasonBtnHover,
+                      ]}
+                      onPress={() => setReportReason(r)}
+                    >
+                      <View style={[styles.reportRadio, reportReason === r && styles.reportRadioSelected]}>
+                        {reportReason === r ? <View style={styles.reportRadioDot} /> : null}
+                      </View>
+                      <ThemedText style={[styles.reportReasonText, reportReason === r && styles.reportReasonTextSelected]}>
+                        {r}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+                {reportReason === "Other" ? (
+                  <TextInput
+                    style={styles.reportOtherInput}
+                    placeholder="Describe the issue..."
+                    placeholderTextColor={Colors.dark.border}
+                    value={reportOther}
+                    onChangeText={setReportOther}
+                    multiline
+                    numberOfLines={3}
+                    maxLength={500}
+                    autoFocus
+                  />
+                ) : null}
+                <View style={styles.reportBtnRow}>
+                  <Pressable
+                    style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && styles.reportCancelBtnHover]}
+                    onPress={() => {
+                      setShowReport(false);
+                      setReportReason(null);
+                      setReportOther("");
+                    }}
+                    disabled={reportSubmitting}
+                  >
+                    <ThemedText style={styles.reportCancelText}>Cancel</ThemedText>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed, focused }) => [
+                      styles.reportSubmitBtn,
+                      (!reportReason || (reportReason === "Other" && !reportOther.trim())) && styles.reportSubmitBtnDisabled,
+                      (pressed || focused) && styles.reportSubmitBtnHover,
+                    ]}
+                    onPress={handleSubmitReport}
+                    disabled={reportSubmitting || !reportReason || (reportReason === "Other" && !reportOther.trim())}
+                  >
+                    {reportSubmitting
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <ThemedText style={styles.reportSubmitText}>Submit Report</ThemedText>}
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -844,5 +1017,147 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#fff",
+  },
+
+  // ── Report content modal ──────────────────────────────────────────────────
+  reportBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  reportCard: {
+    width: 400,
+    maxWidth: "95%",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    alignItems: "center",
+  },
+  reportHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  reportTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  reportSubtitle: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+    maxWidth: "90%",
+  },
+  reportReasons: {
+    width: "100%",
+    gap: Spacing.xs,
+  },
+  reportReasonBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  reportReasonBtnSelected: {
+    borderColor: Colors.dark.error,
+    backgroundColor: "rgba(255,59,59,0.1)",
+  },
+  reportReasonBtnHover: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  reportRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: BorderRadius.full,
+    borderWidth: 2,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  reportRadioSelected: {
+    borderColor: Colors.dark.error,
+  },
+  reportRadioDot: {
+    width: 9,
+    height: 9,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.error,
+  },
+  reportReasonText: {
+    fontSize: 14,
+    color: Colors.dark.textSecondary,
+    flex: 1,
+  },
+  reportReasonTextSelected: {
+    color: Colors.dark.text,
+    fontWeight: "600",
+  },
+  reportOtherInput: {
+    width: "100%",
+    minHeight: 70,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    color: Colors.dark.text,
+    fontSize: 14,
+    padding: Spacing.md,
+    textAlignVertical: "top",
+  },
+  reportBtnRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    width: "100%",
+    marginTop: Spacing.xs,
+  },
+  reportCancelBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reportCancelBtnHover: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  reportCancelText: {
+    color: Colors.dark.textSecondary,
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  reportSubmitBtn: {
+    flex: 2,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.error,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 42,
+  },
+  reportSubmitBtnDisabled: {
+    opacity: 0.4,
+  },
+  reportSubmitBtnHover: {
+    backgroundColor: "#ff5555",
+  },
+  reportSubmitText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
   },
 });
