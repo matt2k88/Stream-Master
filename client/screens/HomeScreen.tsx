@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform } from "react-native";
+import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -240,11 +241,12 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleConfirmExit = useCallback(() => {
+  const handleConfirmExit = useCallback(async () => {
     setExitConfirmVisible(false);
     if (Platform.OS !== "web") {
       try { BackHandler.exitApp(); } catch {}
     }
+    try { await reloadAppAsync(); } catch {}
   }, []);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
