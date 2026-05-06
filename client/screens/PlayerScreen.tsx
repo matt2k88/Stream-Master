@@ -687,10 +687,6 @@ export default function PlayerScreen() {
     });
   }, [nextEp, navigation, seriesIdParam, seriesNameParam, thumbnail, title]);
 
-  const handleNextCancel = useCallback(() => {
-    setShowNext(false);
-  }, []);
-
   // Countdown ticker
   useEffect(() => {
     if (!showNext) return;
@@ -972,9 +968,9 @@ export default function PlayerScreen() {
         ) : null}
       </View>
 
-      {/* Next-episode prompt */}
+      {/* Next-episode prompt — countdown only, auto-advances */}
       {showNext && nextEp ? (
-        <View style={styles.nextOverlay} pointerEvents="box-none">
+        <View style={styles.nextOverlay} pointerEvents="none">
           <View style={styles.nextCard}>
             <LinearGradient
               colors={["rgba(20,20,20,0.98)", "rgba(8,8,8,0.98)"]}
@@ -986,37 +982,11 @@ export default function PlayerScreen() {
             <ThemedText style={styles.nextTitle} numberOfLines={2}>
               S{nextEp.season} · E{nextEp.episode.episode_num} — {nextEp.episode.title}
             </ThemedText>
-            <ThemedText style={styles.nextCountdown}>
-              Playing in {countdown}s
-            </ThemedText>
-            <View style={styles.nextBtnRow}>
-              <Pressable
-                style={({ pressed, focused }) => [
-                  styles.nextBtnSecondary,
-                  (pressed || focused) && styles.nextBtnSecondaryActive,
-                ]}
-                onPress={handleNextCancel}
-              >
-                <Feather name="x" size={14} color={Colors.dark.text} />
-                <ThemedText style={styles.nextBtnSecondaryText}>Cancel</ThemedText>
-              </Pressable>
-              <Pressable
-                style={({ pressed, focused }) => [
-                  styles.nextBtnPrimary,
-                  (pressed || focused) && styles.nextBtnPrimaryActive,
-                ]}
-                onPress={handleNextConfirm}
-                hasTVPreferredFocus
-              >
-                <LinearGradient
-                  colors={["#FF8C1A", "#FF5500"]}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
-                <Feather name="play" size={14} color="#fff" />
-                <ThemedText style={styles.nextBtnPrimaryText}>Watch Next</ThemedText>
-              </Pressable>
+            <View style={styles.nextCountdownRow}>
+              <Feather name="play-circle" size={18} color={Colors.dark.accent} />
+              <ThemedText style={styles.nextCountdown}>
+                Playing in {countdown}s
+              </ThemedText>
             </View>
           </View>
         </View>
@@ -1071,46 +1041,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 18,
   },
+  nextCountdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
   nextCountdown: {
-    color: Colors.dark.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-    marginBottom: Spacing.xs,
+    color: Colors.dark.accent,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
-  nextBtnRow: { flexDirection: "row", gap: Spacing.sm },
-  nextBtnSecondary: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  nextBtnSecondaryActive: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accentDim,
-  },
-  nextBtnSecondaryText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
-  nextBtnPrimary: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255,140,26,0.6)",
-  },
-  nextBtnPrimaryActive: {
-    borderColor: "#fff",
-  },
-  nextBtnPrimaryText: { color: "#fff", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
 
 
   loadingOverlay: {
