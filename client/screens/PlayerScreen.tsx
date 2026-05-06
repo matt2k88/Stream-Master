@@ -1039,9 +1039,13 @@ export default function PlayerScreen() {
       />
 
       {/* ── Controls overlay — ALWAYS mounted so TV remote can focus buttons ── */}
+      {/* pointerEvents="none" when hidden so taps pass through to the background   */}
+      {/* Pressable — without this, invisible buttons/SeekBar eat every touch and   */}
+      {/* the controls never come back up on touch-screen devices.                  */}
+      {/* pointerEvents only affects touch; TV remote focus still works when "none".*/}
       <View
         style={[styles.overlay, !ctrlVisible && styles.overlayHidden]}
-        pointerEvents="box-none"
+        pointerEvents={ctrlVisible ? "box-none" : "none"}
       >
         {/* Gradients */}
         <LinearGradient
