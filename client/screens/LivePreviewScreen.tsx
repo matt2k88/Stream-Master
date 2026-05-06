@@ -162,6 +162,8 @@ export default function LivePreviewScreen() {
   const [toastVisible, setToastVisible] = useState(false);
 
   const [backFocused, setBackFocused] = useState(false);
+  const [backPressed, setBackPressed] = useState(false);
+  const backActive = backFocused || backPressed;
 
   const listRef = useRef<FlatList>(null);
 
@@ -268,12 +270,14 @@ export default function LivePreviewScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingLeft: padL, paddingRight: Spacing.md }]}>
         <Pressable
-          style={[styles.headerBtn, backFocused && styles.headerBtnActive]}
+          style={[styles.headerBtn, backActive && styles.headerBtnActive]}
           onPress={() => navigation.goBack()}
           onFocus={() => setBackFocused(true)}
           onBlur={() => setBackFocused(false)}
+          onPressIn={() => setBackPressed(true)}
+          onPressOut={() => setBackPressed(false)}
         >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
         </Pressable>
 
         <View style={styles.liveBadge}>

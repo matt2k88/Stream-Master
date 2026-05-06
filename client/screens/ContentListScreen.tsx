@@ -628,7 +628,9 @@ export default function ContentListScreen() {
           style={({ pressed, focused }) => [styles.backBtn, (pressed || focused) && styles.backBtnPressed]}
           onPress={() => navigation.goBack()}
         >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          {({ pressed, focused }) => (
+            <Feather name="arrow-left" size={20} color={(pressed || focused) ? Colors.dark.accent : Colors.dark.text} />
+          )}
         </Pressable>
         <View style={styles.headerTitleRow}>
           {isFavouritesView ? (
