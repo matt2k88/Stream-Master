@@ -325,13 +325,12 @@ export default function ContentListScreen() {
   }, [type, liveCategories, vodCategories, seriesCategories]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
-    const pinned: SidebarCat[] = [];
-    if (type !== "live") {
-      pinned.push({ category_id: "recently", category_name: "Recently Watched" });
-    }
-    pinned.push({ category_id: "favourites", category_name: "Favourites" });
+    const pinned: SidebarCat[] = [
+      { category_id: "recently", category_name: "Recently Watched" },
+      { category_id: "favourites", category_name: "Favourites" },
+    ];
     return [...pinned, ...categories];
-  }, [categories, type]);
+  }, [categories]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -379,6 +378,20 @@ export default function ContentListScreen() {
       }
     }
     // Recently Watched — walk watchEntries (newest-first), dedup, hydrate
+    if (type === "live") {
+      const out: LiveStream[] = [];
+      const seen = new Set<string>();
+      const idx = new Map<string, LiveStream>();
+      for (const s of liveStreams) idx.set(String(s.stream_id), s);
+      for (const e of watchEntries) {
+        if (e.content_type !== "live" || !e.stream_id) continue;
+        const k = String(e.stream_id);
+        if (seen.has(k)) continue;
+        const s = idx.get(k);
+        if (s) { out.push(s); seen.add(k); }
+      }
+      return out;
+    }
     if (type === "movies") {
       const out: VodStream[] = [];
       const seen = new Set<string>();
@@ -487,8 +500,8 @@ export default function ContentListScreen() {
       if (isFavouritesView) {
         await clearAllFavourites(type as "live" | "movies" | "series");
       } else if (isRecentlyView) {
-        const ct = type === "movies" ? "movie" : "series";
-        await clearHistory(ct as "movie" | "series");
+        const ct = type === "live" ? "live" : type === "movies" ? "movie" : "series";
+        await clearHistory(ct as "live" | "movie" | "series");
       }
     } finally {
       setClearing(false);

@@ -278,7 +278,13 @@ export default function CategoryScreen() {
 
   const favCount = getFavouritesByType(type).length;
   const recentCount = useMemo(() => {
-    if (type === "live") return 0;
+    if (type === "live") {
+      const seen = new Set<string>();
+      for (const e of watchEntries) {
+        if (e.content_type === "live" && e.stream_id) seen.add(String(e.stream_id));
+      }
+      return seen.size;
+    }
     const wantType = type === "movies" ? "movie" : "series";
     if (wantType === "movie") {
       const seen = new Set<string>();
@@ -366,40 +372,25 @@ export default function CategoryScreen() {
 
       {/* Favourites + Recently row — hidden while searching */}
       {!isSearching ? (
-        type === "live" ? (
-          <PillButton
-            icon="star"
-            label="Favourites"
-            count={favCount}
-            onPress={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "favourites",
-                categoryName: "Favourites",
-              })
-            }
-          />
-        ) : (
-          <FavRecentRow
-            type={type}
-            favCount={favCount}
-            recentCount={recentCount}
-            onPressFav={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "favourites",
-                categoryName: "Favourites",
-              })
-            }
-            onPressRecent={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "recently",
-                categoryName: "Recently Watched",
-              })
-            }
-          />
-        )
+        <FavRecentRow
+          type={type}
+          favCount={favCount}
+          recentCount={recentCount}
+          onPressFav={() =>
+            navigation.navigate("ContentList", {
+              type,
+              categoryId: "favourites",
+              categoryName: "Favourites",
+            })
+          }
+          onPressRecent={() =>
+            navigation.navigate("ContentList", {
+              type,
+              categoryId: "recently",
+              categoryName: "Recently Watched",
+            })
+          }
+        />
       ) : (
         // Results count when searching
         <View style={styles.searchResultsHeader}>
@@ -468,40 +459,25 @@ export default function CategoryScreen() {
           ) : null}
         </View>
         {!isSearching ? (
-          type === "live" ? (
-            <PillButton
-              icon="star"
-              label="Favourites"
-              count={favCount}
-              onPress={() =>
-                navigation.navigate("ContentList", {
-                  type,
-                  categoryId: "favourites",
-                  categoryName: "Favourites",
-                })
-              }
-            />
-          ) : (
-            <FavRecentRow
-              type={type}
-              favCount={favCount}
-              recentCount={recentCount}
-              onPressFav={() =>
-                navigation.navigate("ContentList", {
-                  type,
-                  categoryId: "favourites",
-                  categoryName: "Favourites",
-                })
-              }
-              onPressRecent={() =>
-                navigation.navigate("ContentList", {
-                  type,
-                  categoryId: "recently",
-                  categoryName: "Recently Watched",
-                })
-              }
-            />
-          )
+          <FavRecentRow
+            type={type}
+            favCount={favCount}
+            recentCount={recentCount}
+            onPressFav={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "favourites",
+                categoryName: "Favourites",
+              })
+            }
+            onPressRecent={() =>
+              navigation.navigate("ContentList", {
+                type,
+                categoryId: "recently",
+                categoryName: "Recently Watched",
+              })
+            }
+          />
         ) : (
           <View style={styles.searchResultsHeader}>
             <Feather name={getIcon()} size={13} color={Colors.dark.accent} />

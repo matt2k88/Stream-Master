@@ -20,7 +20,7 @@ interface WatchHistoryContextValue {
   upsertLocal: (entry: RecentlyWatched) => void;
   getByStreamId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
   getBySeriesId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
-  clearHistory: (contentType: "movie" | "series") => Promise<void>;
+  clearHistory: (contentType: "movie" | "series" | "live") => Promise<void>;
 }
 
 const WatchHistoryContext = createContext<WatchHistoryContextValue | undefined>(undefined);
@@ -99,7 +99,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
   );
 
   const clearHistory = useCallback(
-    async (contentType: "movie" | "series") => {
+    async (contentType: "movie" | "series" | "live") => {
       if (!activeProfile) return;
       // Optimistic clear
       setEntries((prev) => prev.filter((e) => e.content_type !== contentType));
