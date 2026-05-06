@@ -114,7 +114,6 @@ export default function AnnouncementTicker() {
         >
           <Text
             style={styles.tickerText}
-            numberOfLines={1}
             onLayout={(e) => handleTextLayout(e.nativeEvent.layout.width)}
           >
             {ticker}
@@ -165,6 +164,7 @@ const styles = StyleSheet.create({
   scrollRow: {
     position: "absolute",
     flexDirection: "row",
+    flexWrap: "nowrap",
     alignItems: "center",
   },
   tickerText: {
@@ -172,6 +172,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     opacity: 0.9,
+    flexShrink: 0,
     whiteSpace: "nowrap",
   } as any,
 });

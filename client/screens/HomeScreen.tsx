@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
 import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -29,17 +29,18 @@ interface NavButtonProps {
   iconSize?: number;
   textSize?: number;
   compact?: boolean;
+  loading?: boolean;
 }
 
-function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, compact = false }: NavButtonProps) {
+function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, compact = false, loading = false }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const isActive = focused || pressed || loading;
 
   return (
     <Pressable
       style={[styles.navButton, compact && styles.navButtonCompact, isActive && styles.navButtonActive, style]}
-      onPress={onPress}
+      onPress={loading ? undefined : onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
@@ -54,14 +55,18 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, 
         />
       ) : null}
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
-        <Feather
-          name={icon}
-          size={iconSize}
-          color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
-        />
+        {loading ? (
+          <ActivityIndicator size={Math.max(18, iconSize - 4)} color={Colors.dark.accent} />
+        ) : (
+          <Feather
+            name={icon}
+            size={iconSize}
+            color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+          />
+        )}
       </View>
       <ThemedText style={[styles.navButtonText, { fontSize: textSize }, isActive && styles.navButtonTextActive]}>
-        {title}
+        {loading ? "Loading…" : title}
       </ThemedText>
       {isActive ? <View style={styles.activeIndicator} /> : null}
     </Pressable>
@@ -204,8 +209,11 @@ export default function HomeScreen() {
   const isLandscape = width > height;
   const { refresh, liveCategories, vodCategories, seriesCategories } = useData();
 
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
   // Navigate directly to ContentList, pre-selecting the first real category
   const goToContent = (type: "live" | "movies" | "series", title: string) => {
+    setNavigatingTo(type);
     const cats = type === "live" ? liveCategories : type === "movies" ? vodCategories : seriesCategories;
     const first = cats[0];
     navigation.navigate("ContentList", {
@@ -213,6 +221,10 @@ export default function HomeScreen() {
       categoryId: first?.category_id ?? "",
       categoryName: first?.category_name ?? title,
     });
+  };
+  const goToScreen = (key: string, screen: "TvGuide" | "CatchUp") => {
+    setNavigatingTo(key);
+    navigation.navigate(screen);
   };
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
@@ -223,6 +235,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       setOnDashboard(true);
+      setNavigatingTo(null); // clear loading state when returning to home
       // Refresh watch history every time user returns to home
       refetchHistory();
       setRecentRefreshKey((k) => k + 1);
@@ -305,6 +318,7 @@ export default function HomeScreen() {
                 title="Live TV"
                 icon="tv"
                 onPress={() => goToContent("live", "Live TV")}
+                loading={navigatingTo === "live"}
                 style={styles.colATop}
                 iconSize={30}
                 textSize={17}
@@ -312,7 +326,8 @@ export default function HomeScreen() {
               <NavButton
                 title="Catch Up"
                 icon="clock"
-                onPress={() => navigation.navigate("CatchUp")}
+                onPress={() => goToScreen("catchup", "CatchUp")}
+                loading={navigatingTo === "catchup"}
                 style={styles.catchUpBtn}
                 iconSize={16}
                 textSize={12}
@@ -321,7 +336,8 @@ export default function HomeScreen() {
               <NavButton
                 title="TV Guide"
                 icon="calendar"
-                onPress={() => navigation.navigate("TvGuide")}
+                onPress={() => goToScreen("tvguide", "TvGuide")}
+                loading={navigatingTo === "tvguide"}
                 style={styles.colABot}
                 iconSize={22}
                 textSize={13}
@@ -334,6 +350,7 @@ export default function HomeScreen() {
                 title="Movies"
                 icon="film"
                 onPress={() => goToContent("movies", "Movies")}
+                loading={navigatingTo === "movies"}
                 style={styles.colBBtn}
                 iconSize={28}
                 textSize={16}
@@ -342,6 +359,7 @@ export default function HomeScreen() {
                 title="Series"
                 icon="grid"
                 onPress={() => goToContent("series", "Series")}
+                loading={navigatingTo === "series"}
                 style={styles.colBBtn}
                 iconSize={28}
                 textSize={16}
@@ -396,6 +414,7 @@ export default function HomeScreen() {
             title="Live TV"
             icon="tv"
             onPress={() => goToContent("live", "Live TV")}
+            loading={navigatingTo === "live"}
             style={styles.portraitTopFull}
             iconSize={26}
             textSize={15}
@@ -406,6 +425,7 @@ export default function HomeScreen() {
               title="Movies"
               icon="film"
               onPress={() => goToContent("movies", "Movies")}
+              loading={navigatingTo === "movies"}
               style={styles.portraitSubBtn}
               iconSize={18}
               textSize={12}
@@ -415,6 +435,7 @@ export default function HomeScreen() {
               title="Series"
               icon="grid"
               onPress={() => goToContent("series", "Series")}
+              loading={navigatingTo === "series"}
               style={styles.portraitSubBtn}
               iconSize={18}
               textSize={12}
@@ -426,7 +447,8 @@ export default function HomeScreen() {
             <NavButton
               title="Catch Up"
               icon="clock"
-              onPress={() => navigation.navigate("CatchUp")}
+              onPress={() => goToScreen("catchup", "CatchUp")}
+              loading={navigatingTo === "catchup"}
               style={styles.portraitSubBtn}
               iconSize={16}
               textSize={11}
@@ -435,7 +457,8 @@ export default function HomeScreen() {
             <NavButton
               title="TV Guide"
               icon="calendar"
-              onPress={() => navigation.navigate("TvGuide")}
+              onPress={() => goToScreen("tvguide", "TvGuide")}
+              loading={navigatingTo === "tvguide"}
               style={styles.portraitSubBtn}
               iconSize={16}
               textSize={11}

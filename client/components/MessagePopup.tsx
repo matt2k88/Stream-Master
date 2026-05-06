@@ -5,6 +5,7 @@ import {
   Pressable,
   Modal,
   Animated,
+  ScrollView,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -73,10 +74,15 @@ export default function MessagePopup() {
 
           <View style={styles.divider} />
 
-          {/* Message body */}
-          <View style={styles.body}>
+          {/* Message body — scrolls if announcement is long */}
+          <ScrollView
+            style={styles.bodyScroll}
+            contentContainerStyle={styles.body}
+            showsVerticalScrollIndicator={true}
+            indicatorStyle="white"
+          >
             <ThemedText style={styles.message}>{pendingMessage.message}</ThemedText>
-          </View>
+          </ScrollView>
 
           {/* Dismiss button */}
           <Pressable
@@ -102,7 +108,8 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    maxWidth: 400,
+    maxWidth: 460,
+    maxHeight: "88%",
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.lg,
     borderWidth: 1.5,
@@ -141,6 +148,9 @@ const styles = StyleSheet.create({
   },
   closeBtnActive: { borderColor: Colors.dark.accent },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginHorizontal: Spacing.lg },
+  bodyScroll: {
+    flexShrink: 1,
+  },
   body: {
     padding: Spacing.lg,
     paddingBottom: Spacing.md,

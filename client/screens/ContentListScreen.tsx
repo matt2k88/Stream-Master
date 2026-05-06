@@ -319,6 +319,15 @@ export default function ContentListScreen() {
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
+  const [categorySwitching, setCategorySwitching] = useState(false);
+
+  // Brief loading overlay when category changes (lets the UI show feedback
+  // before the new list renders, especially on slower TV devices).
+  useEffect(() => {
+    if (!categorySwitching) return;
+    const t = setTimeout(() => setCategorySwitching(false), 280);
+    return () => clearTimeout(t);
+  }, [categorySwitching, selectedCategoryId]);
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
   const flatListRef = useRef<FlatList<ContentItem>>(null);
 
@@ -713,6 +722,8 @@ export default function ContentListScreen() {
                 isFav={item.category_id === "favourites"}
                 isRecent={item.category_id === "recently"}
                 onPress={() => {
+                  if (item.category_id === selectedCategoryId) return;
+                  setCategorySwitching(true);
                   setSelectedCategoryId(item.category_id);
                   setSelectedCategoryName(item.category_name);
                 }}
@@ -807,6 +818,12 @@ export default function ContentListScreen() {
               }
             />
           )}
+
+          {categorySwitching ? (
+            <View style={styles.switchOverlay} pointerEvents="none">
+              <ActivityIndicator size="large" color={Colors.dark.accent} />
+            </View>
+          ) : null}
         </View>
       </View>
     </ThemedView>
@@ -815,6 +832,12 @@ export default function ContentListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+  switchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(8,8,8,0.45)",
+  },
   header: {
     flexDirection: "row", alignItems: "center",
     paddingBottom: Spacing.md, gap: Spacing.md,

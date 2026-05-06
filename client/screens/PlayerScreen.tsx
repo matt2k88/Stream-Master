@@ -1218,23 +1218,14 @@ export default function PlayerScreen() {
                   {title}
                 </ThemedText>
                 <View style={styles.reportReasons}>
-                  {REPORT_REASONS.map((r) => (
-                    <Pressable
+                  {REPORT_REASONS.map((r, i) => (
+                    <ReportReasonBtn
                       key={r}
-                      style={({ pressed, focused }) => [
-                        styles.reportReasonBtn,
-                        reportReason === r && styles.reportReasonBtnSelected,
-                        (pressed || focused) && styles.reportReasonBtnHover,
-                      ]}
+                      label={r}
+                      selected={reportReason === r}
                       onPress={() => setReportReason(r)}
-                    >
-                      <View style={[styles.reportRadio, reportReason === r && styles.reportRadioSelected]}>
-                        {reportReason === r ? <View style={styles.reportRadioDot} /> : null}
-                      </View>
-                      <ThemedText style={[styles.reportReasonText, reportReason === r && styles.reportReasonTextSelected]}>
-                        {r}
-                      </ThemedText>
-                    </Pressable>
+                      autoFocus={i === 0}
+                    />
                   ))}
                 </View>
                 {reportReason === "Other" ? (
@@ -1251,30 +1242,19 @@ export default function PlayerScreen() {
                   />
                 ) : null}
                 <View style={styles.reportBtnRow}>
-                  <Pressable
-                    style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && styles.reportCancelBtnHover]}
+                  <ReportCancelBtn
                     onPress={() => {
                       setShowReportWithRef(false);
                       setReportReason(null);
                       setReportOther("");
                     }}
                     disabled={reportSubmitting}
-                  >
-                    <ThemedText style={styles.reportCancelText}>Cancel</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed, focused }) => [
-                      styles.reportSubmitBtn,
-                      (!reportReason || (reportReason === "Other" && !reportOther.trim())) && styles.reportSubmitBtnDisabled,
-                      (pressed || focused) && styles.reportSubmitBtnHover,
-                    ]}
+                  />
+                  <ReportSubmitBtn
                     onPress={handleSubmitReport}
+                    submitting={reportSubmitting}
                     disabled={reportSubmitting || !reportReason || (reportReason === "Other" && !reportOther.trim())}
-                  >
-                    {reportSubmitting
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <ThemedText style={styles.reportSubmitText}>Submit Report</ThemedText>}
-                  </Pressable>
+                  />
                 </View>
               </>
             )}
@@ -1282,6 +1262,96 @@ export default function PlayerScreen() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+function ReportReasonBtn({
+  label,
+  selected,
+  onPress,
+  autoFocus,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  autoFocus?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.reportReasonBtn,
+        selected && styles.reportReasonBtnSelected,
+        isActive && styles.reportReasonBtnHover,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
+    >
+      <View style={[styles.reportRadio, selected && styles.reportRadioSelected]}>
+        {selected ? <View style={styles.reportRadioDot} /> : null}
+      </View>
+      <ThemedText style={[styles.reportReasonText, selected && styles.reportReasonTextSelected]}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+function ReportCancelBtn({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.reportCancelBtn, isActive && styles.reportCancelBtnHover]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+    >
+      <ThemedText style={styles.reportCancelText}>Cancel</ThemedText>
+    </Pressable>
+  );
+}
+
+function ReportSubmitBtn({
+  onPress,
+  submitting,
+  disabled,
+}: {
+  onPress: () => void;
+  submitting: boolean;
+  disabled?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.reportSubmitBtn,
+        disabled && styles.reportSubmitBtnDisabled,
+        isActive && !disabled && styles.reportSubmitBtnHover,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+    >
+      {submitting
+        ? <ActivityIndicator size="small" color="#fff" />
+        : <ThemedText style={styles.reportSubmitText}>Submit Report</ThemedText>}
+    </Pressable>
   );
 }
 
