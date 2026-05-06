@@ -96,6 +96,14 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
     return () => clearTimeout(t);
   }, [dismiss]);
 
+  // Release player on unmount — kills the network connection immediately
+  useEffect(() => {
+    return () => {
+      try { player.pause(); } catch {}
+      try { player.release(); } catch {}
+    };
+  }, [player]);
+
   return (
     <View style={styles.container}>
       <VideoView
