@@ -406,12 +406,21 @@ export default function LivePreviewScreen() {
         <View style={[styles.divider, { marginLeft: padL, marginRight: Spacing.md }]} />
       )}
 
-      {/* Body */}
-      {!isFullscreen && (
-      <View style={[styles.body, { paddingBottom: padB, paddingLeft: padL }]}>
-
+      {/* Body — ALWAYS mounted (so the VideoView/SurfaceView never tears down
+          when entering fullscreen). When fullscreen, the body is hidden via
+          display:'none' and the playerWrap escapes via absolute positioning.
+          This is the only way Android's SurfaceView keeps a clean surface
+          across small ↔ fullscreen transitions — unmounting the VideoView
+          (or its host tree) leaves the surface in a black state on phones. */}
+      <View
+        style={[
+          styles.body,
+          { paddingBottom: padB, paddingLeft: padL },
+          isFullscreen && styles.bodyFullscreen,
+        ]}
+      >
         {/* Left: channel list sidebar */}
-        {categoryChannels.length > 0 ? (
+        {!isFullscreen && categoryChannels.length > 0 ? (
           <View style={styles.sidebar}>
             <View style={styles.sidebarHeader}>
               <Feather name="tv" size={11} color={Colors.dark.accent} />
@@ -435,9 +444,10 @@ export default function LivePreviewScreen() {
         ) : null}
 
         {/* Right: player on top, EPG below */}
-        <View style={styles.rightPanel}>
-          {/* Player */}
-          <View style={styles.playerWrap}>
+        <View style={[styles.rightPanel, isFullscreen && styles.rightPanelFullscreen]}>
+          {/* Player — playerWrap restyles to absoluteFill when fullscreen,
+              escaping the flex layout. VideoView NEVER unmounts. */}
+          <View style={[styles.playerWrap, isFullscreen && styles.playerWrapFullscreen]}>
             <VideoView
               style={styles.player}
               player={player}
@@ -446,129 +456,113 @@ export default function LivePreviewScreen() {
               allowsFullscreen={false}
               allowsPictureInPicture={false}
             />
-            <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.5)"]}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-            {selectedIcon ? (
-              <View style={styles.channelIconWrap}>
-                <Image
-                  source={{ uri: selectedIcon }}
-                  style={styles.channelIcon}
-                  contentFit="contain"
-                />
-              </View>
-            ) : null}
-          </View>
-
-          {/* Watch Full Screen */}
-          <FullScreenButton onPress={handleFullScreen} />
-
-          {/* Divider */}
-          <View style={styles.epgDivider}>
-            <Feather name="calendar" size={11} color={Colors.dark.accent} />
-            <ThemedText style={styles.epgHeaderText}>Programme Guide</ThemedText>
-          </View>
-
-          {/* EPG */}
-          <View style={styles.epgPanel}>
-            {epgLoading ? (
-              <View style={styles.epgState}>
-                <ActivityIndicator size="small" color={Colors.dark.accent} />
-                <ThemedText style={styles.epgStateText}>Loading guide...</ThemedText>
-              </View>
-            ) : epgListings.length === 0 ? (
-              <View style={styles.epgState}>
-                <Feather name="calendar" size={28} color={Colors.dark.border} />
-                <ThemedText style={styles.epgStateText}>No guide available</ThemedText>
-              </View>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {epgListings.map((listing, idx) => (
-                  <EpgRow
-                    key={listing.id || String(idx)}
-                    listing={listing}
-                    isNow={listing.now_playing === 1 || idx === 0}
-                  />
-                ))}
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </View>
-      )}
-
-      {/* Fullscreen overlay — same player, no second connection.
-          IMPORTANT: VideoView is wrapped in Pressable (not a sibling) so the
-          Android SurfaceView lifecycle stays clean across small ↔ fullscreen
-          mount swaps (sibling layout was leaving a black surface). The
-          `pointerEvents="box-only"` on the Pressable forces it to steal all
-          touches before the underlying SurfaceView can absorb them — that's
-          what was breaking tap-to-show on phones with the original wrapping. */}
-      {isFullscreen && (
-        <View style={styles.fsRoot}>
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={handlePlayerTap}
-            pointerEvents="box-only"
-          >
-            <VideoView
-              style={StyleSheet.absoluteFill}
-              player={player}
-              contentFit="contain"
-              nativeControls={false}
-              allowsFullscreen={false}
-              allowsPictureInPicture={false}
-            />
-          </Pressable>
-
-          {/* Controls overlay — sibling on top. pointerEvents toggles so when
-                hidden, taps fall through to the wrapping Pressable below. */}
-          <View
-            style={StyleSheet.absoluteFill}
-            pointerEvents={showFsOverlay ? "box-none" : "none"}
-          >
-            {showFsOverlay && (
+            {!isFullscreen && (
               <>
                 <LinearGradient
-                  colors={["rgba(0,0,0,0.85)", "transparent"]}
-                  style={styles.fsTopGradient}
+                  colors={["transparent", "rgba(0,0,0,0.5)"]}
+                  style={StyleSheet.absoluteFill}
                   pointerEvents="none"
                 />
-                <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
-                  <Pressable
-                    style={[styles.headerBtn, backActive && styles.headerBtnActive]}
-                    onPress={exitFullscreen}
-                    onFocus={() => setBackFocused(true)}
-                    onBlur={() => setBackFocused(false)}
-                    onPressIn={() => setBackPressed(true)}
-                    onPressOut={() => setBackPressed(false)}
-                    hasTVPreferredFocus
-                  >
-                    <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
-                  </Pressable>
-                  <View style={styles.liveBadge}>
-                    <View style={styles.liveDot} />
-                    <ThemedText style={styles.liveText}>LIVE</ThemedText>
+                {selectedIcon ? (
+                  <View style={styles.channelIconWrap}>
+                    <Image
+                      source={{ uri: selectedIcon }}
+                      style={styles.channelIcon}
+                      contentFit="contain"
+                    />
                   </View>
-                  <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
-                  {/* Report content button */}
-                  <Pressable
-                    style={({ pressed, focused }) => [
-                      styles.headerBtn,
-                      (pressed || focused) && styles.headerBtnActive,
-                    ]}
-                    onPress={() => { setShowReport(true); resetFsHideTimer(); }}
-                  >
-                    <Feather name="flag" size={18} color={Colors.dark.text} />
-                  </Pressable>
-                  <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
-                </View>
+                ) : null}
               </>
             )}
           </View>
+
+          {/* Watch Full Screen + EPG — hidden in fullscreen */}
+          {!isFullscreen && (
+            <>
+              <FullScreenButton onPress={handleFullScreen} />
+              <View style={styles.epgDivider}>
+                <Feather name="calendar" size={11} color={Colors.dark.accent} />
+                <ThemedText style={styles.epgHeaderText}>Programme Guide</ThemedText>
+              </View>
+              <View style={styles.epgPanel}>
+                {epgLoading ? (
+                  <View style={styles.epgState}>
+                    <ActivityIndicator size="small" color={Colors.dark.accent} />
+                    <ThemedText style={styles.epgStateText}>Loading guide...</ThemedText>
+                  </View>
+                ) : epgListings.length === 0 ? (
+                  <View style={styles.epgState}>
+                    <Feather name="calendar" size={28} color={Colors.dark.border} />
+                    <ThemedText style={styles.epgStateText}>No guide available</ThemedText>
+                  </View>
+                ) : (
+                  <ScrollView showsVerticalScrollIndicator={false}>
+                    {epgListings.map((listing, idx) => (
+                      <EpgRow
+                        key={listing.id || String(idx)}
+                        listing={listing}
+                        isNow={listing.now_playing === 1 || idx === 0}
+                      />
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            </>
+          )}
         </View>
+      </View>
+
+      {/* Fullscreen tap target + controls — siblings on top of the
+          (now absolute-positioned) playerWrap. The VideoView is rendered
+          inside playerWrap above, so it stays alive across the transition. */}
+      {isFullscreen && (
+        <>
+          {/* Tap target: catches all taps to toggle overlay. zIndex above
+              the playerWrap (50) but below the controls (70). Transparent,
+              so the SurfaceView underneath shows through. */}
+          <Pressable
+            style={[StyleSheet.absoluteFill, { zIndex: 60 }]}
+            onPress={handlePlayerTap}
+          />
+
+          {showFsOverlay && (
+            <View style={[StyleSheet.absoluteFill, { zIndex: 70 }]} pointerEvents="box-none">
+              <LinearGradient
+                colors={["rgba(0,0,0,0.85)", "transparent"]}
+                style={styles.fsTopGradient}
+                pointerEvents="none"
+              />
+              <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
+                <Pressable
+                  style={[styles.headerBtn, backActive && styles.headerBtnActive]}
+                  onPress={exitFullscreen}
+                  onFocus={() => setBackFocused(true)}
+                  onBlur={() => setBackFocused(false)}
+                  onPressIn={() => setBackPressed(true)}
+                  onPressOut={() => setBackPressed(false)}
+                  hasTVPreferredFocus
+                >
+                  <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
+                </Pressable>
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <ThemedText style={styles.liveText}>LIVE</ThemedText>
+                </View>
+                <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                <Pressable
+                  style={({ pressed, focused }) => [
+                    styles.headerBtn,
+                    (pressed || focused) && styles.headerBtnActive,
+                  ]}
+                  onPress={() => { setShowReport(true); resetFsHideTimer(); }}
+                >
+                  <Feather name="flag" size={18} color={Colors.dark.text} />
+                </Pressable>
+                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+              </View>
+            </View>
+          )}
+        </>
       )}
 
       {/* Toast */}
@@ -870,6 +864,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.border,
     flexShrink: 0,
+  },
+  bodyFullscreen: {
+    paddingBottom: 0,
+    paddingLeft: 0,
+  },
+  rightPanelFullscreen: {
+    flex: 1,
+    paddingRight: 0,
+    gap: 0,
+  },
+  playerWrapFullscreen: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    aspectRatio: undefined,
+    maxHeight: undefined,
+    borderRadius: 0,
+    borderWidth: 0,
+    zIndex: 50,
   },
   player: { width: "100%", height: "100%" },
   channelIconWrap: {
