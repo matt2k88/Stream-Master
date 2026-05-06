@@ -330,6 +330,31 @@ class XtreamAPI {
       return [];
     }
   }
+
+  async getSimpleDataTable(streamId: number): Promise<EpgListing[]> {
+    try {
+      const url = `${this.getBaseUrl()}/player_api.php?${this.getAuthParams()}&action=get_simple_data_table&stream_id=${streamId}`;
+      const response = await fetch(url);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data?.epg_listings) ? data.epg_listings : [];
+    } catch {
+      return [];
+    }
+  }
+
+  getCatchupStreamUrl(streamId: number, startTimestamp: number, durationMinutes: number): string {
+    const d = new Date(startTimestamp * 1000);
+    const yyyy = d.getUTCFullYear();
+    const MM = (d.getUTCMonth() + 1).toString().padStart(2, "0");
+    const dd = d.getUTCDate().toString().padStart(2, "0");
+    const HH = d.getUTCHours().toString().padStart(2, "0");
+    const mm = d.getUTCMinutes().toString().padStart(2, "0");
+    const start = `${yyyy}-${MM}-${dd}:${HH}-${mm}`;
+    const u = this.credentials?.username ?? "";
+    const p = this.credentials?.password ?? "";
+    return `${this.getBaseUrl()}/timeshift/${u}/${p}/${durationMinutes}/${start}/${streamId}.ts`;
+  }
 }
 
 export const xtreamApi = new XtreamAPI();

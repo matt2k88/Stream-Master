@@ -294,46 +294,54 @@ export default function HomeScreen() {
         // Right 50%: Advert carousel (fills top) + Search All (bottom)
         <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
 
-          {/* LEFT PANEL — 2×2 grid */}
+          {/* LEFT PANEL — two sub-columns */}
           <View style={styles.leftPanel}>
-            {/* Top row: Live TV + Movies (bigger) */}
-            <View style={styles.topRow}>
+            {/* Sub-column A: Live TV | Catch Up | TV Guide */}
+            <View style={styles.colA}>
               <NavButton
                 title="Live TV"
                 icon="tv"
                 onPress={() => goToContent("live", "Live TV")}
-                style={styles.topBtn}
+                style={styles.colATop}
                 iconSize={30}
                 textSize={17}
               />
               <NavButton
-                title="Movies"
-                icon="film"
-                onPress={() => goToContent("movies", "Movies")}
-                style={styles.topBtn}
-                iconSize={30}
-                textSize={17}
-              />
-            </View>
-            {/* Bottom row: Series + TV Guide (smaller) */}
-            <View style={styles.botRow}>
-              <NavButton
-                title="Series"
-                icon="grid"
-                onPress={() => goToContent("series", "Series")}
-                style={styles.botBtn}
-                iconSize={22}
-                textSize={13}
+                title="Catch Up"
+                icon="clock"
+                onPress={() => navigation.navigate("CatchUp")}
+                style={styles.catchUpBtn}
+                iconSize={16}
+                textSize={12}
                 compact
               />
               <NavButton
                 title="TV Guide"
                 icon="calendar"
                 onPress={() => navigation.navigate("TvGuide")}
-                style={styles.botBtn}
+                style={styles.colABot}
                 iconSize={22}
                 textSize={13}
                 compact
+              />
+            </View>
+            {/* Sub-column B: Movies | Series stacked 50/50 */}
+            <View style={styles.colB}>
+              <NavButton
+                title="Movies"
+                icon="film"
+                onPress={() => goToContent("movies", "Movies")}
+                style={styles.colBBtn}
+                iconSize={28}
+                textSize={16}
+              />
+              <NavButton
+                title="Series"
+                icon="grid"
+                onPress={() => goToContent("series", "Series")}
+                style={styles.colBBtn}
+                iconSize={28}
+                textSize={16}
               />
             </View>
           </View>
@@ -369,27 +377,26 @@ export default function HomeScreen() {
       ) : (
         // ── Portrait / Mobile layout ────────────────────────────────────────
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          {/* Portrait top row: Live TV + Movies */}
-          <View style={styles.portraitTopRow}>
-            <NavButton
-              title="Live TV"
-              icon="tv"
-              onPress={() => goToContent("live", "Live TV")}
-              style={styles.portraitTopBtn}
-              iconSize={26}
-              textSize={15}
-            />
+          {/* Portrait top: Live TV full-width */}
+          <NavButton
+            title="Live TV"
+            icon="tv"
+            onPress={() => goToContent("live", "Live TV")}
+            style={styles.portraitTopFull}
+            iconSize={26}
+            textSize={15}
+          />
+          {/* Portrait mid row: Movies + Series */}
+          <View style={styles.portraitSubRow}>
             <NavButton
               title="Movies"
               icon="film"
               onPress={() => goToContent("movies", "Movies")}
-              style={styles.portraitTopBtn}
-              iconSize={26}
-              textSize={15}
+              style={styles.portraitSubBtn}
+              iconSize={18}
+              textSize={12}
+              compact
             />
-          </View>
-          {/* Portrait bottom row: Series + TV Guide */}
-          <View style={styles.portraitSubRow}>
             <NavButton
               title="Series"
               icon="grid"
@@ -399,13 +406,25 @@ export default function HomeScreen() {
               textSize={12}
               compact
             />
+          </View>
+          {/* Portrait small row: Catch Up + TV Guide */}
+          <View style={styles.portraitSubRow}>
+            <NavButton
+              title="Catch Up"
+              icon="clock"
+              onPress={() => navigation.navigate("CatchUp")}
+              style={styles.portraitSubBtn}
+              iconSize={16}
+              textSize={11}
+              compact
+            />
             <NavButton
               title="TV Guide"
               icon="calendar"
               onPress={() => navigation.navigate("TvGuide")}
               style={styles.portraitSubBtn}
-              iconSize={18}
-              textSize={12}
+              iconSize={16}
+              textSize={11}
               compact
             />
           </View>
@@ -649,24 +668,28 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
   },
 
-  // Left panel — 50%
+  // Left panel — 50%, two sub-columns
   leftPanel: {
+    flex: 1,
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  // Sub-column A: Live TV | Catch Up | TV Guide
+  colA: {
     flex: 1,
     flexDirection: "column",
     gap: Spacing.sm,
   },
-  topRow: {
-    flex: 3,
-    flexDirection: "row",
+  colATop: { flex: 3, minHeight: 0 },
+  catchUpBtn: { height: 44, minHeight: 0 },
+  colABot: { flex: 2, minHeight: 0 },
+  // Sub-column B: Movies | Series 50/50
+  colB: {
+    flex: 1,
+    flexDirection: "column",
     gap: Spacing.sm,
   },
-  topBtn: { flex: 1, minHeight: 0 },
-  botRow: {
-    flex: 2,
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  botBtn: { flex: 1, minHeight: 0 },
+  colBBtn: { flex: 1, minHeight: 0 },
 
   // Right panel — 50%
   rightPanel: {
@@ -691,9 +714,8 @@ const styles = StyleSheet.create({
 
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-  portraitTopRow: { height: 90, flexDirection: "row", gap: Spacing.sm },
-  portraitTopBtn: { flex: 1 },
-  portraitSubRow: { height: 72, flexDirection: "row", gap: Spacing.sm },
+  portraitTopFull: { height: 90, width: "100%" },
+  portraitSubRow: { height: 64, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
   portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 

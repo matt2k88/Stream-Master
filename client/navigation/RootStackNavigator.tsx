@@ -22,6 +22,7 @@ import SearchScreen from "@/screens/SearchScreen";
 import MessagesScreen from "@/screens/MessagesScreen";
 import LivePreviewScreen from "@/screens/LivePreviewScreen";
 import TvGuideScreen from "@/screens/TvGuideScreen";
+import CatchUpScreen from "@/screens/CatchUpScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -32,6 +33,7 @@ export type RootStackParamList = {
   Search: undefined;
   Messages: undefined;
   TvGuide: undefined;
+  CatchUp: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string; initialSeason?: number };
@@ -80,6 +82,7 @@ export default function RootStackNavigator() {
               options={{ animation: "fade", orientation: "landscape" }}
             />
             <Stack.Screen name="TvGuide" component={TvGuideScreen} />
+            <Stack.Screen name="CatchUp" component={CatchUpScreen} />
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
           </>
         )}
