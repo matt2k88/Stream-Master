@@ -54,11 +54,7 @@ export default function PinEntryScreen() {
     if (next.length === 4) {
       if (next === profile.pin) {
         setActiveProfile(profile);
-        if (fromHome) {
-          navigation.goBack();
-        } else {
-          navigation.reset({ index: 0, routes: [{ name: "Home" }] });
-        }
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
       } else {
         setTimeout(shake, 100);
       }
