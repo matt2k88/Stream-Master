@@ -431,6 +431,7 @@ export default function HomeScreen() {
           <RecentlyWatchedCard
             style={styles.portraitRecent}
             refreshKey={recentRefreshKey}
+            maxItems={2}
             onPress={(item) => {
               if (!item.stream_url) return;
               navigation.navigate("Player", {

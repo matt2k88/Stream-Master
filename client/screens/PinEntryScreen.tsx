@@ -121,7 +121,7 @@ export default function PinEntryScreen() {
               disabled={!key}
             >
               {key === "⌫" ? (
-                <Feather name="delete" size={22} color={Colors.dark.textSecondary} />
+                <Feather name="delete" size={18} color={Colors.dark.textSecondary} />
               ) : (
                 <ThemedText style={styles.keyText}>{key}</ThemedText>
               )}
@@ -158,9 +158,9 @@ const styles = StyleSheet.create({
   dotsRow: { flexDirection: "row", gap: Spacing.lg },
   dot: { width: 20, height: 20, borderRadius: 10, borderWidth: 2 },
   errorText: { color: Colors.dark.error, fontSize: 13, fontWeight: "500", height: 20 },
-  pad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 260, justifyContent: "center" },
+  pad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 210, justifyContent: "center" },
   key: {
-    width: 78, height: 78, borderRadius: BorderRadius.md,
+    width: 60, height: 60, borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
@@ -169,5 +169,5 @@ const styles = StyleSheet.create({
   keyPressed: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
   keyDelete: { backgroundColor: "transparent", borderColor: "transparent" },
   keyDeleteActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
-  keyText: { color: Colors.dark.text, fontSize: 24, fontWeight: "600" },
+  keyText: { color: Colors.dark.text, fontSize: 20, fontWeight: "600" },
 });
