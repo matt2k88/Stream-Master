@@ -531,6 +531,12 @@ export default function PlayerScreen() {
   const seekHoldRef = useRef<{ dir: string | null; start: number; lastFire: number }>({
     dir: null, start: 0, lastFire: 0,
   });
+  // Large skip acceleration — tracks rapid consecutive presses in same direction
+  const largeSkipAccelRef = useRef<{ dir: "back" | "fwd" | null; count: number; lastTime: number }>({
+    dir: null, count: 0, lastTime: 0,
+  });
+  const [largeStepBack, setLargeStepBack] = useState(60);
+  const [largeStepFwd, setLargeStepFwd] = useState(60);
 
   const player = useVideoPlayer(streamUrl, (p) => {
     p.loop = false;
@@ -835,14 +841,54 @@ export default function PlayerScreen() {
   }, [isPlaying, player, showAndReset]);
 
   const handleSkipBack = useCallback(() => {
-    player.seekBy(-10);
+    const newTime = Math.max(0, currentTimeRef.current - 10);
+    try { playerRef.current.currentTime = newTime; } catch {}
+    setCurrentTime(newTime);
     showAndReset();
-  }, [player, showAndReset]);
+  }, [showAndReset]);
 
   const handleSkipForward = useCallback(() => {
-    player.seekBy(10);
+    const newTime = Math.min(tvDurationRef.current, currentTimeRef.current + 10);
+    try { playerRef.current.currentTime = newTime; } catch {}
+    setCurrentTime(newTime);
     showAndReset();
-  }, [player, showAndReset]);
+  }, [showAndReset]);
+
+  const handleSkipBackLarge = useCallback(() => {
+    const accel = largeSkipAccelRef.current;
+    const now = Date.now();
+    if (accel.dir === "back" && now - accel.lastTime < 900) {
+      accel.count = Math.min(accel.count + 1, 8);
+    } else {
+      accel.count = 1;
+      accel.dir = "back";
+    }
+    accel.lastTime = now;
+    const step = accel.count >= 5 ? 300 : accel.count >= 3 ? 120 : 60;
+    setLargeStepBack(step);
+    const newTime = Math.max(0, currentTimeRef.current - step);
+    try { playerRef.current.currentTime = newTime; } catch {}
+    setCurrentTime(newTime);
+    showAndReset();
+  }, [showAndReset]);
+
+  const handleSkipForwardLarge = useCallback(() => {
+    const accel = largeSkipAccelRef.current;
+    const now = Date.now();
+    if (accel.dir === "fwd" && now - accel.lastTime < 900) {
+      accel.count = Math.min(accel.count + 1, 8);
+    } else {
+      accel.count = 1;
+      accel.dir = "fwd";
+    }
+    accel.lastTime = now;
+    const step = accel.count >= 5 ? 300 : accel.count >= 3 ? 120 : 60;
+    setLargeStepFwd(step);
+    const newTime = Math.min(tvDurationRef.current, currentTimeRef.current + step);
+    try { playerRef.current.currentTime = newTime; } catch {}
+    setCurrentTime(newTime);
+    showAndReset();
+  }, [showAndReset]);
 
   const handleSeek = useCallback((time: number) => {
     player.currentTime = time;
@@ -936,8 +982,34 @@ export default function PlayerScreen() {
         </View>
       ) : null}
 
-      {/* Background tap target (touch only — behind controls) */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={handleScreenTap} />
+      {/* Background tap target — also catches Android D-pad key events globally */}
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={handleScreenTap}
+        onKeyDown={Platform.OS === "android" && !isLive ? ({ nativeEvent }: any) => {
+          const { keyCode } = nativeEvent;
+          const isLeft  = keyCode === 21 || keyCode === 89; // DPAD_LEFT / MEDIA_REWIND
+          const isRight = keyCode === 22 || keyCode === 90; // DPAD_RIGHT / MEDIA_FAST_FORWARD
+          if (!isLeft && !isRight) return;
+          if (tvDurationRef.current <= 0) return;
+          showAndReset();
+          const dir = isLeft ? "left" : "right";
+          const now = Date.now();
+          const hold = seekHoldRef.current;
+          if (dir !== hold.dir || now - hold.lastFire > 500) {
+            hold.start = now;
+            hold.dir = dir;
+          }
+          hold.lastFire = now;
+          const elapsed = now - hold.start;
+          const step = elapsed > 4000 ? 60 : elapsed > 2000 ? 40 : elapsed > 1000 ? 20 : elapsed > 500 ? 10 : 5;
+          const delta = isLeft ? -step : step;
+          const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+          currentTimeRef.current = newTime;
+          try { playerRef.current.currentTime = newTime; } catch {}
+          setCurrentTime(newTime);
+        } : undefined}
+      />
 
       {/* ── Controls overlay — ALWAYS mounted so TV remote can focus buttons ── */}
       <View
@@ -986,7 +1058,15 @@ export default function PlayerScreen() {
         {/* Centre controls */}
         <View style={styles.centerRow}>
           {!isLive ? (
-            <CtrlBtn icon="rotate-ccw" label="-10" onPress={handleSkipBack} onFocus={showAndReset} />
+            <CtrlBtn
+              icon="rewind"
+              label={`-${largeStepBack >= 300 ? "5m" : largeStepBack >= 120 ? "2m" : "1m"}`}
+              onPress={handleSkipBackLarge}
+              onFocus={showAndReset}
+            />
+          ) : null}
+          {!isLive ? (
+            <CtrlBtn icon="rotate-ccw" label="-10s" onPress={handleSkipBack} onFocus={showAndReset} />
           ) : null}
 
           <CtrlBtn
@@ -999,7 +1079,15 @@ export default function PlayerScreen() {
           />
 
           {!isLive ? (
-            <CtrlBtn icon="rotate-cw" label="+10" onPress={handleSkipForward} onFocus={showAndReset} />
+            <CtrlBtn icon="rotate-cw" label="+10s" onPress={handleSkipForward} onFocus={showAndReset} />
+          ) : null}
+          {!isLive ? (
+            <CtrlBtn
+              icon="fast-forward"
+              label={`+${largeStepFwd >= 300 ? "5m" : largeStepFwd >= 120 ? "2m" : "1m"}`}
+              onPress={handleSkipForwardLarge}
+              onFocus={showAndReset}
+            />
           ) : null}
         </View>
 
