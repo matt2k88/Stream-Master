@@ -500,28 +500,31 @@ export default function LivePreviewScreen() {
       )}
 
       {/* Fullscreen overlay — same player, no second connection.
-          Layered so taps on the screen reliably re-show the controls on
-          mobile (wrapping the VideoView in a Pressable was being absorbed
-          by the native video surface on phones — same fix as PlayerScreen). */}
+          IMPORTANT: VideoView is wrapped in Pressable (not a sibling) so the
+          Android SurfaceView lifecycle stays clean across small ↔ fullscreen
+          mount swaps (sibling layout was leaving a black surface). The
+          `pointerEvents="box-only"` on the Pressable forces it to steal all
+          touches before the underlying SurfaceView can absorb them — that's
+          what was breaking tap-to-show on phones with the original wrapping. */}
       {isFullscreen && (
         <View style={styles.fsRoot}>
-          {/* 1. Video underneath */}
-          <VideoView
+          <Pressable
             style={StyleSheet.absoluteFill}
-            player={player}
-            contentFit="contain"
-            nativeControls={false}
-            allowsFullscreen={false}
-            allowsPictureInPicture={false}
-          />
+            onPress={handlePlayerTap}
+            pointerEvents="box-only"
+          >
+            <VideoView
+              style={StyleSheet.absoluteFill}
+              player={player}
+              contentFit="contain"
+              nativeControls={false}
+              allowsFullscreen={false}
+              allowsPictureInPicture={false}
+            />
+          </Pressable>
 
-          {/* 2. Background tap target — sits above the video, below the controls.
-                Always mounted so even when controls are hidden, taps anywhere
-                on the screen toggle them back on. */}
-          <Pressable style={StyleSheet.absoluteFill} onPress={handlePlayerTap} />
-
-          {/* 3. Controls overlay — always mounted but pointerEvents="none" when
-                hidden so taps fall through to the background Pressable. */}
+          {/* Controls overlay — sibling on top. pointerEvents toggles so when
+                hidden, taps fall through to the wrapping Pressable below. */}
           <View
             style={StyleSheet.absoluteFill}
             pointerEvents={showFsOverlay ? "box-none" : "none"}

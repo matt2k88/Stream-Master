@@ -614,17 +614,27 @@ export default function PlayerScreen() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [resetTimer]);
 
-  // Release player on unmount — kills the network stream connection instantly.
-  // Also: if `player` ever changes mid-life (e.g. setup ref churn — should now
-  // be impossible thanks to the stable setupRef above), release the OLD one
-  // immediately so its HLS socket dies before a new one is even registered.
+  // Release player on unmount — kills the network stream connection.
   useEffect(() => {
     return () => {
       try { player.pause(); } catch {}
-      try { player.replace(null as any); } catch {}
       try { player.release(); } catch {}
     };
   }, [player]);
+
+  // EARLY release: react-navigation fires `beforeRemove` BEFORE the screen
+  // starts its unmount/transition animation. By killing the player here we
+  // close the upstream HLS/HTTP socket the instant the user hits back —
+  // instead of waiting for the React unmount cleanup, which doesn't run
+  // until after the slide-out animation completes (~300ms+ later, during
+  // which the IPTV server still sees an active connection).
+  useEffect(() => {
+    const unsub = navigation.addListener("beforeRemove", () => {
+      try { player.pause(); } catch {}
+      try { player.release(); } catch {}
+    });
+    return unsub;
+  }, [navigation, player]);
 
   // ── Player event listeners ────────────────────────────────────────────────
   useEffect(() => {
