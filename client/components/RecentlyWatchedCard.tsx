@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState } from "react";
 import { View, StyleSheet, Pressable, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 
 export interface RecentlyWatched {
   id: string;
@@ -137,29 +137,26 @@ function RecentlyWatchedRow({
 }
 
 export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout }: Props) {
-  const { activeProfile } = useProfile();
-  const [items, setItems] = useState<RecentlyWatched[] | undefined>(undefined);
+  const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
 
-  const fetchItems = useCallback(async () => {
-    if (!activeProfile) return;
-    try {
-      const url = new URL("/api/recently-watched", getApiUrl());
-      url.searchParams.set("profile_id", activeProfile.id);
-      const res = await fetch(url.toString());
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : data ? [data] : []);
-    } catch {
-      setItems([]);
-    }
-  }, [activeProfile]);
+  // Trigger refetch when external `refreshKey` changes (HomeScreen focus)
+  React.useEffect(() => {
+    refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems, refreshKey]);
+  // Entries are already deduped server-side, but filter again as a safety net
+  const seen = new Set<string>();
+  const dedupedEntries = entries.filter((e) => {
+    const key = e.stream_id != null ? String(e.stream_id) : `__id_${e.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  const displayItems = maxItems && items ? items.slice(0, maxItems) : items;
-  const isEmpty = !displayItems || displayItems.length === 0;
-  const isLoading = items === undefined;
+  const displayItems = maxItems ? dedupedEntries.slice(0, maxItems) : dedupedEntries;
+  const isEmpty = displayItems.length === 0;
+  const isLoading = isCtxLoading && entries.length === 0;
 
   return (
     <View style={[styles.card, style]} onLayout={onLayout}>
@@ -213,10 +210,10 @@ export async function saveRecentlyWatched(params: {
   seriesId?: string;
   seasonNum?: number;
   episodeNum?: number;
-}) {
+}): Promise<RecentlyWatched | null> {
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
-    await fetch(url.toString(), {
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -234,8 +231,10 @@ export async function saveRecentlyWatched(params: {
         episode_num: typeof params.episodeNum === "number" ? params.episodeNum : undefined,
       }),
     });
+    const data = await res.json();
+    return data ?? null;
   } catch {
-    // silent — non-critical
+    return null;
   }
 }
 

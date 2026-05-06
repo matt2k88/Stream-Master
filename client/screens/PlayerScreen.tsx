@@ -24,6 +24,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -373,6 +374,7 @@ export default function PlayerScreen() {
   } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
+  const { upsertLocal } = useWatchHistory();
   const { isFavourite, toggleFavourite } = useFavourites();
   const savedRef = useRef(false);
 
@@ -506,6 +508,24 @@ export default function PlayerScreen() {
     return () => { try { tvHandler?.disable(); } catch {} };
   }, []); // empty deps — all values accessed via stable refs
 
+  // ── Web/desktop: keyboard arrow keys seek when the seek bar is focused ───
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isLiveRef.current) return;
+      if (!seekBarFocusedRef.current && !seekBarCapturedRef.current) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const delta = e.key === "ArrowLeft" ? -10 : 10;
+      const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+      try { playerRef.current.currentTime = newTime; } catch {}
+      setCurrentTime(newTime);
+      showAndResetRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   // Bump key when controls go from hidden → visible so the play button remounts
   // and hasTVPreferredFocus re-fires, restoring D-pad focus
   useEffect(() => {
@@ -560,7 +580,7 @@ export default function PlayerScreen() {
             seriesId: seriesIdParam,
             seasonNum,
             episodeNum,
-          });
+          }).then((entry) => { if (entry) upsertLocal(entry); });
         }
         // Apply resume seek (once)
         if (!resumeAppliedRef.current && resumeTime && resumeTime > 5 && !isLive) {
@@ -602,7 +622,7 @@ export default function PlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
-      });
+      }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
     const now = Date.now();
@@ -613,7 +633,7 @@ export default function PlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
-      });
+      }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum]);
 

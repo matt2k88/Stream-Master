@@ -18,6 +18,11 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
+import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
+import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SeriesDetailRouteProp = RouteProp<RootStackParamList, "SeriesDetail">;
@@ -59,10 +64,19 @@ function SeasonBtn({ label, active, onPress }: { label: string; active: boolean;
   );
 }
 
-function EpisodeCard({ episode, onPress }: { episode: Episode; onPress: () => void }) {
+function EpisodeCard({
+  episode,
+  onPress,
+  watchEntry,
+}: {
+  episode: Episode;
+  onPress: () => void;
+  watchEntry?: RecentlyWatched;
+}) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
+  const ws = getWatchState(watchEntry);
 
   return (
     <Pressable
@@ -86,11 +100,29 @@ function EpisodeCard({ episode, onPress }: { episode: Episode; onPress: () => vo
             <Feather name="play-circle" size={28} color={Colors.dark.accent} />
           </View>
         ) : null}
+        {ws.hasProgress && !ws.isCompleted ? (
+          <View style={styles.epProgressTrack}>
+            <View style={[styles.epProgressFill, { width: `${ws.progress * 100}%` }]} />
+          </View>
+        ) : null}
       </View>
       <View style={styles.episodeInfo}>
-        <ThemedText style={[styles.episodeTitle, isActive && styles.episodeTitleActive]} numberOfLines={1}>
-          {episode.episode_num}. {episode.title}
-        </ThemedText>
+        <View style={styles.epTitleRow}>
+          <ThemedText style={[styles.episodeTitle, isActive && styles.episodeTitleActive]} numberOfLines={1}>
+            {episode.episode_num}. {episode.title}
+          </ThemedText>
+          {ws.isCompleted ? (
+            <View style={styles.epWatchedPill}>
+              <Feather name="check" size={9} color="#7CFF7C" />
+              <ThemedText style={styles.epWatchedText}>WATCHED</ThemedText>
+            </View>
+          ) : ws.hasProgress ? (
+            <View style={styles.epContinuePill}>
+              <Feather name="play" size={9} color={Colors.dark.accent} />
+              <ThemedText style={styles.epContinueText}>CONTINUE</ThemedText>
+            </View>
+          ) : null}
+        </View>
         {episode.info?.duration ? (
           <ThemedText style={styles.episodeMeta}>{episode.info.duration}</ThemedText>
         ) : null}
@@ -100,6 +132,29 @@ function EpisodeCard({ episode, onPress }: { episode: Episode; onPress: () => vo
       </View>
       <Feather name="play-circle" size={24} color={isActive ? Colors.dark.accent : Colors.dark.border} style={styles.playIcon} />
       {isActive ? <View style={styles.activeBar} /> : null}
+    </Pressable>
+  );
+}
+
+function FavBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isInteracting = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, (isInteracting || active) && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isInteracting ? <View style={styles.backBtnOverlay} /> : null}
+      <Feather
+        name="star"
+        size={20}
+        color={active ? "#FFD700" : isInteracting ? Colors.dark.accent : Colors.dark.text}
+      />
     </Pressable>
   );
 }
@@ -116,6 +171,26 @@ export default function SeriesDetailScreen() {
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const { isFavourite, toggleFavourite } = useFavourites();
+  const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
+  const isFav = isFavourite(seriesId, "series");
+
+  useFocusEffect(
+    useCallback(() => {
+      refetchHistory();
+    }, [refetchHistory])
+  );
+
+  const handleToggleFav = () => {
+    toggleFavourite({
+      streamId: Number(seriesId),
+      streamType: "series",
+      streamName: seriesName,
+      streamIcon: cover ?? null,
+      categoryId: null,
+    });
+  };
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -140,6 +215,8 @@ export default function SeriesDetailScreen() {
 
   const handleEpisodePress = (ep: Episode) => {
     const seasonNum = Number(ep.season ?? selectedSeason ?? 1) || 1;
+    const watch = getByStreamId(ep.id);
+    const resume = watch && !watch.is_completed ? (watch.current_time ?? 0) : 0;
     navigation.navigate("Player", {
       streamUrl: xtreamApi.getSeriesStreamUrl(ep.id, ep.container_extension),
       title: `${seriesName} - ${ep.title}`,
@@ -150,6 +227,7 @@ export default function SeriesDetailScreen() {
       seriesName,
       seasonNum,
       episodeNum: Number(ep.episode_num),
+      resumeTime: resume,
     });
   };
 
@@ -186,7 +264,7 @@ export default function SeriesDetailScreen() {
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle} numberOfLines={1}>{seriesName}</ThemedText>
-        <View style={{ width: 40 }} />
+        <FavBtn active={isFav} onPress={handleToggleFav} />
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />
@@ -239,7 +317,11 @@ export default function SeriesDetailScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: padB, gap: Spacing.sm }}
             renderItem={({ item }) => (
-              <EpisodeCard episode={item} onPress={() => handleEpisodePress(item)} />
+              <EpisodeCard
+                episode={item}
+                onPress={() => handleEpisodePress(item)}
+                watchEntry={getByStreamId(item.id)}
+              />
             )}
           />
         </View>
@@ -476,4 +558,50 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
   },
   retryBtnText: { color: "#fff", fontWeight: "700" },
+  epTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginBottom: 2,
+  },
+  epWatchedPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: "rgba(120,255,120,0.5)",
+  },
+  epWatchedText: { color: "#7CFF7C", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  epContinuePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.55)",
+  },
+  epContinueText: { color: Colors.dark.accent, fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  epProgressTrack: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 3,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  epProgressFill: {
+    height: "100%",
+    backgroundColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+  },
 });

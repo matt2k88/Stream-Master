@@ -244,19 +244,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Recently Watched ──────────────────────────────────────────────────────
   app.get("/api/recently-watched", async (req, res) => {
-    const { profile_id } = req.query;
+    const { profile_id, limit } = req.query;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     try {
-      const { data, error } = await supabase
+      let q = supabase
         .from("recently_watched")
         .select("*")
         .eq("profile_id", profile_id as string)
-        .order("updated_at", { ascending: false })
-        .limit(2);
+        .order("updated_at", { ascending: false });
+      const lim = limit ? Math.max(1, Math.min(2000, Number(limit))) : null;
+      if (lim) q = q.limit(lim);
+      const { data, error } = await q;
       if (error && error.code !== "PGRST116" && !error.message?.includes("does not exist") && !error.message?.includes("Could not find")) {
         return res.status(500).json({ error: error.message });
       }
-      res.json(data ?? []);
+      // Safety dedup by stream_id (latest wins, preserve order)
+      const seen = new Set<string>();
+      const out: any[] = [];
+      for (const row of data ?? []) {
+        const key = row.stream_id != null ? String(row.stream_id) : `__noid_${row.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(row);
+      }
+      res.json(out);
     } catch {
       res.json([]);
     }
@@ -308,7 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (season_num != null) entry.season_num = Number(season_num);
       if (episode_num != null) entry.episode_num = Number(episode_num);
 
-      // Step 1: Remove any existing entry for the same stream (dedup / re-watch)
+      // Dedup: remove any existing entry for the same stream (also handles re-watch)
       if (stream_id) {
         await supabase
           .from("recently_watched")
@@ -317,53 +328,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .eq("stream_id", String(stream_id));
       }
 
-      // Step 2: Get remaining entries ordered oldest first
-      const { data: existing, error: fetchErr } = await supabase
+      // Insert fresh entry (no per-profile cap — full lifetime watch log)
+      const { data, error: insertErr } = await supabase
         .from("recently_watched")
-        .select("id, updated_at")
-        .eq("profile_id", profile_id)
-        .order("updated_at", { ascending: true });
+        .insert(entry)
+        .select()
+        .single();
 
-      if (fetchErr) console.error("[recently-watched] fetch error:", fetchErr.message);
-
-      let result;
-      if (!existing || existing.length < 2) {
-        // Try inserting; fall back to updating oldest if unique constraint fires
-        const { data, error: insertErr } = await supabase
-          .from("recently_watched")
-          .insert(entry)
-          .select()
-          .single();
-
-        if (insertErr) {
-          console.error("[recently-watched] insert error:", insertErr.message, insertErr.code);
-          // Unique constraint violation (code 23505) or any insert failure — update oldest
-          if (existing && existing.length > 0) {
-            const { data: upd, error: updErr } = await supabase
-              .from("recently_watched")
-              .update(entry)
-              .eq("id", existing[0].id)
-              .select()
-              .single();
-            if (updErr) console.error("[recently-watched] fallback update error:", updErr.message);
-            result = upd;
-          }
-        } else {
-          result = data;
-        }
-      } else {
-        // At limit — replace the oldest entry
-        const { data, error: updErr } = await supabase
-          .from("recently_watched")
-          .update(entry)
-          .eq("id", existing[0].id)
-          .select()
-          .single();
-        if (updErr) console.error("[recently-watched] update error:", updErr.message);
-        result = data;
+      if (insertErr) {
+        console.error("[recently-watched] insert error:", insertErr.message, insertErr.code);
+        return res.json(null);
       }
 
-      res.json(result ?? null);
+      res.json(data ?? null);
     } catch (e: any) {
       console.error("[recently-watched] POST exception:", e?.message);
       res.json(null);

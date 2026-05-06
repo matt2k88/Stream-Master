@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -11,7 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -23,6 +23,8 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
+import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
@@ -84,6 +86,7 @@ function ContentCard({
   isFavourited,
   cardWidth,
   cardHeight,
+  watchEntry,
 }: {
   item: ContentItem;
   type: string;
@@ -92,6 +95,7 @@ function ContentCard({
   isFavourited: boolean;
   cardWidth: number;
   cardHeight: number;
+  watchEntry?: RecentlyWatched;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -158,6 +162,30 @@ function ContentCard({
             <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
           </View>
         ) : null}
+        {(() => {
+          const ws = getWatchState(watchEntry);
+          if (!ws.hasProgress || type === "live") return null;
+          return (
+            <>
+              {ws.isCompleted ? (
+                <View style={styles.watchedBadge}>
+                  <Feather name="check" size={9} color="#fff" />
+                  <ThemedText style={styles.watchedBadgeText}>WATCHED</ThemedText>
+                </View>
+              ) : (
+                <View style={styles.continueBadge}>
+                  <Feather name="play" size={9} color={Colors.dark.accent} />
+                  <ThemedText style={styles.continueBadgeText}>CONTINUE</ThemedText>
+                </View>
+              )}
+              {!ws.isCompleted ? (
+                <View style={styles.cardProgressTrack}>
+                  <View style={[styles.cardProgressFill, { width: `${ws.progress * 100}%` }]} />
+                </View>
+              ) : null}
+            </>
+          );
+        })()}
       </View>
 
       <View style={styles.cardInfo}>
@@ -249,6 +277,7 @@ export default function ContentListScreen() {
   const { width } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType } = useFavourites();
+  const { getByStreamId, getBySeriesId, refetch: refetchHistory } = useWatchHistory();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
@@ -349,12 +378,15 @@ export default function ContentListScreen() {
       }
     } else if (type === "movies") {
       const s = item as VodStream;
+      const watch = getByStreamId(s.stream_id);
+      const resume = watch && !watch.is_completed ? (watch.current_time ?? 0) : 0;
       navigation.navigate("Player", {
         streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension),
         title: s.name,
         type: "vod",
         thumbnail: s.stream_icon ?? undefined,
         streamId: String(s.stream_id),
+        resumeTime: resume,
       });
     } else {
       const s = item as Series;
@@ -365,6 +397,13 @@ export default function ContentListScreen() {
       });
     }
   };
+
+  // Refresh watch history when this screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refetchHistory();
+    }, [refetchHistory])
+  );
 
   const handleLongPress = (item: ContentItem) => {
     if (isSearching) return;
@@ -541,17 +580,26 @@ export default function ContentListScreen() {
               updateCellsBatchingPeriod={type === "live" ? 50 : 80}
               windowSize={type === "live" ? 5 : 3}
               removeClippedSubviews
-              renderItem={({ item }) => (
-                <ContentCard
-                  item={item}
-                  type={type}
-                  onPress={() => handleItemPress(item)}
-                  onLongPress={() => handleLongPress(item)}
-                  isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
-                  cardWidth={cardWidth}
-                  cardHeight={cardTotalH}
-                />
-              )}
+              renderItem={({ item }) => {
+                const watchEntry =
+                  type === "series"
+                    ? getBySeriesId((item as Series).series_id)
+                    : type !== "live"
+                      ? getByStreamId((item as VodStream).stream_id)
+                      : undefined;
+                return (
+                  <ContentCard
+                    item={item}
+                    type={type}
+                    onPress={() => handleItemPress(item)}
+                    onLongPress={() => handleLongPress(item)}
+                    isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
+                    cardWidth={cardWidth}
+                    cardHeight={cardTotalH}
+                    watchEntry={watchEntry}
+                  />
+                );
+              }}
               ListEmptyComponent={
                 isSearching ? (
                   <View style={styles.centeredInline}>
@@ -729,6 +777,33 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,102,0,0.35)",
   },
   ratingText: { color: Colors.dark.text, fontSize: 10, fontWeight: "700" },
+  watchedBadge: {
+    position: "absolute", top: 4, left: 4,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: "rgba(120,255,120,0.5)",
+  },
+  watchedBadgeText: { color: "#7CFF7C", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  continueBadge: {
+    position: "absolute", top: 4, left: 4,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.55)",
+  },
+  continueBadgeText: { color: Colors.dark.accent, fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  cardProgressTrack: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    height: 3, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  cardProgressFill: {
+    height: "100%",
+    backgroundColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,
+  },
   activeBar: {
     height: 2, backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,

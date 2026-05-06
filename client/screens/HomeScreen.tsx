@@ -12,6 +12,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useMessages } from "@/contexts/MessageContext";
+import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
@@ -204,13 +205,15 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
 
+  const { refetch: refetchHistory } = useWatchHistory();
   useFocusEffect(
     useCallback(() => {
       setOnDashboard(true);
-      // Refresh recently-watched card every time user returns to home
+      // Refresh watch history every time user returns to home
+      refetchHistory();
       setRecentRefreshKey((k) => k + 1);
       return () => setOnDashboard(false);
-    }, [setOnDashboard])
+    }, [setOnDashboard, refetchHistory])
   );
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);

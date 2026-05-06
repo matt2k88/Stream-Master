@@ -16,6 +16,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { DataProvider } from "@/contexts/DataContext";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
+import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
@@ -44,15 +45,17 @@ export default function App() {
                 <DataProvider>
                   <ProfileProvider>
                     <FavouritesProvider>
-                      <MessageProvider>
-                        <KeyboardProvider>
-                          <NavigationContainer>
-                            <RootStackNavigator />
-                          </NavigationContainer>
-                          <StatusBar style="light" hidden={false} />
-                          <MessagePopup />
-                        </KeyboardProvider>
-                      </MessageProvider>
+                      <WatchHistoryProvider>
+                        <MessageProvider>
+                          <KeyboardProvider>
+                            <NavigationContainer>
+                              <RootStackNavigator />
+                            </NavigationContainer>
+                            <StatusBar style="light" hidden={false} />
+                            <MessagePopup />
+                          </KeyboardProvider>
+                        </MessageProvider>
+                      </WatchHistoryProvider>
                     </FavouritesProvider>
                   </ProfileProvider>
                 </DataProvider>
