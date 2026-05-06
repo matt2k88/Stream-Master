@@ -898,7 +898,7 @@ export default function PlayerScreen() {
             <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           </View>
           <ThemedText style={styles.errorTitle}>Playback Error</ThemedText>
-          <ThemedText style={styles.errorMsg}>{error}</ThemedText>
+          <ThemedText style={styles.errorMsg}>This content could not be played.</ThemedText>
           <Pressable
             style={({ pressed, focused }) => [styles.errorBackBtn, (pressed || focused) && { opacity: 0.8 }]}
             onPress={handleBack}
