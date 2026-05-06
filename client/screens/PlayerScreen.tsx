@@ -61,11 +61,12 @@ function SeekBar({
   const [barWidth, setBarWidth] = useState(1);
   const [localFrac, setLocalFrac] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
-  const [isCaptured, setIsCaptured] = useState(false);
   const [selfTag, setSelfTag] = useState<number | null>(null);
   const pressableRef = useRef<View>(null);
   const barWidthRef = useRef(1);
   const durationRef = useRef(duration);
+  // Capture follows focus — as soon as the seek bar is focused, arrows seek.
+  const isCaptured = isFocused;
   useEffect(() => {
     if (pressableRef.current) {
       const tag = findNodeHandle(pressableRef.current);
@@ -73,14 +74,7 @@ function SeekBar({
     }
   }, []);
   useEffect(() => { durationRef.current = duration; }, [duration]);
-
-  // Auto-release capture if focus is lost
-  useEffect(() => {
-    if (!isFocused && isCaptured) {
-      setIsCaptured(false);
-      onCapturedChange?.(false);
-    }
-  }, [isFocused, isCaptured, onCapturedChange]);
+  useEffect(() => { onCapturedChange?.(isFocused); }, [isFocused, onCapturedChange]);
 
   const frac = localFrac !== null
     ? localFrac
@@ -115,21 +109,17 @@ function SeekBar({
   return (
     <Pressable
       ref={pressableRef as any}
-      // While captured, trap D-pad left/right/up/down to self so arrows only seek
-      // and don't move focus to adjacent controls (which would auto-release capture).
-      nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
-      nextFocusRight={isCaptured && selfTag ? selfTag : undefined}
-      nextFocusUp={isCaptured && selfTag ? selfTag : undefined}
-      nextFocusDown={isCaptured && selfTag ? selfTag : undefined}
+      // While focused, trap D-pad left/right to self so arrows always seek
+      // (and don't move focus away to neighbouring controls).
+      nextFocusLeft={isFocused && selfTag ? selfTag : undefined}
+      nextFocusRight={isFocused && selfTag ? selfTag : undefined}
       style={[
         styles.seekBarWrapper,
         isHighlighted && styles.seekBarWrapperFocused,
         isCaptured && styles.seekBarWrapperCaptured,
       ]}
       onPress={() => {
-        const next = !isCaptured;
-        setIsCaptured(next);
-        onCapturedChange?.(next);
+        // Tap simply confirms focus; arrow keys handle seeking.
         onFocus?.();
       }}
       onFocus={() => {
@@ -143,7 +133,7 @@ function SeekBar({
       }}
     >
       <Feather
-        name={isCaptured ? "move" : "skip-forward"}
+        name="move"
         size={isHighlighted ? 20 : 15}
         color={isHighlighted ? Colors.dark.accent : "rgba(255,255,255,0.4)"}
       />
@@ -473,14 +463,14 @@ export default function PlayerScreen() {
   useEffect(() => { isLiveRef.current = isLive; }, [isLive]);
 
   useEffect(() => {
-    if (!Platform.isTV) return;
+    if (Platform.OS !== "android" && Platform.OS !== "ios") return;
     let tvHandler: any = null;
     try {
       const TVEventHandler = (require as any)("react-native").TVEventHandler;
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
-        if (!seekBarCapturedRef.current || isLiveRef.current) return;
+        if (!seekBarFocusedRef.current || isLiveRef.current) return;
         if (evt.eventType !== "left" && evt.eventType !== "right") return;
         const now = Date.now();
         const isSameDir = evt.eventType === seekHoldRef.current.dir;
