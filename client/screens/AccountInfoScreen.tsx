@@ -42,7 +42,7 @@ function HoverBtn({
   activeStyle: any;
   onPress: () => void;
   disabled?: boolean;
-  children: React.ReactNode;
+  children: React.ReactNode | ((isActive: boolean) => React.ReactNode);
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -57,7 +57,7 @@ function HoverBtn({
       onPressOut={() => setPressed(false)}
       disabled={disabled}
     >
-      {children}
+      {typeof children === "function" ? children(isActive) : children}
     </Pressable>
   );
 }
@@ -233,7 +233,7 @@ export default function AccountInfoScreen() {
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
         </HoverBtn>
         <ThemedText style={styles.headerTitle}>Account</ThemedText>
         <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={handleRefresh} disabled={isRefreshing}>

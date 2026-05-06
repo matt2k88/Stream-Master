@@ -36,7 +36,7 @@ const AVATAR_COLORS = [
 ];
 
 // ─── Focusable wrappers with hover/focus overlays ────────────────────────────
-function IconBtn({ onPress, children }: { onPress: () => void; children: React.ReactNode }) {
+function IconBtn({ onPress, children }: { onPress: () => void; children: React.ReactNode | ((isActive: boolean) => React.ReactNode) }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
@@ -49,7 +49,7 @@ function IconBtn({ onPress, children }: { onPress: () => void; children: React.R
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
     >
-      {children}
+      {typeof children === "function" ? children(isActive) : children}
     </Pressable>
   );
 }
@@ -272,7 +272,7 @@ export default function CreateProfileScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <IconBtn onPress={() => navigation.goBack()}>
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
         </IconBtn>
         <ThemedText style={styles.headerTitle}>
           {editing ? "Edit Profile" : "New Profile"}

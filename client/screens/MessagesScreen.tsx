@@ -85,7 +85,7 @@ export default function MessagesScreen() {
           onPressIn={() => setBackPressed(true)}
           onPressOut={() => setBackPressed(false)}
         >
-          <Feather name="arrow-left" size={20} color={Colors.dark.text} />
+          <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Messages</ThemedText>
         <View style={styles.headerBadge}>
