@@ -124,10 +124,12 @@ function SeekBar({
   return (
     <Pressable
       ref={pressableRef as any}
-      // On standard Android APKs (non-TV), disable D-pad focus entirely on the
-      // seek bar — it doesn't work reliably and confuses navigation. Touch /
-      // pan dragging still works because that bypasses focus.
-      focusable={Platform.OS !== "android" || IS_TV}
+      // Disable D-pad focus entirely on the seek bar across all native
+      // platforms (including Android TV / Firestick). It doesn't navigate
+      // reliably and confuses remote navigation — users skip past CC/Audio.
+      // Touch / pan dragging still works on phones (bypasses focus), and on
+      // web ArrowLeft/Right always seek (handled separately).
+      focusable={false}
       // While captured, trap D-pad left/right to self so arrows always seek.
       // Pressing OK releases the trap so left/right can move to CC/Audio.
       nextFocusLeft={isCaptured && selfTag ? selfTag : undefined}
