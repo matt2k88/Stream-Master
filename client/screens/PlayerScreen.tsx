@@ -386,7 +386,12 @@ export default function PlayerScreen() {
   const isFavourited = favStreamId > 0 ? isFavourite(favStreamId, favStreamType) : false;
 
   // ── Report content ────────────────────────────────────────────────────────
+  const showReportRef = useRef(false);
   const [showReport, setShowReport] = useState(false);
+  const setShowReportWithRef = useCallback((v: boolean) => {
+    showReportRef.current = v;
+    setShowReport(v);
+  }, []);
   const [reportReason, setReportReason] = useState<string | null>(null);
   const [reportOther, setReportOther] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -422,14 +427,14 @@ export default function PlayerScreen() {
       });
       setReportDone(true);
       setTimeout(() => {
-        setShowReport(false);
+        setShowReportWithRef(false);
         setReportDone(false);
         setReportReason(null);
         setReportOther("");
       }, 1800);
     } catch {
       // silent failure — report is best-effort
-      setShowReport(false);
+      setShowReportWithRef(false);
     } finally {
       setReportSubmitting(false);
     }
@@ -555,13 +560,19 @@ export default function PlayerScreen() {
     return () => { try { tvHandler?.disable(); } catch {} };
   }, []); // empty deps — all values accessed via stable refs
 
-  // ── Web/desktop: keyboard arrow keys seek when the seek bar is focused ───
+  // ── Web/desktop: keyboard arrow keys always seek (player is fullscreen) ──
+  // We intentionally do NOT check seekBarFocusedRef here — on web the inner
+  // pan-responder View intercepts clicks so the outer Pressable's onFocus
+  // never fires reliably. Instead we gate only on: not live, has duration,
+  // no CC/Audio panel open, and the report modal is not open.
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isLiveRef.current) return;
-      if (!seekBarFocusedRef.current && !seekBarCapturedRef.current) return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (isLiveRef.current) return;
+      if (tvDurationRef.current <= 0) return;
+      if (activePanelRef.current !== null) return;
+      if (showReportRef.current) return;
       e.preventDefault();
       const delta = e.key === "ArrowLeft" ? -10 : 10;
       const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
@@ -913,7 +924,7 @@ export default function PlayerScreen() {
           {/* Report content button — red flag */}
           <CtrlBtn
             icon="flag"
-            onPress={() => { setShowReport(true); showAndReset(); }}
+            onPress={() => { setShowReportWithRef(true); showAndReset(); }}
             onFocus={showAndReset}
             active={false}
           />
@@ -1064,7 +1075,7 @@ export default function PlayerScreen() {
         animationType="fade"
         onRequestClose={() => {
           if (!reportSubmitting) {
-            setShowReport(false);
+            setShowReportWithRef(false);
             setReportReason(null);
             setReportOther("");
             setReportDone(false);
@@ -1127,7 +1138,7 @@ export default function PlayerScreen() {
                   <Pressable
                     style={({ pressed, focused }) => [styles.reportCancelBtn, (pressed || focused) && { opacity: 0.75 }]}
                     onPress={() => {
-                      setShowReport(false);
+                      setShowReportWithRef(false);
                       setReportReason(null);
                       setReportOther("");
                     }}
