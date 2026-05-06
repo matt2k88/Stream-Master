@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import { supabase } from "./supabase";
+import { supabase, lifetimeDb } from "./supabase";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // ── Servers ──────────────────────────────────────────────────────────────
@@ -421,6 +421,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, data });
     } catch {
       res.status(500).json({ error: "Seed failed" });
+    }
+  });
+
+  // ── Lifetime access check ─────────────────────────────────────────────────
+  // Checks the separate lifetime_users DB — returns { isLifetime: bool }
+  app.get("/api/lifetime-check", async (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      const { data, error } = await lifetimeDb
+        .from("lifetime_users")
+        .select("id")
+        .eq("username", username as string)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[lifetime-check] error:", error.message);
+        return res.json({ isLifetime: false });
+      }
+      res.json({ isLifetime: !!data });
+    } catch (e: any) {
+      console.error("[lifetime-check] exception:", e?.message);
+      res.json({ isLifetime: false });
     }
   });
 

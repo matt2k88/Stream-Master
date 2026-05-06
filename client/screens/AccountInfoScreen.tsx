@@ -141,6 +141,7 @@ export default function AccountInfoScreen() {
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [isLifetime, setIsLifetime] = useState(false);
 
   const handleCheckForUpdates = async () => {
     if (updateChecking) return;
@@ -174,6 +175,18 @@ export default function AccountInfoScreen() {
     handleRefresh();
     fetchDevDetails();
   }, []);
+
+  // Check lifetime DB whenever username is known
+  useEffect(() => {
+    const username = userInfo?.user_info?.username;
+    if (!username) return;
+    const url = new URL("/api/lifetime-check", getApiUrl());
+    url.searchParams.set("username", username);
+    fetch(url.toString())
+      .then((r) => r.ok ? r.json() : { isLifetime: false })
+      .then((d) => setIsLifetime(!!d?.isLifetime))
+      .catch(() => {});
+  }, [userInfo?.user_info?.username]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -358,10 +371,17 @@ export default function AccountInfoScreen() {
           {/* Info section */}
           <View style={styles.infoSection}>
             <View style={styles.infoGrid}>
-              {/* Subscription card — no "Created" row */}
+              {/* Subscription card */}
               <View style={styles.infoCard}>
                 <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
-                <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
+                {isLifetime ? (
+                  <View style={styles.lifetimeBadge}>
+                    <Feather name="star" size={14} color={Colors.dark.accent} />
+                    <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
+                  </View>
+                ) : (
+                  <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
+                )}
                 <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
                 <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
               </View>
@@ -526,6 +546,17 @@ const styles = StyleSheet.create({
   devEmpty: { paddingVertical: Spacing.md, alignItems: "center", gap: Spacing.xs },
   devEmptyText: { color: Colors.dark.textSecondary, fontSize: 12 },
 
+  lifetimeBadge: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    backgroundColor: "rgba(255,102,0,0.12)",
+    borderRadius: BorderRadius.sm, borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.4)",
+    alignSelf: "flex-start",
+  },
+  lifetimeText: {
+    color: Colors.dark.accent, fontWeight: "700", fontSize: 14,
+  },
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
