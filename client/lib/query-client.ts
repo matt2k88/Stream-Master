@@ -18,9 +18,17 @@ export function getApiUrl(): string {
   }
 
   // 2. Dev env var (injected by npm run expo:dev)
+  // On Replit, port 5000 (Express) is not reachable from devices at :5000
+  // because Replit only proxies TLS on the standard port (80→8081 Metro).
+  // API calls are proxied through Metro via metro.config.js enhanceMiddleware,
+  // so we strip any explicit port and use the standard HTTPS port.
   const envDomain = process.env.EXPO_PUBLIC_DOMAIN;
   if (envDomain) {
-    return new URL(`https://${envDomain}`).href.replace(/\/$/, "");
+    const isReplitProxy =
+      envDomain.includes(".riker.replit.dev") ||
+      envDomain.includes(".replit.dev");
+    const cleanDomain = isReplitProxy ? envDomain.split(":")[0] : envDomain;
+    return new URL(`https://${cleanDomain}`).href.replace(/\/$/, "");
   }
 
   // 3. Web browser — API is served from the same origin
