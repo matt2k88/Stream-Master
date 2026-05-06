@@ -352,7 +352,9 @@ export default function AccountInfoScreen() {
                       {
                         text: "Yes, Exit",
                         style: "destructive",
-                        onPress: () => {
+                        onPress: async () => {
+                          clearProfile();
+                          await logout();
                           if (Platform.OS !== "web") {
                             try { BackHandler.exitApp(); } catch {}
                           }
