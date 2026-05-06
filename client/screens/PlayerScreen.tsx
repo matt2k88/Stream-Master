@@ -789,6 +789,8 @@ export default function PlayerScreen() {
   const handleNextConfirm = useCallback(() => {
     if (!nextEp || !seriesIdParam) { setShowNext(false); return; }
     setShowNext(false);
+    try { player.pause(); } catch {}
+    try { player.release(); } catch {}
     const ep = nextEp.episode;
     navigation.replace("Player", {
       streamUrl: xtreamApi.getSeriesStreamUrl(ep.id, ep.container_extension),
@@ -801,7 +803,7 @@ export default function PlayerScreen() {
       seasonNum: nextEp.season,
       episodeNum: Number(ep.episode_num),
     });
-  }, [nextEp, navigation, seriesIdParam, seriesNameParam, thumbnail, title]);
+  }, [nextEp, navigation, player, seriesIdParam, seriesNameParam, thumbnail, title]);
 
   // Countdown ticker
   useEffect(() => {
@@ -844,7 +846,8 @@ export default function PlayerScreen() {
       showAndReset();
       return;
     }
-    player.pause();
+    try { player.pause(); } catch {}
+    try { player.release(); } catch {}
     navigation.goBack();
   }, [activePanel, player, navigation, showAndReset]);
 
