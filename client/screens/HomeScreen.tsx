@@ -200,7 +200,18 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { refresh } = useData();
+  const { refresh, liveCategories, vodCategories, seriesCategories } = useData();
+
+  // Navigate directly to ContentList, pre-selecting the first real category
+  const goToContent = (type: "live" | "movies" | "series", title: string) => {
+    const cats = type === "live" ? liveCategories : type === "movies" ? vodCategories : seriesCategories;
+    const first = cats[0];
+    navigation.navigate("ContentList", {
+      type,
+      categoryId: first?.category_id ?? "",
+      categoryName: first?.category_name ?? title,
+    });
+  };
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
@@ -290,7 +301,7 @@ export default function HomeScreen() {
               <NavButton
                 title="Live TV"
                 icon="tv"
-                onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
+                onPress={() => goToContent("live", "Live TV")}
                 style={styles.topBtn}
                 iconSize={30}
                 textSize={17}
@@ -298,7 +309,7 @@ export default function HomeScreen() {
               <NavButton
                 title="Movies"
                 icon="film"
-                onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
+                onPress={() => goToContent("movies", "Movies")}
                 style={styles.topBtn}
                 iconSize={30}
                 textSize={17}
@@ -309,7 +320,7 @@ export default function HomeScreen() {
               <NavButton
                 title="Series"
                 icon="grid"
-                onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
+                onPress={() => goToContent("series", "Series")}
                 style={styles.botBtn}
                 iconSize={22}
                 textSize={13}
@@ -363,7 +374,7 @@ export default function HomeScreen() {
             <NavButton
               title="Live TV"
               icon="tv"
-              onPress={() => navigation.navigate("Category", { type: "live", title: "Live TV" })}
+              onPress={() => goToContent("live", "Live TV")}
               style={styles.portraitTopBtn}
               iconSize={26}
               textSize={15}
@@ -371,7 +382,7 @@ export default function HomeScreen() {
             <NavButton
               title="Movies"
               icon="film"
-              onPress={() => navigation.navigate("Category", { type: "movies", title: "Movies" })}
+              onPress={() => goToContent("movies", "Movies")}
               style={styles.portraitTopBtn}
               iconSize={26}
               textSize={15}
@@ -382,7 +393,7 @@ export default function HomeScreen() {
             <NavButton
               title="Series"
               icon="grid"
-              onPress={() => navigation.navigate("Category", { type: "series", title: "Series" })}
+              onPress={() => goToContent("series", "Series")}
               style={styles.portraitSubBtn}
               iconSize={18}
               textSize={12}
