@@ -70,7 +70,15 @@ function SeekBar({
   const pressableRef = useRef<View>(null);
   const barWidthRef = useRef(1);
   const durationRef = useRef(duration);
+  const currentTimeRef = useRef(currentTime);
+  // Hold-to-accelerate tracking for Android D-pad long-press
+  const androidHoldRef = useRef<{ dir: string | null; start: number; lastFire: number }>({
+    dir: null, start: 0, lastFire: 0,
+  });
   const isCaptured = isFocused && !released;
+  // Keep a stable ref to isCaptured so onKeyDown closure is always current
+  const isCapturedRef = useRef(isCaptured);
+  useEffect(() => { isCapturedRef.current = isCaptured; }, [isCaptured]);
   useEffect(() => {
     if (pressableRef.current) {
       const tag = findNodeHandle(pressableRef.current);
@@ -78,6 +86,7 @@ function SeekBar({
     }
   }, []);
   useEffect(() => { durationRef.current = duration; }, [duration]);
+  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
   useEffect(() => { onCapturedChange?.(isCaptured); }, [isCaptured, onCapturedChange]);
   // Re-arm capture whenever focus is regained
   useEffect(() => { if (isFocused) setReleased(false); }, [isFocused]);
@@ -138,6 +147,36 @@ function SeekBar({
         setIsFocused(false);
         onFocusChange?.(false);
       }}
+      // Android native D-pad key handling — TVEventHandler is not available in
+      // standard (non-TV) APKs, so we catch left/right here directly.
+      // keyCode 21 = DPAD_LEFT, 22 = DPAD_RIGHT, 89 = MEDIA_REWIND, 90 = MEDIA_FAST_FORWARD
+      onKeyDown={Platform.OS === "android" ? ({ nativeEvent }: any) => {
+        if (!isCapturedRef.current) return; // Released mode — let focus move normally
+        const { keyCode } = nativeEvent;
+        const isLeft  = keyCode === 21 || keyCode === 89;
+        const isRight = keyCode === 22 || keyCode === 90;
+        if (!isLeft && !isRight) return;
+        onFocus?.();
+        const dir = isLeft ? "left" : "right";
+        const now = Date.now();
+        const hold = androidHoldRef.current;
+        if (dir !== hold.dir || now - hold.lastFire > 500) {
+          hold.start = now;
+          hold.dir = dir;
+        }
+        hold.lastFire = now;
+        const elapsed = now - hold.start;
+        let step: number;
+        if      (elapsed > 4000) step = 60;
+        else if (elapsed > 2000) step = 40;
+        else if (elapsed > 1000) step = 20;
+        else if (elapsed > 500)  step = 10;
+        else                     step = 5;
+        const delta = isLeft ? -step : step;
+        const newTime = Math.max(0, Math.min(durationRef.current, currentTimeRef.current + delta));
+        currentTimeRef.current = newTime; // Update immediately so rapid presses accumulate correctly
+        onSeek(newTime);
+      } : undefined}
     >
       <Feather
         name={isCaptured ? "move" : "skip-forward"}
