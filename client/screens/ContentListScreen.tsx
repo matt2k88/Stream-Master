@@ -152,6 +152,12 @@ function ContentCard({
         )}
         {isActive ? <View style={styles.cardOverlay} /> : null}
         <StarBadge visible={isFavourited} />
+        {"rating" in item && item.rating ? (
+          <View style={styles.ratingBadge}>
+            <Feather name="star" size={9} color={Colors.dark.accent} />
+            <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.cardInfo}>
@@ -161,12 +167,6 @@ function ContentCard({
         >
           {item.name}
         </ThemedText>
-        {"rating" in item && item.rating ? (
-          <View style={styles.ratingRow}>
-            <Feather name="star" size={10} color={Colors.dark.accent} />
-            <ThemedText style={styles.ratingText}>{item.rating}</ThemedText>
-          </View>
-        ) : null}
       </View>
 
       {isActive ? <View style={styles.activeBar} /> : null}
@@ -711,11 +711,24 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1, shadowRadius: 6, elevation: 6,
   },
-  cardInfo: { padding: Spacing.sm, gap: 2 },
+  cardInfo: { padding: Spacing.sm, gap: 2, flex: 1, justifyContent: "center" },
   cardName: { color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "500", lineHeight: 15 },
   cardNameActive: { color: Colors.dark.text },
-  ratingRow: { flexDirection: "row", alignItems: "center", gap: 3, marginTop: 1 },
-  ratingText: { color: Colors.dark.textSecondary, fontSize: 10 },
+  ratingBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.35)",
+  },
+  ratingText: { color: Colors.dark.text, fontSize: 10, fontWeight: "700" },
   activeBar: {
     height: 2, backgroundColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 4,

@@ -24,6 +24,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
@@ -365,7 +366,11 @@ function TrackPanel({
 export default function PlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PlayerRouteProp>();
-  const { streamUrl, title, type, thumbnail, streamId, seriesId: seriesIdParam, seriesName: seriesNameParam } = route.params;
+  const {
+    streamUrl, title, type, thumbnail, streamId,
+    seriesId: seriesIdParam, seriesName: seriesNameParam,
+    resumeTime, seasonNum, episodeNum,
+  } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
   const { isFavourite, toggleFavourite } = useFavourites();
@@ -397,6 +402,30 @@ export default function PlayerScreen() {
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
+
+  // Progress / completion / next-episode state
+  const lastSavedRef = useRef(0);
+  const completionPostedRef = useRef(false);
+  const resumeAppliedRef = useRef(false);
+  const [nextEp, setNextEp] = useState<{ episode: Episode; season: number } | null>(null);
+  const [showNext, setShowNext] = useState(false);
+  const [countdown, setCountdown] = useState(10);
+  const nextPromptShownRef = useRef(false);
+
+  // navigation.replace into PlayerScreen reuses the same instance — reset all
+  // per-episode refs/state when the underlying stream changes.
+  useEffect(() => {
+    savedRef.current = false;
+    lastSavedRef.current = 0;
+    completionPostedRef.current = false;
+    resumeAppliedRef.current = false;
+    nextPromptShownRef.current = false;
+    setNextEp(null);
+    setShowNext(false);
+    setCountdown(10);
+    setCurrentTime(0);
+    setDuration(0);
+  }, [streamId, streamUrl]);
 
   // ── Seek bar TV remote — refs declared early so they're stable ───────────
   const [seekBarFocused, setSeekBarFocused] = useState(false);
@@ -528,7 +557,15 @@ export default function PlayerScreen() {
             name: title,
             thumbnailUrl: thumbnail,
             streamUrl: streamUrl,
+            seriesId: seriesIdParam,
+            seasonNum,
+            episodeNum,
           });
+        }
+        // Apply resume seek (once)
+        if (!resumeAppliedRef.current && resumeTime && resumeTime > 5 && !isLive) {
+          resumeAppliedRef.current = true;
+          try { player.currentTime = resumeTime; } catch {}
         }
       } else if (e.status === "error") { setIsLoading(false); setError(e.error?.message ?? "Playback failed"); }
       else if (e.status === "loading") setIsLoading(true);
@@ -552,6 +589,95 @@ export default function PlayerScreen() {
     });
     return () => sub.remove();
   }, [isLive, player]);
+
+  // ── Progress save (throttled) + auto-mark-completed within 30s of end ─────
+  useEffect(() => {
+    if (isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
+    const contentType = type === "series" ? "series" : "movie";
+    const remaining = duration - currentTime;
+    if (remaining <= 30 && !completionPostedRef.current) {
+      completionPostedRef.current = true;
+      saveRecentlyWatched({
+        profileId: activeProfile.id, contentType, streamId, name: title,
+        thumbnailUrl: thumbnail, streamUrl,
+        currentTime, duration, isCompleted: true,
+        seriesId: seriesIdParam, seasonNum, episodeNum,
+      });
+      return;
+    }
+    const now = Date.now();
+    if (!completionPostedRef.current && now - lastSavedRef.current >= 10000 && currentTime > 5) {
+      lastSavedRef.current = now;
+      saveRecentlyWatched({
+        profileId: activeProfile.id, contentType, streamId, name: title,
+        thumbnailUrl: thumbnail, streamUrl,
+        currentTime, duration, isCompleted: false,
+        seriesId: seriesIdParam, seasonNum, episodeNum,
+      });
+    }
+  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum]);
+
+  // ── Series: pre-fetch next episode ────────────────────────────────────────
+  useEffect(() => {
+    if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await xtreamApi.getSeriesInfo(parseInt(seriesIdParam, 10));
+        if (cancelled || !info?.episodes) return;
+        const seasonKey = String(seasonNum);
+        const eps = info.episodes[seasonKey] || [];
+        const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);
+        if (next) { setNextEp({ episode: next, season: seasonNum }); return; }
+        const seasonKeys = Object.keys(info.episodes).map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b);
+        const nextSeason = seasonKeys.find((s) => s > seasonNum);
+        if (nextSeason != null) {
+          const sEps = info.episodes[String(nextSeason)] || [];
+          if (sEps.length > 0) setNextEp({ episode: sEps[0], season: nextSeason });
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [type, seriesIdParam, seasonNum, episodeNum]);
+
+  // Trigger next-episode prompt when within 30s of end
+  useEffect(() => {
+    if (isLive || nextPromptShownRef.current || !nextEp) return;
+    if (duration > 0 && currentTime > 0 && currentTime >= duration - 30) {
+      nextPromptShownRef.current = true;
+      setShowNext(true);
+      setCountdown(10);
+    }
+  }, [currentTime, duration, isLive, nextEp]);
+
+  const handleNextConfirm = useCallback(() => {
+    if (!nextEp || !seriesIdParam) { setShowNext(false); return; }
+    setShowNext(false);
+    const ep = nextEp.episode;
+    navigation.replace("Player", {
+      streamUrl: xtreamApi.getSeriesStreamUrl(ep.id, ep.container_extension),
+      title: `${seriesNameParam ?? title} - ${ep.title}`,
+      type: "series",
+      thumbnail: ep.info?.movie_image ?? thumbnail,
+      streamId: String(ep.id),
+      seriesId: seriesIdParam,
+      seriesName: seriesNameParam,
+      seasonNum: nextEp.season,
+      episodeNum: Number(ep.episode_num),
+    });
+  }, [nextEp, navigation, seriesIdParam, seriesNameParam, thumbnail, title]);
+
+  const handleNextCancel = useCallback(() => {
+    setShowNext(false);
+  }, []);
+
+  // Countdown ticker
+  useEffect(() => {
+    if (!showNext) return;
+    if (countdown <= 0) { handleNextConfirm(); return; }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [showNext, countdown, handleNextConfirm]);
 
   useEffect(() => {
     if (isLive) return;
@@ -826,6 +952,56 @@ export default function PlayerScreen() {
         ) : null}
       </View>
 
+      {/* Next-episode prompt */}
+      {showNext && nextEp ? (
+        <View style={styles.nextOverlay} pointerEvents="box-none">
+          <View style={styles.nextCard}>
+            <LinearGradient
+              colors={["rgba(20,20,20,0.98)", "rgba(8,8,8,0.98)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+            <ThemedText style={styles.nextLabel}>UP NEXT</ThemedText>
+            <ThemedText style={styles.nextTitle} numberOfLines={2}>
+              S{nextEp.season} · E{nextEp.episode.episode_num} — {nextEp.episode.title}
+            </ThemedText>
+            <ThemedText style={styles.nextCountdown}>
+              Playing in {countdown}s
+            </ThemedText>
+            <View style={styles.nextBtnRow}>
+              <Pressable
+                style={({ pressed, focused }) => [
+                  styles.nextBtnSecondary,
+                  (pressed || focused) && styles.nextBtnSecondaryActive,
+                ]}
+                onPress={handleNextCancel}
+              >
+                <Feather name="x" size={14} color={Colors.dark.text} />
+                <ThemedText style={styles.nextBtnSecondaryText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                style={({ pressed, focused }) => [
+                  styles.nextBtnPrimary,
+                  (pressed || focused) && styles.nextBtnPrimaryActive,
+                ]}
+                onPress={handleNextConfirm}
+                hasTVPreferredFocus
+              >
+                <LinearGradient
+                  colors={["#FF8C1A", "#FF5500"]}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+                <Feather name="play" size={14} color="#fff" />
+                <ThemedText style={styles.nextBtnPrimaryText}>Watch Next</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       {/* Favourite toast */}
       {toastVisible ? (
         <Animated.View
@@ -843,6 +1019,79 @@ export default function PlayerScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+
+  nextOverlay: {
+    position: "absolute",
+    right: Spacing.lg,
+    bottom: Spacing.lg,
+    maxWidth: 380,
+  },
+  nextCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.4)",
+    padding: Spacing.md,
+    overflow: "hidden",
+    gap: Spacing.xs,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  nextLabel: {
+    color: Colors.dark.accent,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+  },
+  nextTitle: {
+    color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  nextCountdown: {
+    color: Colors.dark.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: Spacing.xs,
+  },
+  nextBtnRow: { flexDirection: "row", gap: Spacing.sm },
+  nextBtnSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  nextBtnSecondaryActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  nextBtnSecondaryText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
+  nextBtnPrimary: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,140,26,0.6)",
+  },
+  nextBtnPrimaryActive: {
+    borderColor: "#fff",
+  },
+  nextBtnPrimaryText: { color: "#fff", fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

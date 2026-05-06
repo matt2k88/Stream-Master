@@ -6,7 +6,9 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   ScrollView,
+  Alert,
 } from "react-native";
+import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -22,6 +24,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const APP_VERSION: string =
+  (Constants?.expoConfig?.version as string | undefined) ?? "1.0.0";
 
 function HoverBtn({
   style,
@@ -133,6 +138,33 @@ export default function AccountInfoScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
+  const [updateChecking, setUpdateChecking] = useState(false);
+
+  const handleCheckForUpdates = async () => {
+    if (updateChecking) return;
+    setUpdateChecking(true);
+    try {
+      const url = new URL("/api/app-version", getApiUrl());
+      const res = await fetch(url.toString());
+      const data = res.ok ? await res.json() : null;
+      const remoteVersion = data?.version as string | undefined;
+      const code = data?.downloader_code as string | undefined;
+      if (!remoteVersion) {
+        Alert.alert("Update Check", "Could not reach the update server. Try again later.");
+      } else if (remoteVersion === APP_VERSION) {
+        Alert.alert("You're Up to Date", `You're running the latest version (v${APP_VERSION}).`);
+      } else {
+        Alert.alert(
+          "Update Available",
+          `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.`,
+        );
+      }
+    } catch {
+      Alert.alert("Update Check", "Could not reach the update server. Try again later.");
+    } finally {
+      setUpdateChecking(false);
+    }
+  };
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
@@ -274,6 +306,26 @@ export default function AccountInfoScreen() {
                 </HoverBtn>
               </View>
             ) : null}
+
+            {/* App version + update check */}
+            <View style={styles.versionBlock}>
+              <ThemedText style={styles.versionText}>v{APP_VERSION}</ThemedText>
+              <HoverBtn
+                style={styles.updateBtn}
+                activeStyle={styles.updateBtnActive}
+                onPress={handleCheckForUpdates}
+                disabled={updateChecking}
+              >
+                {updateChecking ? (
+                  <ActivityIndicator size="small" color={Colors.dark.accent} />
+                ) : (
+                  <Feather name="download-cloud" size={13} color={Colors.dark.accent} />
+                )}
+                <ThemedText style={styles.updateBtnText}>
+                  {updateChecking ? "Checking..." : "Check for Updates"}
+                </ThemedText>
+              </HoverBtn>
+            </View>
           </View>
 
           {/* Info section */}
@@ -395,6 +447,22 @@ const styles = StyleSheet.create({
   },
   profileActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   profileActionText: { color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
+  versionBlock: { alignItems: "center", gap: Spacing.xs, marginTop: Spacing.xs },
+  versionText: {
+    color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "600",
+    letterSpacing: 0.5,
+  },
+  updateBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    alignSelf: "stretch",
+    gap: 6, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: "rgba(255,102,0,0.35)",
+  },
+  updateBtnActive: {
+    borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
+  },
+  updateBtnText: { color: Colors.dark.accent, fontSize: 11, fontWeight: "700" },
   infoSection: { flex: 1, gap: Spacing.md },
   infoGrid: { flexDirection: "column", gap: Spacing.md },
   infoCard: {

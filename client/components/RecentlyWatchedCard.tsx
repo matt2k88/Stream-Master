@@ -16,6 +16,12 @@ export interface RecentlyWatched {
   thumbnail_url: string | null;
   stream_url: string | null;
   updated_at: string;
+  current_time?: number | null;
+  duration?: number | null;
+  is_completed?: boolean | null;
+  series_id?: string | null;
+  season_num?: number | null;
+  episode_num?: number | null;
 }
 
 const TYPE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
@@ -87,6 +93,16 @@ function RecentlyWatchedRow({
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
             <ThemedText style={styles.liveText}>LIVE</ThemedText>
+          </View>
+        ) : null}
+        {item.content_type !== "live" && item.duration && item.duration > 0 && !item.is_completed ? (
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))}%` },
+              ]}
+            />
           </View>
         ) : null}
       </View>
@@ -191,6 +207,12 @@ export async function saveRecentlyWatched(params: {
   name: string;
   thumbnailUrl?: string;
   streamUrl?: string;
+  currentTime?: number;
+  duration?: number;
+  isCompleted?: boolean;
+  seriesId?: string;
+  seasonNum?: number;
+  episodeNum?: number;
 }) {
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
@@ -204,10 +226,30 @@ export async function saveRecentlyWatched(params: {
         name: params.name,
         thumbnail_url: params.thumbnailUrl ?? null,
         stream_url: params.streamUrl ?? null,
+        current_time: typeof params.currentTime === "number" ? params.currentTime : undefined,
+        duration: typeof params.duration === "number" ? params.duration : undefined,
+        is_completed: typeof params.isCompleted === "boolean" ? params.isCompleted : undefined,
+        series_id: params.seriesId ?? undefined,
+        season_num: typeof params.seasonNum === "number" ? params.seasonNum : undefined,
+        episode_num: typeof params.episodeNum === "number" ? params.episodeNum : undefined,
       }),
     });
   } catch {
     // silent — non-critical
+  }
+}
+
+export async function fetchResumeFor(profileId: string, streamId: string): Promise<RecentlyWatched | null> {
+  try {
+    const url = new URL("/api/recently-watched/by-stream", getApiUrl());
+    url.searchParams.set("profile_id", profileId);
+    url.searchParams.set("stream_id", streamId);
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -315,6 +357,16 @@ const styles = StyleSheet.create({
   },
   liveDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: "#fff" },
   liveText: { color: "#fff", fontSize: 7, fontWeight: "800", letterSpacing: 0.4 },
+  progressTrack: {
+    position: "absolute",
+    left: 0, right: 0, bottom: 0,
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.dark.accent,
+  },
 
   infoCol: {
     flex: 1,

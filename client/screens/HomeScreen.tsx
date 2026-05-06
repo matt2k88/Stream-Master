@@ -324,6 +324,10 @@ export default function HomeScreen() {
                   type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                   thumbnail: item.thumbnail_url ?? undefined,
                   streamId: item.stream_id ?? undefined,
+                  resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
+                  seriesId: item.series_id ?? undefined,
+                  seasonNum: item.season_num ?? undefined,
+                  episodeNum: item.episode_num ?? undefined,
                 });
               }}
             />
@@ -383,6 +387,10 @@ export default function HomeScreen() {
                 type: item.content_type === "live" ? "live" : item.content_type === "series" ? "series" : "vod",
                 thumbnail: item.thumbnail_url ?? undefined,
                 streamId: item.stream_id ?? undefined,
+                resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
+                seriesId: item.series_id ?? undefined,
+                seasonNum: item.season_num ?? undefined,
+                episodeNum: item.episode_num ?? undefined,
               });
             }}
           />

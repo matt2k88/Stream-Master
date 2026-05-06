@@ -25,6 +25,13 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 - **Live Preview Screen**: Tapping a live channel navigates to LivePreviewScreen — left side shows a mini VideoView (plays the stream), right side shows EPG (now + upcoming programmes from Xtream `get_short_epg` API, base64-decoded). "Watch Full Screen" button navigates to full PlayerScreen.
 - **Player Favourite Button**: Star button in the PlayerScreen top bar. Press it to add/remove the current stream from Favourites. An animated toast notification confirms the action. Works on TV remote.
 - **Previously Watched Adaptive**: RecentlyWatchedCard on HomeScreen measures its available height via onLayout and shows 2 items if space allows (≥130px), 1 item otherwise.
+- **Continue Watching / Resume**: Player periodically saves `current_time` + `duration` to `recently_watched` (every ~10s, after the first 5s of playback). When playback enters the last 30s, the entry is marked `is_completed=true` (single-shot). RecentlyWatchedCard shows an orange progress bar overlay on the thumbnail for partially-watched VOD/series; tapping resumes from `current_time` (completed items start over).
+- **Watch Next Episode Prompt**: For series episodes, the Player pre-fetches the next episode (next ep in season, falling back to first ep of next numeric season). When within 30s of end an "UP NEXT" overlay appears with a 10s countdown — pressing Watch Next (or auto-confirm) `navigation.replace`s into the next episode's Player; Cancel dismisses for the rest of the playback.
+- **Card Rating Badge**: ContentListScreen rating moved to a dark pill overlaid top-right of the card thumbnail (kept uniform card heights and avoids cut-off when titles wrap to 2 lines).
+- **App Version + Update Check**: Profile screen shows `v{expo.version}` under Switch Profile plus a "Check for Updates" button. Hits `GET /api/app-version` (Supabase `app_version` table) and alerts the user with the downloader code if a newer version is available.
+
+## Database Migrations
+SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending: `migrations/001_continue_watching.sql` (adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`).
 
 ## Tech Stack
 

@@ -139,6 +139,7 @@ export default function SeriesDetailScreen() {
   };
 
   const handleEpisodePress = (ep: Episode) => {
+    const seasonNum = Number(ep.season ?? selectedSeason ?? 1) || 1;
     navigation.navigate("Player", {
       streamUrl: xtreamApi.getSeriesStreamUrl(ep.id, ep.container_extension),
       title: `${seriesName} - ${ep.title}`,
@@ -147,6 +148,8 @@ export default function SeriesDetailScreen() {
       streamId: String(ep.id),
       seriesId: String(seriesId),
       seriesName,
+      seasonNum,
+      episodeNum: Number(ep.episode_num),
     });
   };
 

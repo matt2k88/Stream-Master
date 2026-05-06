@@ -226,6 +226,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── App Version ───────────────────────────────────────────────────────────
+  app.get("/api/app-version", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("app_version")
+        .select("id, version, updated_at, downloader_code")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? null);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch app version" });
+    }
+  });
+
   // ── Recently Watched ──────────────────────────────────────────────────────
   app.get("/api/recently-watched", async (req, res) => {
     const { profile_id } = req.query;
@@ -246,14 +262,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Single resume entry by stream
+  app.get("/api/recently-watched/by-stream", async (req, res) => {
+    const { profile_id, stream_id } = req.query;
+    if (!profile_id || !stream_id) return res.status(400).json({ error: "profile_id and stream_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("recently_watched")
+        .select("*")
+        .eq("profile_id", profile_id as string)
+        .eq("stream_id", String(stream_id))
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? null);
+    } catch {
+      res.json(null);
+    }
+  });
+
   app.post("/api/recently-watched", async (req, res) => {
-    const { profile_id, content_type, stream_id, name, thumbnail_url, stream_url } = req.body;
+    const {
+      profile_id, content_type, stream_id, name, thumbnail_url, stream_url,
+      current_time, duration, is_completed, series_id, season_num, episode_num,
+    } = req.body;
     if (!profile_id || !content_type || !name) {
       return res.status(400).json({ error: "profile_id, content_type, and name required" });
     }
     try {
       const now = new Date().toISOString();
-      const entry = {
+      const entry: Record<string, any> = {
         profile_id,
         content_type,
         stream_id: stream_id ?? null,
@@ -262,6 +301,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         stream_url: stream_url ?? null,
         updated_at: now,
       };
+      if (typeof current_time === "number") entry.current_time = current_time;
+      if (typeof duration === "number") entry.duration = duration;
+      if (typeof is_completed === "boolean") entry.is_completed = is_completed;
+      if (series_id != null) entry.series_id = String(series_id);
+      if (season_num != null) entry.season_num = Number(season_num);
+      if (episode_num != null) entry.episode_num = Number(episode_num);
 
       // Step 1: Remove any existing entry for the same stream (dedup / re-watch)
       if (stream_id) {
