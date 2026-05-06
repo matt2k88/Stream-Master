@@ -1,0 +1,20 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "1DLGAkGKl0w6mAAonLn9E"
+uri = "file://assets/images/icon.png"
+type = "image"
+title = "App Icon (iOS / Android home screen)"
+
+[[outputs]]
+id = "9FC9tuUDbTYspuYixL3sO"
+uri = "file://assets/images/android-icon-foreground.png"
+type = "image"
+title = "Android Adaptive Foreground"
+
+[[outputs]]
+id = "Ume9PI4g7Xs-pEN3azJ0u"
+uri = "file://assets/images/tv-banner.png"
+type = "image"
+title = "Android TV / Firestick Banner (1280x720)"

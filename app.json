@@ -62,7 +62,11 @@
           }
         }
       ],
-      "./plugins/withCleartextTraffic"
+      "./plugins/withCleartextTraffic",
+      [
+        "./plugins/withTvBanner",
+        { "bannerPath": "./assets/images/tv-banner.png" }
+      ]
     ],
     "experiments": {
       "reactCompiler": true
