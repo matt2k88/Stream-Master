@@ -26,6 +26,7 @@ import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
+import { normaliseSearch } from "@/lib/search";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -402,7 +403,7 @@ export default function ContentListScreen() {
   const isFavouritesView = selectedCategoryId === "favourites";
   const isRecentlyView = selectedCategoryId === "recently";
   const isSpecialView = isFavouritesView || isRecentlyView;
-  const trimmedQuery = submittedQuery.trim().toLowerCase();
+  const trimmedQuery = normaliseSearch(submittedQuery);
   const isSearching = trimmedQuery.length > 0;
 
   const numColumns = type === "live"
@@ -537,13 +538,29 @@ export default function ContentListScreen() {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [selectedCategoryId]);
 
-  // Search results — searches entire section, not just current category
+  // Pre-build a normalised-name index once per stream list. Doing the
+  // normalisation per-keystroke across thousands of titles would block the
+  // JS thread; this caches the costly NFD/regex work and lets each search
+  // be a cheap String.includes() over already-normalised values.
+  const normalisedSection = useMemo(
+    () => allSectionStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
+    [allSectionStreams],
+  );
+
+  // Search results — searches entire section, not just current category.
+  // Punctuation/accents/case are ignored so e.g. "ru pauls drag race"
+  // matches "RuPaul's Drag Race".
   const searchResults: ContentItem[] = useMemo(() => {
     if (!trimmedQuery) return [];
-    return allSectionStreams
-      .filter((s) => s.name.toLowerCase().includes(trimmedQuery))
-      .slice(0, SEARCH_LIMIT);
-  }, [trimmedQuery, allSectionStreams]);
+    const out: ContentItem[] = [];
+    for (const { s, n } of normalisedSection) {
+      if (n.includes(trimmedQuery)) {
+        out.push(s);
+        if (out.length >= SEARCH_LIMIT) break;
+      }
+    }
+    return out;
+  }, [trimmedQuery, normalisedSection]);
 
   const fullDisplayContent = isSearching ? searchResults : categoryContent;
 

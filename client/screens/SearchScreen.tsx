@@ -19,6 +19,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
+import { normaliseSearch } from "@/lib/search";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AnyStream = LiveStream | VodStream | Series;
@@ -208,16 +209,41 @@ export default function SearchScreen() {
   const desktopMovieCardW = Math.floor((width - padH * 2 - gap * (desktopMovieCols - 1)) / desktopMovieCols);
   const desktopLiveCardW = Math.floor((width - padH * 2 - gap * (desktopLiveCols - 1)) / desktopLiveCols);
 
-  const trimmed = submittedQuery.trim().toLowerCase();
+  const trimmed = normaliseSearch(submittedQuery);
+
+  // Pre-normalise once per stream list — avoids re-running NFD/regex on
+  // thousands of titles for every keystroke.
+  const normLive = useMemo(
+    () => liveStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
+    [liveStreams],
+  );
+  const normMovies = useMemo(
+    () => vodStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
+    [vodStreams],
+  );
+  const normSeries = useMemo(
+    () => seriesList.map((s) => ({ s, n: normaliseSearch(s.name) })),
+    [seriesList],
+  );
 
   const results = useMemo(() => {
     if (!trimmed) return { live: [], movies: [], series: [] };
-    return {
-      live: liveStreams.filter((s) => s.name.toLowerCase().includes(trimmed)).slice(0, RESULT_LIMIT),
-      movies: vodStreams.filter((s) => s.name.toLowerCase().includes(trimmed)).slice(0, RESULT_LIMIT),
-      series: seriesList.filter((s) => s.name.toLowerCase().includes(trimmed)).slice(0, RESULT_LIMIT),
+    const pick = <T,>(arr: { s: T; n: string }[]) => {
+      const out: T[] = [];
+      for (const { s, n } of arr) {
+        if (n.includes(trimmed)) {
+          out.push(s);
+          if (out.length >= RESULT_LIMIT) break;
+        }
+      }
+      return out;
     };
-  }, [trimmed, liveStreams, vodStreams, seriesList]);
+    return {
+      live: pick(normLive),
+      movies: pick(normMovies),
+      series: pick(normSeries),
+    };
+  }, [trimmed, normLive, normMovies, normSeries]);
 
   const hasResults = results.live.length + results.movies.length + results.series.length > 0;
 
