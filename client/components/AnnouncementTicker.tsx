@@ -114,6 +114,8 @@ export default function AnnouncementTicker() {
         >
           <Text
             style={styles.tickerText}
+            numberOfLines={1}
+            ellipsizeMode="clip"
             onLayout={(e) => handleTextLayout(e.nativeEvent.layout.width)}
           >
             {ticker}
