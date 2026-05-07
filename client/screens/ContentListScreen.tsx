@@ -464,6 +464,15 @@ export default function ContentListScreen() {
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
+  // Progressive render: on slower devices, mounting a FlatList with hundreds
+  // of cards (images + focus handlers + watch-state lookups) blocks the JS
+  // thread on first paint. Instead we expose a tiny first batch immediately,
+  // then grow the visible window off-screen in larger chunks until the full
+  // list is materialised. The user sees results almost instantly and the
+  // remainder fills in before they can scroll past it.
+  const PROGRESSIVE_STEPS = [16, 60, 200, 600, 2000];
+  const [renderLimit, setRenderLimit] = useState(PROGRESSIVE_STEPS[0]);
+
   // Scroll to top whenever the selected category changes (without remounting FlatList)
   useEffect(() => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -477,7 +486,42 @@ export default function ContentListScreen() {
       .slice(0, SEARCH_LIMIT);
   }, [trimmedQuery, allSectionStreams]);
 
-  const displayContent = isSearching ? searchResults : categoryContent;
+  const fullDisplayContent = isSearching ? searchResults : categoryContent;
+
+  // Reset progressive limit whenever the underlying list identity changes
+  // (category switch, search, type change, special view toggle). Then ramp
+  // it up on requestAnimationFrame + setTimeout so the bumps land AFTER
+  // the first paint and don't compete with it for the JS thread.
+  useEffect(() => {
+    setRenderLimit(PROGRESSIVE_STEPS[0]);
+    if (fullDisplayContent.length <= PROGRESSIVE_STEPS[0]) return;
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let raf: number | null = null;
+    const schedule = (i: number, delay: number) => {
+      timers.push(setTimeout(() => {
+        if (cancelled) return;
+        setRenderLimit(PROGRESSIVE_STEPS[i]);
+      }, delay));
+    };
+    raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      schedule(1, 32);   // ~1 frame after paint
+      schedule(2, 120);
+      schedule(3, 280);
+      schedule(4, 600);
+    });
+    return () => {
+      cancelled = true;
+      if (raf !== null) cancelAnimationFrame(raf);
+      timers.forEach(clearTimeout);
+    };
+  }, [selectedCategoryId, isSearching, type, isFavouritesView, isRecentlyView, fullDisplayContent.length]);
+
+  const displayContent = useMemo(
+    () => fullDisplayContent.slice(0, renderLimit),
+    [fullDisplayContent, renderLimit],
+  );
 
   const handleItemPress = (item: ContentItem) => {
     if (type === "live") {
@@ -573,7 +617,7 @@ export default function ContentListScreen() {
     type === "movies" ? "Search all movies..." :
     "Search all series...";
 
-  const countDisplay = isSearching ? searchResults.length : displayContent.length;
+  const countDisplay = isSearching ? searchResults.length : fullDisplayContent.length;
 
   const searchBarHeader = (
     <View style={styles.searchBarWrap}>
@@ -796,10 +840,11 @@ export default function ContentListScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={type === "live" ? 30 : 20}
-              maxToRenderPerBatch={type === "live" ? 30 : 20}
-              updateCellsBatchingPeriod={16}
-              windowSize={21}
+              initialNumToRender={type === "live" ? 16 : 12}
+              maxToRenderPerBatch={type === "live" ? 16 : 12}
+              updateCellsBatchingPeriod={32}
+              windowSize={11}
+              removeClippedSubviews
               renderItem={({ item }) => {
                 const watchEntry =
                   type === "series"
