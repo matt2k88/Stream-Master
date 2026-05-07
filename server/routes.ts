@@ -148,6 +148,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Category Prefs (per-profile organise) ─────────────────────────────────
+  app.get("/api/category-prefs", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("category_prefs")
+        .select("type, order_ids, hidden_ids")
+        .eq("profile_id", profile_id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch category prefs" });
+    }
+  });
+
+  app.put("/api/category-prefs", async (req, res) => {
+    const { profile_id, type, order_ids, hidden_ids } = req.body;
+    if (!profile_id || !type) {
+      return res.status(400).json({ error: "profile_id and type required" });
+    }
+    if (!["live", "movies", "series"].includes(type)) {
+      return res.status(400).json({ error: "invalid type" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("category_prefs")
+        .upsert(
+          {
+            profile_id,
+            type,
+            order_ids: Array.isArray(order_ids) ? order_ids : [],
+            hidden_ids: Array.isArray(hidden_ids) ? hidden_ids : [],
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "profile_id,type" },
+        )
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to save category prefs" });
+    }
+  });
+
   // ── Announcements ─────────────────────────────────────────────────────────
   app.get("/api/announcements", async (req, res) => {
     try {

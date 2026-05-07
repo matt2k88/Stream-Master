@@ -4,12 +4,13 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Category } from "@/lib/xtream-api";
 import { useProfile } from "@/contexts/ProfileContext";
+import { getApiUrl } from "@/lib/query-client";
 
 export type CategoryType = "live" | "movies" | "series";
 
@@ -32,9 +33,7 @@ interface OrganiseEntry extends Category {
 
 interface CategoryOrderContextType {
   prefs: AllPrefs;
-  // For grids/sidebars — visible categories in user order.
   applyOrder: (type: CategoryType, cats: Category[]) => Category[];
-  // For the Organise screen — ALL categories in user order, with hidden flag.
   buildOrganiseList: (type: CategoryType, cats: Category[]) => OrganiseEntry[];
   toggleHidden: (type: CategoryType, categoryId: string) => Promise<void>;
   moveUp: (type: CategoryType, categoryId: string) => Promise<void>;
@@ -42,11 +41,10 @@ interface CategoryOrderContextType {
   moveToTop: (type: CategoryType, categoryId: string) => Promise<void>;
   moveToBottom: (type: CategoryType, categoryId: string) => Promise<void>;
   resetType: (type: CategoryType) => Promise<void>;
+  commitDisplayOrder: (type: CategoryType, ids: string[]) => Promise<void>;
 }
 
 const CategoryOrderContext = createContext<CategoryOrderContextType | undefined>(undefined);
-
-const storageKey = (profileId: string) => `category_prefs_${profileId}`;
 
 function mergeOrder(orderIds: string[], cats: Category[]): Category[] {
   const map = new Map(cats.map((c) => [c.category_id, c]));
@@ -68,13 +66,48 @@ function mergeOrder(orderIds: string[], cats: Category[]): Category[] {
 export function CategoryOrderProvider({ children }: { children: ReactNode }) {
   const { activeProfile } = useProfile();
   const [prefs, setPrefs] = useState<AllPrefs>(EMPTY);
-  // Track which profile `prefs` actually corresponds to. While loading or
-  // when profile is null, we ignore writes to prevent stale-prefs from
-  // being persisted under a different profile key.
+  // Track which profile `prefs` actually corresponds to. Writes are blocked
+  // until load completes so we never persist stale prefs under the wrong
+  // profile id.
   const [loadedProfileId, setLoadedProfileId] = useState<string | null>(null);
 
-  // Load from storage when profile changes. We immediately blank prefs and
-  // mark unloaded so screens never see the previous profile's data.
+  // Per-(profile,type) save queue: collapses rapid clicks into a single
+  // trailing PUT so order on the server matches the user's final intent
+  // even under high-frequency moves.
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const saveSeq = useRef<Record<string, number>>({});
+  const SAVE_DEBOUNCE_MS = 250;
+
+  const scheduleSave = useCallback(
+    (pid: string, type: CategoryType, p: TypePrefs) => {
+      const key = `${pid}:${type}`;
+      const existing = saveTimers.current[key];
+      if (existing) clearTimeout(existing);
+      const seq = (saveSeq.current[key] ?? 0) + 1;
+      saveSeq.current[key] = seq;
+      saveTimers.current[key] = setTimeout(async () => {
+        try {
+          const url = new URL("/api/category-prefs", getApiUrl());
+          await fetch(url.toString(), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              profile_id: pid,
+              type,
+              order_ids: p.order,
+              hidden_ids: p.hidden,
+            }),
+          });
+        } catch {
+          // best-effort — local state is the source of truth in-session.
+        }
+      }, SAVE_DEBOUNCE_MS);
+    },
+    [],
+  );
+
+  // Load from API when profile changes. Immediately blank prefs so screens
+  // never see another profile's data.
   useEffect(() => {
     let cancelled = false;
     setPrefs(EMPTY);
@@ -83,20 +116,30 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
     if (!pid) return;
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(storageKey(pid));
+        const url = new URL("/api/category-prefs", getApiUrl());
+        url.searchParams.set("profile_id", pid);
+        const res = await fetch(url.toString());
         if (cancelled) return;
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          setPrefs({
-            live: { order: parsed?.live?.order ?? [], hidden: parsed?.live?.hidden ?? [] },
-            movies: { order: parsed?.movies?.order ?? [], hidden: parsed?.movies?.hidden ?? [] },
-            series: { order: parsed?.series?.order ?? [], hidden: parsed?.series?.hidden ?? [] },
-          });
-        } else {
-          setPrefs(EMPTY);
+        if (res.ok) {
+          const rows: { type: CategoryType; order_ids: string[]; hidden_ids: string[] }[] =
+            await res.json();
+          const next: AllPrefs = {
+            live: { order: [], hidden: [] },
+            movies: { order: [], hidden: [] },
+            series: { order: [], hidden: [] },
+          };
+          for (const row of rows) {
+            if (row && (row.type === "live" || row.type === "movies" || row.type === "series")) {
+              next[row.type] = {
+                order: Array.isArray(row.order_ids) ? row.order_ids : [],
+                hidden: Array.isArray(row.hidden_ids) ? row.hidden_ids : [],
+              };
+            }
+          }
+          if (!cancelled) setPrefs(next);
         }
       } catch {
-        if (!cancelled) setPrefs(EMPTY);
+        // silent — leave prefs empty (default behaviour).
       } finally {
         if (!cancelled) setLoadedProfileId(pid);
       }
@@ -104,24 +147,24 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [activeProfile?.id]);
 
-  // All writes go through this; uses functional setState so rapid consecutive
-  // calls don't drop updates from a stale closure.
+  // All writes go through this. Functional setState avoids stale-closure
+  // issues from rapid consecutive taps. We also schedule a debounced PUT
+  // with the resulting state so the server always lands on the latest value.
   const updateType = useCallback(
     (type: CategoryType, fn: (p: TypePrefs) => TypePrefs) => {
       const pid = activeProfile?.id ?? null;
-      // Refuse writes if profile not yet loaded — would corrupt persistence.
       if (!pid || pid !== loadedProfileId) return Promise.resolve();
       return new Promise<void>((resolve) => {
         setPrefs((prev) => {
-          const next = { ...prev, [type]: fn(prev[type]) };
-          AsyncStorage.setItem(storageKey(pid), JSON.stringify(next))
-            .catch(() => {})
-            .finally(() => resolve());
+          const nextType = fn(prev[type]);
+          const next = { ...prev, [type]: nextType };
+          scheduleSave(pid, type, nextType);
+          resolve();
           return next;
         });
       });
     },
-    [activeProfile?.id, loadedProfileId],
+    [activeProfile?.id, loadedProfileId, scheduleSave],
   );
 
   const applyOrder = useCallback(
@@ -158,16 +201,8 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
   const reorder = useCallback(
     (type: CategoryType, id: string, action: "up" | "down" | "top" | "bottom") =>
       updateType(type, (p) => {
-        // We need the current effective order. The screen calls movement
-        // functions through `useCategoryOrder` after rendering an organise
-        // list, so the canonical source of truth is `p.order` if present,
-        // otherwise the caller should have already touched it. To keep this
-        // robust we operate on whatever ids we know about — including `id`.
         let arr = p.order.slice();
-        if (!arr.includes(id)) {
-          // Append unknowns so the move still has effect.
-          arr.push(id);
-        }
+        if (!arr.includes(id)) arr.push(id);
         const idx = arr.indexOf(id);
         if (idx < 0) return p;
         arr.splice(idx, 1);
@@ -180,11 +215,6 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
     [updateType],
   );
 
-  // Public movement wrappers — these need the full current displayed order
-  // to behave correctly even before the user has done their first reorder.
-  // The Organise screen calls `commitDisplayOrder` once on mount to seed
-  // `prefs[type].order` with the currently-displayed list (api order +
-  // any prior overrides), so subsequent moves are predictable.
   const commitDisplayOrder = useCallback(
     (type: CategoryType, ids: string[]) =>
       updateType(type, (p) => ({ ...p, order: ids })),
@@ -202,7 +232,14 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
     [updateType],
   );
 
-  const value = useMemo<CategoryOrderContextType & { commitDisplayOrder: typeof commitDisplayOrder }>(
+  // Flush any pending debounced saves on unmount.
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimers.current).forEach((t) => t && clearTimeout(t));
+    };
+  }, []);
+
+  const value = useMemo<CategoryOrderContextType>(
     () => ({
       prefs,
       applyOrder,
@@ -228,7 +265,5 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
 export function useCategoryOrder() {
   const ctx = useContext(CategoryOrderContext);
   if (!ctx) throw new Error("useCategoryOrder must be used within CategoryOrderProvider");
-  return ctx as CategoryOrderContextType & {
-    commitDisplayOrder: (type: CategoryType, ids: string[]) => Promise<void>;
-  };
+  return ctx;
 }

@@ -39,6 +39,7 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending:
 - `migrations/001_continue_watching.sql` — adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`
 - `migrations/002_content_reports.sql` — creates `content_reports` table (id, profile_id, stream_id, stream_name, stream_type, reason, other_text, created_at)
+- `migrations/003_category_prefs.sql` — creates `category_prefs` table (id, profile_id, type, order_ids text[], hidden_ids text[], updated_at) with unique (profile_id, type). Stores per-profile category organise prefs (order + hidden) for Live/Movies/Series so they sync across devices.
 
 ## Tech Stack
 
