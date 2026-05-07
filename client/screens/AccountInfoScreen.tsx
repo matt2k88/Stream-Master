@@ -388,6 +388,28 @@ export default function AccountInfoScreen() {
                 <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
               </View>
 
+              {/* Organise Categories button */}
+              <HoverBtn
+                style={styles.organiseBtn}
+                activeStyle={styles.organiseBtnActive}
+                onPress={() => navigation.navigate("OrganiseTypePicker")}
+              >
+                {(active) => (
+                  <>
+                    <Feather name="sliders" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
+                        Organise Categories
+                      </ThemedText>
+                      <ThemedText style={styles.organiseSub}>
+                        Reorder or hide categories per profile
+                      </ThemedText>
+                    </View>
+                    <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                  </>
+                )}
+              </HoverBtn>
+
               {/* Developer card */}
               <View style={styles.infoCard}>
                 <ThemedText style={styles.cardLabel}>Developer</ThemedText>
@@ -542,6 +564,19 @@ const styles = StyleSheet.create({
   },
   copyBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   copyBtnCopied: { borderColor: Colors.dark.success, backgroundColor: "rgba(34,197,94,0.1)" },
+
+  // Organise Categories button
+  organiseBtn: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.md,
+  },
+  organiseBtnActive: {
+    borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
+  },
+  organiseTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "700" },
+  organiseSub: { color: Colors.dark.textSecondary, fontSize: 11, marginTop: 2 },
 
   // Developer card states
   devLoading: { paddingVertical: Spacing.md, alignItems: "center" },

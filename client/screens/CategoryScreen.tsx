@@ -22,6 +22,7 @@ import { Category, xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
@@ -241,6 +242,7 @@ export default function CategoryScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, isSyncing } = useData();
+  const { applyOrder } = useCategoryOrder();
   const { getFavouritesByType } = useFavourites();
   const { entries: watchEntries } = useWatchHistory();
   const [query, setQuery] = useState("");
@@ -262,10 +264,14 @@ export default function CategoryScreen() {
     : Math.max(3, Math.floor(width / 130));
   const searchCardWidth = Math.floor((width - padH * 2 - gap * (numSearchCols - 1)) / numSearchCols);
 
-  const categories: Category[] =
+  const rawCategories: Category[] =
     type === "live" ? liveCategories :
     type === "movies" ? vodCategories :
     seriesCategories;
+  const categories: Category[] = useMemo(
+    () => applyOrder(type, rawCategories),
+    [applyOrder, type, rawCategories],
+  );
 
   const getIcon = (): keyof typeof Feather.glyphMap => {
     switch (type) {

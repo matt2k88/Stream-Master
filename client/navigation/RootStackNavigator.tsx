@@ -23,6 +23,8 @@ import MessagesScreen from "@/screens/MessagesScreen";
 import LivePreviewScreen from "@/screens/LivePreviewScreen";
 import TvGuideScreen from "@/screens/TvGuideScreen";
 import CatchUpScreen from "@/screens/CatchUpScreen";
+import OrganiseTypePickerScreen from "@/screens/OrganiseTypePickerScreen";
+import OrganiseCategoriesScreen from "@/screens/OrganiseCategoriesScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -40,6 +42,8 @@ export type RootStackParamList = {
   Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number };
   LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string; categoryId?: string; initialFullscreen?: boolean };
   AccountInfo: undefined;
+  OrganiseTypePicker: undefined;
+  OrganiseCategories: { type: "live" | "movies" | "series" };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -84,6 +88,8 @@ export default function RootStackNavigator() {
             <Stack.Screen name="TvGuide" component={TvGuideScreen} />
             <Stack.Screen name="CatchUp" component={CatchUpScreen} />
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
+            <Stack.Screen name="OrganiseTypePicker" component={OrganiseTypePickerScreen} />
+            <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
           </>
         )}
       </Stack.Navigator>

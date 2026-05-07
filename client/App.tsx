@@ -17,6 +17,7 @@ import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { MessageProvider } from "@/contexts/MessageContext";
+import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
@@ -44,6 +45,7 @@ export default function App() {
               <AuthProvider>
                 <DataProvider>
                   <ProfileProvider>
+                    <CategoryOrderProvider>
                     <FavouritesProvider>
                       <WatchHistoryProvider>
                         <MessageProvider>
@@ -57,6 +59,7 @@ export default function App() {
                         </MessageProvider>
                       </WatchHistoryProvider>
                     </FavouritesProvider>
+                    </CategoryOrderProvider>
                   </ProfileProvider>
                 </DataProvider>
               </AuthProvider>

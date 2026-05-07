@@ -25,6 +25,7 @@ import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
+import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -312,6 +313,7 @@ export default function ContentListScreen() {
   const { width } = useWindowDimensions();
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
+  const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -354,12 +356,12 @@ export default function ContentListScreen() {
   // Categories for the sidebar
   const categories: SidebarCat[] = useMemo(() => {
     switch (type) {
-      case "live": return liveCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
-      case "movies": return vodCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
-      case "series": return seriesCategories.map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      case "live": return applyOrder("live", liveCategories).map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      case "movies": return applyOrder("movies", vodCategories).map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
+      case "series": return applyOrder("series", seriesCategories).map((c) => ({ category_id: c.category_id, category_name: c.category_name }));
       default: return [];
     }
-  }, [type, liveCategories, vodCategories, seriesCategories]);
+  }, [type, liveCategories, vodCategories, seriesCategories, applyOrder]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
     const pinned: SidebarCat[] = [
