@@ -753,7 +753,13 @@ export default function ContentListScreen() {
             {searchBarHeader}
           </View>
 
-          {isFavouritesView && !isSearching && categoryContent.length === 0 ? (
+          {categorySwitching ? (
+            // Blank content area while switching — old list is unmounted so
+            // it visually clears immediately, then the new content fades in.
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={Colors.dark.accent} />
+            </View>
+          ) : isFavouritesView && !isSearching && categoryContent.length === 0 ? (
             <View style={styles.centered}>
               <Feather name="star" size={44} color={Colors.dark.border} />
               <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
@@ -828,11 +834,6 @@ export default function ContentListScreen() {
             />
           )}
 
-          {categorySwitching ? (
-            <View style={styles.switchOverlay} pointerEvents="none">
-              <ActivityIndicator size="large" color={Colors.dark.accent} />
-            </View>
-          ) : null}
         </View>
       </View>
     </ThemedView>
