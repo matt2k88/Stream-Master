@@ -165,9 +165,15 @@ const styles = StyleSheet.create({
   },
   scrollRow: {
     position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: "row",
     flexWrap: "nowrap",
     alignItems: "center",
+    // Huge width so single-line Text can lay out at its true natural width
+    // (otherwise RN clips numberOfLines=1 text to the parent scroll area).
+    width: 100000,
   },
   tickerText: {
     color: Colors.dark.text,
