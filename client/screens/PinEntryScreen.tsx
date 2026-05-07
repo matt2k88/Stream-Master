@@ -169,7 +169,7 @@ export default function PinEntryScreen() {
                 key={idx}
                 keyVal={key}
                 onPress={handleKey}
-                autoFocus={key === "5"}
+                autoFocus={key === "⌫"}
               />
             ))}
           </View>
