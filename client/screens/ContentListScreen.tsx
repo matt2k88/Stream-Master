@@ -36,6 +36,65 @@ const SEARCH_LIMIT = 150;
 const SIDEBAR_W = 170;
 const CONTENT_PAD = Spacing.md;
 
+// Header "Clear All" button — explicit focus/hover/press tracking because
+// Pressable's style render-prop only exposes `pressed` on RN native; using
+// `({ focused, hovered })` would always be undefined and the active style
+// would never apply on TV remotes or desktop hover.
+function ClearAllButton({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      style={[styles.clearAllBtn, isActive && styles.clearAllBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name="trash-2" size={13} color={Colors.dark.error} />
+      <ThemedText style={styles.clearAllText}>Clear All</ThemedText>
+    </Pressable>
+  );
+}
+
+// Confirm-modal Cancel / Clear All buttons — same focus/hover pattern as
+// ClearAllButton so the active highlight actually shows on TV + desktop.
+function ModalBtn({
+  kind, onPress, disabled, children,
+}: {
+  kind: "cancel" | "confirm";
+  onPress: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  const baseStyle = kind === "cancel" ? styles.modalBtnCancel : styles.modalBtnConfirm;
+  const activeStyle = kind === "cancel" ? styles.modalBtnCancelActive : styles.modalBtnConfirmActive;
+  return (
+    <Pressable
+      style={[baseStyle, isActive && activeStyle]}
+      onPress={onPress}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -700,22 +759,22 @@ export default function ContentListScreen() {
                 : `Remove all ${type === "movies" ? "movie" : "series"} watch history for this profile?`}
             </ThemedText>
             <View style={styles.modalBtnRow}>
-              <Pressable
-                style={({ pressed, focused, hovered }: any) => [styles.modalBtnCancel, (pressed || focused || hovered) && styles.modalBtnCancelActive]}
+              <ModalBtn
+                kind="cancel"
                 onPress={() => setShowClearConfirm(false)}
                 disabled={clearing}
               >
                 <ThemedText style={styles.modalBtnCancelText}>Cancel</ThemedText>
-              </Pressable>
-              <Pressable
-                style={({ pressed, focused, hovered }: any) => [styles.modalBtnConfirm, (pressed || focused || hovered) && styles.modalBtnConfirmActive]}
+              </ModalBtn>
+              <ModalBtn
+                kind="confirm"
                 onPress={handleClearAll}
                 disabled={clearing}
               >
                 {clearing
                   ? <ActivityIndicator size="small" color="#fff" />
                   : <ThemedText style={styles.modalBtnConfirmText}>Clear All</ThemedText>}
-              </Pressable>
+              </ModalBtn>
             </View>
           </View>
         </View>
@@ -743,13 +802,7 @@ export default function ContentListScreen() {
           </ThemedText>
         </View>
         {isSpecialView && !isSearching ? (
-          <Pressable
-            style={({ pressed, focused, hovered }: any) => [styles.clearAllBtn, (pressed || focused || hovered) && styles.clearAllBtnActive]}
-            onPress={() => setShowClearConfirm(true)}
-          >
-            <Feather name="trash-2" size={13} color={Colors.dark.error} />
-            <ThemedText style={styles.clearAllText}>Clear All</ThemedText>
-          </Pressable>
+          <ClearAllButton onPress={() => setShowClearConfirm(true)} />
         ) : null}
       </View>
 

@@ -190,6 +190,13 @@ export default function CatchUpScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.sm);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.sm);
 
+  // Responsive channel grid: mirror the Live TV grid in ContentListScreen so
+  // portrait phones don't cram 3 oversized cards across. Works out to 2 cols
+  // on narrow portrait screens and grows naturally on tablets / landscape.
+  const { width: winWidth } = useWindowDimensions();
+  const channelGridWidth = Math.max(200, winWidth - SIDEBAR_W - 1);
+  const channelCols = Math.max(2, Math.floor(channelGridWidth / 150));
+
   // ── Catchup categories — only those with tv_archive channels ─────────────
   const catchupCatIds = useMemo(() => {
     const s = new Set<string>();
@@ -362,8 +369,8 @@ export default function CatchUpScreen() {
                 <FlatList
                   data={channelsInCat}
                   keyExtractor={(s) => String(s.stream_id)}
-                  numColumns={3}
-                  key="channels-3"
+                  numColumns={channelCols}
+                  key={`channels-${channelCols}`}
                   contentContainerStyle={styles.channelGrid}
                   columnWrapperStyle={{ gap: Spacing.sm }}
                   showsVerticalScrollIndicator={false}
