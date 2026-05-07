@@ -9,6 +9,7 @@ import {
   Alert,
   BackHandler,
   Platform,
+  Modal,
 } from "react-native";
 import Constants from "expo-constants";
 import { reloadAppAsync } from "expo";
@@ -60,6 +61,14 @@ function HoverBtn({
       {typeof children === "function" ? children(isActive) : children}
     </Pressable>
   );
+}
+
+interface AppNote {
+  id: string;
+  type: "change" | "issue" | string;
+  text: string;
+  sort_order?: number;
+  created_at?: string;
 }
 
 interface DeveloperDetails {
@@ -143,6 +152,28 @@ export default function AccountInfoScreen() {
   const [devLoading, setDevLoading] = useState(true);
   const [updateChecking, setUpdateChecking] = useState(false);
   const [isLifetime, setIsLifetime] = useState(false);
+  const [notesVisible, setNotesVisible] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [notes, setNotes] = useState<AppNote[]>([]);
+  const [notesError, setNotesError] = useState<string | null>(null);
+
+  const handleOpenNotes = async () => {
+    setNotesVisible(true);
+    setNotesLoading(true);
+    setNotesError(null);
+    try {
+      const url = new URL("/api/app-notes", getApiUrl());
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error("Failed");
+      const data = (await res.json()) as AppNote[];
+      setNotes(Array.isArray(data) ? data : []);
+    } catch {
+      setNotesError("Could not load app notes. Try again later.");
+      setNotes([]);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
 
   const handleCheckForUpdates = async () => {
     if (updateChecking) return;
@@ -342,6 +373,14 @@ export default function AccountInfoScreen() {
                 </ThemedText>
               </HoverBtn>
               <HoverBtn
+                style={styles.notesBtn}
+                activeStyle={styles.notesBtnActive}
+                onPress={handleOpenNotes}
+              >
+                <Feather name="file-text" size={13} color={Colors.dark.accent} />
+                <ThemedText style={styles.updateBtnText}>What&apos;s New</ThemedText>
+              </HoverBtn>
+              <HoverBtn
                 style={styles.exitAppBtn}
                 activeStyle={styles.exitAppBtnActive}
                 onPress={() => {
@@ -460,7 +499,150 @@ export default function AccountInfoScreen() {
           </Pressable>
         </View>
       )}
+
+      {/* App Notes modal — changelog + known issues */}
+      <Modal
+        visible={notesVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotesVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setNotesVisible(false)}>
+          <Pressable style={styles.notesModal} onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <View style={styles.notesHeader}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.notesEyebrow}>ULTRA CAST</ThemedText>
+                <ThemedText style={styles.notesTitle}>What&apos;s New &amp; Known Issues</ThemedText>
+                <ThemedText style={styles.notesSub}>v{APP_VERSION}</ThemedText>
+              </View>
+              <HoverBtn
+                style={styles.notesCloseBtn}
+                activeStyle={styles.notesCloseBtnActive}
+                onPress={() => setNotesVisible(false)}
+              >
+                {(active) => (
+                  <Feather name="x" size={18} color={active ? Colors.dark.accent : Colors.dark.text} />
+                )}
+              </HoverBtn>
+            </View>
+
+            <View style={styles.notesDivider} />
+
+            {notesLoading ? (
+              <View style={styles.notesCentered}>
+                <ActivityIndicator size="large" color={Colors.dark.accent} />
+              </View>
+            ) : notesError ? (
+              <View style={styles.notesCentered}>
+                <Feather name="alert-circle" size={28} color={Colors.dark.error} />
+                <ThemedText style={styles.notesErrorText}>{notesError}</ThemedText>
+                <Pressable style={styles.retryBtn} onPress={handleOpenNotes}>
+                  <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
+                </Pressable>
+              </View>
+            ) : notes.length === 0 ? (
+              <View style={styles.notesCentered}>
+                <Feather name="inbox" size={28} color={Colors.dark.border} />
+                <ThemedText style={styles.notesEmpty}>No notes yet.</ThemedText>
+              </View>
+            ) : (
+              <ScrollView
+                style={{ maxHeight: 460 }}
+                contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.sm }}
+                showsVerticalScrollIndicator={false}
+              >
+                {(() => {
+                  const changes = notes.filter((n) => (n.type ?? "").toLowerCase() === "change");
+                  const issues = notes.filter((n) => (n.type ?? "").toLowerCase() === "issue");
+                  const others = notes.filter(
+                    (n) => !["change", "issue"].includes((n.type ?? "").toLowerCase()),
+                  );
+                  return (
+                    <>
+                      {changes.length > 0 ? (
+                        <NotesSection
+                          label="Latest Changes"
+                          icon="zap"
+                          tint={Colors.dark.accent}
+                          items={changes}
+                        />
+                      ) : null}
+                      {issues.length > 0 ? (
+                        <NotesSection
+                          label="Known Issues"
+                          icon="alert-triangle"
+                          tint={Colors.dark.error}
+                          items={issues}
+                        />
+                      ) : null}
+                      {others.length > 0 ? (
+                        <NotesSection
+                          label="Notes"
+                          icon="info"
+                          tint={Colors.dark.textSecondary}
+                          items={others}
+                        />
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedView>
+  );
+}
+
+function NotesSection({
+  label,
+  icon,
+  tint,
+  items,
+}: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  tint: string;
+  items: AppNote[];
+}) {
+  return (
+    <View style={{ gap: Spacing.xs, marginBottom: Spacing.sm }}>
+      <View style={styles.notesSectionHeader}>
+        <Feather name={icon} size={13} color={tint} />
+        <ThemedText style={[styles.notesSectionLabel, { color: tint }]}>{label}</ThemedText>
+        <View style={[styles.notesCountPill, { borderColor: tint + "55", backgroundColor: tint + "15" }]}>
+          <ThemedText style={[styles.notesCountText, { color: tint }]}>{items.length}</ThemedText>
+        </View>
+      </View>
+      {items.map((n) => (
+        <View
+          key={n.id}
+          style={[
+            styles.noteRow,
+            { borderLeftColor: tint, backgroundColor: "rgba(255,255,255,0.025)" },
+          ]}
+        >
+          <ThemedText style={styles.noteText}>{n.text}</ThemedText>
+          {n.created_at ? (
+            <ThemedText style={styles.noteDate}>
+              {new Date(n.created_at).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </ThemedText>
+          ) : null}
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -534,6 +716,87 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
   },
   updateBtnText: { color: Colors.dark.accent, fontSize: 11, fontWeight: "700" },
+  notesBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    alignSelf: "stretch",
+    gap: 6, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
+    backgroundColor: "transparent",
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: "rgba(255,102,0,0.25)",
+  },
+  notesBtnActive: {
+    borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
+  },
+
+  // ── App Notes modal ─────────────────────────────────────────────────────
+  modalBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center", alignItems: "center",
+    padding: Spacing.lg,
+  },
+  notesModal: {
+    width: "100%", maxWidth: 640,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.4)",
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 20, elevation: 14,
+  },
+  notesHeader: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.md,
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md,
+  },
+  notesEyebrow: {
+    color: Colors.dark.accent, fontSize: 10, fontWeight: "800",
+    letterSpacing: 2.5,
+  },
+  notesTitle: {
+    color: Colors.dark.text, fontSize: 18, fontWeight: "800",
+    marginTop: 2, letterSpacing: 0.3,
+  },
+  notesSub: {
+    color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "600",
+    marginTop: 2,
+  },
+  notesCloseBtn: {
+    width: 36, height: 36, borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  notesCloseBtnActive: {
+    borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
+  },
+  notesDivider: { height: 1, backgroundColor: "rgba(255,102,0,0.2)" },
+  notesCentered: {
+    paddingVertical: Spacing["3xl"],
+    alignItems: "center", gap: Spacing.sm,
+  },
+  notesErrorText: { color: Colors.dark.textSecondary, fontSize: 13 },
+  notesEmpty: { color: Colors.dark.textSecondary, fontSize: 13 },
+  notesSectionHeader: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.xs,
+    paddingHorizontal: Spacing.xs, paddingBottom: Spacing.xs,
+  },
+  notesSectionLabel: {
+    fontSize: 11, fontWeight: "800",
+    textTransform: "uppercase", letterSpacing: 1.2,
+  },
+  notesCountPill: {
+    paddingHorizontal: 8, paddingVertical: 1,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, marginLeft: 4,
+  },
+  notesCountText: { fontSize: 10, fontWeight: "800" },
+  noteRow: {
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderLeftWidth: 3,
+    gap: 4,
+  },
+  noteText: { color: Colors.dark.text, fontSize: 13, fontWeight: "500", lineHeight: 18 },
+  noteDate: { color: Colors.dark.textSecondary, fontSize: 10, fontWeight: "600", letterSpacing: 0.3 },
   infoSection: { flex: 1, gap: Spacing.md },
   infoGrid: { flexDirection: "column", gap: Spacing.md },
   infoCard: {

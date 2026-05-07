@@ -302,6 +302,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── App Notes (changelog / known issues) ──────────────────────────────────
+  app.get("/api/app-notes", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("app_notes")
+        .select("id, type, text, sort_order, created_at")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch app notes" });
+    }
+  });
+
   // ── Recently Watched ──────────────────────────────────────────────────────
   app.get("/api/recently-watched", async (req, res) => {
     const { profile_id, limit } = req.query;
