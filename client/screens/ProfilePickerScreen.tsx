@@ -324,14 +324,16 @@ export default function ProfilePickerScreen() {
   const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
   const padB = Math.max(insets.bottom + Spacing.sm, Spacing.lg);
 
-  // Tighter, larger cards. Cap container at 1100px and centre it so the grid
-  // never feels lost on big TV screens.
-  const maxContentW = 1100;
-  const numCols = isLandscape ? 4 : 3;
-  const gap = Spacing.xl;
+  // Compact cards — avatars are intentionally small (~56px) so the grid
+  // feels tight and premium even on a 65" TV. Container is capped and
+  // centred so the row of profiles sits as a tidy cluster instead of
+  // sprawling across the screen.
+  const maxContentW = 900;
+  const numCols = isLandscape ? 6 : 3;
+  const gap = Spacing.lg;
   const containerW = Math.min(width, maxContentW) - padH * 2;
   const cardSize = Math.floor((containerW - gap * (numCols - 1)) / numCols);
-  const avatarSize = Math.max(72, Math.min(110, Math.floor(cardSize * 0.55)));
+  const avatarSize = Math.max(44, Math.min(58, Math.floor(cardSize * 0.42)));
 
   useFocusEffect(
     useCallback(() => {
