@@ -20,7 +20,7 @@ type PinEntryRouteProp = RouteProp<RootStackParamList, "PinEntry">;
 
 const KEYS = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
 
-function KeyButton({ keyVal, onPress }: { keyVal: string; onPress: (k: string) => void }) {
+function KeyButton({ keyVal, onPress, autoFocus }: { keyVal: string; onPress: (k: string) => void; autoFocus?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
@@ -43,6 +43,8 @@ function KeyButton({ keyVal, onPress }: { keyVal: string; onPress: (k: string) =
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
+      autoFocus={autoFocus}
     >
       {isActive ? (
         <LinearGradient
@@ -163,7 +165,12 @@ export default function PinEntryScreen() {
         <View style={styles.padPanel}>
           <View style={styles.pad}>
             {KEYS.map((key, idx) => (
-              <KeyButton key={idx} keyVal={key} onPress={handleKey} />
+              <KeyButton
+                key={idx}
+                keyVal={key}
+                onPress={handleKey}
+                autoFocus={key === "5"}
+              />
             ))}
           </View>
         </View>

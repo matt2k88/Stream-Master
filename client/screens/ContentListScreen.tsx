@@ -321,13 +321,15 @@ export default function ContentListScreen() {
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [categorySwitching, setCategorySwitching] = useState(false);
 
-  // Brief loading overlay when category changes (lets the UI show feedback
-  // before the new list renders, especially on slower TV devices).
+  // Clear the loading overlay shortly AFTER the new selectedCategoryId has
+  // been applied (the list re-renders synchronously with the change). We
+  // wait until selectedCategoryId actually changes — not when the spinner
+  // first appears — so the overlay covers the entire heavy re-render.
   useEffect(() => {
     if (!categorySwitching) return;
-    const t = setTimeout(() => setCategorySwitching(false), 280);
+    const t = setTimeout(() => setCategorySwitching(false), 120);
     return () => clearTimeout(t);
-  }, [categorySwitching, selectedCategoryId]);
+  }, [selectedCategoryId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
   const flatListRef = useRef<FlatList<ContentItem>>(null);
 
@@ -723,9 +725,16 @@ export default function ContentListScreen() {
                 isRecent={item.category_id === "recently"}
                 onPress={() => {
                   if (item.category_id === selectedCategoryId) return;
+                  // Show the spinner first, then defer the heavy
+                  // re-render (filtering / FlatList rebuild) to the next
+                  // frame so the spinner has time to paint on slower TVs.
                   setCategorySwitching(true);
-                  setSelectedCategoryId(item.category_id);
-                  setSelectedCategoryName(item.category_name);
+                  const nextId = item.category_id;
+                  const nextName = item.category_name;
+                  requestAnimationFrame(() => {
+                    setSelectedCategoryId(nextId);
+                    setSelectedCategoryName(nextName);
+                  });
                 }}
               />
             )}

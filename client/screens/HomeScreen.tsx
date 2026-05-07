@@ -211,20 +211,28 @@ export default function HomeScreen() {
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
-  // Navigate directly to ContentList, pre-selecting the first real category
+  // Navigate directly to ContentList, pre-selecting the first real category.
+  // We defer the heavy navigation work to the next frame so the loading
+  // spinner gets a chance to paint first (otherwise on slow TV devices the
+  // press feels frozen because the JS thread is busy mounting the next
+  // screen before the spinner can render).
   const goToContent = (type: "live" | "movies" | "series", title: string) => {
     setNavigatingTo(type);
     const cats = type === "live" ? liveCategories : type === "movies" ? vodCategories : seriesCategories;
     const first = cats[0];
-    navigation.navigate("ContentList", {
-      type,
-      categoryId: first?.category_id ?? "",
-      categoryName: first?.category_name ?? title,
+    requestAnimationFrame(() => {
+      navigation.navigate("ContentList", {
+        type,
+        categoryId: first?.category_id ?? "",
+        categoryName: first?.category_name ?? title,
+      });
     });
   };
   const goToScreen = (key: string, screen: "TvGuide" | "CatchUp") => {
     setNavigatingTo(key);
-    navigation.navigate(screen);
+    requestAnimationFrame(() => {
+      navigation.navigate(screen);
+    });
   };
   const { setOnDashboard } = useMessages();
   const [refreshing, setRefreshing] = useState(false);
