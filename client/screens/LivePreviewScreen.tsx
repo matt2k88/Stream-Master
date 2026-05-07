@@ -319,6 +319,28 @@ export default function LivePreviewScreen() {
     showToast(wasAdded ? "Added to Favourites" : "Removed from Favourites");
   }, [isFavourited, toggleFavourite, selectedId, selectedName, selectedIcon, showToast]);
 
+  // Playback status for the mini-player. Drives the loading spinner /
+  // "channel offline" overlay so a dead stream never leaves the previous
+  // channel's last frame frozen on screen.
+  type PlayStatus = "loading" | "playing" | "error";
+  const [playStatus, setPlayStatus] = useState<PlayStatus>("loading");
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armLoadingTimeout = useCallback(() => {
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    // If the stream hasn't started in 12s assume the channel is dead.
+    loadingTimeoutRef.current = setTimeout(() => {
+      setPlayStatus((s) => (s === "loading" ? "error" : s));
+    }, 12000);
+  }, []);
+
+  useEffect(() => {
+    armLoadingTimeout();
+    return () => {
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    };
+  }, [armLoadingTimeout]);
+
   const handleChannelPress = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
     currentStreamUrlRef.current = newUrl;
@@ -326,24 +348,46 @@ export default function LivePreviewScreen() {
     setSelectedId(s.stream_id);
     setSelectedName(s.name);
     setSelectedIcon(s.stream_icon ?? undefined);
+    setPlayStatus("loading");
+    armLoadingTimeout();
     try { player.replace(newUrl); player.play(); } catch {}
-  }, [player]);
+  }, [player, armLoadingTimeout]);
 
-  // ── Log to recently_watched on readyToPlay (per channel) ───────────────────
+  const handleRetry = useCallback(() => {
+    setPlayStatus("loading");
+    armLoadingTimeout();
+    try { player.replace(currentStreamUrlRef.current); player.play(); } catch {}
+  }, [player, armLoadingTimeout]);
+
+  // ── Status listener: drives overlay + log to recently_watched ─────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
-      if (e.status !== "readyToPlay") return;
-      if (!activeProfile) return;
-      if (savedChannelRef.current === selectedId) return;
-      savedChannelRef.current = selectedId;
-      saveRecentlyWatched({
-        profileId: activeProfile.id,
-        contentType: "live",
-        streamId: String(selectedId),
-        name: selectedName,
-        thumbnailUrl: selectedIcon,
-        streamUrl: currentStreamUrlRef.current,
-      }).then((entry) => { if (entry) upsertLocal(entry); });
+      if (e.status === "readyToPlay") {
+        setPlayStatus("playing");
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+          loadingTimeoutRef.current = null;
+        }
+        if (!activeProfile) return;
+        if (savedChannelRef.current === selectedId) return;
+        savedChannelRef.current = selectedId;
+        saveRecentlyWatched({
+          profileId: activeProfile.id,
+          contentType: "live",
+          streamId: String(selectedId),
+          name: selectedName,
+          thumbnailUrl: selectedIcon,
+          streamUrl: currentStreamUrlRef.current,
+        }).then((entry) => { if (entry) upsertLocal(entry); });
+      } else if (e.status === "error") {
+        setPlayStatus("error");
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current);
+          loadingTimeoutRef.current = null;
+        }
+      } else if (e.status === "loading") {
+        setPlayStatus((cur) => (cur === "playing" ? cur : "loading"));
+      }
     });
     return () => sub.remove();
   }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal]);
@@ -506,6 +550,36 @@ export default function LivePreviewScreen() {
                   </View>
                 ) : null}
               </>
+            )}
+            {/* Status overlay: opaque so the previous channel's last frame
+                never bleeds through when switching to a dead channel. */}
+            {playStatus !== "playing" && (
+              <View style={styles.statusOverlay} pointerEvents="box-none">
+                {playStatus === "loading" ? (
+                  <>
+                    <ActivityIndicator size="large" color={Colors.dark.accent} />
+                    <ThemedText style={styles.statusOverlayText}>Loading...</ThemedText>
+                  </>
+                ) : (
+                  <>
+                    <Feather name="wifi-off" size={36} color={Colors.dark.error} />
+                    <ThemedText style={styles.statusOverlayTitle}>Channel Offline</ThemedText>
+                    <ThemedText style={styles.statusOverlaySubtitle}>
+                      This stream is currently unavailable
+                    </ThemedText>
+                    <Pressable
+                      onPress={handleRetry}
+                      style={({ pressed, focused }) => [
+                        styles.retryBtn,
+                        (pressed || focused) && styles.retryBtnActive,
+                      ]}
+                    >
+                      <Feather name="refresh-cw" size={14} color={Colors.dark.text} />
+                      <ThemedText style={styles.retryBtnText}>Try Again</ThemedText>
+                    </Pressable>
+                  </>
+                )}
+              </View>
             )}
           </View>
 
@@ -1001,6 +1075,51 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   channelIcon: { width: "100%", height: "100%" },
+  statusOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: Colors.dark.background,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
+  statusOverlayText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+    marginTop: Spacing.xs,
+  },
+  statusOverlayTitle: {
+    color: Colors.dark.text,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: Spacing.xs,
+  },
+  statusOverlaySubtitle: {
+    color: Colors.dark.textSecondary,
+    fontSize: 12,
+    textAlign: "center",
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surface,
+    marginTop: Spacing.xs,
+  },
+  retryBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "22",
+  },
+  retryBtnText: {
+    color: Colors.dark.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
 
   fullScreenBtn: {
     flexDirection: "row",
