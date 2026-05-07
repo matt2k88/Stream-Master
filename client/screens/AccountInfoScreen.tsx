@@ -160,7 +160,7 @@ export default function AccountInfoScreen() {
       } else {
         Alert.alert(
           "Update Available",
-          `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.`,
+          `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`,
         );
       }
     } catch {
