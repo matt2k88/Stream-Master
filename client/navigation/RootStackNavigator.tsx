@@ -79,7 +79,7 @@ export default function RootStackNavigator() {
             <Stack.Screen
               name="LivePreview"
               component={LivePreviewScreen}
-              options={{ animation: "fade", orientation: "landscape" }}
+              options={{ animation: "fade" }}
             />
             <Stack.Screen name="TvGuide" component={TvGuideScreen} />
             <Stack.Screen name="CatchUp" component={CatchUpScreen} />

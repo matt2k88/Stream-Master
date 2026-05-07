@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { getApiUrl } from "@/lib/query-client";
 import { Colors } from "@/constants/theme";
 
@@ -140,6 +141,15 @@ interface IntroOverlayProps {
 
 export default function IntroOverlay({ onDone }: IntroOverlayProps) {
   const [videoUrl, setVideoUrl] = useState<string | null | false>(null);
+
+  // The intro must always play in landscape. Lock on mount, restore on
+  // unmount so the rest of the app can rotate freely on mobile.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    return () => {
+      ScreenOrientation.unlockAsync().catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

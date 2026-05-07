@@ -4,7 +4,7 @@
     "slug": "stream-master",
     "owner": "mgcultra",
     "version": "1.0.0",
-    "orientation": "landscape",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "iptvplayer",
     "userInterfaceStyle": "dark",
@@ -45,7 +45,7 @@
       [
         "expo-screen-orientation",
         {
-          "initialOrientation": "LANDSCAPE"
+          "initialOrientation": "DEFAULT"
         }
       ],
       [

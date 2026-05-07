@@ -5,7 +5,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import * as ScreenOrientation from "expo-screen-orientation";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
@@ -25,9 +24,10 @@ import { Colors } from "@/constants/theme";
 export default function App() {
   const [introComplete, setIntroComplete] = useState(false);
 
-  useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-  }, []);
+  // NOTE: orientation is no longer globally locked here. The intro locks
+  // landscape while it plays, the Player screen locks landscape via its
+  // navigator option, and everything else can rotate freely so users on
+  // mobile can use the app in portrait OR landscape from the start.
 
   const handleIntroDone = useCallback(() => {
     setIntroComplete(true);
