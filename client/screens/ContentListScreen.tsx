@@ -655,14 +655,14 @@ export default function ContentListScreen() {
             </ThemedText>
             <View style={styles.modalBtnRow}>
               <Pressable
-                style={({ pressed, focused }) => [styles.modalBtnCancel, (pressed || focused) && styles.modalBtnCancelActive]}
+                style={({ pressed, focused, hovered }: any) => [styles.modalBtnCancel, (pressed || focused || hovered) && styles.modalBtnCancelActive]}
                 onPress={() => setShowClearConfirm(false)}
                 disabled={clearing}
               >
                 <ThemedText style={styles.modalBtnCancelText}>Cancel</ThemedText>
               </Pressable>
               <Pressable
-                style={({ pressed, focused }) => [styles.modalBtnConfirm, (pressed || focused) && styles.modalBtnConfirmActive]}
+                style={({ pressed, focused, hovered }: any) => [styles.modalBtnConfirm, (pressed || focused || hovered) && styles.modalBtnConfirmActive]}
                 onPress={handleClearAll}
                 disabled={clearing}
               >
@@ -698,7 +698,7 @@ export default function ContentListScreen() {
         </View>
         {isSpecialView && !isSearching ? (
           <Pressable
-            style={({ pressed, focused }) => [styles.clearAllBtn, (pressed || focused) && styles.clearAllBtnActive]}
+            style={({ pressed, focused, hovered }: any) => [styles.clearAllBtn, (pressed || focused || hovered) && styles.clearAllBtnActive]}
             onPress={() => setShowClearConfirm(true)}
           >
             <Feather name="trash-2" size={13} color={Colors.dark.error} />
