@@ -1021,22 +1021,8 @@ export default function PlayerScreen() {
           <ThemedText style={styles.errorTitle}>Playback Error</ThemedText>
           <ThemedText style={styles.errorMsg}>This content could not be played.</ThemedText>
           <View style={styles.errorBtnRow}>
-            <Pressable
-              style={({ pressed, focused }) => [styles.errorBackBtn, (pressed || focused) && { opacity: 0.85 }]}
-              onPress={handleBack}
-              hasTVPreferredFocus
-            >
-              <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
-              <Feather name="arrow-left" size={16} color="#fff" />
-              <ThemedText style={styles.errorBackBtnText}>Go Back</ThemedText>
-            </Pressable>
-            <Pressable
-              style={({ pressed, focused }) => [styles.errorReportBtn, (pressed || focused) && styles.errorReportBtnActive]}
-              onPress={() => setShowReportWithRef(true)}
-            >
-              <Feather name="flag" size={15} color={Colors.dark.error} />
-              <ThemedText style={styles.errorReportBtnText}>Report Content</ThemedText>
-            </Pressable>
+            <ErrorGoBackBtn onPress={handleBack} />
+            <ErrorReportBtn onPress={() => setShowReportWithRef(true)} />
           </View>
         </View>
         {reportModalNode}
@@ -1280,6 +1266,46 @@ export default function PlayerScreen() {
       {/* Report content modal — shared with the error screen via reportModalNode */}
       {reportModalNode}
     </View>
+  );
+}
+
+function ErrorGoBackBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.errorBackBtn, isActive && { opacity: 0.85, transform: [{ scale: 1.04 }] }]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus
+    >
+      <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+      <Feather name="arrow-left" size={16} color="#fff" />
+      <ThemedText style={styles.errorBackBtnText}>Go Back</ThemedText>
+    </Pressable>
+  );
+}
+
+function ErrorReportBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.errorReportBtn, isActive && styles.errorReportBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name="flag" size={15} color={Colors.dark.error} />
+      <ThemedText style={styles.errorReportBtnText}>Report Content</ThemedText>
+    </Pressable>
   );
 }
 
