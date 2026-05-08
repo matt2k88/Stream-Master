@@ -19,7 +19,9 @@ import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteP = RouteProp<RootStackParamList, "OrganiseCategories">;
+type ActionKind = "top" | "up" | "down" | "bottom";
 
+// ─── HoverPressable ───────────────────────────────────────────────────────────
 const HoverPressable = React.forwardRef<View, {
   children: (active: boolean) => React.ReactNode;
   style: any;
@@ -27,7 +29,6 @@ const HoverPressable = React.forwardRef<View, {
   onPress: () => void;
   disabled?: boolean;
   autoFocus?: boolean;
-  /** Keep the view focusable even when "disabled" — press becomes a no-op. */
   keepFocusableWhenDisabled?: boolean;
 }>(function HoverPressable(
   { children, style, activeStyle, onPress, disabled, autoFocus, keepFocusableWhenDisabled },
@@ -37,11 +38,9 @@ const HoverPressable = React.forwardRef<View, {
   const [p, setP] = useState(false);
   const [h, setH] = useState(false);
   const active = !disabled && (f || p || h);
-  // When keepFocusableWhenDisabled is set, we never actually pass `disabled`
-  // to the underlying Pressable. Android TV drops focus from a view the
-  // moment it becomes disabled, which on this screen used to bounce focus
-  // back up to the back button after every chevron-up press. Instead we
-  // render it dim and short-circuit onPress.
+  // When keepFocusableWhenDisabled is set, never pass `disabled` to the
+  // underlying Pressable — Android TV drops focus from a view the moment it
+  // becomes truly disabled, which would bounce focus to the back button.
   const isHardDisabled = !!disabled && !keepFocusableWhenDisabled;
   return (
     <Pressable
@@ -62,6 +61,7 @@ const HoverPressable = React.forwardRef<View, {
   );
 });
 
+// ─── BackBtn ─────────────────────────────────────────────────────────────────
 function BackBtn({ onPress }: { onPress: () => void }) {
   return (
     <HoverPressable
@@ -76,6 +76,7 @@ function BackBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
+// ─── ResetBtn ────────────────────────────────────────────────────────────────
 function ResetBtn({ onPress }: { onPress: () => void }) {
   return (
     <HoverPressable
@@ -95,6 +96,10 @@ function ResetBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
+// ─── ActionBtn ───────────────────────────────────────────────────────────────
+// autoFocus here maps directly to hasTVPreferredFocus on the underlying
+// Pressable. We use this to restore focus after a reorder without any
+// imperative ref.focus() calls (which are unreliable when FlatList scrolls).
 const ActionBtn = React.forwardRef<View, {
   icon: keyof typeof Feather.glyphMap;
   onPress: () => void;
@@ -123,8 +128,7 @@ const ActionBtn = React.forwardRef<View, {
   );
 });
 
-type ActionKind = "top" | "up" | "down" | "bottom";
-
+// ─── CategoryRow ─────────────────────────────────────────────────────────────
 function CategoryRow({
   categoryId,
   index,
@@ -136,8 +140,8 @@ function CategoryRow({
   onDown,
   onTop,
   onBottom,
-  autoFocus,
-  registerActionRef,
+  initialFocus,
+  focusKind,          // which action button should receive TV preferred focus
 }: {
   categoryId: string;
   index: number;
@@ -149,20 +153,20 @@ function CategoryRow({
   onDown: () => void;
   onTop: () => void;
   onBottom: () => void;
-  autoFocus?: boolean;
-  registerActionRef: (id: string, kind: ActionKind, node: View | null) => void;
+  initialFocus?: boolean;
+  focusKind?: ActionKind | null; // null = no action button should focus
 }) {
   const isFirst = index === 0;
   const isLast = index === total - 1;
 
   return (
     <View style={styles.row}>
-      {/* Tick + name (entire left area is one big pressable for the tick) */}
+      {/* Tick + name */}
       <HoverPressable
         style={styles.tickArea}
         activeStyle={styles.tickAreaActive}
         onPress={onToggle}
-        autoFocus={autoFocus}
+        autoFocus={initialFocus}
       >
         {(active) => (
           <>
@@ -190,17 +194,38 @@ function CategoryRow({
         )}
       </HoverPressable>
 
-      {/* Move buttons */}
+      {/* Move buttons — autoFocus drives hasTVPreferredFocus natively */}
       <View style={styles.actions}>
-        <ActionBtn ref={(n) => registerActionRef(categoryId, "top", n)}    icon="chevrons-up"   onPress={onTop}    disabled={isFirst} />
-        <ActionBtn ref={(n) => registerActionRef(categoryId, "up", n)}     icon="chevron-up"    onPress={onUp}     disabled={isFirst} />
-        <ActionBtn ref={(n) => registerActionRef(categoryId, "down", n)}   icon="chevron-down"  onPress={onDown}   disabled={isLast} />
-        <ActionBtn ref={(n) => registerActionRef(categoryId, "bottom", n)} icon="chevrons-down" onPress={onBottom} disabled={isLast} />
+        <ActionBtn
+          icon="chevrons-up"
+          onPress={onTop}
+          disabled={isFirst}
+          autoFocus={focusKind === "top"}
+        />
+        <ActionBtn
+          icon="chevron-up"
+          onPress={onUp}
+          disabled={isFirst}
+          autoFocus={focusKind === "up"}
+        />
+        <ActionBtn
+          icon="chevron-down"
+          onPress={onDown}
+          disabled={isLast}
+          autoFocus={focusKind === "down"}
+        />
+        <ActionBtn
+          icon="chevrons-down"
+          onPress={onBottom}
+          disabled={isLast}
+          autoFocus={focusKind === "bottom"}
+        />
       </View>
     </View>
   );
 }
 
+// ─── Screen ──────────────────────────────────────────────────────────────────
 export default function OrganiseCategoriesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -225,9 +250,7 @@ export default function OrganiseCategoriesScreen() {
     return seriesCategories;
   }, [type, liveCategories, vodCategories, seriesCategories]);
 
-  // Seed the order on mount so up/down/top/bottom are predictable from the
-  // first interaction (otherwise the persisted `order` may be empty for new
-  // profiles).
+  // Seed the order on mount so up/down/top/bottom are predictable.
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current) return;
@@ -239,51 +262,38 @@ export default function OrganiseCategoriesScreen() {
 
   const list = useMemo(() => buildOrganiseList(type, allCats), [type, allCats, buildOrganiseList]);
 
-  // Only the very first row on initial mount gets TV preferred focus, so
-  // reordering doesn't keep yanking focus back to row 0 after each move.
+  // Only the very first row on initial mount gets TV preferred focus.
   const initialFocusIdRef = useRef<string | null>(null);
   if (initialFocusIdRef.current === null && list.length > 0) {
     initialFocusIdRef.current = list[0].category_id;
   }
 
-  // Refs to every action button by category_id + kind, so we can explicitly
-  // restore focus to the just-pressed button after the list re-renders.
-  // Without this, on Android TV pressing OK on chevron-up briefly fires a
-  // native focus-clear which falls through to the back button at the top.
-  const actionRefs = useRef<Map<string, Partial<Record<ActionKind, View | null>>>>(new Map());
-  const registerActionRef = (id: string, kind: ActionKind, node: View | null) => {
-    let bucket = actionRefs.current.get(id);
-    if (!bucket) { bucket = {}; actionRefs.current.set(id, bucket); }
-    bucket[kind] = node;
-  };
+  // ── Focus restoration via hasTVPreferredFocus ─────────────────────────────
+  // Instead of imperative ref.focus() (unreliable when FlatList scrolls /
+  // recycles views), we drive hasTVPreferredFocus as a React prop.  After each
+  // move we record which {id, kind} should receive focus in the NEXT render.
+  // The useEffect below clears it shortly after so subsequent presses can
+  // re-trigger the mechanism.
+  const [focusTarget, setFocusTarget] = useState<{ id: string; kind: ActionKind } | null>(null);
 
-  const focusAction = (id: string, preferred: ActionKind) => {
-    // Try the same button first; if it's disabled at the new position
-    // (e.g. up at index 0) fall back to the most sensible neighbour so
-    // focus stays inside the row's action cluster.
-    const order: ActionKind[] =
-      preferred === "up"     ? ["up", "down", "top", "bottom"] :
-      preferred === "top"    ? ["top", "up", "down", "bottom"] :
-      preferred === "down"   ? ["down", "up", "bottom", "top"] :
-                               ["bottom", "down", "up", "top"];
-    const idx = list.findIndex((c) => c.category_id === id);
-    const isFirst = idx === 0;
-    const isLast = idx === list.length - 1;
-    const enabled = (k: ActionKind) =>
-      ((k === "up" || k === "top") && !isFirst) ||
-      ((k === "down" || k === "bottom") && !isLast);
-    const bucket = actionRefs.current.get(id);
-    if (!bucket) return;
-    for (const k of order) {
-      if (!enabled(k)) continue;
-      const node: any = bucket[k];
-      if (node && typeof node.focus === "function") { node.focus(); return; }
-    }
-  };
+  useEffect(() => {
+    if (!focusTarget) return;
+    // Keep hasTVPreferredFocus=true for one render cycle, then clear.
+    const t = setTimeout(() => setFocusTarget(null), 400);
+    return () => clearTimeout(t);
+  }, [focusTarget]);
 
-  const queueRefocus = (id: string, kind: ActionKind) => {
-    // Wait for FlatList to commit the reordered rows before re-focusing.
-    requestAnimationFrame(() => requestAnimationFrame(() => focusAction(id, kind)));
+  // Compute which kind to refocus based on the PREDICTED new position so we
+  // don't depend on stale closures or FlatList scroll state.
+  const requestFocus = (id: string, kind: ActionKind, newIndex: number, total: number) => {
+    const isNewFirst = newIndex === 0;
+    const isNewLast  = newIndex === total - 1;
+    // If the same button is still enabled at the new position, keep it.
+    // Otherwise fall back to the logical neighbour.
+    let resolved = kind;
+    if ((kind === "up"   || kind === "top")    && isNewFirst) resolved = "down";
+    if ((kind === "down" || kind === "bottom") && isNewLast)  resolved = "up";
+    setFocusTarget({ id, kind: resolved });
   };
 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -322,22 +332,41 @@ export default function OrganiseCategoriesScreen() {
           gap: Spacing.xs,
         }}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item, index }) => (
-          <CategoryRow
-            categoryId={item.category_id}
-            index={index}
-            total={list.length}
-            name={item.category_name}
-            hidden={item.hidden}
-            onToggle={() => toggleHidden(type, item.category_id)}
-            onUp={()     => { moveUp(type, item.category_id);       queueRefocus(item.category_id, "up"); }}
-            onDown={()   => { moveDown(type, item.category_id);     queueRefocus(item.category_id, "down"); }}
-            onTop={()    => { moveToTop(type, item.category_id);    queueRefocus(item.category_id, "top"); }}
-            onBottom={() => { moveToBottom(type, item.category_id); queueRefocus(item.category_id, "bottom"); }}
-            autoFocus={item.category_id === initialFocusIdRef.current}
-            registerActionRef={registerActionRef}
-          />
-        )}
+        renderItem={({ item, index }) => {
+          const total = list.length;
+          // focusKind is only set for the row that just moved
+          const focusKind =
+            focusTarget?.id === item.category_id ? focusTarget.kind : null;
+
+          return (
+            <CategoryRow
+              categoryId={item.category_id}
+              index={index}
+              total={total}
+              name={item.category_name}
+              hidden={item.hidden}
+              onToggle={() => toggleHidden(type, item.category_id)}
+              onUp={() => {
+                moveUp(type, item.category_id);
+                requestFocus(item.category_id, "up", index - 1, total);
+              }}
+              onDown={() => {
+                moveDown(type, item.category_id);
+                requestFocus(item.category_id, "down", index + 1, total);
+              }}
+              onTop={() => {
+                moveToTop(type, item.category_id);
+                requestFocus(item.category_id, "top", 0, total);
+              }}
+              onBottom={() => {
+                moveToBottom(type, item.category_id);
+                requestFocus(item.category_id, "bottom", total - 1, total);
+              }}
+              initialFocus={item.category_id === initialFocusIdRef.current}
+              focusKind={focusKind}
+            />
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Feather name="folder" size={36} color={Colors.dark.border} />
@@ -367,7 +396,7 @@ export default function OrganiseCategoriesScreen() {
                 activeStyle={styles.modalConfirmActive}
                 onPress={async () => {
                   await resetType(type);
-                  seededRef.current = false; // allow re-seed
+                  seededRef.current = false;
                   setShowResetConfirm(false);
                 }}
               >
