@@ -17,6 +17,7 @@ import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { MessageProvider } from "@/contexts/MessageContext";
+import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
@@ -49,6 +50,7 @@ export default function App() {
                     <FavouritesProvider>
                       <WatchHistoryProvider>
                         <MessageProvider>
+                          <VpnProvider>
                           <KeyboardProvider>
                             <NavigationContainer>
                               <RootStackNavigator />
@@ -56,6 +58,7 @@ export default function App() {
                             <StatusBar style="light" hidden={false} />
                             <MessagePopup />
                           </KeyboardProvider>
+                          </VpnProvider>
                         </MessageProvider>
                       </WatchHistoryProvider>
                     </FavouritesProvider>

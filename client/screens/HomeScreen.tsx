@@ -14,6 +14,7 @@ import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useMessages } from "@/contexts/MessageContext";
+import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
@@ -175,6 +176,50 @@ function AccountButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function VpnButton() {
+  const { status, toggle, toggling } = useVpn();
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+
+  const isLoading = status === "loading" || toggling;
+  const isEnabled = status === "enabled";
+  const isSubscribed = status === "enabled" || status === "disabled";
+
+  // Colors:
+  // - enabled  → neon green glow
+  // - disabled → dim red/grey (subscribed but switched off)
+  // - none     → fully greyed out (no subscription on file)
+  const tint =
+    isEnabled ? "#22C55E" :
+    status === "disabled" ? Colors.dark.textSecondary :
+    Colors.dark.border;
+
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isEnabled && styles.headerBtnVpnOn,
+        !isSubscribed && { opacity: 0.45 },
+      ]}
+      onPress={isSubscribed ? toggle : undefined}
+      disabled={!isSubscribed || isLoading}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {isLoading ? (
+        <ActivityIndicator size="small" color={isEnabled ? "#22C55E" : Colors.dark.textSecondary} />
+      ) : (
+        <Feather name="shield" size={18} color={isActive ? Colors.dark.accent : tint} />
+      )}
+      {isEnabled ? <View style={styles.vpnDot} /> : null}
+    </Pressable>
+  );
+}
+
 function MessagesButton({ onPress }: { onPress: () => void }) {
   const { unreadCount } = useMessages();
   const [pressed, setPressed] = useState(false);
@@ -303,15 +348,17 @@ export default function HomeScreen() {
             style={styles.headerLogo}
             resizeMode="contain"
           />
-          <View>
-            <ThemedText style={styles.appName}>Ultra Cast</ThemedText>
-            <ThemedText style={styles.appVersion}>v3</ThemedText>
-          </View>
+          {isLandscape ? (
+            <View>
+              <ThemedText style={styles.appName}>Ultra Cast</ThemedText>
+              <ThemedText style={styles.appVersion}>v3</ThemedText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.headerActions}>
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-
+          <VpnButton />
           <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
@@ -708,6 +755,21 @@ const styles = StyleSheet.create({
   },
   headerBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   headerBtnAlert: { borderColor: "rgba(255,102,0,0.5)", backgroundColor: Colors.dark.accentDim },
+  headerBtnVpnOn: {
+    borderColor: "#22C55E",
+    backgroundColor: "rgba(34,197,94,0.12)",
+    shadowColor: "#22C55E",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  vpnDot: {
+    position: "absolute", top: -2, right: -2,
+    width: 9, height: 9, borderRadius: 5,
+    backgroundColor: "#22C55E",
+    borderWidth: 1.5, borderColor: Colors.dark.backgroundRoot,
+  },
   unreadBadge: {
     position: "absolute", top: -4, right: -4,
     backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.full,

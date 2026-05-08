@@ -508,6 +508,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── VPN subscription ──────────────────────────────────────────────────────
+  // Reads/writes the `vpn_subscriptions` table on the lifetime DB.
+  // Status: { subscribed: bool, isEnabled: bool, planType?: string, expiryDate?: string }
+  app.get("/api/vpn/status", async (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      const { data, error } = await lifetimeDb
+        .from("vpn_subscriptions")
+        .select("is_enabled, plan_type, expiry_date")
+        .eq("username", username as string)
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error("[vpn/status] error:", error.message);
+        return res.json({ subscribed: false, isEnabled: false });
+      }
+      if (!data) return res.json({ subscribed: false, isEnabled: false });
+      res.json({
+        subscribed: true,
+        isEnabled: !!data.is_enabled,
+        planType: data.plan_type ?? null,
+        expiryDate: data.expiry_date ?? null,
+      });
+    } catch (e: any) {
+      console.error("[vpn/status] exception:", e?.message);
+      res.json({ subscribed: false, isEnabled: false });
+    }
+  });
+
+  app.post("/api/vpn/toggle", async (req, res) => {
+    const { username, isEnabled } = req.body ?? {};
+    if (!username || typeof isEnabled !== "boolean") {
+      return res.status(400).json({ error: "username and isEnabled required" });
+    }
+    try {
+      const { data, error } = await lifetimeDb
+        .from("vpn_subscriptions")
+        .update({ is_enabled: isEnabled })
+        .eq("username", username)
+        .select("is_enabled")
+        .maybeSingle();
+      if (error) {
+        console.error("[vpn/toggle] error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      if (!data) return res.status(404).json({ error: "No VPN subscription for that username" });
+      res.json({ success: true, isEnabled: !!data.is_enabled });
+    } catch (e: any) {
+      console.error("[vpn/toggle] exception:", e?.message);
+      res.status(500).json({ error: "Toggle failed" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {
