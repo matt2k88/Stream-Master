@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
 import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -180,43 +180,126 @@ function VpnButton() {
   const { status, toggle, toggling } = useVpn();
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const btnRef = useRef<View>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const isActive = pressed || focused;
   const isLoading = status === "loading" || toggling;
   const isEnabled = status === "enabled";
   const isSubscribed = status === "enabled" || status === "disabled";
 
-  // Colors:
-  // - enabled  → neon green glow
-  // - disabled → dim red/grey (subscribed but switched off)
-  // - none     → fully greyed out (no subscription on file)
+  // Tint:
+  // - enabled  → neon green
+  // - disabled → mid-grey (subscribed but switched off)
+  // - none     → faded grey (no subscription)
   const tint =
     isEnabled ? "#22C55E" :
     status === "disabled" ? Colors.dark.textSecondary :
-    Colors.dark.border;
+    "#5a5a5a";
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const closeTooltip = useCallback(() => {
+    clearTimer();
+    setTooltipVisible(false);
+  }, []);
+
+  const openTooltip = useCallback(() => {
+    if (btnRef.current && (btnRef.current as any).measureInWindow) {
+      (btnRef.current as any).measureInWindow((x: number, y: number, w: number, h: number) => {
+        setAnchor({ x, y, w, h });
+        setTooltipVisible(true);
+        clearTimer();
+        timerRef.current = setTimeout(() => setTooltipVisible(false), 6000);
+      });
+    } else {
+      setTooltipVisible(true);
+      clearTimer();
+      timerRef.current = setTimeout(() => setTooltipVisible(false), 6000);
+    }
+  }, []);
+
+  useEffect(() => () => clearTimer(), []);
+
+  const handlePress = () => {
+    if (isLoading) return;
+    if (isSubscribed) {
+      toggle();
+    } else {
+      openTooltip();
+    }
+  };
 
   return (
-    <Pressable
-      style={[
-        styles.headerBtn,
-        isActive && styles.headerBtnActive,
-        isEnabled && styles.headerBtnVpnOn,
-        !isSubscribed && { opacity: 0.45 },
-      ]}
-      onPress={isSubscribed ? toggle : undefined}
-      disabled={!isSubscribed || isLoading}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    >
-      {isLoading ? (
-        <ActivityIndicator size="small" color={isEnabled ? "#22C55E" : Colors.dark.textSecondary} />
-      ) : (
-        <Feather name="shield" size={18} color={isActive ? Colors.dark.accent : tint} />
-      )}
-      {isEnabled ? <View style={styles.vpnDot} /> : null}
-    </Pressable>
+    <>
+      <Pressable
+        ref={btnRef as any}
+        style={[
+          styles.headerBtn,
+          isActive && styles.headerBtnActive,
+          isEnabled && styles.headerBtnVpnOn,
+        ]}
+        onPress={handlePress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color={isEnabled ? "#22C55E" : Colors.dark.textSecondary} />
+        ) : (
+          <Feather
+            name="shield"
+            size={18}
+            color={isActive ? Colors.dark.accent : tint}
+            style={!isSubscribed && !isActive ? { opacity: 0.55 } : undefined}
+          />
+        )}
+        {isEnabled ? <View style={styles.vpnDot} /> : null}
+      </Pressable>
+
+      <Modal
+        visible={tooltipVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeTooltip}
+      >
+        <Pressable style={styles.vpnTooltipBackdrop} onPress={closeTooltip}>
+          {anchor ? (
+            <View
+              style={[
+                styles.vpnTooltip,
+                {
+                  // Position the tooltip just below the button, right-aligned to
+                  // the button so it stays on screen when the button is near
+                  // the right edge of the header.
+                  top: anchor.y + anchor.h + 8,
+                  right: undefined,
+                  left: Math.max(8, anchor.x + anchor.w / 2 - 150),
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.vpnTooltipArrow,
+                  { left: Math.min(280, Math.max(12, anchor.x + anchor.w / 2 - Math.max(8, anchor.x + anchor.w / 2 - 150) - 6)) },
+                ]}
+              />
+              <ThemedText style={styles.vpnTooltipText}>
+                You don't currently have a VPN subscription. Contact us now if you'd like to add one.
+              </ThemedText>
+            </View>
+          ) : null}
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -769,6 +852,41 @@ const styles = StyleSheet.create({
     width: 9, height: 9, borderRadius: 5,
     backgroundColor: "#22C55E",
     borderWidth: 1.5, borderColor: Colors.dark.backgroundRoot,
+  },
+  vpnTooltipBackdrop: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
+  vpnTooltip: {
+    position: "absolute",
+    width: 300,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "#1a1a1a",
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  vpnTooltipArrow: {
+    position: "absolute",
+    top: -6,
+    width: 12, height: 12,
+    backgroundColor: "#1a1a1a",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderColor: Colors.dark.accent,
+    transform: [{ rotate: "45deg" }],
+  },
+  vpnTooltipText: {
+    color: Colors.dark.text,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
   },
   unreadBadge: {
     position: "absolute", top: -4, right: -4,
