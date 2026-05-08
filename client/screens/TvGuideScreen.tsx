@@ -38,6 +38,35 @@ function b64(s: string): string {
   try { return atob(s); } catch { return s; }
 }
 
+// ── EPG fetch tuning ─────────────────────────────────────────────────────────
+// The Xtream `get_short_epg` endpoint is flaky under parallel load — firing
+// 50+ requests at once causes the upstream to throttle/return empties for a
+// random subset of channels. We cap concurrency and re-attempt any channel
+// that came back empty until either all channels return data or we've used
+// up MAX_EPG_ATTEMPTS rounds.
+const EPG_CONCURRENCY = 6;
+const MAX_EPG_ATTEMPTS = 4;
+
+// Run async `fn` over `items` with at most `limit` concurrent in-flight calls.
+async function fetchWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (true) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  };
+  const n = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: n }, worker));
+  return results;
+}
+
 function fmtHHMM(date: Date): string {
   return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
 }
@@ -363,37 +392,69 @@ export default function TvGuideScreen() {
 
     setIsLoadingEpg(true);
     try {
-      const results = await Promise.allSettled(
-        channelsInCat.map((ch) => xtreamApi.getShortEpg(ch.stream_id))
-      );
-      // MERGE policy: only overwrite a channel's cached EPG if the new fetch
-      // returned a non-empty list. Xtream short-EPG calls are flaky and often
-      // return empty arrays for channels that DO have data — replacing every
-      // entry blindly would make programmes vanish on each refresh. With this
-      // merge, refresh can only ever ADD data, never remove it (apart from the
-      // first ever fetch where we record empty so the UI can show
-      // "No programme data").
-      setEpgCache((prev) => {
-        const prevCatEpg = prev[catId] ?? {};
-        const merged: Record<number, EpgListing[]> = { ...prevCatEpg };
-        results.forEach((r, i) => {
-          const sid = channelsInCat[i].stream_id;
-          const fetched =
-            r.status === "fulfilled" && Array.isArray(r.value) ? (r.value as EpgListing[]) : [];
-          if (fetched.length > 0) {
-            merged[sid] = fetched;
-          } else if (!(sid in merged)) {
-            // First time seeing this channel and it returned nothing —
-            // record an empty array so the row shows "No programme data"
-            // instead of staying blank forever.
-            merged[sid] = [];
-          }
-          // else: previous good data stays put.
-        });
-        return { ...prev, [catId]: merged };
+      // Start with whatever we already have cached. On a force refresh we
+      // keep channels that already returned good data and only retry the
+      // ones that came back empty — saves roundtrips and avoids losing data.
+      const prevCatEpg = epgCache[catId] ?? {};
+      let pending: LiveStream[] = channelsInCat.filter((ch) => {
+        const existing = prevCatEpg[ch.stream_id];
+        return !(existing && existing.length > 0);
       });
+
+      let attempt = 0;
+      while (pending.length > 0 && attempt < MAX_EPG_ATTEMPTS) {
+        const results = await fetchWithLimit(pending, EPG_CONCURRENCY, (ch) =>
+          xtreamApi.getShortEpg(ch.stream_id),
+        );
+
+        const succeeded: { sid: number; listings: EpgListing[] }[] = [];
+        const stillPending: LiveStream[] = [];
+        results.forEach((listings, i) => {
+          const ch = pending[i];
+          if (Array.isArray(listings) && listings.length > 0) {
+            succeeded.push({ sid: ch.stream_id, listings });
+          } else {
+            stillPending.push(ch);
+          }
+        });
+
+        // Surface successes immediately so the UI fills in progressively
+        // rather than waiting for every retry round to complete.
+        if (succeeded.length > 0) {
+          setEpgCache((prev) => {
+            const prevCat = prev[catId] ?? {};
+            const merged: Record<number, EpgListing[]> = { ...prevCat };
+            for (const { sid, listings } of succeeded) merged[sid] = listings;
+            return { ...prev, [catId]: merged };
+          });
+        }
+
+        pending = stillPending;
+        attempt += 1;
+        // Linear backoff between rounds: 400ms, 800ms, 1200ms.
+        if (pending.length > 0 && attempt < MAX_EPG_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 400 * attempt));
+        }
+      }
+
+      // Anything that's still empty after MAX_EPG_ATTEMPTS rounds: record an
+      // empty array so the row shows "No programme data" instead of an
+      // indefinite blank. Don't clobber any data we may have meanwhile.
+      if (pending.length > 0) {
+        const stillEmpty = pending.map((c) => c.stream_id);
+        setEpgCache((prev) => {
+          const prevCat = prev[catId] ?? {};
+          const merged: Record<number, EpgListing[]> = { ...prevCat };
+          for (const sid of stillEmpty) {
+            if (!(sid in merged) || merged[sid].length === 0) {
+              merged[sid] = [];
+            }
+          }
+          return { ...prev, [catId]: merged };
+        });
+      }
     } catch {
-      // silently fail — existing cache is preserved
+      // silently fail — any partial data already pushed remains in the cache
     } finally {
       setIsLoadingEpg(false);
     }
