@@ -64,31 +64,36 @@ function EpgBlock({ listing, guideStart, onPress, scrollX }: {
   onPress: () => void;
   scrollX: Animated.Value;
 }) {
-  const isNow = listing.now_playing === 1;
   const left = ((listing.start_timestamp - guideStart) / 60) * PX_PER_MIN;
   const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 24);
   const title = b64(listing.title) || "No info";
 
-  // For the currently-playing block: if it started long ago, its left edge
-  // is well to the left of the viewport and the title would be hidden behind
-  // the channel column. We shift the title text horizontally inside the block
-  // so it always sits at (or after) the viewport's left edge — but never past
-  // the block's right edge (capped at width - 70 to leave room for the text).
-  const stickyTitleTranslate: Animated.AnimatedInterpolation<number> | undefined = isNow
-    ? Animated.subtract(scrollX, left).interpolate({
-        inputRange: [-1, 0, Math.max(1, width - 70), Math.max(2, width - 70) + 1],
-        outputRange: [0, 0, Math.max(0, width - 70), Math.max(0, width - 70)],
-        extrapolate: "clamp",
-      })
-    : undefined;
+  // Compute "currently playing" from timestamps rather than the API flag —
+  // many providers don't set `now_playing: 1`, so the API value is unreliable.
+  const nowTs = guideStart + PAST_MINS * 60;
+  const isCurrent =
+    listing.start_timestamp <= nowTs && listing.stop_timestamp > nowTs;
+
+  // Sticky title for ANY block whose left edge is off the viewport: the title
+  // text is shifted horizontally inside the block so it always sits at (or
+  // after) the visible left edge. This way the title of whatever's "on now"
+  // (or any partially-scrolled-out block) is never hidden behind the channel
+  // column. It's clamped to (width - 8) so the text is never pushed past the
+  // block's own right edge.
+  const titleMaxShift = Math.max(0, width - 8);
+  const stickyTitleTranslate = Animated.subtract(scrollX, left).interpolate({
+    inputRange: [-1, 0, Math.max(1, titleMaxShift), Math.max(2, titleMaxShift) + 1],
+    outputRange: [0, 0, titleMaxShift, titleMaxShift],
+    extrapolate: "clamp",
+  });
 
   return (
     <Pressable
-      style={[styles.epgBlock, { left, width }, isNow && styles.epgBlockNow]}
+      style={[styles.epgBlock, { left, width }, isCurrent && styles.epgBlockNow]}
       onPress={onPress}
       accessible={false}
     >
-      {isNow ? (
+      {isCurrent ? (
         <LinearGradient
           colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.06)"]}
           style={StyleSheet.absoluteFill}
@@ -96,14 +101,8 @@ function EpgBlock({ listing, guideStart, onPress, scrollX }: {
           end={{ x: 1, y: 0 }}
         />
       ) : null}
-      <Animated.View
-        style={
-          isNow && stickyTitleTranslate
-            ? { transform: [{ translateX: stickyTitleTranslate }] }
-            : undefined
-        }
-      >
-        <ThemedText style={[styles.epgBlockTitle, isNow && styles.epgBlockTitleNow]} numberOfLines={1}>
+      <Animated.View style={{ transform: [{ translateX: stickyTitleTranslate }] }}>
+        <ThemedText style={[styles.epgBlockTitle, isCurrent && styles.epgBlockTitleNow]} numberOfLines={1}>
           {title}
         </ThemedText>
         <ThemedText style={styles.epgBlockTime} numberOfLines={1}>
@@ -367,14 +366,34 @@ export default function TvGuideScreen() {
       const results = await Promise.allSettled(
         channelsInCat.map((ch) => xtreamApi.getShortEpg(ch.stream_id))
       );
-      const catEpg: Record<number, EpgListing[]> = {};
-      results.forEach((r, i) => {
-        catEpg[channelsInCat[i].stream_id] =
-          r.status === "fulfilled" ? (r.value as EpgListing[]) : [];
+      // MERGE policy: only overwrite a channel's cached EPG if the new fetch
+      // returned a non-empty list. Xtream short-EPG calls are flaky and often
+      // return empty arrays for channels that DO have data — replacing every
+      // entry blindly would make programmes vanish on each refresh. With this
+      // merge, refresh can only ever ADD data, never remove it (apart from the
+      // first ever fetch where we record empty so the UI can show
+      // "No programme data").
+      setEpgCache((prev) => {
+        const prevCatEpg = prev[catId] ?? {};
+        const merged: Record<number, EpgListing[]> = { ...prevCatEpg };
+        results.forEach((r, i) => {
+          const sid = channelsInCat[i].stream_id;
+          const fetched =
+            r.status === "fulfilled" && Array.isArray(r.value) ? (r.value as EpgListing[]) : [];
+          if (fetched.length > 0) {
+            merged[sid] = fetched;
+          } else if (!(sid in merged)) {
+            // First time seeing this channel and it returned nothing —
+            // record an empty array so the row shows "No programme data"
+            // instead of staying blank forever.
+            merged[sid] = [];
+          }
+          // else: previous good data stays put.
+        });
+        return { ...prev, [catId]: merged };
       });
-      setEpgCache((prev) => ({ ...prev, [catId]: catEpg }));
     } catch {
-      // silently fail — channels will show "No programme data"
+      // silently fail — existing cache is preserved
     } finally {
       setIsLoadingEpg(false);
     }
