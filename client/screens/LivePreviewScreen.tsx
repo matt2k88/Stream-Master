@@ -326,6 +326,20 @@ export default function LivePreviewScreen() {
   const [playStatus, setPlayStatus] = useState<PlayStatus>("loading");
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── A/V sync offset (live) ───────────────────────────────────────────────
+  const [audioOffset, setAudioOffset] = useState(0); // ms, –2000 to +2000
+
+  // ── Auto-retry on freeze ─────────────────────────────────────────────────
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 8000;
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set to true after the first successful "playing" — distinguishes a real
+  // freeze from the initial buffering before the stream first loads.
+  const hasSeenPlayingRef = useRef(false);
+
   const armLoadingTimeout = useCallback(() => {
     if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
     // If the stream hasn't started in 12s assume the channel is dead.
@@ -334,10 +348,44 @@ export default function LivePreviewScreen() {
     }, 12000);
   }, []);
 
+  // Set when we have exhausted all auto-retries — blocks any further
+  // scheduleReconnect() calls until a channel switch or manual retry.
+  const gaveUpRef = useRef(false);
+
+  const cancelReconnect = useCallback(() => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+    retryCountRef.current = 0;
+    setRetryCount(0);
+    setIsReconnecting(false);
+    gaveUpRef.current = false;
+  }, []);
+
+  // Schedule an auto-reconnect for the current channel when the live stream
+  // freezes (drops back to loading) after having played. Up to MAX_RETRIES
+  // attempts, RETRY_DELAY_MS apart. Cancelled on readyToPlay or channel switch.
+  const scheduleReconnect = useCallback(() => {
+    if (retryTimerRef.current) return; // one pending retry at a time
+    if (gaveUpRef.current) return; // terminal — wait for user action
+    if (retryCountRef.current >= MAX_RETRIES) {
+      gaveUpRef.current = true;
+      setIsReconnecting(false);
+      setPlayStatus("error");
+      return;
+    }
+    setIsReconnecting(true);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      retryCountRef.current += 1;
+      setRetryCount(retryCountRef.current);
+      try { player.replace(currentStreamUrlRef.current); player.play(); } catch {}
+    }, RETRY_DELAY_MS);
+  }, [player]);
+
   useEffect(() => {
     armLoadingTimeout();
     return () => {
       if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, [armLoadingTimeout]);
 
@@ -349,21 +397,29 @@ export default function LivePreviewScreen() {
     setSelectedName(s.name);
     setSelectedIcon(s.stream_icon ?? undefined);
     setPlayStatus("loading");
+    // New channel — reset auto-retry + sync offset bookkeeping.
+    hasSeenPlayingRef.current = false;
+    cancelReconnect();
+    setAudioOffset(0);
     armLoadingTimeout();
     try { player.replace(newUrl); player.play(); } catch {}
-  }, [player, armLoadingTimeout]);
+  }, [player, armLoadingTimeout, cancelReconnect]);
 
   const handleRetry = useCallback(() => {
     setPlayStatus("loading");
+    cancelReconnect();
     armLoadingTimeout();
     try { player.replace(currentStreamUrlRef.current); player.play(); } catch {}
-  }, [player, armLoadingTimeout]);
+  }, [player, armLoadingTimeout, cancelReconnect]);
 
   // ── Status listener: drives overlay + log to recently_watched ─────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
       if (e.status === "readyToPlay") {
         setPlayStatus("playing");
+        hasSeenPlayingRef.current = true;
+        // Successful play — clear any in-flight reconnect attempts.
+        cancelReconnect();
         if (loadingTimeoutRef.current) {
           clearTimeout(loadingTimeoutRef.current);
           loadingTimeoutRef.current = null;
@@ -380,17 +436,26 @@ export default function LivePreviewScreen() {
           streamUrl: currentStreamUrlRef.current,
         }).then((entry) => { if (entry) upsertLocal(entry); });
       } else if (e.status === "error") {
-        setPlayStatus("error");
-        if (loadingTimeoutRef.current) {
-          clearTimeout(loadingTimeoutRef.current);
-          loadingTimeoutRef.current = null;
+        if (hasSeenPlayingRef.current) {
+          // Stream errored after playing — auto-reconnect rather than show
+          // the dead-channel overlay immediately.
+          scheduleReconnect();
+        } else {
+          setPlayStatus("error");
+          if (loadingTimeoutRef.current) {
+            clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null;
+          }
         }
       } else if (e.status === "loading") {
         setPlayStatus((cur) => (cur === "playing" ? cur : "loading"));
+        // If the stream had been playing and now drops back to loading, treat
+        // it as a freeze and schedule an auto-reconnect.
+        if (hasSeenPlayingRef.current) scheduleReconnect();
       }
     });
     return () => sub.remove();
-  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal]);
+  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleReconnect, cancelReconnect]);
 
   const resetFsHideTimer = useCallback(() => {
     if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
@@ -553,9 +618,19 @@ export default function LivePreviewScreen() {
             )}
             {/* Status overlay: opaque so the previous channel's last frame
                 never bleeds through when switching to a dead channel. */}
-            {playStatus !== "playing" && (
+            {(playStatus !== "playing" || isReconnecting) && (
               <View style={styles.statusOverlay} pointerEvents="box-none">
-                {playStatus === "loading" ? (
+                {isReconnecting ? (
+                  <>
+                    <ActivityIndicator size="large" color={Colors.dark.accent} />
+                    <ThemedText style={styles.statusOverlayText}>
+                      {`Reconnecting${retryCount > 0 ? ` (attempt ${retryCount}/${MAX_RETRIES})` : "..."}`}
+                    </ThemedText>
+                    <ThemedText style={styles.statusOverlaySubtitle}>
+                      The stream will reconnect automatically
+                    </ThemedText>
+                  </>
+                ) : playStatus === "loading" ? (
                   <>
                     <ActivityIndicator size="large" color={Colors.dark.accent} />
                     <ThemedText style={styles.statusOverlayText}>Loading...</ThemedText>
@@ -630,6 +705,10 @@ export default function LivePreviewScreen() {
           <Pressable
             style={[StyleSheet.absoluteFill, { zIndex: 60 }]}
             onPress={handlePlayerTap}
+            focusable={false}
+            // @ts-expect-error — TV-only prop, not in RN web types
+            isTVSelectable={false}
+            accessible={false}
           />
 
           {showFsOverlay && (
@@ -667,6 +746,20 @@ export default function LivePreviewScreen() {
                   <Feather name="flag" size={18} color={reportActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
                 <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+              </View>
+
+              {/* A/V sync controls — bottom of fullscreen overlay */}
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.85)"]}
+                style={styles.fsBottomGradient}
+                pointerEvents="none"
+              />
+              <View style={[styles.fsBottomBar, { paddingBottom: padB + Spacing.sm, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
+                <AudioOffsetBar
+                  offset={audioOffset}
+                  onChange={setAudioOffset}
+                  onFocus={resetFsHideTimer}
+                />
               </View>
             </View>
           )}
@@ -870,6 +963,71 @@ function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPres
         color={isFavourited ? Colors.dark.accent : Colors.dark.textSecondary}
       />
     </Pressable>
+  );
+}
+
+// ─── A/V sync step button ─────────────────────────────────────────────────────
+function AdjustBtn({
+  label,
+  onPress,
+  onFocus,
+  isReset,
+}: {
+  label: string;
+  onPress: () => void;
+  onFocus?: () => void;
+  isReset?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.avBtn, isActive && styles.avBtnActive, isReset && styles.avBtnReset]}
+      onPress={onPress}
+      onFocus={() => { setFocused(true); onFocus?.(); }}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
+    >
+      <ThemedText style={[styles.avBtnText, isActive && styles.avBtnTextActive]}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+// ─── Audio offset bar ─────────────────────────────────────────────────────────
+function AudioOffsetBar({
+  offset,
+  onChange,
+  onFocus,
+}: {
+  offset: number;
+  onChange: (ms: number) => void;
+  onFocus?: () => void;
+}) {
+  const clamp = (v: number) => Math.max(-2000, Math.min(2000, v));
+  const label = offset === 0 ? "0 ms" : offset > 0 ? `+${offset} ms` : `${offset} ms`;
+  return (
+    <View style={styles.avRow}>
+      <Feather name="sliders" size={13} color="rgba(255,255,255,0.5)" />
+      <ThemedText style={styles.avLabel}>A/V Sync</ThemedText>
+      <AdjustBtn label="-500" onPress={() => onChange(clamp(offset - 500))} onFocus={onFocus} />
+      <AdjustBtn label="-100" onPress={() => onChange(clamp(offset - 100))} onFocus={onFocus} />
+      <View style={styles.avDisplay}>
+        <ThemedText style={[styles.avDisplayText, offset !== 0 && styles.avDisplayTextActive]}>
+          {label}
+        </ThemedText>
+      </View>
+      <AdjustBtn label="+100" onPress={() => onChange(clamp(offset + 100))} onFocus={onFocus} />
+      <AdjustBtn label="+500" onPress={() => onChange(clamp(offset + 500))} onFocus={onFocus} />
+      {offset !== 0 ? (
+        <AdjustBtn label="Reset" onPress={() => onChange(0)} onFocus={onFocus} isReset />
+      ) : null}
+    </View>
   );
 }
 
@@ -1258,6 +1416,75 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
   },
+  fsBottomGradient: {
+    position: "absolute",
+    bottom: 0, left: 0, right: 0,
+    height: 120,
+  },
+  fsBottomBar: {
+    position: "absolute",
+    bottom: 0, left: 0, right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: Spacing.md,
+  },
+
+  // A/V sync bar
+  avRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  avLabel: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginRight: 4,
+  },
+  avBtn: {
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  avBtnActive: {
+    backgroundColor: "rgba(255,102,0,0.25)",
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 7,
+    elevation: 5,
+  },
+  avBtnReset: {
+    borderColor: "rgba(255,102,0,0.4)",
+    backgroundColor: "rgba(255,102,0,0.1)",
+  },
+  avBtnText: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  avBtnTextActive: { color: Colors.dark.accent },
+  avDisplay: {
+    minWidth: 74,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  avDisplayText: {
+    color: "rgba(255,255,255,0.92)",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  avDisplayTextActive: { color: Colors.dark.accent },
 
   // ── Report content modal ──────────────────────────────────────────────────
   reportBackdrop: {
