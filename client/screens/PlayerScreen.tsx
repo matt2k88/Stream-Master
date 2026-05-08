@@ -341,6 +341,71 @@ function TrackPanel({
   );
 }
 
+// ─── A/V sync step button ─────────────────────────────────────────────────────
+function AdjustBtn({
+  label,
+  onPress,
+  onFocus,
+  isReset,
+}: {
+  label: string;
+  onPress: () => void;
+  onFocus?: () => void;
+  isReset?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.avBtn, isActive && styles.avBtnActive, isReset && styles.avBtnReset]}
+      onPress={onPress}
+      onFocus={() => { setFocused(true); onFocus?.(); }}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
+    >
+      <ThemedText style={[styles.avBtnText, isActive && styles.avBtnTextActive]}>
+        {label}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+// ─── Audio offset bar ─────────────────────────────────────────────────────────
+function AudioOffsetBar({
+  offset,
+  onChange,
+  onFocus,
+}: {
+  offset: number;
+  onChange: (ms: number) => void;
+  onFocus?: () => void;
+}) {
+  const clamp = (v: number) => Math.max(-2000, Math.min(2000, v));
+  const label = offset === 0 ? "0 ms" : offset > 0 ? `+${offset} ms` : `${offset} ms`;
+  return (
+    <View style={styles.avRow}>
+      <Feather name="sliders" size={13} color="rgba(255,255,255,0.45)" />
+      <ThemedText style={styles.avLabel}>A/V Sync</ThemedText>
+      <AdjustBtn label="-500" onPress={() => onChange(clamp(offset - 500))} onFocus={onFocus} />
+      <AdjustBtn label="-100" onPress={() => onChange(clamp(offset - 100))} onFocus={onFocus} />
+      <View style={styles.avDisplay}>
+        <ThemedText style={[styles.avDisplayText, offset !== 0 && styles.avDisplayTextActive]}>
+          {label}
+        </ThemedText>
+      </View>
+      <AdjustBtn label="+100" onPress={() => onChange(clamp(offset + 100))} onFocus={onFocus} />
+      <AdjustBtn label="+500" onPress={() => onChange(clamp(offset + 500))} onFocus={onFocus} />
+      {offset !== 0 ? (
+        <AdjustBtn label="Reset" onPress={() => onChange(0)} onFocus={onFocus} isReset />
+      ) : null}
+    </View>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function PlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -447,6 +512,20 @@ export default function PlayerScreen() {
   const [countdown, setCountdown] = useState(10);
   const nextPromptShownRef = useRef(false);
 
+  // ── A/V sync offset (live streams) ───────────────────────────────────────
+  const [audioOffset, setAudioOffset] = useState(0); // ms, –2000 to +2000
+
+  // ── Auto-retry (live streams) ─────────────────────────────────────────────
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 8000;
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set to true after the first successful readyToPlay so we know a freeze is
+  // unnatural (as opposed to the initial buffering before first play).
+  const hasSeenReadyRef = useRef(false);
+
   // navigation.replace into PlayerScreen reuses the same instance — reset all
   // per-episode refs/state when the underlying stream changes.
   useEffect(() => {
@@ -455,6 +534,12 @@ export default function PlayerScreen() {
     completionPostedRef.current = false;
     resumeAppliedRef.current = false;
     nextPromptShownRef.current = false;
+    hasSeenReadyRef.current = false;
+    retryCountRef.current = 0;
+    setRetryCount(0);
+    setIsReconnecting(false);
+    setAudioOffset(0);
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
     setNextEp(null);
     setShowNext(false);
     setCountdown(10);
@@ -622,6 +707,13 @@ export default function PlayerScreen() {
     };
   }, [player]);
 
+  // Clean up any pending retry timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
+
   // EARLY release: react-navigation fires `beforeRemove` BEFORE the screen
   // starts its unmount/transition animation. By killing the player here we
   // close the upstream HLS/HTTP socket the instant the user hits back —
@@ -638,8 +730,31 @@ export default function PlayerScreen() {
 
   // ── Player event listeners ────────────────────────────────────────────────
   useEffect(() => {
+    const scheduleRetry = () => {
+      // Don't stack timers — one pending retry at a time.
+      if (retryTimerRef.current) return;
+      setIsReconnecting(true);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        retryCountRef.current += 1;
+        setRetryCount(retryCountRef.current);
+        if (retryCountRef.current > MAX_RETRIES) {
+          setIsReconnecting(false);
+          setError("Could not reconnect to the stream. Please go back and try again.");
+          return;
+        }
+        try { player.replace(streamUrl); } catch {}
+      }, RETRY_DELAY_MS);
+    };
+
     const sub = player.addListener("statusChange", (e) => {
       if (e.status === "readyToPlay") {
+        // Successful play — cancel any pending retry and reset counters.
+        hasSeenReadyRef.current = true;
+        retryCountRef.current = 0;
+        setRetryCount(0);
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+        setIsReconnecting(false);
         setIsLoading(false);
         setError("");
         if (activeProfile && !savedRef.current) {
@@ -662,8 +777,21 @@ export default function PlayerScreen() {
           resumeAppliedRef.current = true;
           try { player.currentTime = resumeTime; } catch {}
         }
-      } else if (e.status === "error") { setIsLoading(false); setError(e.error?.message ?? "Playback failed"); }
-      else if (e.status === "loading") setIsLoading(true);
+      } else if (e.status === "loading") {
+        setIsLoading(true);
+        // For live streams: if we've played before and the stream drops back to
+        // loading, treat that as a freeze and schedule an auto-reconnect.
+        if (isLive && hasSeenReadyRef.current) scheduleRetry();
+      } else if (e.status === "error") {
+        if (isLive && hasSeenReadyRef.current) {
+          // Treat errors as freezes for live TV — retry rather than hard-fail.
+          setIsLoading(false);
+          scheduleRetry();
+        } else {
+          setIsLoading(false);
+          setError(e.error?.message ?? "Playback failed");
+        }
+      }
     });
     return () => sub.remove();
   }, [player]);
@@ -966,11 +1094,23 @@ export default function PlayerScreen() {
         nativeControls={false}
       />
 
-      {/* Loading */}
-      {isLoading ? (
+      {/* Loading / Reconnecting */}
+      {(isLoading || isReconnecting) ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={Colors.dark.accent} />
-          <ThemedText style={styles.loadingText}>Loading stream...</ThemedText>
+          <ActivityIndicator
+            size="large"
+            color={isReconnecting ? Colors.dark.accent : Colors.dark.accent}
+          />
+          <ThemedText style={styles.loadingText}>
+            {isReconnecting
+              ? `Reconnecting${retryCount > 0 ? ` (attempt ${retryCount}/${MAX_RETRIES})` : "..."}` 
+              : "Loading stream..."}
+          </ThemedText>
+          {isReconnecting ? (
+            <ThemedText style={styles.reconnectSubText}>
+              The stream will reconnect automatically
+            </ThemedText>
+          ) : null}
         </View>
       ) : null}
 
@@ -1087,7 +1227,16 @@ export default function PlayerScreen() {
           ) : null}
         </View>
 
-        {/* Bottom section: panels + progress row (VOD only) */}
+        {/* Bottom section: A/V sync (live) or panels + progress row (VOD) */}
+        {isLive ? (
+          <View style={styles.liveBottomSection}>
+            <AudioOffsetBar
+              offset={audioOffset}
+              onChange={setAudioOffset}
+              onFocus={showAndReset}
+            />
+          </View>
+        ) : null}
         {!isLive ? (
           <View style={styles.bottomSection}>
             {/* CC panel */}
@@ -1412,6 +1561,73 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   loadingText: { color: Colors.dark.textSecondary, fontSize: 14 },
+  reconnectSubText: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: -4,
+  },
+
+  // A/V sync bar (live streams)
+  liveBottomSection: {
+    paddingHorizontal: Spacing["2xl"],
+    paddingBottom: Spacing.xl,
+  },
+  avRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  avLabel: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.4,
+    marginRight: 4,
+  },
+  avBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  avBtnActive: {
+    backgroundColor: "rgba(255,102,0,0.22)",
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  avBtnReset: {
+    borderColor: "rgba(255,102,0,0.35)",
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  avBtnText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  avBtnTextActive: { color: Colors.dark.accent },
+  avDisplay: {
+    minWidth: 72,
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  avDisplayText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  avDisplayTextActive: { color: Colors.dark.accent },
 
   // Controls overlay
   overlay: {
