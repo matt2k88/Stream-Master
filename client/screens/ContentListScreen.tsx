@@ -402,7 +402,8 @@ export default function ContentListScreen() {
 
   const isFavouritesView = selectedCategoryId === "favourites";
   const isRecentlyView = selectedCategoryId === "recently";
-  const isSpecialView = isFavouritesView || isRecentlyView;
+  const isRecentlyAddedView = selectedCategoryId === "recent" && (type === "movies" || type === "series");
+  const isSpecialView = isFavouritesView || isRecentlyView || isRecentlyAddedView;
   const trimmedQuery = normaliseSearch(submittedQuery);
   const isSearching = trimmedQuery.length > 0;
 
@@ -424,12 +425,14 @@ export default function ContentListScreen() {
   }, [type, liveCategories, vodCategories, seriesCategories, applyOrder]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
-    const pinned: SidebarCat[] = [
-      { category_id: "recently", category_name: "Recently Watched" },
-      { category_id: "favourites", category_name: "Favourites" },
-    ];
+    const pinned: SidebarCat[] = [];
+    if (type === "movies" || type === "series") {
+      pinned.push({ category_id: "recent", category_name: "Recently Added" });
+    }
+    pinned.push({ category_id: "recently", category_name: "Recently Watched" });
+    pinned.push({ category_id: "favourites", category_name: "Favourites" });
     return [...pinned, ...categories];
-  }, [categories]);
+  }, [type, categories]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -462,9 +465,24 @@ export default function ContentListScreen() {
     return categoryIndex.get(selectedCategoryId) ?? [];
   }, [isSpecialView, selectedCategoryId, categoryIndex]);
 
-  // Special views (Favourites / Recently Watched) — allowed to depend on watchEntries.
+  // Special views (Favourites / Recently Watched / Recently Added).
   const specialContent: ContentItem[] = useMemo(() => {
     if (!isSpecialView) return [];
+    // Recently Added — newest 30 items by `added` (movies) or `last_modified` (series)
+    if (isRecentlyAddedView) {
+      const RECENT_LIMIT = 30;
+      const tsOf = (s: any): number => {
+        const raw = (type === "series" ? s.last_modified : s.added) ?? s.added ?? s.last_modified;
+        if (!raw) return 0;
+        const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+        if (!isNaN(n) && n > 0) return n;
+        const d = Date.parse(String(raw));
+        return isNaN(d) ? 0 : Math.floor(d / 1000);
+      };
+      const pool: ContentItem[] = type === "movies" ? vodStreams : seriesList;
+      const sorted = [...pool].sort((a, b) => tsOf(b) - tsOf(a));
+      return sorted.slice(0, RECENT_LIMIT);
+    }
     if (isFavouritesView) {
       const favIds = new Set(
         getFavouritesByType(type as "live" | "movies" | "series").map((f) => f.stream_id)
@@ -520,7 +538,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, type, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, type, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 

@@ -218,7 +218,19 @@ export default function HomeScreen() {
   // screen before the spinner can render).
   const goToContent = (type: "live" | "movies" | "series", title: string) => {
     setNavigatingTo(type);
-    const cats = type === "live" ? liveCategories : type === "movies" ? vodCategories : seriesCategories;
+    // Movies + Series default to the new "Recently Added" pinned category
+    // (newest 30 items). Live still defaults to the first real category.
+    if (type === "movies" || type === "series") {
+      requestAnimationFrame(() => {
+        navigation.navigate("ContentList", {
+          type,
+          categoryId: "recent",
+          categoryName: "Recently Added",
+        });
+      });
+      return;
+    }
+    const cats = liveCategories;
     const first = cats[0];
     requestAnimationFrame(() => {
       navigation.navigate("ContentList", {

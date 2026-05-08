@@ -416,6 +416,8 @@ export default function CategoryScreen() {
     </View>
   );
 
+  const showRecentlyAdded = !isSearching && (type === "movies" || type === "series");
+
   if (isSyncing && categories.length === 0) {
     return (
       <ThemedView style={styles.container}>
@@ -465,25 +467,41 @@ export default function CategoryScreen() {
           ) : null}
         </View>
         {!isSearching ? (
-          <FavRecentRow
-            type={type}
-            favCount={favCount}
-            recentCount={recentCount}
-            onPressFav={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "favourites",
-                categoryName: "Favourites",
-              })
-            }
-            onPressRecent={() =>
-              navigation.navigate("ContentList", {
-                type,
-                categoryId: "recently",
-                categoryName: "Recently Watched",
-              })
-            }
-          />
+          <>
+            {showRecentlyAdded ? (
+              <PillButton
+                icon="zap"
+                label="Recently Added"
+                count={30}
+                onPress={() =>
+                  navigation.navigate("ContentList", {
+                    type,
+                    categoryId: "recent",
+                    categoryName: "Recently Added",
+                  })
+                }
+              />
+            ) : null}
+            <FavRecentRow
+              type={type}
+              favCount={favCount}
+              recentCount={recentCount}
+              onPressFav={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "favourites",
+                  categoryName: "Favourites",
+                })
+              }
+              onPressRecent={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "recently",
+                  categoryName: "Recently Watched",
+                })
+              }
+            />
+          </>
         ) : (
           <View style={styles.searchResultsHeader}>
             <Feather name={getIcon()} size={13} color={Colors.dark.accent} />
