@@ -926,6 +926,89 @@ export default function PlayerScreen() {
     showAndReset();
   }, [showAndReset]);
 
+  // ── Report content modal — shared between the error screen and the
+  // normal player return so users can still report a stream that never
+  // managed to load (no player attached doesn't change what we report:
+  // the streamId, title and type are all known from route params).
+  const reportModalNode = (
+    <Modal
+      visible={showReport}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!reportSubmitting) {
+          setShowReportWithRef(false);
+          setReportReason(null);
+          setReportOther("");
+          setReportDone(false);
+        }
+      }}
+    >
+      <View style={styles.reportBackdrop}>
+        <View style={styles.reportCard}>
+          {reportDone ? (
+            <>
+              <Feather name="check-circle" size={36} color={Colors.dark.accent} />
+              <ThemedText style={styles.reportTitle}>Report Submitted</ThemedText>
+              <ThemedText style={styles.reportSubtitle}>
+                Thank you — we will look into this.
+              </ThemedText>
+            </>
+          ) : (
+            <>
+              <View style={styles.reportHeader}>
+                <Feather name="flag" size={18} color={Colors.dark.error} />
+                <ThemedText style={styles.reportTitle}>Report Content</ThemedText>
+              </View>
+              <ThemedText style={styles.reportSubtitle} numberOfLines={1}>
+                {title}
+              </ThemedText>
+              <View style={styles.reportReasons}>
+                {REPORT_REASONS.map((r, i) => (
+                  <ReportReasonBtn
+                    key={r}
+                    label={r}
+                    selected={reportReason === r}
+                    onPress={() => setReportReason(r)}
+                    autoFocus={i === 0}
+                  />
+                ))}
+              </View>
+              {reportReason === "Other" ? (
+                <TextInput
+                  style={styles.reportOtherInput}
+                  placeholder="Describe the issue..."
+                  placeholderTextColor={Colors.dark.border}
+                  value={reportOther}
+                  onChangeText={setReportOther}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={500}
+                  autoFocus
+                />
+              ) : null}
+              <View style={styles.reportBtnRow}>
+                <ReportCancelBtn
+                  onPress={() => {
+                    setShowReportWithRef(false);
+                    setReportReason(null);
+                    setReportOther("");
+                  }}
+                  disabled={reportSubmitting}
+                />
+                <ReportSubmitBtn
+                  onPress={handleSubmitReport}
+                  submitting={reportSubmitting}
+                  disabled={reportSubmitting || !reportReason || (reportReason === "Other" && !reportOther.trim())}
+                />
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+
   // ── Error screen ──────────────────────────────────────────────────────────
   if (error) {
     return (
@@ -937,28 +1020,26 @@ export default function PlayerScreen() {
           </View>
           <ThemedText style={styles.errorTitle}>Playback Error</ThemedText>
           <ThemedText style={styles.errorMsg}>This content could not be played.</ThemedText>
-          {/* Surface the actual underlying error from the player so users can
-              see why it failed (e.g. unsupported codec / DRM / network).
-              This is what helps identify the bad codec on Firestick / Android
-              boxes when the same stream plays fine on a flagship phone. */}
-          {error && error !== "Playback failed" ? (
-            <ThemedText
-              style={[styles.errorMsg, { fontSize: 12, opacity: 0.75, marginTop: -6 }]}
-              numberOfLines={3}
+          <View style={styles.errorBtnRow}>
+            <Pressable
+              style={({ pressed, focused }) => [styles.errorBackBtn, (pressed || focused) && { opacity: 0.85 }]}
+              onPress={handleBack}
+              hasTVPreferredFocus
             >
-              {error}
-            </ThemedText>
-          ) : null}
-          <Pressable
-            style={({ pressed, focused }) => [styles.errorBackBtn, (pressed || focused) && { opacity: 0.8 }]}
-            onPress={handleBack}
-            hasTVPreferredFocus
-          >
-            <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
-            <Feather name="arrow-left" size={16} color="#fff" />
-            <ThemedText style={styles.errorBackBtnText}>Go Back</ThemedText>
-          </Pressable>
+              <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+              <Feather name="arrow-left" size={16} color="#fff" />
+              <ThemedText style={styles.errorBackBtnText}>Go Back</ThemedText>
+            </Pressable>
+            <Pressable
+              style={({ pressed, focused }) => [styles.errorReportBtn, (pressed || focused) && styles.errorReportBtnActive]}
+              onPress={() => setShowReportWithRef(true)}
+            >
+              <Feather name="flag" size={15} color={Colors.dark.error} />
+              <ThemedText style={styles.errorReportBtnText}>Report Content</ThemedText>
+            </Pressable>
+          </View>
         </View>
+        {reportModalNode}
       </View>
     );
   }
@@ -1196,83 +1277,8 @@ export default function PlayerScreen() {
         </Animated.View>
       ) : null}
 
-      {/* Report content modal */}
-      <Modal
-        visible={showReport}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!reportSubmitting) {
-            setShowReportWithRef(false);
-            setReportReason(null);
-            setReportOther("");
-            setReportDone(false);
-          }
-        }}
-      >
-        <View style={styles.reportBackdrop}>
-          <View style={styles.reportCard}>
-            {reportDone ? (
-              <>
-                <Feather name="check-circle" size={36} color={Colors.dark.accent} />
-                <ThemedText style={styles.reportTitle}>Report Submitted</ThemedText>
-                <ThemedText style={styles.reportSubtitle}>
-                  Thank you — we will look into this.
-                </ThemedText>
-              </>
-            ) : (
-              <>
-                <View style={styles.reportHeader}>
-                  <Feather name="flag" size={18} color={Colors.dark.error} />
-                  <ThemedText style={styles.reportTitle}>Report Content</ThemedText>
-                </View>
-                <ThemedText style={styles.reportSubtitle} numberOfLines={1}>
-                  {title}
-                </ThemedText>
-                <View style={styles.reportReasons}>
-                  {REPORT_REASONS.map((r, i) => (
-                    <ReportReasonBtn
-                      key={r}
-                      label={r}
-                      selected={reportReason === r}
-                      onPress={() => setReportReason(r)}
-                      autoFocus={i === 0}
-                    />
-                  ))}
-                </View>
-                {reportReason === "Other" ? (
-                  <TextInput
-                    style={styles.reportOtherInput}
-                    placeholder="Describe the issue..."
-                    placeholderTextColor={Colors.dark.border}
-                    value={reportOther}
-                    onChangeText={setReportOther}
-                    multiline
-                    numberOfLines={3}
-                    maxLength={500}
-                    autoFocus
-                  />
-                ) : null}
-                <View style={styles.reportBtnRow}>
-                  <ReportCancelBtn
-                    onPress={() => {
-                      setShowReportWithRef(false);
-                      setReportReason(null);
-                      setReportOther("");
-                    }}
-                    disabled={reportSubmitting}
-                  />
-                  <ReportSubmitBtn
-                    onPress={handleSubmitReport}
-                    submitting={reportSubmitting}
-                    disabled={reportSubmitting || !reportReason || (reportReason === "Other" && !reportOther.trim())}
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Report content modal — shared with the error screen via reportModalNode */}
+      {reportModalNode}
     </View>
   );
 }
@@ -1708,6 +1714,28 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   errorBackBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  errorBtnRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  errorReportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,59,59,0.45)",
+    backgroundColor: "rgba(255,59,59,0.08)",
+  },
+  errorReportBtnActive: {
+    borderColor: Colors.dark.error,
+    backgroundColor: "rgba(255,59,59,0.18)",
+  },
+  errorReportBtnText: { color: Colors.dark.error, fontWeight: "700", fontSize: 13 },
 
   toast: {
     position: "absolute",
