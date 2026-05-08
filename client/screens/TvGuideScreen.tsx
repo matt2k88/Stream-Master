@@ -14,6 +14,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
+import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -57,15 +58,29 @@ function buildTimeSlots(guideStart: number): { label: string; x: number }[] {
 }
 
 // ── EPG block — NOT focusable via TV remote (touch only) ─────────────────────
-function EpgBlock({ listing, guideStart, onPress }: {
+function EpgBlock({ listing, guideStart, onPress, scrollX }: {
   listing: EpgListing;
   guideStart: number;
   onPress: () => void;
+  scrollX: Animated.Value;
 }) {
   const isNow = listing.now_playing === 1;
   const left = ((listing.start_timestamp - guideStart) / 60) * PX_PER_MIN;
   const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 24);
   const title = b64(listing.title) || "No info";
+
+  // For the currently-playing block: if it started long ago, its left edge
+  // is well to the left of the viewport and the title would be hidden behind
+  // the channel column. We shift the title text horizontally inside the block
+  // so it always sits at (or after) the viewport's left edge — but never past
+  // the block's right edge (capped at width - 70 to leave room for the text).
+  const stickyTitleTranslate: Animated.AnimatedInterpolation<number> | undefined = isNow
+    ? Animated.subtract(scrollX, left).interpolate({
+        inputRange: [-1, 0, Math.max(1, width - 70), Math.max(2, width - 70) + 1],
+        outputRange: [0, 0, Math.max(0, width - 70), Math.max(0, width - 70)],
+        extrapolate: "clamp",
+      })
+    : undefined;
 
   return (
     <Pressable
@@ -81,14 +96,22 @@ function EpgBlock({ listing, guideStart, onPress }: {
           end={{ x: 1, y: 0 }}
         />
       ) : null}
-      <ThemedText style={[styles.epgBlockTitle, isNow && styles.epgBlockTitleNow]} numberOfLines={1}>
-        {title}
-      </ThemedText>
-      <ThemedText style={styles.epgBlockTime} numberOfLines={1}>
-        {fmtHHMM(new Date(listing.start_timestamp * 1000))}
-        {" – "}
-        {fmtHHMM(new Date(listing.stop_timestamp * 1000))}
-      </ThemedText>
+      <Animated.View
+        style={
+          isNow && stickyTitleTranslate
+            ? { transform: [{ translateX: stickyTitleTranslate }] }
+            : undefined
+        }
+      >
+        <ThemedText style={[styles.epgBlockTitle, isNow && styles.epgBlockTitleNow]} numberOfLines={1}>
+          {title}
+        </ThemedText>
+        <ThemedText style={styles.epgBlockTime} numberOfLines={1}>
+          {fmtHHMM(new Date(listing.start_timestamp * 1000))}
+          {" – "}
+          {fmtHHMM(new Date(listing.stop_timestamp * 1000))}
+        </ThemedText>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -127,6 +150,7 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
                 listing={listing}
                 guideStart={guideStart}
                 onPress={onPress}
+                scrollX={scrollX}
               />
             ))
           )}
@@ -219,6 +243,10 @@ export default function TvGuideScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width } = useWindowDimensions();
   const { liveCategories, liveStreams } = useData();
+  const { applyOrder } = useCategoryOrder();
+  // Channels list ref so we can snap back to the top each time the user
+  // selects a different category.
+  const channelListRef = useRef<FlatList<LiveStream>>(null);
 
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
   const [clockStr, setClockStr] = useState(fmtHHMM(new Date()));
@@ -314,11 +342,16 @@ export default function TvGuideScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const cats = useMemo(() => liveCategories, [liveCategories]);
+  // Honour the user's per-profile category prefs (hidden + custom order)
+  // exactly as Live TV elsewhere in the app does.
+  const cats = useMemo(() => applyOrder("live", liveCategories), [applyOrder, liveCategories]);
 
-  // Auto-select first category
+  // Auto-select first visible category. Also if the previously-selected
+  // category is no longer in the visible list (e.g. user just hid it in
+  // Organise Categories), fall back to the first one.
   useEffect(() => {
-    if (selectedCatId === null && cats.length > 0) {
+    if (cats.length === 0) return;
+    if (selectedCatId === null || !cats.some((c) => c.category_id === selectedCatId)) {
       setSelectedCatId(cats[0].category_id);
     }
   }, [cats, selectedCatId]);
@@ -354,6 +387,15 @@ export default function TvGuideScreen() {
 
   const handleCatSelect = useCallback((catId: string) => {
     setSelectedCatId(catId);
+    // Snap the channels list back to the top so the user starts at the first
+    // channel in the new category instead of mid-scroll from the previous one.
+    requestAnimationFrame(() => {
+      try {
+        channelListRef.current?.scrollToOffset({ offset: 0, animated: false });
+      } catch {
+        // ignore — list may not be mounted yet
+      }
+    });
   }, []);
 
   const channels = useMemo(() => {
@@ -469,6 +511,7 @@ export default function TvGuideScreen() {
               </View>
             ) : null}
             <FlatList
+              ref={channelListRef}
               data={channels}
               keyExtractor={(item) => String(item.stream_id)}
               renderItem={renderChannel}
