@@ -468,20 +468,6 @@ export default function CategoryScreen() {
         </View>
         {!isSearching ? (
           <>
-            {showRecentlyAdded ? (
-              <PillButton
-                icon="zap"
-                label="Recently Added"
-                count={30}
-                onPress={() =>
-                  navigation.navigate("ContentList", {
-                    type,
-                    categoryId: "recent",
-                    categoryName: "Recently Added",
-                  })
-                }
-              />
-            ) : null}
             <FavRecentRow
               type={type}
               favCount={favCount}
@@ -501,6 +487,20 @@ export default function CategoryScreen() {
                 })
               }
             />
+            {showRecentlyAdded ? (
+              <PillButton
+                icon="zap"
+                label="Recently Added"
+                count={30}
+                onPress={() =>
+                  navigation.navigate("ContentList", {
+                    type,
+                    categoryId: "recent",
+                    categoryName: "Recently Added",
+                  })
+                }
+              />
+            ) : null}
           </>
         ) : (
           <View style={styles.searchResultsHeader}>

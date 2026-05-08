@@ -426,11 +426,11 @@ export default function ContentListScreen() {
 
   const sidebarData: SidebarCat[] = useMemo(() => {
     const pinned: SidebarCat[] = [];
+    pinned.push({ category_id: "recently", category_name: "Recently Watched" });
+    pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
-    pinned.push({ category_id: "recently", category_name: "Recently Watched" });
-    pinned.push({ category_id: "favourites", category_name: "Favourites" });
     return [...pinned, ...categories];
   }, [type, categories]);
 
