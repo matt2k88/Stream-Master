@@ -26,6 +26,7 @@ import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { normaliseSearch } from "@/lib/search";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
@@ -190,6 +191,7 @@ function ContentCard({
   const isActive = focused || pressed;
   const longFiredRef = useRef(false);
   const pressInTimeRef = useRef(0);
+  const { scaleFont } = useUISettings();
 
   const imageUrl = getIconUrl(item);
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
@@ -278,7 +280,11 @@ function ContentCard({
 
       <View style={styles.cardInfo}>
         <ThemedText
-          style={[styles.cardName, isActive && styles.cardNameActive]}
+          style={[
+            styles.cardName,
+            { fontSize: scaleFont(11), lineHeight: scaleFont(15) },
+            isActive && styles.cardNameActive,
+          ]}
           numberOfLines={2}
         >
           {item.name}
@@ -312,6 +318,7 @@ function CategorySidebarItem({
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
   const highlight = isSelected || isActive;
+  const { scaleFont } = useUISettings();
 
   return (
     <Pressable
@@ -355,7 +362,11 @@ function CategorySidebarItem({
         />
       ) : null}
       <ThemedText
-        style={[styles.sidebarItemText, highlight && styles.sidebarItemTextActive]}
+        style={[
+          styles.sidebarItemText,
+          { fontSize: scaleFont(11), lineHeight: scaleFont(15) },
+          highlight && styles.sidebarItemTextActive,
+        ]}
         numberOfLines={3}
       >
         {item.category_name}
@@ -931,8 +942,13 @@ export default function ContentListScreen() {
               initialNumToRender={type === "live" ? 16 : 12}
               maxToRenderPerBatch={type === "live" ? 16 : 12}
               updateCellsBatchingPeriod={32}
-              windowSize={11}
-              removeClippedSubviews
+              // Wider render window + clipped-subviews disabled means the next
+              // row is already mounted (and focusable) when the user presses
+              // D-pad down at the bottom of the visible window — focus moves
+              // immediately on the same press, instead of the list scrolling
+              // first and only moving focus on the next press.
+              windowSize={21}
+              removeClippedSubviews={false}
               renderItem={({ item }) => {
                 const watchEntry =
                   type === "series"

@@ -16,6 +16,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
@@ -37,6 +38,10 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, 
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed || loading;
+  const { scaleFont } = useUISettings();
+  // Only scale the label — leaving icon size untouched preserves the carefully
+  // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
+  const scaledTextSize = scaleFont(textSize);
 
   return (
     <Pressable
@@ -66,7 +71,7 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, 
           />
         )}
       </View>
-      <ThemedText style={[styles.navButtonText, { fontSize: textSize }, isActive && styles.navButtonTextActive]}>
+      <ThemedText style={[styles.navButtonText, { fontSize: scaledTextSize }, isActive && styles.navButtonTextActive]}>
         {loading ? "Loading…" : title}
       </ThemedText>
       {isActive ? <View style={styles.activeIndicator} /> : null}

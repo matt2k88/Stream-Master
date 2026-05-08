@@ -15,6 +15,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -93,6 +94,8 @@ function EpgBlock({ listing, guideStart, onPress, scrollX }: {
   onPress: () => void;
   scrollX: Animated.Value;
 }) {
+  const { scaleFont } = useUISettings();
+  const epgTitleFontSize = scaleFont(11);
   const left = ((listing.start_timestamp - guideStart) / 60) * PX_PER_MIN;
   const width = Math.max(((listing.stop_timestamp - listing.start_timestamp) / 60) * PX_PER_MIN - 2, 24);
   const title = b64(listing.title) || "No info";
@@ -131,7 +134,7 @@ function EpgBlock({ listing, guideStart, onPress, scrollX }: {
         />
       ) : null}
       <Animated.View style={{ transform: [{ translateX: stickyTitleTranslate }] }}>
-        <ThemedText style={[styles.epgBlockTitle, isCurrent && styles.epgBlockTitleNow]} numberOfLines={1}>
+        <ThemedText style={[styles.epgBlockTitle, { fontSize: epgTitleFontSize }, isCurrent && styles.epgBlockTitleNow]} numberOfLines={1}>
           {title}
         </ThemedText>
         <ThemedText style={styles.epgBlockTime} numberOfLines={1}>
@@ -153,6 +156,7 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
   onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
+  const { scaleFont } = useUISettings();
 
   return (
     <View style={styles.row}>
@@ -162,7 +166,12 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
       >
-        <ThemedText style={styles.channelName} numberOfLines={2}>{channel.name}</ThemedText>
+        <ThemedText
+          style={[styles.channelName, { fontSize: scaleFont(11), lineHeight: scaleFont(15) }]}
+          numberOfLines={2}
+        >
+          {channel.name}
+        </ThemedText>
       </Pressable>
 
       <View style={styles.epgClip} accessible={false}>
@@ -196,6 +205,7 @@ function CatItem({ name, selected, onPress }: {
 }) {
   const [focused, setFocused] = useState(false);
   const isActive = selected || focused;
+  const { scaleFont } = useUISettings();
   return (
     <Pressable
       style={[styles.catItem, isActive && styles.catItemActive]}
@@ -204,7 +214,10 @@ function CatItem({ name, selected, onPress }: {
       onBlur={() => setFocused(false)}
     >
       {isActive ? <View style={styles.catActiveBar} /> : null}
-      <ThemedText style={[styles.catName, isActive && styles.catNameActive]} numberOfLines={2}>
+      <ThemedText
+        style={[styles.catName, { fontSize: scaleFont(11) }, isActive && styles.catNameActive]}
+        numberOfLines={2}
+      >
         {name}
       </ThemedText>
     </Pressable>

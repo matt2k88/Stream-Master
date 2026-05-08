@@ -23,6 +23,7 @@ import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
@@ -150,6 +151,7 @@ function CategoryCard({
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
+  const { scaleFont } = useUISettings();
 
   return (
     <Pressable
@@ -169,7 +171,10 @@ function CategoryCard({
         />
       ) : null}
       <Feather name={icon} size={20} color={isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
-      <ThemedText style={[styles.cardText, isActive && styles.cardTextActive]} numberOfLines={2}>
+      <ThemedText
+        style={[styles.cardText, { fontSize: scaleFont(13) }, isActive && styles.cardTextActive]}
+        numberOfLines={2}
+      >
         {item.category_name}
       </ThemedText>
       {isActive ? <View style={styles.cardGlow} /> : null}
@@ -191,6 +196,7 @@ function StreamCard({
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
+  const { scaleFont } = useUISettings();
 
   const thumb = "stream_icon" in item ? item.stream_icon : "cover" in item ? item.cover : null;
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
@@ -223,7 +229,7 @@ function StreamCard({
       </View>
       <View style={styles.streamInfo}>
         <ThemedText
-          style={[styles.streamName, isActive && styles.streamNameActive]}
+          style={[styles.streamName, { fontSize: scaleFont(11) }, isActive && styles.streamNameActive]}
           numberOfLines={2}
         >
           {item.name}

@@ -19,6 +19,7 @@ import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
+import { UISettingsProvider } from "@/contexts/UISettingsContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
@@ -46,6 +47,7 @@ export default function App() {
               <AuthProvider>
                 <DataProvider>
                   <ProfileProvider>
+                    <UISettingsProvider>
                     <CategoryOrderProvider>
                     <FavouritesProvider>
                       <WatchHistoryProvider>
@@ -63,6 +65,7 @@ export default function App() {
                       </WatchHistoryProvider>
                     </FavouritesProvider>
                     </CategoryOrderProvider>
+                    </UISettingsProvider>
                   </ProfileProvider>
                 </DataProvider>
               </AuthProvider>

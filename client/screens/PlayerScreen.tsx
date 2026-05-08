@@ -937,6 +937,18 @@ export default function PlayerScreen() {
           </View>
           <ThemedText style={styles.errorTitle}>Playback Error</ThemedText>
           <ThemedText style={styles.errorMsg}>This content could not be played.</ThemedText>
+          {/* Surface the actual underlying error from the player so users can
+              see why it failed (e.g. unsupported codec / DRM / network).
+              This is what helps identify the bad codec on Firestick / Android
+              boxes when the same stream plays fine on a flagship phone. */}
+          {error && error !== "Playback failed" ? (
+            <ThemedText
+              style={[styles.errorMsg, { fontSize: 12, opacity: 0.75, marginTop: -6 }]}
+              numberOfLines={3}
+            >
+              {error}
+            </ThemedText>
+          ) : null}
           <Pressable
             style={({ pressed, focused }) => [styles.errorBackBtn, (pressed || focused) && { opacity: 0.8 }]}
             onPress={handleBack}

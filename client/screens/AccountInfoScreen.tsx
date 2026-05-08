@@ -24,6 +24,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 
@@ -147,6 +148,7 @@ export default function AccountInfoScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile } = useProfile();
+  const { textSize, toggleTextSize } = useUISettings();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
@@ -379,6 +381,16 @@ export default function AccountInfoScreen() {
               >
                 <Feather name="file-text" size={13} color={Colors.dark.accent} />
                 <ThemedText style={styles.updateBtnText}>What&apos;s New</ThemedText>
+              </HoverBtn>
+              <HoverBtn
+                style={styles.notesBtn}
+                activeStyle={styles.notesBtnActive}
+                onPress={() => { void toggleTextSize(); }}
+              >
+                <Feather name="type" size={13} color={Colors.dark.accent} />
+                <ThemedText style={styles.updateBtnText}>
+                  Text Size: {textSize === "large" ? "Large" : "Normal"}
+                </ThemedText>
               </HoverBtn>
               <HoverBtn
                 style={styles.exitAppBtn}
