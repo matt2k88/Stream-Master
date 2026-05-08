@@ -836,7 +836,7 @@ export default function ContentListScreen() {
             {countDisplay}
           </ThemedText>
         </View>
-        {isSpecialView && !isSearching ? (
+        {(isFavouritesView || isRecentlyView) && !isSearching ? (
           <ClearAllButton onPress={() => setShowClearConfirm(true)} />
         ) : null}
       </View>

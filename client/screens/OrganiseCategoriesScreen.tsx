@@ -3,7 +3,7 @@ import {
   View,
   StyleSheet,
   Pressable,
-  FlatList,
+  ScrollView,
   Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -313,38 +313,39 @@ export default function OrganiseCategoriesScreen() {
       </View>
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
-      <FlatList
-        data={list}
-        keyExtractor={(item) => item.category_id}
+      <ScrollView
         contentContainerStyle={{
           paddingHorizontal: padH,
           paddingBottom: padB,
           gap: Spacing.xs,
         }}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item, index }) => (
-          <CategoryRow
-            categoryId={item.category_id}
-            index={index}
-            total={list.length}
-            name={item.category_name}
-            hidden={item.hidden}
-            onToggle={() => toggleHidden(type, item.category_id)}
-            onUp={()     => { moveUp(type, item.category_id);       queueRefocus(item.category_id, "up"); }}
-            onDown={()   => { moveDown(type, item.category_id);     queueRefocus(item.category_id, "down"); }}
-            onTop={()    => { moveToTop(type, item.category_id);    queueRefocus(item.category_id, "top"); }}
-            onBottom={() => { moveToBottom(type, item.category_id); queueRefocus(item.category_id, "bottom"); }}
-            autoFocus={item.category_id === initialFocusIdRef.current}
-            registerActionRef={registerActionRef}
-          />
-        )}
-        ListEmptyComponent={
+      >
+        {list.length === 0 ? (
           <View style={styles.empty}>
             <Feather name="folder" size={36} color={Colors.dark.border} />
             <ThemedText style={styles.emptyText}>No categories to organise</ThemedText>
           </View>
-        }
-      />
+        ) : (
+          list.map((item, index) => (
+            <CategoryRow
+              key={item.category_id}
+              categoryId={item.category_id}
+              index={index}
+              total={list.length}
+              name={item.category_name}
+              hidden={item.hidden}
+              onToggle={() => toggleHidden(type, item.category_id)}
+              onUp={()     => { moveUp(type, item.category_id);       queueRefocus(item.category_id, "up"); }}
+              onDown={()   => { moveDown(type, item.category_id);     queueRefocus(item.category_id, "down"); }}
+              onTop={()    => { moveToTop(type, item.category_id);    queueRefocus(item.category_id, "top"); }}
+              onBottom={() => { moveToBottom(type, item.category_id); queueRefocus(item.category_id, "bottom"); }}
+              autoFocus={item.category_id === initialFocusIdRef.current}
+              registerActionRef={registerActionRef}
+            />
+          ))
+        )}
+      </ScrollView>
 
       <Modal visible={showResetConfirm} transparent animationType="fade" onRequestClose={() => setShowResetConfirm(false)}>
         <View style={styles.modalBackdrop}>
