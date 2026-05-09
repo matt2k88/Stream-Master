@@ -17,6 +17,8 @@ import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { useAppTheme } from "@/contexts/ThemeContext";
+import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
@@ -27,6 +29,9 @@ interface NavButtonProps {
   title: string;
   icon: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  /** Theme icon slot — when the active theme provides a themed image
+   *  for this slot, it replaces the vector glyph. */
+  iconKey?: ThemeIconKey;
   onPress: () => void;
   style?: any;
   iconSize?: number;
@@ -42,18 +47,20 @@ function formatCount(n: number) {
 }
 
 function NavButton({
-  title, icon, mciIcon, onPress, style, iconSize = 30, textSize = 16,
+  title, icon, mciIcon, iconKey, onPress, style, iconSize = 30, textSize = 16,
   compact = false, loading = false, count, countLabel,
 }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed || loading;
   const { scaleFont } = useUISettings();
+  const { getIcon } = useAppTheme();
   // Only scale the label — leaving icon size untouched preserves the carefully
   // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
   const scaledTextSize = scaleFont(textSize);
   const showCount = typeof count === "number";
   const iconColor = isActive ? "#FFB266" : Colors.dark.accent;
+  const themedIcon = iconKey ? getIcon(iconKey) : undefined;
 
   return (
     <Pressable
@@ -83,6 +90,12 @@ function NavButton({
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         {loading ? (
           <ActivityIndicator size={Math.max(18, iconSize - 4)} color={Colors.dark.accent} />
+        ) : themedIcon ? (
+          <Image
+            source={themedIcon}
+            style={{ width: iconSize * 1.5, height: iconSize * 1.5 }}
+            resizeMode="contain"
+          />
         ) : mciIcon ? (
           <MaterialCommunityIcons name={mciIcon} size={iconSize} color={iconColor} />
         ) : (
@@ -512,6 +525,7 @@ export default function HomeScreen() {
                 countLabel="CHANNELS"
                 icon="tv"
                 mciIcon="television-classic"
+                iconKey="liveTv"
                 onPress={() => goToContent("live", "Live TV")}
                 loading={navigatingTo === "live"}
                 style={styles.colATop}
@@ -521,6 +535,7 @@ export default function HomeScreen() {
               <NavButton
                 title="Catch Up"
                 icon="clock"
+                iconKey="catchUp"
                 onPress={() => goToScreen("catchup", "CatchUp")}
                 loading={navigatingTo === "catchup"}
                 style={styles.catchUpBtn}
@@ -531,6 +546,7 @@ export default function HomeScreen() {
               <NavButton
                 title="TV Guide"
                 icon="calendar"
+                iconKey="tvGuide"
                 onPress={() => goToScreen("tvguide", "TvGuide")}
                 loading={navigatingTo === "tvguide"}
                 style={styles.colABot}
@@ -547,6 +563,7 @@ export default function HomeScreen() {
                 countLabel="MOVIES"
                 icon="film"
                 mciIcon="movie-open-outline"
+                iconKey="movies"
                 onPress={() => goToContent("movies", "Movies")}
                 loading={navigatingTo === "movies"}
                 style={styles.colBBtn}
@@ -559,6 +576,7 @@ export default function HomeScreen() {
                 countLabel="SERIES"
                 icon="grid"
                 mciIcon="play-box-multiple-outline"
+                iconKey="series"
                 onPress={() => goToContent("series", "Series")}
                 loading={navigatingTo === "series"}
                 style={styles.colBBtn}
@@ -617,6 +635,7 @@ export default function HomeScreen() {
             countLabel="CHANNELS"
             icon="tv"
             mciIcon="television-classic"
+            iconKey="liveTv"
             onPress={() => goToContent("live", "Live TV")}
             loading={navigatingTo === "live"}
             style={styles.portraitTopFull}
@@ -631,6 +650,7 @@ export default function HomeScreen() {
               countLabel="MOVIES"
               icon="film"
               mciIcon="movie-open-outline"
+              iconKey="movies"
               onPress={() => goToContent("movies", "Movies")}
               loading={navigatingTo === "movies"}
               style={styles.portraitSubBtnMain}
@@ -643,6 +663,7 @@ export default function HomeScreen() {
               countLabel="SERIES"
               icon="grid"
               mciIcon="play-box-multiple-outline"
+              iconKey="series"
               onPress={() => goToContent("series", "Series")}
               loading={navigatingTo === "series"}
               style={styles.portraitSubBtnMain}
@@ -655,6 +676,7 @@ export default function HomeScreen() {
             <NavButton
               title="Catch Up"
               icon="clock"
+              iconKey="catchUp"
               onPress={() => goToScreen("catchup", "CatchUp")}
               loading={navigatingTo === "catchup"}
               style={styles.portraitSubBtn}
@@ -665,6 +687,7 @@ export default function HomeScreen() {
             <NavButton
               title="TV Guide"
               icon="calendar"
+              iconKey="tvGuide"
               onPress={() => goToScreen("tvguide", "TvGuide")}
               loading={navigatingTo === "tvguide"}
               style={styles.portraitSubBtn}

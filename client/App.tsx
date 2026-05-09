@@ -20,6 +20,7 @@ import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
@@ -44,6 +45,7 @@ export default function App() {
             {!introComplete ? (
               <IntroOverlay onDone={handleIntroDone} />
             ) : (
+              <ThemeProvider>
               <AuthProvider>
                 <DataProvider>
                   <ProfileProvider>
@@ -69,6 +71,7 @@ export default function App() {
                   </ProfileProvider>
                 </DataProvider>
               </AuthProvider>
+              </ThemeProvider>
             )}
           </GestureHandlerRootView>
         </SafeAreaProvider>

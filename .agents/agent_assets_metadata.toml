@@ -1,5 +1,154 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "YpiZ5WKqnXWmopFLsQ1hg"
+uri = "file://assets/images/themes/newyear/liveTv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "nbA2J3OOuWJNX62YjV96Q"
+uri = "file://assets/images/themes/newyear/movies.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "_qwOG02X_heOsCHZz6x8t"
+uri = "file://assets/images/themes/newyear/series.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "iAPj4dxlA-yVHTlLPe9QX"
+uri = "file://assets/images/themes/newyear/catchUp.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "UDiAuA1ejcADWvO2DfJiW"
+uri = "file://assets/images/themes/newyear/tvGuide.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "yzSbfKAOrU8aCiymUO1or"
+uri = "file://assets/images/themes/christmas/liveTv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "695VYwCDq4wLLD4yZB5rN"
+uri = "file://assets/images/themes/christmas/movies.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ixlBx60r46L2aVDZSrKin"
+uri = "file://assets/images/themes/christmas/series.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "biCUhlxOe2CnS-iM-Q2hu"
+uri = "file://assets/images/themes/christmas/catchUp.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "io7WnK3WTxvn1IWWVy-e8"
+uri = "file://assets/images/themes/christmas/tvGuide.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "wDIROdEg2QoOMuUPAqUBv"
+uri = "file://assets/images/themes/valentines/liveTv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Oeot3Td8gSDoJM7B0YHAE"
+uri = "file://assets/images/themes/valentines/movies.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "yxqYQIw4REZxDk3Bi5v-k"
+uri = "file://assets/images/themes/valentines/series.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "r_hWSZFedAmhALyWedjNo"
+uri = "file://assets/images/themes/valentines/catchUp.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "MPcHpa-aqo8PrcOOnoQI2"
+uri = "file://assets/images/themes/valentines/tvGuide.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "A72cF9vsuIgDqpff5pwWg"
+uri = "file://assets/images/themes/halloween/liveTv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "lmSFLlX7NL_6u7pDUiBEY"
+uri = "file://assets/images/themes/halloween/movies.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ii90VPgZXiQLvQmQacjNK"
+uri = "file://assets/images/themes/halloween/series.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "oMKLI05r-HgfTNvKK71VV"
+uri = "file://assets/images/themes/halloween/catchUp.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "FDCQeKyzd1zSLNxlrZZFZ"
+uri = "file://assets/images/themes/halloween/tvGuide.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "NhavVHjYq9Gx3cuwN1Xjw"
+uri = "file://assets/images/themes/bonfire/liveTv.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "AhP_304mfodsTeEerLs4R"
+uri = "file://assets/images/themes/bonfire/movies.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "w_Lhk5mZaJ_g6qnqBmcKb"
+uri = "file://assets/images/themes/bonfire/series.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "SscqCjQ6myrMByuY1qyUf"
+uri = "file://assets/images/themes/bonfire/catchUp.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "j3e52eDF506_SaO5ZBdTL"
+uri = "file://assets/images/themes/bonfire/tvGuide.png"
+type = "image"
+title = "generated_image"
 
 [[outputs]]
 id = "1DLGAkGKl0w6mAAonLn9E"
