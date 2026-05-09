@@ -332,16 +332,29 @@ function DetailModal({
     : null;
   const genres = (merged.genres || []).map((g) => g.name).filter(Boolean);
 
+  const sheetMaxW = isLandscape ? Math.min(960, width - 48) : width - 24;
+  const sheetMaxH = height - insets.top - insets.bottom - 24;
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <View style={modalStyles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[modalStyles.sheet, { maxHeight: height - insets.top - insets.bottom - 40, marginTop: insets.top + 20, marginBottom: insets.bottom + 20 }]}>
+        <View
+          style={[
+            modalStyles.sheet,
+            {
+              width: sheetMaxW,
+              height: sheetMaxH,
+              marginTop: insets.top + 12,
+              marginBottom: insets.bottom + 12,
+            },
+          ]}
+        >
           {backdrop ? (
             <View style={modalStyles.heroWrap} pointerEvents="none">
               <Image source={{ uri: backdrop }} style={StyleSheet.absoluteFill} contentFit="cover" />
               <LinearGradient
-                colors={["rgba(8,8,8,0.2)", "rgba(8,8,8,0.92)", "rgba(8,8,8,1)"]}
+                colors={["rgba(8,8,8,0.35)", "rgba(8,8,8,0.92)", "rgba(8,8,8,1)"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
@@ -738,14 +751,11 @@ const styles = StyleSheet.create({
 const modalStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
+    backgroundColor: "rgba(0,0,0,0.78)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: Spacing.lg,
   },
   sheet: {
-    width: "100%",
-    maxWidth: 900,
     borderRadius: BorderRadius.lg,
     backgroundColor: "#0E0E0E",
     borderWidth: 1,
@@ -753,10 +763,12 @@ const modalStyles = StyleSheet.create({
     overflow: "hidden",
   },
   heroWrap: {
-    ...StyleSheet.absoluteFillObject,
-    height: 280,
-    bottom: undefined,
-    opacity: 0.7,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 240,
+    opacity: 0.75,
   },
   headerRow: {
     flexDirection: "row",
