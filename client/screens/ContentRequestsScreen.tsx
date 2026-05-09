@@ -78,10 +78,40 @@ function statusColor(status: string | null | undefined): { bg: string; text: str
   return { bg: "rgba(255,102,0,0.18)", text: Colors.dark.accent, label: status || "Pending" };
 }
 
+function RetryBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.retryBtn, isActive && styles.retryBtnActive]}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <ThemedText style={styles.retryText}>Try again</ThemedText>
+    </Pressable>
+  );
+}
+
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.iconBtn, isActive && styles.iconBtnActive]}
@@ -90,6 +120,8 @@ function BackBtn({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isActive ? (
         <LinearGradient
@@ -117,7 +149,8 @@ function RequestCard({
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   const poster = getPoster(item.content_details);
   const title = getTitle(item.content_details);
   const year = getYear(item.content_details);
@@ -137,7 +170,18 @@ function RequestCard({
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.04)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          pointerEvents="none"
+        />
+      ) : null}
       <View style={[styles.posterWrap, { height: posterH }]}>
         {poster ? (
           <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
@@ -251,9 +295,7 @@ export default function ContentRequestsScreen() {
           <ThemedText style={[styles.muted, { marginTop: Spacing.md }]}>
             Couldn't load content requests.
           </ThemedText>
-          <Pressable onPress={handleRefresh} style={styles.retryBtn}>
-            <ThemedText style={styles.retryText}>Try again</ThemedText>
-          </Pressable>
+          <RetryBtn onPress={handleRefresh} />
         </View>
       ) : requests.length === 0 ? (
         <View style={styles.centered}>
@@ -348,6 +390,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.accent,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,102,0,0.04)",
+  },
+  retryBtnActive: {
+    borderColor: "#FFD700",
+    backgroundColor: "rgba(255,102,0,0.12)",
   },
   retryText: { color: Colors.dark.accent, fontWeight: "700" },
   card: {

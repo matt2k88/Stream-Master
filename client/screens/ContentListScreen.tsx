@@ -100,7 +100,8 @@ function ModalBtn({
 function RequestsBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
@@ -109,6 +110,8 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isActive ? (
         <LinearGradient

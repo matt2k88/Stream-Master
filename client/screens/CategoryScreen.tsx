@@ -34,7 +34,8 @@ const SEARCH_LIMIT = 100;
 function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.backBtn, (isActive || refreshing) && styles.backBtnActive]}
@@ -43,6 +44,8 @@ function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: 
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       disabled={refreshing}
     >
       {(isActive || refreshing) ? (
@@ -61,7 +64,8 @@ function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: 
 function RequestsBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
@@ -70,6 +74,8 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isActive ? (
         <LinearGradient
@@ -90,7 +96,8 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.backBtn, isActive && styles.backBtnActive]}
@@ -99,6 +106,8 @@ function BackBtn({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isActive ? (
         <LinearGradient
