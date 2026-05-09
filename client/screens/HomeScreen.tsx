@@ -32,9 +32,23 @@ interface NavButtonProps {
   textSize?: number;
   compact?: boolean;
   loading?: boolean;
+  subtitle?: string;
+  count?: number;
+  countLabel?: string;
 }
 
-function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, compact = false, loading = false }: NavButtonProps) {
+function formatCount(n: number) {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return (k >= 10 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, "")) + "k";
+  }
+  return String(n);
+}
+
+function NavButton({
+  title, icon, onPress, style, iconSize = 30, textSize = 16,
+  compact = false, loading = false, subtitle, count, countLabel,
+}: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed || loading;
@@ -42,24 +56,34 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, 
   // Only scale the label — leaving icon size untouched preserves the carefully
   // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
   const scaledTextSize = scaleFont(textSize);
+  const showCount = typeof count === "number" && !compact;
+  const showSubtitle = !!subtitle && !compact;
 
   return (
     <Pressable
-      style={[styles.navButton, compact && styles.navButtonCompact, isActive && styles.navButtonActive, style]}
+      style={[
+        styles.navButton,
+        compact && styles.navButtonCompact,
+        isActive && styles.navButtonActive,
+        style,
+      ]}
       onPress={loading ? undefined : onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      {isActive ? (
-        <LinearGradient
-          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
-      ) : null}
+      {/* Always-on subtle gradient sheen — stronger when focused */}
+      <LinearGradient
+        colors={
+          isActive
+            ? ["rgba(255,102,0,0.28)", "rgba(255,102,0,0.10)", "rgba(255,102,0,0.04)"]
+            : ["rgba(255,102,0,0.10)", "rgba(255,102,0,0.04)", "rgba(0,0,0,0)"]
+        }
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+      />
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         {loading ? (
           <ActivityIndicator size={Math.max(18, iconSize - 4)} color={Colors.dark.accent} />
@@ -67,13 +91,37 @@ function NavButton({ title, icon, onPress, style, iconSize = 30, textSize = 16, 
           <Feather
             name={icon}
             size={iconSize}
-            color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+            color={isActive ? "#FFB266" : Colors.dark.accent}
           />
         )}
       </View>
-      <ThemedText style={[styles.navButtonText, { fontSize: scaledTextSize }, isActive && styles.navButtonTextActive]}>
+      <ThemedText
+        style={[
+          styles.navButtonText,
+          { fontSize: scaledTextSize },
+          isActive && styles.navButtonTextActive,
+        ]}
+        numberOfLines={1}
+      >
         {loading ? "Loading…" : title}
       </ThemedText>
+      {showSubtitle ? (
+        <ThemedText style={styles.navButtonSubtitle} numberOfLines={1}>
+          {subtitle}
+        </ThemedText>
+      ) : null}
+      {showCount ? (
+        <View style={[styles.countChip, isActive && styles.countChipActive]}>
+          <ThemedText style={[styles.countChipNumber, isActive && styles.countChipNumberActive]}>
+            {formatCount(count!)}
+          </ThemedText>
+          {countLabel ? (
+            <ThemedText style={[styles.countChipLabel, isActive && styles.countChipLabelActive]} numberOfLines={1}>
+              {countLabel}
+            </ThemedText>
+          ) : null}
+        </View>
+      ) : null}
       {isActive ? <View style={styles.activeIndicator} /> : null}
     </Pressable>
   );
@@ -340,7 +388,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { refresh, liveCategories, vodCategories, seriesCategories } = useData();
+  const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -470,13 +518,16 @@ export default function HomeScreen() {
             {/* Sub-column A: Live TV | Catch Up | TV Guide */}
             <View style={styles.colA}>
               <NavButton
-                title="Live TV"
+                title="LIVE TV"
+                subtitle="Live channels"
+                count={liveStreams.length}
+                countLabel="CHANNELS"
                 icon="tv"
                 onPress={() => goToContent("live", "Live TV")}
                 loading={navigatingTo === "live"}
                 style={styles.colATop}
-                iconSize={30}
-                textSize={17}
+                iconSize={36}
+                textSize={18}
               />
               <NavButton
                 title="Catch Up"
@@ -502,22 +553,28 @@ export default function HomeScreen() {
             {/* Sub-column B: Movies | Series stacked 50/50 */}
             <View style={styles.colB}>
               <NavButton
-                title="Movies"
+                title="MOVIES"
+                subtitle="Latest releases"
+                count={vodStreams.length}
+                countLabel="MOVIES"
                 icon="film"
                 onPress={() => goToContent("movies", "Movies")}
                 loading={navigatingTo === "movies"}
                 style={styles.colBBtn}
-                iconSize={28}
-                textSize={16}
+                iconSize={32}
+                textSize={17}
               />
               <NavButton
-                title="Series"
+                title="SERIES"
+                subtitle="Binge-worthy"
+                count={seriesList.length}
+                countLabel="SERIES"
                 icon="grid"
                 onPress={() => goToContent("series", "Series")}
                 loading={navigatingTo === "series"}
                 style={styles.colBBtn}
-                iconSize={28}
-                textSize={16}
+                iconSize={32}
+                textSize={17}
               />
             </View>
           </View>
@@ -566,13 +623,16 @@ export default function HomeScreen() {
         <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
           {/* Portrait top: Live TV full-width */}
           <NavButton
-            title="Live TV"
+            title="LIVE TV"
+            subtitle="Live channels"
+            count={liveStreams.length}
+            countLabel="CHANNELS"
             icon="tv"
             onPress={() => goToContent("live", "Live TV")}
             loading={navigatingTo === "live"}
             style={styles.portraitTopFull}
-            iconSize={26}
-            textSize={15}
+            iconSize={28}
+            textSize={16}
           />
           {/* Portrait mid row: Movies + Series */}
           <View style={styles.portraitSubRow}>
@@ -968,45 +1028,96 @@ const styles = StyleSheet.create({
 
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-  portraitTopFull: { height: 90, width: "100%" },
+  portraitTopFull: { minHeight: 180, width: "100%" },
   portraitSubRow: { height: 64, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
   portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
   navButton: {
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+    backgroundColor: "rgba(20,12,6,0.85)",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.35)",
     justifyContent: "center",
     alignItems: "center",
     padding: Spacing.lg,
-    gap: Spacing.sm,
+    gap: 6,
     overflow: "hidden",
   },
   navButtonCompact: {
     padding: Spacing.sm,
     gap: 4,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.25)",
   },
   navButtonActive: {
     borderColor: Colors.dark.accent,
+    borderWidth: 2,
     shadowColor: "#FF6600",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    elevation: 14,
   },
   iconWrap: {
-    width: 56, height: 56, borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    width: 60, height: 60, borderRadius: BorderRadius.full,
+    backgroundColor: "transparent",
     justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: Colors.dark.border,
   },
-  iconWrapCompact: { width: 36, height: 36 },
-  iconWrapActive: { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
-  navButtonText: { fontWeight: "700", color: Colors.dark.textSecondary, letterSpacing: 0.3 },
-  navButtonTextActive: { color: Colors.dark.accent },
+  iconWrapCompact: { width: 32, height: 32 },
+  iconWrapActive: {},
+  navButtonText: {
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+  },
+  navButtonTextActive: { color: "#fff" },
+  navButtonSubtitle: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    letterSpacing: 0.3,
+    fontWeight: "500",
+    marginTop: -2,
+  },
+  countChip: {
+    marginTop: 6,
+    minWidth: 92,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.55)",
+    backgroundColor: "rgba(255,102,0,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  countChipActive: {
+    borderColor: "#FFB266",
+    backgroundColor: Colors.dark.accent,
+  },
+  countChipNumber: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+    letterSpacing: 0.5,
+    lineHeight: 22,
+  },
+  countChipNumberActive: {
+    color: "#fff",
+  },
+  countChipLabel: {
+    fontSize: 9,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+    letterSpacing: 1.4,
+    marginTop: -1,
+  },
+  countChipLabelActive: {
+    color: "rgba(255,255,255,0.92)",
+  },
 
   // ── Search button ────────────────────────────────────────────────────────
   searchButton: {
