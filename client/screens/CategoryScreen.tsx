@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -30,6 +30,33 @@ type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
 type AnyStream = LiveStream | VodStream | Series;
 
 const SEARCH_LIMIT = 100;
+
+function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, (isActive || refreshing) && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={refreshing}
+    >
+      {(isActive || refreshing) ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="refresh-cw" size={18} color={(isActive || refreshing) ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
+  );
+}
 
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
@@ -247,7 +274,11 @@ export default function CategoryScreen() {
   const { type, title } = route.params;
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, isSyncing } = useData();
+  const { liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, isSyncing, refresh } = useData();
+  const handleRefresh = useCallback(() => {
+    if (isSyncing) return;
+    refresh();
+  }, [refresh, isSyncing]);
   const { applyOrder } = useCategoryOrder();
   const { getFavouritesByType } = useFavourites();
   const { entries: watchEntries } = useWatchHistory();
@@ -440,7 +471,7 @@ export default function CategoryScreen() {
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle}>{title}</ThemedText>
-        <View style={{ width: 40 }} />
+        <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
       </View>
 
       <View style={[styles.divider, { marginHorizontal: padH }]} />

@@ -97,6 +97,33 @@ function ModalBtn({
   );
 }
 
+function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, (isActive || refreshing) && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={refreshing}
+    >
+      {(isActive || refreshing) ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="refresh-cw" size={18} color={(isActive || refreshing) ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
+  );
+}
+
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -382,7 +409,11 @@ export default function ContentListScreen() {
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
   const { width } = useWindowDimensions();
-  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing } = useData();
+  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing, refresh } = useData();
+  const handleRefresh = useCallback(() => {
+    if (isSyncing) return;
+    refresh();
+  }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory } = useWatchHistory();
@@ -847,6 +878,7 @@ export default function ContentListScreen() {
             {countDisplay}
           </ThemedText>
         </View>
+        <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
         {(isFavouritesView || isRecentlyView) && !isSearching ? (
           <ClearAllButton onPress={() => setShowClearConfirm(true)} />
         ) : null}
