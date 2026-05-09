@@ -4,7 +4,7 @@ import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -26,28 +26,24 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 interface NavButtonProps {
   title: string;
   icon: keyof typeof Feather.glyphMap;
+  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
   onPress: () => void;
   style?: any;
   iconSize?: number;
   textSize?: number;
   compact?: boolean;
   loading?: boolean;
-  subtitle?: string;
   count?: number;
   countLabel?: string;
 }
 
 function formatCount(n: number) {
-  if (n >= 1000) {
-    const k = n / 1000;
-    return (k >= 10 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, "")) + "k";
-  }
-  return String(n);
+  return n.toLocaleString("en-US");
 }
 
 function NavButton({
-  title, icon, onPress, style, iconSize = 30, textSize = 16,
-  compact = false, loading = false, subtitle, count, countLabel,
+  title, icon, mciIcon, onPress, style, iconSize = 30, textSize = 16,
+  compact = false, loading = false, count, countLabel,
 }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -56,8 +52,8 @@ function NavButton({
   // Only scale the label — leaving icon size untouched preserves the carefully
   // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
   const scaledTextSize = scaleFont(textSize);
-  const showCount = typeof count === "number" && !compact;
-  const showSubtitle = !!subtitle && !compact;
+  const showCount = typeof count === "number";
+  const iconColor = isActive ? "#FFB266" : Colors.dark.accent;
 
   return (
     <Pressable
@@ -87,12 +83,10 @@ function NavButton({
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         {loading ? (
           <ActivityIndicator size={Math.max(18, iconSize - 4)} color={Colors.dark.accent} />
+        ) : mciIcon ? (
+          <MaterialCommunityIcons name={mciIcon} size={iconSize} color={iconColor} />
         ) : (
-          <Feather
-            name={icon}
-            size={iconSize}
-            color={isActive ? "#FFB266" : Colors.dark.accent}
-          />
+          <Feather name={icon} size={iconSize} color={iconColor} />
         )}
       </View>
       <ThemedText
@@ -105,11 +99,6 @@ function NavButton({
       >
         {loading ? "Loading…" : title}
       </ThemedText>
-      {showSubtitle ? (
-        <ThemedText style={styles.navButtonSubtitle} numberOfLines={1}>
-          {subtitle}
-        </ThemedText>
-      ) : null}
       {showCount ? (
         <View style={[styles.countChip, isActive && styles.countChipActive]}>
           <ThemedText style={[styles.countChipNumber, isActive && styles.countChipNumberActive]}>
@@ -519,14 +508,14 @@ export default function HomeScreen() {
             <View style={styles.colA}>
               <NavButton
                 title="LIVE TV"
-                subtitle="Live channels"
                 count={liveStreams.length}
                 countLabel="CHANNELS"
                 icon="tv"
+                mciIcon="television-classic"
                 onPress={() => goToContent("live", "Live TV")}
                 loading={navigatingTo === "live"}
                 style={styles.colATop}
-                iconSize={36}
+                iconSize={42}
                 textSize={18}
               />
               <NavButton
@@ -554,26 +543,26 @@ export default function HomeScreen() {
             <View style={styles.colB}>
               <NavButton
                 title="MOVIES"
-                subtitle="Latest releases"
                 count={vodStreams.length}
                 countLabel="MOVIES"
                 icon="film"
+                mciIcon="movie-open-outline"
                 onPress={() => goToContent("movies", "Movies")}
                 loading={navigatingTo === "movies"}
                 style={styles.colBBtn}
-                iconSize={32}
+                iconSize={38}
                 textSize={17}
               />
               <NavButton
                 title="SERIES"
-                subtitle="Binge-worthy"
                 count={seriesList.length}
                 countLabel="SERIES"
                 icon="grid"
+                mciIcon="play-box-multiple-outline"
                 onPress={() => goToContent("series", "Series")}
                 loading={navigatingTo === "series"}
                 style={styles.colBBtn}
-                iconSize={32}
+                iconSize={38}
                 textSize={17}
               />
             </View>
@@ -624,37 +613,41 @@ export default function HomeScreen() {
           {/* Portrait top: Live TV full-width */}
           <NavButton
             title="LIVE TV"
-            subtitle="Live channels"
             count={liveStreams.length}
             countLabel="CHANNELS"
             icon="tv"
+            mciIcon="television-classic"
             onPress={() => goToContent("live", "Live TV")}
             loading={navigatingTo === "live"}
             style={styles.portraitTopFull}
-            iconSize={28}
-            textSize={16}
+            iconSize={42}
+            textSize={18}
           />
           {/* Portrait mid row: Movies + Series */}
-          <View style={styles.portraitSubRow}>
+          <View style={styles.portraitSubRowMain}>
             <NavButton
-              title="Movies"
+              title="MOVIES"
+              count={vodStreams.length}
+              countLabel="MOVIES"
               icon="film"
+              mciIcon="movie-open-outline"
               onPress={() => goToContent("movies", "Movies")}
               loading={navigatingTo === "movies"}
-              style={styles.portraitSubBtn}
-              iconSize={18}
-              textSize={12}
-              compact
+              style={styles.portraitSubBtnMain}
+              iconSize={36}
+              textSize={16}
             />
             <NavButton
-              title="Series"
+              title="SERIES"
+              count={seriesList.length}
+              countLabel="SERIES"
               icon="grid"
+              mciIcon="play-box-multiple-outline"
               onPress={() => goToContent("series", "Series")}
               loading={navigatingTo === "series"}
-              style={styles.portraitSubBtn}
-              iconSize={18}
-              textSize={12}
-              compact
+              style={styles.portraitSubBtnMain}
+              iconSize={36}
+              textSize={16}
             />
           </View>
           {/* Portrait small row: Catch Up + TV Guide */}
@@ -1028,9 +1021,11 @@ const styles = StyleSheet.create({
 
   // ── Portrait body ────────────────────────────────────────────────────────
   bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-  portraitTopFull: { minHeight: 180, width: "100%" },
+  portraitTopFull: { minHeight: 200, width: "100%" },
   portraitSubRow: { height: 64, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
+  portraitSubRowMain: { flexDirection: "row", gap: Spacing.sm },
+  portraitSubBtnMain: { flex: 1, minHeight: 180 },
   portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
@@ -1075,13 +1070,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   navButtonTextActive: { color: "#fff" },
-  navButtonSubtitle: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-    letterSpacing: 0.3,
-    fontWeight: "500",
-    marginTop: -2,
-  },
   countChip: {
     marginTop: 6,
     minWidth: 92,
