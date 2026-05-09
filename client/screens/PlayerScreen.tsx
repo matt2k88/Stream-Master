@@ -438,6 +438,17 @@ export default function PlayerScreen() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
 
+  // ── Live stream auto-reconnect state ─────────────────────────────────────
+  // For live channels we never want to dead-end on a "Playback Error" screen.
+  // If the stream errors or freezes we silently reload it on a backoff loop.
+  const [reconnecting, setReconnecting] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastLiveTimeRef = useRef<number>(-1);
+  const lastLiveTimeAtRef = useRef<number>(Date.now());
+
   // Progress / completion / next-episode state
   const lastSavedRef = useRef(0);
   const completionPostedRef = useRef(false);
@@ -636,12 +647,81 @@ export default function PlayerScreen() {
     return unsub;
   }, [navigation, player]);
 
+  // ── Live auto-reconnect helpers ──────────────────────────────────────────
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+  }, []);
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current) { clearInterval(stallTimerRef.current); stallTimerRef.current = null; }
+  }, []);
+
+  const reloadLiveStream = useCallback(() => {
+    try {
+      player.replace(streamUrl);
+      player.play();
+    } catch {}
+  }, [player, streamUrl]);
+
+  const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearLoadWatchdog = useCallback(() => {
+    if (loadWatchdogRef.current) { clearTimeout(loadWatchdogRef.current); loadWatchdogRef.current = null; }
+  }, []);
+
+  const scheduleLiveRetry = useCallback(() => {
+    clearRetryTimer();
+    clearLoadWatchdog();
+    const attempt = retryCountRef.current + 1;
+    retryCountRef.current = attempt;
+    setRetryAttempt(attempt);
+    setReconnecting(true);
+    setIsLoading(true);
+    const delays = [1000, 2000, 4000, 8000];
+    const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      reloadLiveStream();
+      // Watchdog: if expo-video keeps emitting "loading" without a hard
+      // error and never reaches readyToPlay, schedule another retry after 12s
+      // so reconnection always keeps progressing.
+      clearLoadWatchdog();
+      loadWatchdogRef.current = setTimeout(() => {
+        loadWatchdogRef.current = null;
+        scheduleLiveRetry();
+      }, 12000);
+    }, delay);
+  }, [clearRetryTimer, clearLoadWatchdog, reloadLiveStream]);
+
+  // Reset retry state whenever the stream URL changes (channel switch / replace).
+  useEffect(() => {
+    clearRetryTimer();
+    clearStallTimer();
+    clearLoadWatchdog();
+    retryCountRef.current = 0;
+    setRetryAttempt(0);
+    setReconnecting(false);
+    lastLiveTimeRef.current = -1;
+    lastLiveTimeAtRef.current = Date.now();
+  }, [streamId, streamUrl, clearRetryTimer, clearStallTimer, clearLoadWatchdog]);
+
+  // Cleanup all timers on unmount.
+  useEffect(() => {
+    return () => { clearRetryTimer(); clearStallTimer(); clearLoadWatchdog(); };
+  }, [clearRetryTimer, clearStallTimer, clearLoadWatchdog]);
+
   // ── Player event listeners ────────────────────────────────────────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
       if (e.status === "readyToPlay") {
         setIsLoading(false);
         setError("");
+        // Clear any in-flight reconnect — playback is healthy again.
+        clearRetryTimer();
+        clearLoadWatchdog();
+        retryCountRef.current = 0;
+        setRetryAttempt(0);
+        setReconnecting(false);
+        lastLiveTimeRef.current = -1;
+        lastLiveTimeAtRef.current = Date.now();
         if (activeProfile && !savedRef.current) {
           savedRef.current = true;
           const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
@@ -662,11 +742,51 @@ export default function PlayerScreen() {
           resumeAppliedRef.current = true;
           try { player.currentTime = resumeTime; } catch {}
         }
-      } else if (e.status === "error") { setIsLoading(false); setError(e.error?.message ?? "Playback failed"); }
-      else if (e.status === "loading") setIsLoading(true);
+      } else if (e.status === "error") {
+        if (isLive) {
+          // Never dead-end on a live stream — auto-reconnect.
+          clearLoadWatchdog();
+          scheduleLiveRetry();
+        } else {
+          setIsLoading(false);
+          setError(e.error?.message ?? "Playback failed");
+        }
+      } else if (e.status === "loading") {
+        setIsLoading(true);
+      }
     });
     return () => sub.remove();
-  }, [player]);
+  }, [player, isLive, scheduleLiveRetry, clearRetryTimer, activeProfile, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, type, upsertLocal, resumeTime]);
+
+  // ── Live freeze/stall detector ───────────────────────────────────────────
+  // While playing a live stream poll currentTime; if it hasn't advanced for
+  // ~8s the stream froze (common on flaky IPTV connections) → reload.
+  useEffect(() => {
+    clearStallTimer();
+    if (!isLive || isLoading || reconnecting || error) return;
+    lastLiveTimeRef.current = -1;
+    lastLiveTimeAtRef.current = Date.now();
+    stallTimerRef.current = setInterval(() => {
+      let t = 0;
+      try { t = player.currentTime ?? 0; } catch { t = 0; }
+      const now = Date.now();
+      if (lastLiveTimeRef.current === -1) {
+        lastLiveTimeRef.current = t;
+        lastLiveTimeAtRef.current = now;
+        return;
+      }
+      if (t > lastLiveTimeRef.current + 0.05) {
+        lastLiveTimeRef.current = t;
+        lastLiveTimeAtRef.current = now;
+        return;
+      }
+      if (now - lastLiveTimeAtRef.current >= 8000) {
+        clearStallTimer();
+        scheduleLiveRetry();
+      }
+    }, 3000);
+    return clearStallTimer;
+  }, [isLive, isLoading, reconnecting, error, player, scheduleLiveRetry, clearStallTimer]);
 
   useEffect(() => {
     const sub = player.addListener("playingChange", (e) => setIsPlaying(e.isPlaying));
@@ -1045,11 +1165,17 @@ export default function PlayerScreen() {
         nativeControls={false}
       />
 
-      {/* Loading */}
-      {isLoading ? (
+      {/* Loading / reconnecting */}
+      {isLoading || reconnecting ? (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
-          <ThemedText style={styles.loadingText}>Loading stream...</ThemedText>
+          <ThemedText style={styles.loadingText}>
+            {reconnecting
+              ? (retryAttempt > 0
+                  ? `Reconnecting… (attempt ${retryAttempt})`
+                  : "Reconnecting…")
+              : "Loading stream..."}
+          </ThemedText>
         </View>
       ) : null}
 

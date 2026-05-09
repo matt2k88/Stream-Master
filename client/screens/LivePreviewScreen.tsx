@@ -245,6 +245,88 @@ export default function LivePreviewScreen() {
   const currentStreamUrlRef = useRef(streamUrl);
   const hasMountedRef = useRef(false);
 
+  // ── Auto-reconnect state ──────────────────────────────────────────────────
+  // Declared up-front (above useFocusEffect) so the effect's dep array can
+  // reference the helper callbacks without hitting a TDZ error at render time.
+  type PlayStatus = "loading" | "playing" | "reconnecting";
+  const [playStatus, setPlayStatus] = useState<PlayStatus>("loading");
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const stallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastTimeRef = useRef<number>(0);
+  const lastTimeAtRef = useRef<number>(Date.now());
+
+  const clearLoadingTimeout = useCallback(() => {
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+  }, []);
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current) {
+      clearInterval(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
+
+  const reloadStream = useCallback(() => {
+    try {
+      player.replace(currentStreamUrlRef.current);
+      player.play();
+    } catch {}
+  }, [player]);
+
+  // Schedule the next auto-retry. Backs off (1s, 2s, 4s, 8s, capped) and never
+  // gives up — live channels can come back at any time. Each retry re-arms a
+  // 12s load-timeout watchdog so we keep trying even if the player only emits
+  // "loading" events without a hard error.
+  const scheduleAutoRetry = useCallback(() => {
+    clearRetryTimer();
+    clearLoadingTimeout();
+    const attempt = retryCountRef.current + 1;
+    retryCountRef.current = attempt;
+    setRetryAttempt(attempt);
+    setPlayStatus("reconnecting");
+    const delays = [1000, 2000, 4000, 8000];
+    const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      reloadStream();
+      // Watchdog: still not playing after 12s → try again.
+      clearLoadingTimeout();
+      loadingTimeoutRef.current = setTimeout(() => {
+        loadingTimeoutRef.current = null;
+        scheduleAutoRetry();
+      }, 12000);
+    }, delay);
+  }, [reloadStream, clearRetryTimer, clearLoadingTimeout]);
+
+  const armLoadingTimeout = useCallback(() => {
+    clearLoadingTimeout();
+    loadingTimeoutRef.current = setTimeout(() => {
+      loadingTimeoutRef.current = null;
+      setPlayStatus((s) => {
+        if (s === "playing") return s;
+        scheduleAutoRetry();
+        return "reconnecting";
+      });
+    }, 12000);
+  }, [scheduleAutoRetry, clearLoadingTimeout]);
+
+  const resetRetryState = useCallback(() => {
+    clearRetryTimer();
+    retryCountRef.current = 0;
+    setRetryAttempt(0);
+  }, [clearRetryTimer]);
+
   // Release player fully on unmount — kills the network connection immediately
   useEffect(() => {
     return () => {
@@ -259,7 +341,13 @@ export default function LivePreviewScreen() {
   useFocusEffect(
     useCallback(() => {
       if (hasMountedRef.current) {
-        // Returning from full-screen — reload stream from live edge
+        // Returning from full-screen — reload stream from live edge and
+        // reset reconnect state so we get a fresh "loading" pass.
+        clearRetryTimer();
+        retryCountRef.current = 0;
+        setRetryAttempt(0);
+        setPlayStatus("loading");
+        armLoadingTimeout();
         try {
           player.replace(currentStreamUrlRef.current);
           player.play();
@@ -268,9 +356,13 @@ export default function LivePreviewScreen() {
       hasMountedRef.current = true;
       return () => {
         // Screen lost focus (navigating away) — stop streaming immediately
+        // and cancel any pending auto-retries so they don't fire in the bg.
+        clearRetryTimer();
+        clearLoadingTimeout();
+        clearStallTimer();
         try { player.pause(); } catch {}
       };
-    }, [player])
+    }, [player, clearRetryTimer, clearLoadingTimeout, clearStallTimer, armLoadingTimeout])
   );
 
   // Reload EPG whenever the selected channel changes
@@ -319,27 +411,15 @@ export default function LivePreviewScreen() {
     showToast(wasAdded ? "Added to Favourites" : "Removed from Favourites");
   }, [isFavourited, toggleFavourite, selectedId, selectedName, selectedIcon, showToast]);
 
-  // Playback status for the mini-player. Drives the loading spinner /
-  // "channel offline" overlay so a dead stream never leaves the previous
-  // channel's last frame frozen on screen.
-  type PlayStatus = "loading" | "playing" | "error";
-  const [playStatus, setPlayStatus] = useState<PlayStatus>("loading");
-  const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const armLoadingTimeout = useCallback(() => {
-    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
-    // If the stream hasn't started in 12s assume the channel is dead.
-    loadingTimeoutRef.current = setTimeout(() => {
-      setPlayStatus((s) => (s === "loading" ? "error" : s));
-    }, 12000);
-  }, []);
-
+  // (PlayStatus / retry state declared above useFocusEffect.)
   useEffect(() => {
     armLoadingTimeout();
     return () => {
-      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+      clearLoadingTimeout();
+      clearRetryTimer();
+      clearStallTimer();
     };
-  }, [armLoadingTimeout]);
+  }, [armLoadingTimeout, clearLoadingTimeout, clearRetryTimer, clearStallTimer]);
 
   const handleChannelPress = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
@@ -349,25 +429,31 @@ export default function LivePreviewScreen() {
     setSelectedName(s.name);
     setSelectedIcon(s.stream_icon ?? undefined);
     setPlayStatus("loading");
+    resetRetryState();
+    clearStallTimer();
+    lastTimeRef.current = 0;
+    lastTimeAtRef.current = Date.now();
     armLoadingTimeout();
-    try { player.replace(newUrl); player.play(); } catch {}
-  }, [player, armLoadingTimeout]);
+    reloadStream();
+  }, [reloadStream, armLoadingTimeout, resetRetryState, clearStallTimer]);
 
   const handleRetry = useCallback(() => {
+    resetRetryState();
     setPlayStatus("loading");
     armLoadingTimeout();
-    try { player.replace(currentStreamUrlRef.current); player.play(); } catch {}
-  }, [player, armLoadingTimeout]);
+    reloadStream();
+  }, [reloadStream, armLoadingTimeout, resetRetryState]);
 
   // ── Status listener: drives overlay + log to recently_watched ─────────────
   useEffect(() => {
     const sub = player.addListener("statusChange", (e) => {
       if (e.status === "readyToPlay") {
         setPlayStatus("playing");
-        if (loadingTimeoutRef.current) {
-          clearTimeout(loadingTimeoutRef.current);
-          loadingTimeoutRef.current = null;
-        }
+        resetRetryState();
+        clearLoadingTimeout();
+        // Reset stall tracker — playback is healthy.
+        lastTimeRef.current = 0;
+        lastTimeAtRef.current = Date.now();
         if (!activeProfile) return;
         if (savedChannelRef.current === selectedId) return;
         savedChannelRef.current = selectedId;
@@ -380,17 +466,46 @@ export default function LivePreviewScreen() {
           streamUrl: currentStreamUrlRef.current,
         }).then((entry) => { if (entry) upsertLocal(entry); });
       } else if (e.status === "error") {
-        setPlayStatus("error");
-        if (loadingTimeoutRef.current) {
-          clearTimeout(loadingTimeoutRef.current);
-          loadingTimeoutRef.current = null;
-        }
+        // Player error — kick off auto-retry loop instead of dead-ending.
+        clearLoadingTimeout();
+        scheduleAutoRetry();
       } else if (e.status === "loading") {
-        setPlayStatus((cur) => (cur === "playing" ? cur : "loading"));
+        setPlayStatus((cur) => (cur === "playing" || cur === "reconnecting" ? cur : "loading"));
       }
     });
     return () => sub.remove();
-  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal]);
+  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleAutoRetry, resetRetryState, clearLoadingTimeout]);
+
+  // ── Stall detector: while we believe we're playing, poll currentTime.
+  // If it hasn't advanced for ~8s the stream has frozen and we need to reload.
+  useEffect(() => {
+    clearStallTimer();
+    if (playStatus !== "playing") return;
+    lastTimeRef.current = -1; // sentinel: capture first value on next tick
+    lastTimeAtRef.current = Date.now();
+    stallTimerRef.current = setInterval(() => {
+      let t = 0;
+      try { t = player.currentTime ?? 0; } catch { t = 0; }
+      const now = Date.now();
+      if (lastTimeRef.current === -1) {
+        lastTimeRef.current = t;
+        lastTimeAtRef.current = now;
+        return;
+      }
+      if (t > lastTimeRef.current + 0.05) {
+        // Time advanced — healthy.
+        lastTimeRef.current = t;
+        lastTimeAtRef.current = now;
+        return;
+      }
+      if (now - lastTimeAtRef.current >= 8000) {
+        // Frozen for 8s+ — auto-reconnect.
+        clearStallTimer();
+        scheduleAutoRetry();
+      }
+    }, 3000);
+    return clearStallTimer;
+  }, [playStatus, player, scheduleAutoRetry, clearStallTimer]);
 
   const resetFsHideTimer = useCallback(() => {
     if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
@@ -562,10 +677,12 @@ export default function LivePreviewScreen() {
                   </>
                 ) : (
                   <>
-                    <Feather name="wifi-off" size={36} color={Colors.dark.error} />
-                    <ThemedText style={styles.statusOverlayTitle}>Channel Offline</ThemedText>
+                    <ActivityIndicator size="large" color={Colors.dark.accent} />
+                    <ThemedText style={styles.statusOverlayTitle}>Reconnecting…</ThemedText>
                     <ThemedText style={styles.statusOverlaySubtitle}>
-                      This stream is currently unavailable
+                      {retryAttempt > 0
+                        ? `Stream interrupted — retrying (attempt ${retryAttempt})`
+                        : "Stream interrupted — reconnecting automatically"}
                     </ThemedText>
                     <Pressable
                       onPress={handleRetry}
@@ -575,7 +692,7 @@ export default function LivePreviewScreen() {
                       ]}
                     >
                       <Feather name="refresh-cw" size={14} color={Colors.dark.text} />
-                      <ThemedText style={styles.retryBtnText}>Try Again</ThemedText>
+                      <ThemedText style={styles.retryBtnText}>Retry Now</ThemedText>
                     </Pressable>
                   </>
                 )}
