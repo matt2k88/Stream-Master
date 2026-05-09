@@ -562,6 +562,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Content requests (lifetime DB) ────────────────────────────────────────
+  // Returns the content_requests rows for a given xtream username, newest first.
+  // The `content_details` column is jsonb populated from the TMDB API at
+  // submission time, so it usually already contains poster_path, title/name,
+  // overview, release_date/first_air_date, etc.
+  app.get("/api/content-requests", async (req, res) => {
+    const { username } = req.query;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      const { data, error } = await lifetimeDb
+        .from("content_requests")
+        .select("id, status, admin_notes, comments, content_details, created_at, requester_username")
+        .eq("requester_username", username as string)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) {
+        console.error("[content-requests] error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ requests: data ?? [] });
+    } catch (e: any) {
+      console.error("[content-requests] exception:", e?.message);
+      res.status(500).json({ error: "Failed to fetch content requests" });
+    }
+  });
+
+  // ── TMDB proxy ────────────────────────────────────────────────────────────
+  // Fetches fresh details for a TMDB title without exposing the bearer token
+  // to the client. type must be "movie" or "tv".
+  app.get("/api/tmdb/:type/:id", async (req, res) => {
+    const { type, id } = req.params;
+    if (type !== "movie" && type !== "tv") {
+      return res.status(400).json({ error: "type must be 'movie' or 'tv'" });
+    }
+    if (!id || !/^\d+$/.test(id)) {
+      return res.status(400).json({ error: "valid numeric id required" });
+    }
+    const token = process.env.TMDB_READ_TOKEN;
+    if (!token) {
+      return res.status(500).json({ error: "TMDB_READ_TOKEN not configured" });
+    }
+    try {
+      const r = await fetch(`https://api.themoviedb.org/3/${type}/${id}`, {
+        headers: { Authorization: `Bearer ${token}`, accept: "application/json" },
+      });
+      if (!r.ok) {
+        return res.status(r.status).json({ error: `TMDB ${r.status}` });
+      }
+      const json = await r.json();
+      res.json(json);
+    } catch (e: any) {
+      console.error("[tmdb] exception:", e?.message);
+      res.status(500).json({ error: "TMDB fetch failed" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {

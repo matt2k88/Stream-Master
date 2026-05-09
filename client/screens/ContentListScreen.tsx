@@ -97,6 +97,35 @@ function ModalBtn({
   );
 }
 
+function RequestsBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="inbox" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+        Requests
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -878,6 +907,9 @@ export default function ContentListScreen() {
             {countDisplay}
           </ThemedText>
         </View>
+        {(type === "movies" || type === "series") ? (
+          <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
+        ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
         {(isFavouritesView || isRecentlyView) && !isSearching ? (
           <ClearAllButton onPress={() => setShowClearConfirm(true)} />

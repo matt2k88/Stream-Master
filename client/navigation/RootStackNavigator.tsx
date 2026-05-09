@@ -25,6 +25,7 @@ import TvGuideScreen from "@/screens/TvGuideScreen";
 import CatchUpScreen from "@/screens/CatchUpScreen";
 import OrganiseTypePickerScreen from "@/screens/OrganiseTypePickerScreen";
 import OrganiseCategoriesScreen from "@/screens/OrganiseCategoriesScreen";
+import ContentRequestsScreen from "@/screens/ContentRequestsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -44,6 +45,7 @@ export type RootStackParamList = {
   AccountInfo: undefined;
   OrganiseTypePicker: undefined;
   OrganiseCategories: { type: "live" | "movies" | "series" };
+  ContentRequests: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -90,6 +92,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="AccountInfo" component={AccountInfoScreen} />
             <Stack.Screen name="OrganiseTypePicker" component={OrganiseTypePickerScreen} />
             <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
+            <Stack.Screen name="ContentRequests" component={ContentRequestsScreen} />
           </>
         )}
       </Stack.Navigator>
