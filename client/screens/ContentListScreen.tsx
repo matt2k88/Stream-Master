@@ -42,6 +42,38 @@ const CONTENT_PAD = Spacing.md;
 // Pressable's style render-prop only exposes `pressed` on RN native; using
 // `({ focused, hovered })` would always be undefined and the active style
 // would never apply on TV remotes or desktop hover.
+function ManageBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.manageBtn,
+        active && styles.manageBtnOn,
+        isActive && (active ? styles.manageBtnOnActive : styles.manageBtnActive),
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather
+        name={active ? "check" : "edit-2"}
+        size={13}
+        color={active ? "#fff" : Colors.dark.accent}
+      />
+      <ThemedText style={[styles.manageBtnText, active && styles.manageBtnTextOn]}>
+        {active ? "Done" : "Manage"}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function ClearAllButton({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -235,6 +267,8 @@ function ContentCard({
   cardWidth,
   cardHeight,
   watchEntry,
+  editMode,
+  editAction,
 }: {
   item: ContentItem;
   type: string;
@@ -244,6 +278,8 @@ function ContentCard({
   cardWidth: number;
   cardHeight: number;
   watchEntry?: RecentlyWatched;
+  editMode?: boolean;
+  editAction?: "delete" | "favourite";
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -265,12 +301,16 @@ function ContentCard({
         isActive && !isFavourited && styles.cardActive,
         isFavourited && styles.cardFavourited,
         isActive && isFavourited && styles.cardFavouritedActive,
+        editMode && editAction === "delete" && styles.cardEditDelete,
+        editMode && editAction === "delete" && isActive && styles.cardEditDeleteActive,
+        editMode && editAction === "favourite" && isActive && styles.cardEditFavActive,
       ]}
       onPress={() => {
         if (longFiredRef.current) { longFiredRef.current = false; return; }
         onPress();
       }}
       onLongPress={() => {
+        if (editMode) return;
         longFiredRef.current = true;
         onLongPress();
       }}
@@ -282,7 +322,12 @@ function ContentCard({
       }}
       onPressOut={() => {
         setPressed(false);
-        if (Platform.isTV && !longFiredRef.current && (Date.now() - pressInTimeRef.current) >= 600) {
+        if (
+          !editMode &&
+          Platform.isTV &&
+          !longFiredRef.current &&
+          (Date.now() - pressInTimeRef.current) >= 600
+        ) {
           longFiredRef.current = true;
           onLongPress();
         }
@@ -304,7 +349,21 @@ function ContentCard({
           </View>
         )}
         {isActive ? <View style={styles.cardOverlay} /> : null}
-        <StarBadge visible={isFavourited} />
+        {editMode && editAction === "delete" ? (
+          <View style={styles.deleteBadge} pointerEvents="none">
+            <Feather name="x" size={13} color="#fff" />
+          </View>
+        ) : null}
+        {editMode && editAction === "favourite" ? (
+          <View style={styles.editFavBadge} pointerEvents="none">
+            <Feather
+              name={isFavourited ? "star" : "plus"}
+              size={11}
+              color="#fff"
+            />
+          </View>
+        ) : null}
+        <StarBadge visible={isFavourited && !editMode} />
         {"rating" in item && item.rating ? (
           <View style={styles.ratingBadge}>
             <Feather name="star" size={9} color={Colors.dark.accent} />
@@ -448,9 +507,10 @@ export default function ContentListScreen() {
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
   const { applyOrder } = useCategoryOrder();
-  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory } = useWatchHistory();
+  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
@@ -774,6 +834,59 @@ export default function ContentListScreen() {
     });
   };
 
+  // Edit-mode action: delete from fav/recent lists, or toggle favourite on
+  // normal categories. Single tap on a focused card — fully D-pad-friendly.
+  const handleEditPress = useCallback(
+    (item: ContentItem) => {
+      const streamId = getStreamId(item, type);
+      if (isFavouritesView) {
+        toggleFavourite({
+          streamId,
+          streamType: type as "live" | "movies" | "series",
+          streamName: item.name,
+          streamIcon: getIconUrl(item),
+          categoryId: "category_id" in item ? (item as any).category_id : null,
+        });
+        return;
+      }
+      if (isRecentlyView) {
+        const entry =
+          type === "series"
+            ? getBySeriesId((item as Series).series_id)
+            : getByStreamId(streamId);
+        if (entry) removeWatchEntry(entry.id);
+        return;
+      }
+      // Normal category: Manage = toggle favourite (TV-remote friendly)
+      toggleFavourite({
+        streamId,
+        streamType: type as "live" | "movies" | "series",
+        streamName: item.name,
+        streamIcon: getIconUrl(item),
+        categoryId: "category_id" in item ? (item as any).category_id : null,
+      });
+    },
+    [type, isFavouritesView, isRecentlyView, toggleFavourite, getByStreamId, getBySeriesId, removeWatchEntry],
+  );
+
+  // Auto-exit edit mode whenever the category changes — semantics differ
+  // between Favourites/Recently Watched (delete) and a normal category
+  // (favourite toggle), so the user explicitly opts in per category.
+  useEffect(() => {
+    setEditMode(false);
+  }, [selectedCategoryId, type]);
+
+  // Also exit if the current view becomes invalid for edit mode
+  useEffect(() => {
+    if (!editMode) return;
+    if (isSearching || isRecentlyAddedView || categoryContent.length === 0) {
+      setEditMode(false);
+    }
+  }, [editMode, isSearching, isRecentlyAddedView, categoryContent.length]);
+
+  const editAction: "delete" | "favourite" =
+    isFavouritesView || isRecentlyView ? "delete" : "favourite";
+
   const getItemId = (item: ContentItem) => {
     if ("stream_id" in item) return String((item as LiveStream | VodStream).stream_id);
     if ("series_id" in item) return String((item as Series).series_id);
@@ -914,6 +1027,12 @@ export default function ContentListScreen() {
           <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
+        {!isSearching && !isRecentlyAddedView && categoryContent.length > 0 ? (
+          <ManageBtn
+            active={editMode}
+            onPress={() => setEditMode((v) => !v)}
+          />
+        ) : null}
         {(isFavouritesView || isRecentlyView) && !isSearching ? (
           <ClearAllButton onPress={() => setShowClearConfirm(true)} />
         ) : null}
@@ -1027,12 +1146,14 @@ export default function ContentListScreen() {
                   <ContentCard
                     item={item}
                     type={type}
-                    onPress={() => handleItemPress(item)}
+                    onPress={() => (editMode ? handleEditPress(item) : handleItemPress(item))}
                     onLongPress={() => handleLongPress(item)}
                     isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
                     cardWidth={cardWidth}
                     cardHeight={cardTotalH}
                     watchEntry={watchEntry}
+                    editMode={editMode && !isSearching}
+                    editAction={editAction}
                   />
                 );
               }}
@@ -1102,6 +1223,26 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,59,59,0.18)",
   },
   clearAllText: { fontSize: 12, fontWeight: "700", color: Colors.dark.error },
+  manageBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.35)",
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  manageBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.18)",
+  },
+  manageBtnOn: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
+  },
+  manageBtnOnActive: {
+    opacity: 0.9,
+  },
+  manageBtnText: { fontSize: 12, fontWeight: "700", color: Colors.dark.accent },
+  manageBtnTextOn: { color: "#fff" },
   // Confirm modal
   modalBackdrop: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
@@ -1228,6 +1369,37 @@ const styles = StyleSheet.create({
     borderColor: "#FFD700",
     shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9, shadowRadius: 14, elevation: 10,
+  },
+  cardEditDelete: {
+    borderColor: "rgba(255,59,59,0.55)",
+  },
+  cardEditDeleteActive: {
+    borderColor: Colors.dark.error,
+    shadowColor: Colors.dark.error, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85, shadowRadius: 14, elevation: 10,
+  },
+  cardEditFavActive: {
+    borderColor: "#FFD700",
+    shadowColor: "#FFD700", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85, shadowRadius: 14, elevation: 10,
+  },
+  deleteBadge: {
+    position: "absolute", top: 6, right: 6,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: Colors.dark.error,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.6, shadowRadius: 3, elevation: 6,
+    zIndex: 5,
+  },
+  editFavBadge: {
+    position: "absolute", top: 6, right: 6,
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: Colors.dark.accent,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1, shadowRadius: 6, elevation: 6,
+    zIndex: 5,
   },
   cardThumb: { overflow: "hidden", backgroundColor: Colors.dark.backgroundSecondary },
   cardImage: { width: "100%", height: "100%" },

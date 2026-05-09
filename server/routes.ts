@@ -403,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .eq("stream_id", String(stream_id));
       }
 
-      // Insert fresh entry (no per-profile cap — full lifetime watch log)
+      // Insert fresh entry (movies/series = full lifetime log; live = capped to 20 below)
       const { data, error: insertErr } = await supabase
         .from("recently_watched")
         .insert(entry)
@@ -415,10 +415,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null);
       }
 
+      // Cap live entries at 20 per profile (movies/series remain uncapped).
+      // Older live rows beyond the newest 20 get trimmed on every insert.
+      if (content_type === "live") {
+        try {
+          const { data: liveRows } = await supabase
+            .from("recently_watched")
+            .select("id")
+            .eq("profile_id", profile_id)
+            .eq("content_type", "live")
+            .order("updated_at", { ascending: false });
+          if (liveRows && liveRows.length > 20) {
+            const toDelete = liveRows.slice(20).map((r: any) => r.id);
+            if (toDelete.length > 0) {
+              await supabase.from("recently_watched").delete().in("id", toDelete);
+            }
+          }
+        } catch (capErr: any) {
+          console.error("[recently-watched] live cap trim failed:", capErr?.message);
+        }
+      }
+
       res.json(data ?? null);
     } catch (e: any) {
       console.error("[recently-watched] POST exception:", e?.message);
       res.json(null);
+    }
+  });
+
+  // ── Recently Watched — delete a single entry ─────────────────────────────
+  app.delete("/api/recently-watched/:id", async (req, res) => {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "id required" });
+    try {
+      const { error } = await supabase
+        .from("recently_watched")
+        .delete()
+        .eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete entry" });
     }
   });
 

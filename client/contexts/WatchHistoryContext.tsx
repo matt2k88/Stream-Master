@@ -21,6 +21,7 @@ interface WatchHistoryContextValue {
   getByStreamId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
   getBySeriesId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
   clearHistory: (contentType: "movie" | "series" | "live") => Promise<void>;
+  removeOne: (id: string) => Promise<void>;
 }
 
 const WatchHistoryContext = createContext<WatchHistoryContextValue | undefined>(undefined);
@@ -115,6 +116,21 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     [activeProfile, refetch]
   );
 
+  const removeOne = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      // Optimistic remove
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      try {
+        const url = new URL(`/api/recently-watched/${encodeURIComponent(id)}`, getApiUrl());
+        await fetch(url.toString(), { method: "DELETE" });
+      } catch {
+        refetch();
+      }
+    },
+    [refetch],
+  );
+
   const value = useMemo<WatchHistoryContextValue>(
     () => ({
       entries,
@@ -126,8 +142,9 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       getByStreamId,
       getBySeriesId,
       clearHistory,
+      removeOne,
     }),
-    [entries, byStreamId, bySeriesId, isLoading, refetch, upsertLocal, getByStreamId, getBySeriesId, clearHistory],
+    [entries, byStreamId, bySeriesId, isLoading, refetch, upsertLocal, getByStreamId, getBySeriesId, clearHistory, removeOne],
   );
 
   return (
