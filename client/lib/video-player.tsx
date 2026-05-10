@@ -405,9 +405,31 @@ export function VideoView({
         ? {
             uri: src,
             initOptions: [
-              "--network-caching=1500",
-              "--live-caching=1500",
-              "--file-caching=1500",
+              // Network buffer for HTTP(S) / TS streams. Lowered from
+              // 1500ms to reduce the steady-state RAM footprint on
+              // memory-constrained TV boxes (Firestick Lite ≈ 1GB).
+              // 1000ms is still well above libVLC's 300ms default and
+              // is comfortable for IPTV.
+              "--network-caching=1000",
+              "--live-caching=1000",
+              "--file-caching=1000",
+              // Prefer the NDK MediaCodec API over the older JNI
+              // MediaCodec on Android/Fire OS. The legacy JNI path on
+              // Amazon Fire devices is well-known for leaking decoder
+              // surfaces / output buffers over the course of a long
+              // playback session — exactly the symptom of "fine for
+              // 5-10 minutes, then crash" that doesn't reproduce on
+              // higher-RAM devices. NDK MediaCodec lifecycle is much
+              // tighter and is the recommended path on modern Android.
+              "--avcodec-hw=mediacodec_ndk",
+              // Disable libVLC's internal stats counters. They're
+              // monotonically growing per-stream allocations that nobody
+              // in this app reads — eliminating one slow accumulator on
+              // memory-constrained devices for free.
+              "--no-stats",
+              // Keep the on-screen-display engine off — we render our
+              // own controls in React, so VLC's OSD only burns RAM.
+              "--no-osd",
             ],
           }
         : null,
