@@ -441,6 +441,7 @@ export default function HomeScreen() {
   const isLandscape = width > height;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const themeAccent = useAccent();
+  const { refetch: refetchTheme } = useAppTheme();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -522,7 +523,9 @@ export default function HomeScreen() {
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    await refresh();
+    // Re-check the active theme in parallel with content refresh so an
+    // admin-flipped theme picks up on the next press without an app restart.
+    await Promise.all([refresh(), refetchTheme()]);
     setRefreshing(false);
   };
 

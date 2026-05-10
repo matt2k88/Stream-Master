@@ -11,6 +11,8 @@ interface ThemeContextValue {
   themeKey: ThemeKey;
   loaded: boolean;
   getIcon: (key: ThemeIconKey) => any | undefined;
+  /** Re-fetch the active theme from the server and apply it if changed. */
+  refetch: () => Promise<void>;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -18,6 +20,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   themeKey: "default",
   loaded: true,
   getIcon: () => undefined,
+  refetch: async () => {},
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -69,6 +72,28 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeKey, setThemeKey] = useState<ThemeKey>("default");
   const [loaded, setLoaded] = useState(false);
 
+  const fetchTheme = React.useCallback(async () => {
+    try {
+      const url = new URL("/api/app-theme", getApiUrl()).toString();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = await res.json();
+      const next = getTheme(data?.theme_key);
+      try {
+        await AsyncStorage.setItem(CACHE_KEY, next.key);
+      } catch {
+        // ignore cache failures
+      }
+      setThemeKey((prev) => {
+        if (prev === next.key) return prev;
+        applyPalette(next);
+        return next.key;
+      });
+    } catch (err) {
+      if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -84,33 +109,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
 
       // 2) Fetch the latest from the server.
-      try {
-        const url = new URL("/api/app-theme", getApiUrl()).toString();
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const data = await res.json();
-        const next = getTheme(data?.theme_key);
-        if (cancelled) return;
-        try {
-          await AsyncStorage.setItem(CACHE_KEY, next.key);
-        } catch {
-          // ignore cache failures
-        }
-        setThemeKey((prev) => {
-          if (prev === next.key) return prev;
-          applyPalette(next);
-          return next.key;
-        });
-      } catch (err) {
-        if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
-      } finally {
-        if (!cancelled) setLoaded(true);
-      }
+      if (!cancelled) await fetchTheme();
+      if (!cancelled) setLoaded(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchTheme]);
 
   const value = useMemo<ThemeContextValue>(() => {
     const theme = THEMES[themeKey];
@@ -119,8 +124,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       themeKey,
       loaded,
       getIcon: (k: ThemeIconKey) => theme.icons[k],
+      refetch: fetchTheme,
     };
-  }, [themeKey, loaded]);
+  }, [themeKey, loaded, fetchTheme]);
 
   return (
     <ThemeContext.Provider value={value}>
