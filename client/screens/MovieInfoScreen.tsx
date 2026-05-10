@@ -104,6 +104,17 @@ function PlayBtn({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
     >
+      {/* Visible hover/focus tint overlay — makes the focus state obvious
+          on TV instead of relying on a subtle outer shadow glow. */}
+      {isActive ? (
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            primary ? styles.playBtnPrimaryOverlay : styles.playBtnSecondaryOverlay,
+          ]}
+          pointerEvents="none"
+        />
+      ) : null}
       <Feather
         name={icon}
         size={18}
@@ -655,17 +666,23 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
+    overflow: "hidden",
   },
   playBtnPrimary: {
     backgroundColor: Colors.dark.accent,
     borderColor: Colors.dark.accent,
   },
   playBtnPrimaryActive: {
+    borderColor: "#fff",
+    borderWidth: 2,
     shadowColor: "#FF6600",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.95,
     shadowRadius: 14,
     elevation: 12,
+  },
+  playBtnPrimaryOverlay: {
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   playBtnSecondary: {
     backgroundColor: Colors.dark.backgroundDefault,
@@ -673,7 +690,11 @@ const styles = StyleSheet.create({
   },
   playBtnSecondaryActive: {
     borderColor: Colors.dark.accent,
+    borderWidth: 2,
     backgroundColor: "rgba(255,102,0,0.12)",
+  },
+  playBtnSecondaryOverlay: {
+    backgroundColor: "rgba(255,102,0,0.18)",
   },
   playBtnText: {
     fontSize: 13,

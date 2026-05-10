@@ -331,7 +331,14 @@ export function VideoView({
         paused={player._paused}
         muted={player._muted}
         repeat={player._loop}
-        autoplay={!player._paused}
+        // CRITICAL: `autoplay` is a mount-time hint. Toggling it at runtime
+        // (e.g. flipping false→true when the user resumes from pause) makes
+        // the native VLC module *restart playback from position 0* on some
+        // builds — which in turn breaks all subsequent seek calls because
+        // every render re-asserts the autoplay flag. Lock it to a constant
+        // so only the imperative `paused` / `resume()` path controls
+        // play state at runtime.
+        autoplay={true}
         resizeMode={resizeMode}
         audioTrack={
           player._audioTrack?._index != null
