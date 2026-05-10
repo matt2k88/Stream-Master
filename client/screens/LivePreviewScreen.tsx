@@ -245,6 +245,22 @@ export default function LivePreviewScreen() {
   const currentStreamUrlRef = useRef(streamUrl);
   const hasMountedRef = useRef(false);
 
+  // HLS → TS fallback: getLiveStreamUrl now returns .m3u8 by default for
+  // better audio-codec compatibility (panel-side remux often converts AC3
+  // to AAC). On first player error we silently retry the .ts variant once
+  // before the normal retry/backoff kicks in. Reset on every channel switch.
+  const triedTsFallbackRef = useRef(false);
+  // Mirror selectedId in a ref so the status-listener closure always sees
+  // the freshest channel id. Without this, a rapid channel switch could
+  // cause the fallback path to compute a TS URL for the previous channel
+  // (because setState is async, but currentStreamUrlRef is updated
+  // synchronously inside handleChannelPress).
+  const selectedIdRef = useRef(streamId);
+  // Stale-error guard: a player error from the previous channel can land in
+  // JS *after* the user switched to a new channel (native event queued
+  // before the JS-side switch ran). Ignore errors within 2s of a switch.
+  const lastChannelSwitchAtRef = useRef(0);
+
   // ── Auto-reconnect state ──────────────────────────────────────────────────
   // Declared up-front (above useFocusEffect) so the effect's dep array can
   // reference the helper callbacks without hitting a TDZ error at render time.
@@ -424,6 +440,9 @@ export default function LivePreviewScreen() {
   const handleChannelPress = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
     currentStreamUrlRef.current = newUrl;
+    selectedIdRef.current = s.stream_id; // sync ref BEFORE setState commits
+    triedTsFallbackRef.current = false; // arm HLS→TS fallback for new channel
+    lastChannelSwitchAtRef.current = Date.now(); // arm stale-error guard
     savedChannelRef.current = null; // re-log new channel on next readyToPlay
     setSelectedId(s.stream_id);
     setSelectedName(s.name);
@@ -466,6 +485,40 @@ export default function LivePreviewScreen() {
           streamUrl: currentStreamUrlRef.current,
         }).then((entry) => { if (entry) upsertLocal(entry); });
       } else if (e.status === "error") {
+        // Stale-error guard: ignore errors arriving within 2s of a channel
+        // switch — they almost certainly belong to the previous channel.
+        if (Date.now() - lastChannelSwitchAtRef.current < 2000) {
+          return;
+        }
+        // First-error fallback: HLS (.m3u8) → raw TS. Free attempt before
+        // the normal retry/backoff loop — covers panels that don't expose
+        // HLS for every channel. Use selectedIdRef (not closure selectedId)
+        // so a rapid channel switch can't make us compute a TS URL for the
+        // previous channel.
+        const sid = selectedIdRef.current;
+        if (
+          !triedTsFallbackRef.current &&
+          currentStreamUrlRef.current.endsWith(".m3u8") &&
+          sid
+        ) {
+          triedTsFallbackRef.current = true;
+          const tsUrl = xtreamApi.getLiveStreamUrlTs(sid);
+          currentStreamUrlRef.current = tsUrl;
+          let swapped = false;
+          try {
+            player.replace(tsUrl);
+            player.play();
+            swapped = true;
+          } catch {}
+          if (swapped) {
+            // Re-arm load watchdog so the TS attempt can never hang silently.
+            // If TS doesn't reach readyToPlay or error in time, the normal
+            // retry/backoff loop will kick in via armLoadingTimeout.
+            armLoadingTimeout();
+            return;
+          }
+          // replace() threw — fall through to normal retry below.
+        }
         // Player error — kick off auto-retry loop instead of dead-ending.
         clearLoadingTimeout();
         scheduleAutoRetry();
@@ -474,7 +527,7 @@ export default function LivePreviewScreen() {
       }
     });
     return () => sub.remove();
-  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleAutoRetry, resetRetryState, clearLoadingTimeout]);
+  }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleAutoRetry, resetRetryState, clearLoadingTimeout, armLoadingTimeout]);
 
   // ── Stall detector: while we believe we're playing, poll currentTime.
   // If it hasn't advanced for ~15s the stream has frozen and we need to reload.

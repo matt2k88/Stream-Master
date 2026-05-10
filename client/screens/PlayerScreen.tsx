@@ -449,6 +449,24 @@ export default function PlayerScreen() {
   const lastLiveTimeRef = useRef<number>(-1);
   const lastLiveTimeAtRef = useRef<number>(Date.now());
 
+  // ── HLS → TS fallback ────────────────────────────────────────────────────
+  // We request live channels as .m3u8 by default (panel-side remux often
+  // converts AC3/EAC3 audio to AAC, which expo-video plays everywhere).
+  // If the .m3u8 endpoint errors (panel doesn't expose HLS for that channel,
+  // or returns 4xx), we silently swap to the .ts variant once before the
+  // normal retry/backoff loop kicks in. currentLiveUrlRef holds whichever
+  // variant is currently live so reload/retry uses the right one.
+  const currentLiveUrlRef = useRef(streamUrl);
+  const triedTsFallbackRef = useRef(false);
+  // Stale-error guard: a player error from the previous stream can land in
+  // JS *after* navigation.replace switched us to a new stream (the native
+  // event was queued before the JS-side switch ran). If we acted on it we'd
+  // burn the TS fallback on the WRONG stream. We ignore errors that arrive
+  // within a short window of a *navigation-driven* stream change. Stays at 0
+  // on first mount so a real cold-start error is processed immediately.
+  const lastStreamChangeAtRef = useRef(0);
+  const playerHasMountedRef = useRef(false);
+
   // Progress / completion / next-episode state
   const lastSavedRef = useRef(0);
   const completionPostedRef = useRef(false);
@@ -471,6 +489,17 @@ export default function PlayerScreen() {
     setCountdown(10);
     setCurrentTime(0);
     setDuration(0);
+    // Reset HLS→TS fallback bookkeeping for the new stream.
+    currentLiveUrlRef.current = streamUrl;
+    triedTsFallbackRef.current = false;
+    // Only arm the stale-error guard when the stream actually CHANGED via
+    // navigation.replace — never on the very first mount, otherwise we'd
+    // suppress a legitimate immediate error (e.g. HLS 404) for 2s.
+    if (playerHasMountedRef.current) {
+      lastStreamChangeAtRef.current = Date.now();
+    } else {
+      playerHasMountedRef.current = true;
+    }
   }, [streamId, streamUrl]);
 
   // ── Seek bar TV remote — refs declared early so they're stable ───────────
@@ -664,10 +693,11 @@ export default function PlayerScreen() {
 
   const reloadLiveStream = useCallback(() => {
     try {
-      player.replace(streamUrl);
+      // Use whichever variant (.m3u8 / .ts) we settled on after fallback.
+      player.replace(currentLiveUrlRef.current);
       player.play();
     } catch {}
-  }, [player, streamUrl]);
+  }, [player]);
 
   const loadWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearLoadWatchdog = useCallback(() => {
@@ -751,6 +781,46 @@ export default function PlayerScreen() {
         }
       } else if (e.status === "error") {
         if (isLive) {
+          // Stale-error guard: ignore errors that arrived within 2s of a
+          // stream change — they almost certainly belong to the previous
+          // stream, queued natively before our JS-side switch.
+          if (Date.now() - lastStreamChangeAtRef.current < 2000) {
+            return;
+          }
+          // First-error fallback: HLS (.m3u8) → raw TS. Some panels don't
+          // expose HLS for every channel; on first error try the .ts variant
+          // before kicking off the retry/backoff loop. This is "free" — it
+          // doesn't count against the retry budget.
+          if (
+            !triedTsFallbackRef.current &&
+            currentLiveUrlRef.current.endsWith(".m3u8") &&
+            streamId
+          ) {
+            triedTsFallbackRef.current = true;
+            const sid = parseInt(streamId, 10);
+            if (!Number.isNaN(sid)) {
+              const tsUrl = xtreamApi.getLiveStreamUrlTs(sid);
+              currentLiveUrlRef.current = tsUrl;
+              let swapped = false;
+              try {
+                player.replace(tsUrl);
+                player.play();
+                swapped = true;
+              } catch {}
+              if (swapped) {
+                // Re-arm a watchdog so the TS attempt can never hang silently.
+                // If TS doesn't reach readyToPlay or error within 12s we fall
+                // into the regular retry/backoff loop.
+                clearLoadWatchdog();
+                loadWatchdogRef.current = setTimeout(() => {
+                  loadWatchdogRef.current = null;
+                  scheduleLiveRetry();
+                }, 12000);
+                return;
+              }
+              // replace() threw — fall through to normal retry below.
+            }
+          }
           // Never dead-end on a live stream — auto-reconnect.
           clearLoadWatchdog();
           scheduleLiveRetry();
