@@ -11,7 +11,12 @@
 //        ExoPlayer renderer factory uses EXTENSION_RENDERER_MODE_PREFER
 //        (extension decoders are tried before the platform/MediaCodec ones).
 //
-//     2. Adds the prebuilt FFmpeg extension for Media3 published by
+//     2. Adds JitPack to the project's centralized
+//        `dependencyResolutionManagement` block in `android/settings.gradle`
+//        (Expo SDK 54 uses `FAIL_ON_PROJECT_REPOS`, so per-module repo
+//        declarations get ignored).
+//
+//     3. Adds the prebuilt FFmpeg extension for Media3 published by
 //        anilbeesetti (https://github.com/anilbeesetti/nextlib) to the
 //        app's build.gradle dependencies. That artifact ships software
 //        decoders for AC3, EAC3, DTS, MPEG-2 audio, MP1/2/3, Opus,
@@ -23,19 +28,22 @@
 //   The patch runs every prebuild, so a fresh `npm install` followed by
 //   `expo prebuild` will always re-apply it. Idempotent — safe to re-run.
 //
-// Bumping versions:
-//   `nextlib-media3ext` releases track Media3 versions. If
-//   react-native-video upgrades Media3 in a future release, bump the
-//   FFMPEG_EXT_VERSION constant below to the matching nextlib release.
-//   The version installed at the time of writing is Media3 1.8.0, paired
-//   with nextlib-media3ext 0.9.1.
+// JitPack coordinate format:
+//   `com.github.<user>.<repo>:<module>:<tag>` — JitPack builds on demand
+//   from any tag pushed to the GitHub repo. If a build of a specific tag
+//   has never been requested before, the first request will trigger the
+//   build (~1-2 min) and subsequent requests are cached.
+//
+// Bumping the version:
+//   See https://github.com/anilbeesetti/nextlib/releases for available
+//   tags. The release tag must exist on GitHub or JitPack returns 404.
 
-const { withDangerousMod, withAppBuildGradle } = require("@expo/config-plugins");
+const { withDangerousMod, withAppBuildGradle, withSettingsGradle } = require("@expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
-const FFMPEG_EXT_VERSION = "0.9.1";
-const FFMPEG_EXT_COORD = `io.github.anilbeesetti.nextlib:nextlib-media3ext:${FFMPEG_EXT_VERSION}`;
+const FFMPEG_EXT_VERSION = "0.8.4";
+const FFMPEG_EXT_COORD = `com.github.anilbeesetti.nextlib:nextlib-media3ext:${FFMPEG_EXT_VERSION}`;
 
 const RNV_VIEW_REL_PATH = path.join(
   "react-native-video",
@@ -50,6 +58,8 @@ const RNV_VIEW_REL_PATH = path.join(
 );
 
 const PATCH_MARKER = "// [ffmpeg-extension-plugin] mode=PREFER";
+const JITPACK_MARKER = "// [ffmpeg-extension-plugin] jitpack";
+const DEP_MARKER = "// [ffmpeg-extension-plugin] dep";
 
 function patchRendererMode(projectRoot) {
   const filePath = path.join(projectRoot, "node_modules", RNV_VIEW_REL_PATH);
@@ -96,9 +106,42 @@ const withFfmpegExtension = (config) => {
     },
   ]);
 
-  // 2) Add the FFmpeg extension dependency to the app's build.gradle.
+  // 2) Inject JitPack into the project's centralized repository list.
+  //    Expo SDK 54's settings.gradle uses dependencyResolutionManagement
+  //    with FAIL_ON_PROJECT_REPOS, so repo declarations inside
+  //    app/build.gradle would be ignored.
+  config = withSettingsGradle(config, (cfg) => {
+    if (cfg.modResults.contents.includes(JITPACK_MARKER)) {
+      return cfg;
+    }
+    const contents = cfg.modResults.contents;
+
+    // Strategy: find the `dependencyResolutionManagement { ... repositories {`
+    // block and append a JitPack maven entry inside it. Falls back to a
+    // top-level allprojects { repositories { ... } } append if not found.
+    const drmReposRegex =
+      /(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)/;
+    if (drmReposRegex.test(contents)) {
+      cfg.modResults.contents = contents.replace(
+        drmReposRegex,
+        `$1\n        maven { url 'https://jitpack.io' } ${JITPACK_MARKER}`,
+      );
+      return cfg;
+    }
+
+    // Fallback: append a top-level allprojects block at the end of the file.
+    cfg.modResults.contents =
+      contents +
+      `\n\n// ${JITPACK_MARKER}\nallprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }\n    }\n}\n`;
+    console.warn(
+      "[withFfmpegExtension] dependencyResolutionManagement block not found in settings.gradle — appended fallback allprojects block. Verify the build still finds JitPack.",
+    );
+    return cfg;
+  });
+
+  // 3) Add the FFmpeg extension dependency to the app's build.gradle.
   config = withAppBuildGradle(config, (cfg) => {
-    if (cfg.modResults.contents.includes("nextlib-media3ext")) {
+    if (cfg.modResults.contents.includes(DEP_MARKER)) {
       return cfg; // already added
     }
     const dependenciesBlockRegex = /dependencies\s*\{/;
@@ -110,7 +153,7 @@ const withFfmpegExtension = (config) => {
     }
     cfg.modResults.contents = cfg.modResults.contents.replace(
       dependenciesBlockRegex,
-      `dependencies {\n    // Added by withFfmpegExtension — enables AC3/EAC3/DTS/MPEG-2/Opus/FLAC etc.\n    implementation "${FFMPEG_EXT_COORD}"\n`,
+      `dependencies {\n    ${DEP_MARKER} — enables AC3/EAC3/DTS/MPEG-2/Opus/FLAC etc.\n    implementation "${FFMPEG_EXT_COORD}"\n`,
     );
     return cfg;
   });
