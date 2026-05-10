@@ -75,12 +75,23 @@ class VideoPlayerHandle {
   _currentTime = 0; // seconds
   _duration = 0; // seconds
   _isPlaying = false;
+  // True once onPlaying has fired at least once for the current source.
+  // Used to suppress the global loading overlay on mid-stream re-buffers
+  // (VLC fires onBuffering on every seek, but the consumer's
+  // "Loading stream..." UI shouldn't pop up just for a seek round-trip —
+  // playback resumes within a few hundred ms).
+  _hasEverPlayed = false;
 
   // Pending seek (in fraction 0..1) that VideoView consumes once on
   // each render and clears. We bump a token so identical seeks (e.g.
   // "back to 0") still get propagated to the native side.
   _seekFraction: number | null = null;
   _seekToken = 0;
+  // Pending seek expressed in seconds. Set when the consumer assigns
+  // `currentTime` BEFORE we know the stream's duration (e.g. resuming
+  // a movie at the moment readyToPlay fires — `onLoad` may not have
+  // arrived yet). Applied automatically once `_duration` becomes known.
+  _pendingSeekSeconds: number | null = null;
 
   private listeners = new Map<EventName, Set<Listener>>();
   // Bound by VideoView — forces a re-render so declarative props on
@@ -98,13 +109,18 @@ class VideoPlayerHandle {
   }
   set currentTime(v: number) {
     this._currentTime = v;
-    // VLC's seek prop expects a fraction of total duration. Without a
-    // known duration there's nothing meaningful to seek to.
     if (this._duration > 0) {
+      // Convert seconds → fraction (0..1) — VLC's seek API is positional.
       const frac = Math.max(0, Math.min(1, v / this._duration));
       this._seekFraction = frac;
       this._seekToken = (this._seekToken + 1) | 0;
+      this._pendingSeekSeconds = null;
       this._render?.();
+    } else {
+      // Duration unknown yet (resume-on-load case). Stash the seconds
+      // and let the onLoad/onProgress handler fire the actual seek
+      // once duration becomes known.
+      this._pendingSeekSeconds = v;
     }
   }
   get duration() {
@@ -147,10 +163,25 @@ class VideoPlayerHandle {
 
   play() {
     this._paused = false;
+    // The declarative `paused` prop on react-native-vlc-media-player is
+    // unreliable for resume — the native side doesn't always exit the
+    // paused state when it goes false. The library's imperative
+    // resume(true) call is the reliable path. Fire it AND re-render so
+    // both code paths get exercised.
+    try {
+      this._vlcRef.current?.resume?.(true);
+    } catch {}
+    // Optimistic UI update — don't make the play/pause icon wait for
+    // VLC's onPlaying callback to round-trip from native.
+    this._setIsPlaying(true);
     this._render?.();
   }
   pause() {
     this._paused = true;
+    try {
+      this._vlcRef.current?.resume?.(false);
+    } catch {}
+    this._setIsPlaying(false);
     this._render?.();
   }
   replace(url: string | null) {
@@ -160,7 +191,9 @@ class VideoPlayerHandle {
     this._subtitleTrack = null;
     this._audioTrack = null;
     this._isPlaying = false;
+    this._hasEverPlayed = false;
     this._seekFraction = null;
+    this._pendingSeekSeconds = null;
     this._render?.();
     this._fire("statusChange", { status: "loading", error: null });
   }
@@ -314,6 +347,17 @@ export function VideoView({
           if (typeof d?.duration === "number") {
             player._duration = msToSec(d.duration);
           }
+          // If a resume-seek was queued before we knew the duration,
+          // apply it now that we do. Re-using the public setter keeps
+          // the fraction/token bookkeeping consistent.
+          if (
+            player._pendingSeekSeconds != null &&
+            player._duration > 0
+          ) {
+            const target = player._pendingSeekSeconds;
+            player._pendingSeekSeconds = null;
+            player.currentTime = target;
+          }
           player._fire("statusChange", { status: "readyToPlay", error: null });
 
           const audioList = d?.audioTracks;
@@ -345,7 +389,15 @@ export function VideoView({
         }}
         onProgress={(d: any) => {
           if (typeof d?.duration === "number" && d.duration > 0) {
-            player._duration = msToSec(d.duration);
+            const newDur = msToSec(d.duration);
+            const wasUnknown = player._duration <= 0;
+            player._duration = newDur;
+            // Late-arriving duration → flush a queued resume seek.
+            if (wasUnknown && player._pendingSeekSeconds != null) {
+              const target = player._pendingSeekSeconds;
+              player._pendingSeekSeconds = null;
+              player.currentTime = target;
+            }
           }
           if (typeof d?.currentTime === "number") {
             const t = msToSec(d.currentTime);
@@ -354,6 +406,7 @@ export function VideoView({
           }
         }}
         onPlaying={() => {
+          player._hasEverPlayed = true;
           player._setIsPlaying(true);
           player._fire("statusChange", { status: "readyToPlay", error: null });
         }}
@@ -364,7 +417,15 @@ export function VideoView({
           player._setIsPlaying(false);
         }}
         onBuffering={() => {
-          player._fire("statusChange", { status: "loading", error: null });
+          // Only surface the "loading" status while the source is
+          // booting up for the first time. Once playback has started,
+          // VLC fires onBuffering on every seek round-trip — translating
+          // those into statusChange:loading would pop the global
+          // "Loading stream…" overlay every time the user scrubs the
+          // timeline, even though playback continues fine underneath.
+          if (!player._hasEverPlayed) {
+            player._fire("statusChange", { status: "loading", error: null });
+          }
         }}
         onEnd={() => {
           player._setIsPlaying(false);
