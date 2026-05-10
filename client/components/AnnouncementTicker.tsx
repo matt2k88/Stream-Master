@@ -11,6 +11,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { Colors, Spacing } from "@/constants/theme";
+import { useAccent } from "@/contexts/ThemeContext";
 import { getApiUrl } from "@/lib/query-client";
 
 const SPEED = 90; // pixels per second
@@ -22,6 +23,7 @@ export default function AnnouncementTicker() {
   const textWidthRef = useRef(0);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const mountedRef = useRef(true);
+  const accent = useAccent();
 
   useEffect(() => {
     return () => { mountedRef.current = false; };
@@ -99,11 +101,19 @@ export default function AnnouncementTicker() {
   if (!ticker) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { borderColor: accent.withAlpha(accent.accent, 0.25) }]}>
       {/* Static label */}
-      <View style={styles.label}>
-        <Feather name="radio" size={11} color={Colors.dark.accent} />
-        <Text style={styles.labelText}>LIVE</Text>
+      <View
+        style={[
+          styles.label,
+          {
+            backgroundColor: accent.withAlpha(accent.accent, 0.12),
+            borderRightColor: accent.withAlpha(accent.accent, 0.25),
+          },
+        ]}
+      >
+        <Feather name="radio" size={11} color={accent.accent} />
+        <Text style={[styles.labelText, { color: accent.accent }]}>LIVE</Text>
       </View>
       <View style={styles.dividerV} />
 
@@ -134,7 +144,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     borderTopWidth: 1,
     borderBottomWidth: 1,
-    borderColor: "rgba(255,102,0,0.25)",
     overflow: "hidden",
   },
   label: {
@@ -143,12 +152,9 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: Spacing.md,
     height: "100%",
-    backgroundColor: "rgba(255,102,0,0.12)",
     borderRightWidth: 1,
-    borderRightColor: "rgba(255,102,0,0.25)",
   },
   labelText: {
-    color: Colors.dark.accent,
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1.5,
@@ -171,8 +177,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "nowrap",
     alignItems: "center",
-    // Huge width so single-line Text can lay out at its true natural width
-    // (otherwise RN clips numberOfLines=1 text to the parent scroll area).
     width: 100000,
   },
   tickerText: {

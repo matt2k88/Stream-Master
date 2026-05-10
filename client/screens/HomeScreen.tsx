@@ -17,7 +17,7 @@ import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
-import { useAppTheme } from "@/contexts/ThemeContext";
+import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
 import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
@@ -59,7 +59,8 @@ function NavButton({
   // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
   const scaledTextSize = scaleFont(textSize);
   const showCount = typeof count === "number";
-  const iconColor = isActive ? "#FFB266" : Colors.dark.accent;
+  const accent = useAccent();
+  const iconColor = isActive ? accent.hover : accent.accent;
   const themedIcon = iconKey ? getIcon(iconKey) : undefined;
 
   return (
@@ -67,7 +68,9 @@ function NavButton({
       style={[
         styles.navButton,
         compact && styles.navButtonCompact,
+        { borderColor: accent.withAlpha(accent.accent, compact ? 0.25 : 0.35) },
         isActive && styles.navButtonActive,
+        isActive && { borderColor: accent.accent, shadowColor: accent.accent },
         style,
       ]}
       onPress={loading ? undefined : onPress}
@@ -78,18 +81,14 @@ function NavButton({
     >
       {/* Always-on subtle gradient sheen — stronger when focused */}
       <LinearGradient
-        colors={
-          isActive
-            ? ["rgba(255,102,0,0.28)", "rgba(255,102,0,0.10)", "rgba(255,102,0,0.04)"]
-            : ["rgba(255,102,0,0.10)", "rgba(255,102,0,0.04)", "rgba(0,0,0,0)"]
-        }
+        colors={isActive ? accent.gradStrong : accent.gradSoft}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
       />
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         {loading ? (
-          <ActivityIndicator size={Math.max(18, iconSize - 4)} color={Colors.dark.accent} />
+          <ActivityIndicator size={Math.max(18, iconSize - 4)} color={accent.accent} />
         ) : themedIcon ? (
           <Image
             source={themedIcon}
@@ -113,8 +112,24 @@ function NavButton({
         {loading ? "Loading…" : title}
       </ThemedText>
       {showCount ? (
-        <View style={[styles.countChip, isActive && styles.countChipActive]}>
-          <ThemedText style={[styles.countChipNumber, isActive && styles.countChipNumberActive]}>
+        <View
+          style={[
+            styles.countChip,
+            {
+              borderColor: accent.withAlpha(accent.accent, 0.55),
+              backgroundColor: accent.withAlpha(accent.accent, 0.08),
+            },
+            isActive && styles.countChipActive,
+            isActive && { borderColor: accent.hover, backgroundColor: accent.accent },
+          ]}
+        >
+          <ThemedText
+            style={[
+              styles.countChipNumber,
+              { color: accent.accent },
+              isActive && styles.countChipNumberActive,
+            ]}
+          >
             {formatCount(count!)}
           </ThemedText>
           {countLabel ? (
@@ -124,7 +139,7 @@ function NavButton({
           ) : null}
         </View>
       ) : null}
-      {isActive ? <View style={styles.activeIndicator} /> : null}
+      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
@@ -133,10 +148,16 @@ function SearchButton({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
+  const accent = useAccent();
 
   return (
     <Pressable
-      style={[styles.searchButton, isActive && styles.searchButtonActive]}
+      style={[
+        styles.searchButton,
+        { borderColor: accent.accent },
+        isActive && styles.searchButtonActive,
+        isActive && { shadowColor: accent.accent },
+      ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -144,24 +165,34 @@ function SearchButton({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
     >
       <LinearGradient
-        colors={isActive
-          ? ["rgba(255,102,0,0.22)", "rgba(255,102,0,0.10)"]
-          : ["rgba(255,102,0,0.09)", "rgba(255,102,0,0.03)"]}
+        colors={isActive ? accent.pairStrong : accent.pairSoft}
         style={StyleSheet.absoluteFill}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       />
-      <View style={[styles.searchBtnIconWrap, isActive && styles.searchBtnIconWrapActive]}>
-        <Feather name="search" size={18} color={Colors.dark.accent} />
+      <View
+        style={[
+          styles.searchBtnIconWrap,
+          { borderColor: accent.accent, backgroundColor: accent.accentDim },
+          isActive && styles.searchBtnIconWrapActive,
+        ]}
+      >
+        <Feather name="search" size={18} color={accent.accent} />
       </View>
       <View style={styles.searchBtnTextCol}>
-        <ThemedText style={[styles.searchBtnText, isActive && styles.searchBtnTextActive]}>
+        <ThemedText
+          style={[
+            styles.searchBtnText,
+            { color: accent.accent },
+            isActive && styles.searchBtnTextActive,
+          ]}
+        >
           Search All Content
         </ThemedText>
         <ThemedText style={styles.searchBtnHint}>channels, movies, series</ThemedText>
       </View>
-      <Feather name="chevron-right" size={16} color={Colors.dark.accent + "88"} />
-      {isActive ? <View style={styles.activeIndicator} /> : null}
+      <Feather name="chevron-right" size={16} color={accent.withAlpha(accent.accent, 0.55)} />
+      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
@@ -198,9 +229,14 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
+  const accent = useAccent();
   return (
     <Pressable
-      style={[styles.headerBtn, isActive && styles.headerBtnActive]}
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -208,7 +244,7 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
       onBlur={() => setFocused(false)}
       disabled={refreshing}
     >
-      <Feather name="refresh-cw" size={16} color={refreshing || isActive ? Colors.dark.accent : Colors.dark.textSecondary} />
+      <Feather name="refresh-cw" size={16} color={refreshing || isActive ? accent.accent : Colors.dark.textSecondary} />
     </Pressable>
   );
 }
@@ -217,16 +253,21 @@ function AccountButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
+  const accent = useAccent();
   return (
     <Pressable
-      style={[styles.headerBtn, isActive && styles.headerBtnActive]}
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <Feather name="user" size={18} color={isActive ? Colors.dark.accent : Colors.dark.accent} />
+      <Feather name="user" size={18} color={accent.accent} />
     </Pressable>
   );
 }
@@ -363,19 +404,27 @@ function MessagesButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const hasUnread = unreadCount > 0;
+  const isActive = pressed || focused;
+  const accent = useAccent();
 
   return (
     <Pressable
-      style={[styles.headerBtn, (pressed || focused) && styles.headerBtnActive, hasUnread && styles.headerBtnAlert]}
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        hasUnread && styles.headerBtnAlert,
+        hasUnread && { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <Feather name="bell" size={18} color={hasUnread ? Colors.dark.accent : Colors.dark.textSecondary} />
+      <Feather name="bell" size={18} color={hasUnread ? accent.accent : Colors.dark.textSecondary} />
       {hasUnread ? (
-        <View style={styles.unreadBadge}>
+        <View style={[styles.unreadBadge, { backgroundColor: accent.accent }]}>
           <ThemedText style={styles.unreadBadgeText}>
             {unreadCount > 9 ? "9+" : String(unreadCount)}
           </ThemedText>
@@ -391,6 +440,7 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
+  const themeAccent = useAccent();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -489,7 +539,7 @@ export default function HomeScreen() {
           {isLandscape ? (
             <View>
               <ThemedText style={styles.appName}>Ultra Cast</ThemedText>
-              <ThemedText style={styles.appVersion}>v3</ThemedText>
+              <ThemedText style={[styles.appVersion, { color: themeAccent.accent }]}>v3</ThemedText>
             </View>
           ) : null}
         </View>

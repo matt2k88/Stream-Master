@@ -6,6 +6,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useAccent } from "@/contexts/ThemeContext";
 
 export interface RecentlyWatched {
   id: string;
@@ -54,10 +55,14 @@ function RecentlyWatchedRow({
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
+  const accent = useAccent();
 
   return (
     <Pressable
-      style={[styles.row, isActive && styles.rowActive]}
+      style={[
+        styles.row,
+        isActive && { backgroundColor: accent.withAlpha(accent.accent, 0.08) },
+      ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
@@ -66,7 +71,7 @@ function RecentlyWatchedRow({
     >
       {isActive ? (
         <LinearGradient
-          colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.04)"]}
+          colors={[accent.withAlpha(accent.accent, 0.12), accent.withAlpha(accent.accent, 0.04)]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -100,6 +105,7 @@ function RecentlyWatchedRow({
             <View
               style={[
                 styles.progressFill,
+                { backgroundColor: accent.accent },
                 { width: `${Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))}%` },
               ]}
             />
@@ -108,13 +114,13 @@ function RecentlyWatchedRow({
       </View>
 
       <View style={styles.infoCol}>
-        <View style={styles.typePill}>
+        <View style={[styles.typePill, { backgroundColor: accent.accentDim }]}>
           <Feather
             name={TYPE_ICON[item.content_type] ?? "play"}
             size={9}
-            color={Colors.dark.accent}
+            color={accent.accent}
           />
-          <ThemedText style={styles.typeText}>
+          <ThemedText style={[styles.typeText, { color: accent.accent }]}>
             {TYPE_LABEL[item.content_type] ?? item.content_type}
           </ThemedText>
         </View>
@@ -123,21 +129,27 @@ function RecentlyWatchedRow({
         </ThemedText>
       </View>
 
-      <View style={[styles.playIcon, isActive && styles.playIconActive]}>
+      <View
+        style={[
+          styles.playIcon,
+          isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+        ]}
+      >
         <Feather
           name="play"
           size={12}
-          color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+          color={isActive ? accent.accent : Colors.dark.textSecondary}
         />
       </View>
 
-      {isActive ? <View style={styles.activeBar} /> : null}
+      {isActive ? <View style={[styles.activeBar, { backgroundColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
 
 export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
+  const accent = useAccent();
 
   // Trigger refetch when external `refreshKey` changes (HomeScreen focus)
   React.useEffect(() => {
@@ -161,8 +173,8 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
   return (
     <View style={[styles.card, style]} onLayout={onLayout}>
       <View style={styles.labelRow}>
-        <Feather name="clock" size={11} color={Colors.dark.accent} />
-        <ThemedText style={styles.sectionLabel}>Previously Watched</ThemedText>
+        <Feather name="clock" size={11} color={accent.accent} />
+        <ThemedText style={[styles.sectionLabel, { color: accent.accent }]}>Previously Watched</ThemedText>
       </View>
 
       {isLoading ? (
@@ -272,7 +284,6 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: Colors.dark.accent,
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
@@ -321,9 +332,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     minWidth: 0,
   },
-  rowActive: {
-    backgroundColor: "rgba(255,102,0,0.06)",
-  },
 
   thumbWrap: {
     width: 52,
@@ -364,7 +372,6 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: "100%",
-    backgroundColor: Colors.dark.accent,
   },
 
   infoCol: {
@@ -376,7 +383,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 3,
     alignSelf: "flex-start",
-    backgroundColor: Colors.dark.accentDim,
     borderRadius: 3,
     paddingHorizontal: 4,
     paddingVertical: 1,
@@ -384,7 +390,6 @@ const styles = StyleSheet.create({
   typeText: {
     fontSize: 8,
     fontWeight: "700",
-    color: Colors.dark.accent,
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
@@ -406,10 +411,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexShrink: 0,
   },
-  playIconActive: {
-    backgroundColor: Colors.dark.accentDim,
-    borderColor: Colors.dark.accent,
-  },
 
   activeBar: {
     position: "absolute",
@@ -417,7 +418,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1.5,
-    backgroundColor: Colors.dark.accent,
     borderRadius: 1,
   },
 });

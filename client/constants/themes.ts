@@ -13,6 +13,8 @@ export type ThemeIconKey = "liveTv" | "movies" | "series" | "catchUp" | "tvGuide
 export interface ThemePalette {
   accent: string;
   accentLight: string;
+  /** Hover / focus / active highlight colour. Pops on top of accent. */
+  hover: string;
   accentDim: string;
   accentGlow: string;
   accentGlowSoft: string;
@@ -40,6 +42,7 @@ export interface ThemeDef {
 const DEFAULT_PALETTE: ThemePalette = {
   accent: "#FF6600",
   accentLight: "#FF8C1A",
+  hover: "#FFB266",
   accentDim: "rgba(255, 102, 0, 0.15)",
   accentGlow: "rgba(255, 102, 0, 0.6)",
   accentGlowSoft: "rgba(255, 102, 0, 0.25)",
@@ -104,6 +107,7 @@ export const THEMES: Record<ThemeKey, ThemeDef> = {
     palette: {
       accent: "#FF7518",
       accentLight: "#FFA552",
+      hover: "#FFB266",
       accentDim: "rgba(255, 117, 24, 0.16)",
       accentGlow: "rgba(255, 117, 24, 0.65)",
       accentGlowSoft: "rgba(255, 117, 24, 0.28)",
@@ -120,6 +124,7 @@ export const THEMES: Record<ThemeKey, ThemeDef> = {
     palette: {
       accent: "#C04CFF",
       accentLight: "#FF5BD3",
+      hover: "#FFFFFF",
       accentDim: "rgba(192, 76, 255, 0.18)",
       accentGlow: "rgba(255, 91, 211, 0.65)",
       accentGlowSoft: "rgba(192, 76, 255, 0.28)",
@@ -136,10 +141,11 @@ export const THEMES: Record<ThemeKey, ThemeDef> = {
     palette: {
       accent: "#E63946",
       accentLight: "#F77F88",
+      hover: "#FFFFFF",
       accentDim: "rgba(230, 57, 70, 0.16)",
       accentGlow: "rgba(230, 57, 70, 0.65)",
       accentGlowSoft: "rgba(230, 57, 70, 0.28)",
-      borderAccent: "#FFFFFF",
+      borderAccent: "#E63946",
       link: "#F77F88",
       tabIconSelected: "#E63946",
       glowShadow: "#E63946",
@@ -152,6 +158,7 @@ export const THEMES: Record<ThemeKey, ThemeDef> = {
     palette: {
       accent: "#FF3D8A",
       accentLight: "#FF8FB8",
+      hover: "#FFFFFF",
       accentDim: "rgba(255, 61, 138, 0.16)",
       accentGlow: "rgba(255, 61, 138, 0.65)",
       accentGlowSoft: "rgba(255, 61, 138, 0.28)",
@@ -168,6 +175,7 @@ export const THEMES: Record<ThemeKey, ThemeDef> = {
     palette: {
       accent: "#FFD700",
       accentLight: "#FFE96B",
+      hover: "#FFFFFF",
       accentDim: "rgba(255, 215, 0, 0.16)",
       accentGlow: "rgba(255, 215, 0, 0.65)",
       accentGlowSoft: "rgba(255, 215, 0, 0.28)",

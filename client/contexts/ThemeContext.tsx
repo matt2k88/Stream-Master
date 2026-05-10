@@ -20,6 +20,20 @@ const ThemeContext = createContext<ThemeContextValue>({
   getIcon: () => undefined,
 });
 
+// ── Hex / RGBA helpers ────────────────────────────────────────────────────
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  if (h.length === 3) {
+    return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16)];
+  }
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+export function withAlpha(hex: string, alpha: number): string {
+  if (!hex.startsWith("#")) return hex; // already rgba/rgb
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 // Mutates the shared Colors / Shadows objects so the inline
 // `Colors.dark.accent` references that are read at render time pick up
 // the new palette. Components re-render via the `key` we pass to
@@ -28,18 +42,18 @@ const ThemeContext = createContext<ThemeContextValue>({
 //
 // LIMITATION: Module-scope `StyleSheet.create({ ... Colors.dark.accent })`
 // captures the colour string at import time, so those frozen styles will
-// keep the original orange even after mutation. This is acceptable here
-// because (a) the dashboard button images change fully via context, and
-// (b) the user explicitly asked to leave the broader Ultra Cast accent
-// usage intact "where it makes sense" (e.g. VPN badge, profile selector).
-// Inline `style={{ color: Colors.dark.accent }}` and runtime references
-// like `iconColor = ... Colors.dark.accent` DO update on remount.
+// keep the original orange even after mutation. The dashboard surfaces
+// (HomeScreen, AnnouncementTicker, RecentlyWatchedCard, etc.) work around
+// this by reading colours at render time via the `useAccent()` hook below
+// and applying them as inline style overrides that win over the static
+// stylesheet entries.
 function applyPalette(theme: ThemeDef) {
   const { palette } = theme;
   const targets = [Colors.dark, Colors.light] as const;
   for (const t of targets) {
     t.accent = palette.accent;
     t.accentLight = palette.accentLight;
+    (t as any).accentHover = palette.hover;
     t.accentDim = palette.accentDim;
     t.accentGlow = palette.accentGlow;
     t.accentGlowSoft = palette.accentGlowSoft;
@@ -58,8 +72,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // 1) Apply cached theme immediately for a snappy launch — avoids the
-      //    short window where children render with default while we fetch.
+      // 1) Apply cached theme immediately for a snappy launch.
       try {
         const cached = await AsyncStorage.getItem(CACHE_KEY);
         if (!cancelled && cached && isThemeKey(cached) && cached !== "default") {
@@ -70,8 +83,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         // ignore cache failures
       }
 
-      // 2) Fetch the latest from the server. Only remount if it differs
-      //    from what we already applied.
+      // 2) Fetch the latest from the server.
       try {
         const url = new URL("/api/app-theme", getApiUrl()).toString();
         const res = await fetch(url);
@@ -84,7 +96,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore cache failures
         }
-        // Only mutate + flip key if this is actually a change
         setThemeKey((prev) => {
           if (prev === next.key) return prev;
           applyPalette(next);
@@ -111,9 +122,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [themeKey, loaded]);
 
-  // `key` on the wrapper forces a remount of the child tree when the theme
-  // flips, so all `Colors.dark.accent` lookups resolve against the freshly
-  // applied palette.
   return (
     <ThemeContext.Provider value={value}>
       <React.Fragment key={themeKey}>{children}</React.Fragment>
@@ -123,4 +131,52 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useAppTheme() {
   return useContext(ThemeContext);
+}
+
+// ── useAccent: render-time palette + helpers ───────────────────────────────
+// Components that need to apply the theme's accent palette as inline style
+// overrides should call this hook and spread the values into their JSX.
+// All values are derived fresh from the current theme so they always reflect
+// the active palette regardless of any cached `StyleSheet.create` content.
+export interface AccentPalette {
+  accent: string;
+  accentLight: string;
+  accentDim: string;
+  accentGlow: string;
+  accentGlowSoft: string;
+  borderAccent: string;
+  hover: string;
+  /** Apply alpha to a hex color. If `color` omitted, uses the active accent. */
+  withAlpha: (color: string, alpha?: number) => string;
+  /** 3-stop gradient for the focused/active sheen on cards */
+  gradStrong: [string, string, string];
+  /** 3-stop gradient for the resting sheen on cards */
+  gradSoft: [string, string, string];
+  /** 2-stop gradient for narrower bars (search button, ticker) */
+  pairStrong: [string, string];
+  /** 2-stop softer gradient */
+  pairSoft: [string, string];
+}
+
+export function useAccent(): AccentPalette {
+  const { theme } = useAppTheme();
+  return useMemo(() => {
+    const p = theme.palette;
+    const wa = (a: number) => withAlpha(p.accent, a);
+    const waAny = (color: string, alpha: number = 1) => withAlpha(color, alpha);
+    return {
+      accent: p.accent,
+      accentLight: p.accentLight,
+      accentDim: p.accentDim,
+      accentGlow: p.accentGlow,
+      accentGlowSoft: p.accentGlowSoft,
+      borderAccent: p.borderAccent,
+      hover: p.hover,
+      withAlpha: waAny,
+      gradStrong: [wa(0.28), wa(0.10), wa(0.04)],
+      gradSoft: [wa(0.10), wa(0.04), "rgba(0,0,0,0)"],
+      pairStrong: [wa(0.22), wa(0.10)],
+      pairSoft: [wa(0.09), wa(0.03)],
+    };
+  }, [theme]);
 }
