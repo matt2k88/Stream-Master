@@ -47,20 +47,22 @@ interface CategoryOrderContextType {
 const CategoryOrderContext = createContext<CategoryOrderContextType | undefined>(undefined);
 
 function mergeOrder(orderIds: string[], cats: Category[]): Category[] {
+  // Categories the user has already organised (any id in orderIds) keep their
+  // saved position. Brand-new categories that the API just started returning
+  // are surfaced at the TOP of the list so the user notices them and can
+  // decide where to place them (move down / hide / leave at top).
+  const orderSet = new Set(orderIds);
   const map = new Map(cats.map((c) => [c.category_id, c]));
-  const out: Category[] = [];
-  const seen = new Set<string>();
+  const fresh: Category[] = [];
+  for (const c of cats) {
+    if (!orderSet.has(c.category_id)) fresh.push(c);
+  }
+  const known: Category[] = [];
   for (const id of orderIds) {
     const c = map.get(id);
-    if (c) {
-      out.push(c);
-      seen.add(id);
-    }
+    if (c) known.push(c);
   }
-  for (const c of cats) {
-    if (!seen.has(c.category_id)) out.push(c);
-  }
-  return out;
+  return [...fresh, ...known];
 }
 
 export function CategoryOrderProvider({ children }: { children: ReactNode }) {

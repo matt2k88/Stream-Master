@@ -12,7 +12,6 @@ import {
   Modal,
 } from "react-native";
 import Constants from "expo-constants";
-import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -262,6 +261,49 @@ export default function AccountInfoScreen() {
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
   const user = userInfo?.user_info;
 
+  // Reusable utility block (app version + check updates + what's new + text
+  // size). Rendered in the LEFT column in portrait, but moved to the RIGHT
+  // column (alongside the Subscription card) in landscape so the Sign Out
+  // button is visible without scrolling on TV / desktop.
+  const utilityBlock = (
+    <View style={[styles.versionBlock, isLandscape && styles.utilityBlockLandscape]}>
+      <ThemedText style={styles.versionText}>v{APP_VERSION}</ThemedText>
+      <HoverBtn
+        style={styles.updateBtn}
+        activeStyle={styles.updateBtnActive}
+        onPress={handleCheckForUpdates}
+        disabled={updateChecking}
+      >
+        {updateChecking ? (
+          <ActivityIndicator size="small" color={Colors.dark.accent} />
+        ) : (
+          <Feather name="download-cloud" size={13} color={Colors.dark.accent} />
+        )}
+        <ThemedText style={styles.updateBtnText}>
+          {updateChecking ? "Checking..." : "Check for Updates"}
+        </ThemedText>
+      </HoverBtn>
+      <HoverBtn
+        style={styles.notesBtn}
+        activeStyle={styles.notesBtnActive}
+        onPress={handleOpenNotes}
+      >
+        <Feather name="file-text" size={13} color={Colors.dark.accent} />
+        <ThemedText style={styles.updateBtnText}>What&apos;s New</ThemedText>
+      </HoverBtn>
+      <HoverBtn
+        style={styles.notesBtn}
+        activeStyle={styles.notesBtnActive}
+        onPress={() => { void toggleTextSize(); }}
+      >
+        <Feather name="type" size={13} color={Colors.dark.accent} />
+        <ThemedText style={styles.updateBtnText}>
+          Text Size: {textSize === "large" ? "Large" : "Normal"}
+        </ThemedText>
+      </HoverBtn>
+    </View>
+  );
+
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
@@ -356,42 +398,13 @@ export default function AccountInfoScreen() {
               </View>
             ) : null}
 
-            {/* App version + update check */}
-            <View style={styles.versionBlock}>
-              <ThemedText style={styles.versionText}>v{APP_VERSION}</ThemedText>
-              <HoverBtn
-                style={styles.updateBtn}
-                activeStyle={styles.updateBtnActive}
-                onPress={handleCheckForUpdates}
-                disabled={updateChecking}
-              >
-                {updateChecking ? (
-                  <ActivityIndicator size="small" color={Colors.dark.accent} />
-                ) : (
-                  <Feather name="download-cloud" size={13} color={Colors.dark.accent} />
-                )}
-                <ThemedText style={styles.updateBtnText}>
-                  {updateChecking ? "Checking..." : "Check for Updates"}
-                </ThemedText>
-              </HoverBtn>
-              <HoverBtn
-                style={styles.notesBtn}
-                activeStyle={styles.notesBtnActive}
-                onPress={handleOpenNotes}
-              >
-                <Feather name="file-text" size={13} color={Colors.dark.accent} />
-                <ThemedText style={styles.updateBtnText}>What&apos;s New</ThemedText>
-              </HoverBtn>
-              <HoverBtn
-                style={styles.notesBtn}
-                activeStyle={styles.notesBtnActive}
-                onPress={() => { void toggleTextSize(); }}
-              >
-                <Feather name="type" size={13} color={Colors.dark.accent} />
-                <ThemedText style={styles.updateBtnText}>
-                  Text Size: {textSize === "large" ? "Large" : "Normal"}
-                </ThemedText>
-              </HoverBtn>
+            {/* App version + update check.
+                In landscape this whole block is moved out of the left column
+                and rendered to the right of the Subscription card so the
+                Sign Out button is visible without scrolling. The Exit App
+                button below stays in the left column either way. */}
+            {!isLandscape ? utilityBlock : null}
+            <View style={styles.exitAppWrap}>
               <HoverBtn
                 style={styles.exitAppBtn}
                 activeStyle={styles.exitAppBtnActive}
@@ -404,11 +417,15 @@ export default function AccountInfoScreen() {
                       {
                         text: "Yes, Exit",
                         style: "destructive",
-                        onPress: async () => {
-                          if (Platform.OS !== "web") {
+                        onPress: () => {
+                          // Android: actually quits the activity. iOS: cannot
+                          // exit programmatically per Apple HIG, so just
+                          // dismiss the alert. We intentionally do NOT call
+                          // reloadAppAsync — that was restarting the app in
+                          // the background instead of closing it.
+                          if (Platform.OS === "android") {
                             try { BackHandler.exitApp(); } catch {}
                           }
-                          try { await reloadAppAsync(); } catch {}
                         },
                       },
                     ],
@@ -424,20 +441,35 @@ export default function AccountInfoScreen() {
           {/* Info section */}
           <View style={styles.infoSection}>
             <View style={styles.infoGrid}>
-              {/* Subscription card */}
-              <View style={styles.infoCard}>
-                <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
-                {isLifetime ? (
-                  <View style={styles.lifetimeBadge}>
-                    <Feather name="star" size={14} color={Colors.dark.accent} />
-                    <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
+              {/* Subscription card — in landscape, paired side-by-side with
+                  the utility block (version + update buttons + text size) so
+                  the page fits on screen without scrolling. */}
+              {(() => {
+                const subscriptionCard = (
+                  <View style={[styles.infoCard, isLandscape && styles.infoCardHalf]}>
+                    <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
+                    {isLifetime ? (
+                      <View style={styles.lifetimeBadge}>
+                        <Feather name="star" size={14} color={Colors.dark.accent} />
+                        <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
+                      </View>
+                    ) : (
+                      <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
+                    )}
+                    <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
+                    <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
                   </View>
-                ) : (
-                  <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
-                )}
-                <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
-                <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
-              </View>
+                );
+                if (!isLandscape) return subscriptionCard;
+                return (
+                  <View style={styles.subRowLandscape}>
+                    {subscriptionCard}
+                    <View style={[styles.infoCard, styles.infoCardHalf, styles.utilityCardLandscape]}>
+                      {utilityBlock}
+                    </View>
+                  </View>
+                );
+              })()}
 
               {/* Organise Categories button */}
               <HoverBtn
@@ -461,7 +493,11 @@ export default function AccountInfoScreen() {
                 )}
               </HoverBtn>
 
-              {/* Developer card */}
+              {/* Developer card — in landscape, the four entries lay out as
+                  a 2×2 grid (Name | Contact on top, Website | Renewal on
+                  bottom) so the card stays short and Sign Out remains in
+                  view without scrolling. Portrait keeps the original
+                  stacked layout. */}
               <View style={styles.infoCard}>
                 <ThemedText style={styles.cardLabel}>Developer</ThemedText>
                 {devLoading ? (
@@ -469,20 +505,28 @@ export default function AccountInfoScreen() {
                     <ActivityIndicator size="small" color={Colors.dark.accent} />
                   </View>
                 ) : devDetails && (devDetails.developer_name || devDetails.developer_contact) ? (
-                  <>
+                  <View style={isLandscape ? styles.devGrid : undefined}>
                     {devDetails.developer_name ? (
-                      <InfoRow label="Name" value={devDetails.developer_name} icon="code" />
+                      <View style={isLandscape ? styles.devGridItem : undefined}>
+                        <InfoRow label="Name" value={devDetails.developer_name} icon="code" />
+                      </View>
                     ) : null}
                     {devDetails.developer_contact ? (
-                      <InfoRow label="Contact" value={devDetails.developer_contact} icon="message-circle" />
+                      <View style={isLandscape ? styles.devGridItem : undefined}>
+                        <InfoRow label="Contact" value={devDetails.developer_contact} icon="message-circle" />
+                      </View>
                     ) : null}
                     {devDetails.website_link ? (
-                      <CopyRow label="Website" value={devDetails.website_link} icon="globe" />
+                      <View style={isLandscape ? styles.devGridItem : undefined}>
+                        <CopyRow label="Website" value={devDetails.website_link} icon="globe" />
+                      </View>
                     ) : null}
                     {devDetails.renewal_link ? (
-                      <CopyRow label="Renewal" value={devDetails.renewal_link} icon="refresh-cw" />
+                      <View style={isLandscape ? styles.devGridItem : undefined}>
+                        <CopyRow label="Renewal" value={devDetails.renewal_link} icon="refresh-cw" />
+                      </View>
                     ) : null}
-                  </>
+                  </View>
                 ) : (
                   <View style={styles.devEmpty}>
                     <Feather name="code" size={20} color={Colors.dark.border} />
@@ -713,6 +757,20 @@ const styles = StyleSheet.create({
   profileActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   profileActionText: { color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
   versionBlock: { alignItems: "center", gap: Spacing.xs, marginTop: Spacing.xs },
+  utilityBlockLandscape: { marginTop: 0, alignSelf: "stretch" },
+  utilityCardLandscape: { padding: Spacing.sm, justifyContent: "center" },
+  subRowLandscape: {
+    flexDirection: "row", gap: Spacing.md, alignItems: "stretch",
+  },
+  infoCardHalf: { flex: 1 },
+  exitAppWrap: { marginTop: Spacing.xs },
+  devGrid: {
+    flexDirection: "row", flexWrap: "wrap",
+    marginHorizontal: -Spacing.xs,
+  },
+  devGridItem: {
+    width: "50%", paddingHorizontal: Spacing.xs,
+  },
   versionText: {
     color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "600",
     letterSpacing: 0.5,

@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
-import { reloadAppAsync } from "expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -507,12 +506,17 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleConfirmExit = useCallback(async () => {
+  const handleConfirmExit = useCallback(() => {
     setExitConfirmVisible(false);
-    if (Platform.OS !== "web") {
+    // Android: actually quits the activity. iOS: per Apple HIG apps cannot
+    // programmatically exit, so we just dismiss the dialog (the user can swipe
+    // up to background it). NOTE: we intentionally do NOT call reloadAppAsync
+    // here — that was causing the app to immediately restart in the background
+    // on iOS (intro video would play and the app would land back at the
+    // profile picker on next open).
+    if (Platform.OS === "android") {
       try { BackHandler.exitApp(); } catch {}
     }
-    try { await reloadAppAsync(); } catch {}
   }, []);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
