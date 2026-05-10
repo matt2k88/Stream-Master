@@ -22,13 +22,20 @@ import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
+import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
+import { hasSeenRenewalNotice, markRenewalNoticeSeen } from "@/lib/renewal-notice";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-function ExpiryBanner({ padH, onPress }: { padH: number; onPress: () => void }) {
-  const status = useExpiryStatus();
+function ExpiryBanner({
+  status,
+  onPress,
+}: {
+  status: ReturnType<typeof useExpiryStatus>;
+  onPress: () => void;
+}) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -39,28 +46,31 @@ function ExpiryBanner({ padH, onPress }: { padH: number; onPress: () => void }) 
   if (!status.isExpiringSoon && !status.isExpired) return null;
 
   return (
-    <Pressable
-      onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      style={[
-        styles.expiryBanner,
-        { marginHorizontal: padH },
-        isActive && styles.expiryBannerActive,
-      ]}
-    >
-      <Feather name="alert-circle" size={13} color={Colors.dark.error} />
-      <ThemedText style={styles.expiryBannerText} numberOfLines={1}>
-        {formatExpiryNotice(status)}
-      </ThemedText>
-      <ThemedText style={styles.expiryBannerHint} numberOfLines={1}>
-        Tap for details
-      </ThemedText>
-    </Pressable>
+    <View style={styles.expiryBannerWrap}>
+      <Pressable
+        onPress={onPress}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        style={[styles.expiryBanner, isActive && styles.expiryBannerActive]}
+      >
+        <Feather name="alert-circle" size={13} color={Colors.dark.error} />
+        <ThemedText style={styles.expiryBannerText} numberOfLines={1}>
+          {formatExpiryNotice(status)}
+        </ThemedText>
+        <View style={[styles.expiryBannerHintWrap, isActive && styles.expiryBannerHintWrapActive]}>
+          <ThemedText
+            style={[styles.expiryBannerHint, isActive && styles.expiryBannerHintActive]}
+            numberOfLines={1}
+          >
+            Tap for details
+          </ThemedText>
+        </View>
+      </Pressable>
+    </View>
   );
 }
 
@@ -523,6 +533,54 @@ export default function HomeScreen() {
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
   const [exitConfirmVisible, setExitConfirmVisible] = useState(false);
 
+  // ── Renewal notice (auto-popup once per expiry cycle) ──────────────────
+  const { userInfo } = useAuth();
+  const expiryStatus = useExpiryStatus();
+  const renewalUsername = userInfo?.user_info?.username ?? "";
+  const renewalExpDate = userInfo?.user_info?.exp_date ?? null;
+  const [renewalModalVisible, setRenewalModalVisible] = useState(false);
+  const renewalAutoCheckedRef = useRef(false);
+
+  useEffect(() => {
+    // Only run the auto-popup check once per mount, after the lifetime
+    // lookup has resolved AND the user is genuinely in the warning window.
+    if (renewalAutoCheckedRef.current) return;
+    if (expiryStatus.loading) return;
+    if (expiryStatus.isLifetime) return;
+    if (!expiryStatus.isExpiringSoon && !expiryStatus.isExpired) return;
+    if (!renewalUsername || !renewalExpDate) return;
+
+    renewalAutoCheckedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      const seen = await hasSeenRenewalNotice(renewalUsername, renewalExpDate);
+      if (!cancelled && !seen) setRenewalModalVisible(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    expiryStatus.loading,
+    expiryStatus.isLifetime,
+    expiryStatus.isExpiringSoon,
+    expiryStatus.isExpired,
+    renewalUsername,
+    renewalExpDate,
+  ]);
+
+  const handleRenewalDismiss = useCallback(() => {
+    setRenewalModalVisible(false);
+    // Persist dismissal per (user, expDate) so it doesn't auto-reappear
+    // until the subscription is renewed (which changes exp_date and
+    // therefore the storage key).
+    void markRenewalNoticeSeen(renewalUsername, renewalExpDate);
+  }, [renewalUsername, renewalExpDate]);
+
+  const handleRenewalReopen = useCallback(() => {
+    // Manual reopen via the banner — does NOT clear the "seen" flag.
+    setRenewalModalVisible(true);
+  }, []);
+
   const { refetch: refetchHistory } = useWatchHistory();
   useFocusEffect(
     useCallback(() => {
@@ -608,7 +666,7 @@ export default function HomeScreen() {
       {/* Subtle one-line banner that only appears when the user's subscription
           is within EXPIRY_WARNING_DAYS (7) of expiring or has expired. Lifetime
           accounts never see this. Tapping opens Account Info. */}
-      <ExpiryBanner padH={padH} onPress={() => navigation.navigate("AccountInfo")} />
+      <ExpiryBanner status={expiryStatus} onPress={handleRenewalReopen} />
 
       {/* ── Announcement Ticker ─────────────────────────────────────────────── */}
       <AnnouncementTicker />
@@ -844,6 +902,11 @@ export default function HomeScreen() {
         visible={exitConfirmVisible}
         onCancel={() => setExitConfirmVisible(false)}
         onConfirm={handleConfirmExit}
+      />
+      <RenewalNoticeModal
+        visible={renewalModalVisible}
+        status={expiryStatus}
+        onClose={handleRenewalDismiss}
       />
     </ThemedView>
   );
@@ -1098,15 +1161,19 @@ const styles = StyleSheet.create({
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
+  expiryBannerWrap: {
+    width: "100%",
+    alignItems: "center",
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
   expiryBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    alignSelf: "flex-start",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    marginTop: 4,
-    marginBottom: 2,
+    gap: Spacing.sm,
+    alignSelf: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
     borderColor: Colors.dark.error + "66",
@@ -1115,6 +1182,11 @@ const styles = StyleSheet.create({
   expiryBannerActive: {
     borderColor: Colors.dark.error,
     backgroundColor: Colors.dark.error + "26",
+    shadowColor: Colors.dark.error,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 6,
   },
   expiryBannerText: {
     color: Colors.dark.error,
@@ -1122,11 +1194,27 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.2,
   },
+  expiryBannerHintWrap: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: "transparent",
+    marginLeft: Spacing.xs,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  expiryBannerHintWrapActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.18)",
+  },
   expiryBannerHint: {
     color: Colors.dark.textSecondary,
     fontSize: 11,
-    fontWeight: "500",
-    marginLeft: 4,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+  },
+  expiryBannerHintActive: {
+    color: Colors.dark.accent,
   },
 
   // ── Landscape body ───────────────────────────────────────────────────────
