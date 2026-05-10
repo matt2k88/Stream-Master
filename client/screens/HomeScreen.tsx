@@ -695,8 +695,8 @@ export default function HomeScreen() {
             onPress={() => goToContent("live", "Live TV")}
             loading={navigatingTo === "live"}
             style={styles.portraitTopFull}
-            iconSize={42}
-            textSize={18}
+            iconSize={32}
+            textSize={16}
             hideCount
           />
           {/* Portrait mid row: Movies + Series */}
@@ -711,8 +711,8 @@ export default function HomeScreen() {
               onPress={() => goToContent("movies", "Movies")}
               loading={navigatingTo === "movies"}
               style={styles.portraitSubBtnMain}
-              iconSize={36}
-              textSize={16}
+              iconSize={28}
+              textSize={14}
               hideCount
             />
             <NavButton
@@ -725,8 +725,8 @@ export default function HomeScreen() {
               onPress={() => goToContent("series", "Series")}
               loading={navigatingTo === "series"}
               style={styles.portraitSubBtnMain}
-              iconSize={36}
-              textSize={16}
+              iconSize={28}
+              textSize={14}
               hideCount
             />
           </View>
@@ -1102,12 +1102,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Portrait body ────────────────────────────────────────────────────────
-  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.md, paddingTop: Spacing.md },
-  portraitTopFull: { minHeight: 200, width: "100%" },
-  portraitSubRow: { height: 64, flexDirection: "row", gap: Spacing.sm },
+  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.sm, paddingTop: Spacing.sm },
+  portraitTopFull: { height: 130, width: "100%", padding: Spacing.md },
+  portraitSubRow: { height: 56, flexDirection: "row", gap: Spacing.sm },
   portraitSubBtn: { flex: 1 },
   portraitSubRowMain: { flexDirection: "row", gap: Spacing.sm },
-  portraitSubBtnMain: { flex: 1, minHeight: 180 },
+  portraitSubBtnMain: { flex: 1, height: 110, padding: Spacing.md },
   portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
 
   // ── Nav buttons (base) ──────────────────────────────────────────────────
