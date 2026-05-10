@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { StyleSheet } from "react-native";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { StyleSheet, AppState, AppStateStatus } from "react-native";
+import { consumeReplayIntroFlag } from "@/lib/intro-flag";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -35,6 +36,33 @@ export default function App() {
 
   const handleIntroDone = useCallback(() => {
     setIntroComplete(true);
+  }, []);
+
+  // Cold-start check: if the user pressed "Exit App" last session, force
+  // the intro to play this launch even if the JS state somehow survived
+  // (e.g. Android kept the process warm).
+  useEffect(() => {
+    (async () => {
+      const replay = await consumeReplayIntroFlag();
+      if (replay) setIntroComplete(false);
+    })();
+  }, []);
+
+  // Warm-resume check: when the OS brings the app back to the foreground
+  // (e.g. after the user pressed "Exit App" on iOS where we cannot truly
+  // terminate, or Android decided not to kill the process), re-check the
+  // flag and replay the intro from the start.
+  const appState = useRef<AppStateStatus>(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (next) => {
+      const prev = appState.current;
+      appState.current = next;
+      if (prev !== "active" && next === "active") {
+        const replay = await consumeReplayIntroFlag();
+        if (replay) setIntroComplete(false);
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   return (

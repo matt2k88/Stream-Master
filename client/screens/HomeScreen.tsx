@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { markReplayIntroOnResume } from "@/lib/intro-flag";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -506,14 +507,17 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const handleConfirmExit = useCallback(() => {
+  const handleConfirmExit = useCallback(async () => {
     setExitConfirmVisible(false);
+    // Persist a flag so that on next launch / next foreground the intro
+    // replays — guarantees the user sees the intro again next time, even
+    // when the OS decides to keep the JS process warm and skip a real
+    // cold start.
+    try { await markReplayIntroOnResume(); } catch {}
     // Android: actually quits the activity. iOS: per Apple HIG apps cannot
-    // programmatically exit, so we just dismiss the dialog (the user can swipe
-    // up to background it). NOTE: we intentionally do NOT call reloadAppAsync
-    // here — that was causing the app to immediately restart in the background
-    // on iOS (intro video would play and the app would land back at the
-    // profile picker on next open).
+    // programmatically exit, so we just dismiss the dialog (the user can
+    // swipe up to background it). On next foreground the AppState listener
+    // in App.tsx detects the flag above and replays the intro.
     if (Platform.OS === "android") {
       try { BackHandler.exitApp(); } catch {}
     }

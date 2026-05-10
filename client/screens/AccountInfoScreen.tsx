@@ -17,6 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import { markReplayIntroOnResume } from "@/lib/intro-flag";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -417,12 +418,15 @@ export default function AccountInfoScreen() {
                       {
                         text: "Yes, Exit",
                         style: "destructive",
-                        onPress: () => {
-                          // Android: actually quits the activity. iOS: cannot
-                          // exit programmatically per Apple HIG, so just
-                          // dismiss the alert. We intentionally do NOT call
-                          // reloadAppAsync — that was restarting the app in
-                          // the background instead of closing it.
+                        onPress: async () => {
+                          // Persist a flag so the intro replays on next
+                          // launch / foreground, regardless of whether the
+                          // OS actually killed the process.
+                          try { await markReplayIntroOnResume(); } catch {}
+                          // Android: actually quits the activity. iOS:
+                          // cannot exit programmatically per Apple HIG, so
+                          // just dismiss the alert. The AppState listener in
+                          // App.tsx will replay the intro on next foreground.
                           if (Platform.OS === "android") {
                             try { BackHandler.exitApp(); } catch {}
                           }
