@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   Platform,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -289,6 +290,17 @@ const ContentCard = React.memo(function ContentCard({
   const pressInTimeRef = useRef(0);
   const { scaleFont } = useUISettings();
 
+  // FlashList recycles cell views — when a cell is reused to show a different
+  // item (during fast scroll), local visual state like `focused`/`pressed`
+  // would otherwise leak across items, leaving stale orange borders on the
+  // wrong card. Reset on item change. Native focus events will repaint
+  // immediately if the TV remote actually has focus on this position.
+  useEffect(() => {
+    setFocused(false);
+    setPressed(false);
+    longFiredRef.current = false;
+  }, [item]);
+
   const imageUrl = getIconUrl(item);
   const iconName = type === "live" ? "tv" : type === "movies" ? "film" : "grid";
   const imgH = cardHeight - 52;
@@ -529,7 +541,7 @@ export default function ContentListScreen() {
     return () => clearTimeout(t);
   }, [selectedCategoryId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
-  const flatListRef = useRef<FlatList<ContentItem>>(null);
+  const flatListRef = useRef<FlashList<ContentItem>>(null);
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -914,18 +926,9 @@ export default function ContentListScreen() {
     [editMode, handleEditPress, handleItemPress],
   );
 
-  // Row height for FlatList — lets it skip per-row measurement and locate
-  // any row instantly. Crucial for TV focus auto-scroll: when the focused
-  // card moves off-screen the list jumps to the right offset on the same
-  // frame instead of measuring rows progressively.
+  // Row height — feeds FlashList's `estimatedItemSize` so it can pre-allocate
+  // recyclable cell pools and locate any row by index in O(1).
   const rowHeight = cardTotalH + gap;
-  const getItemLayout = useCallback(
-    (_data: ArrayLike<ContentItem> | null | undefined, index: number) => {
-      const row = Math.floor(index / Math.max(1, numColumns));
-      return { length: rowHeight, offset: row * rowHeight + Spacing.xs, index };
-    },
-    [rowHeight, numColumns],
-  );
 
   const renderContentItem = useCallback(
     ({ item }: { item: ContentItem }) => {
@@ -1190,38 +1193,32 @@ export default function ContentListScreen() {
               </ThemedText>
             </View>
           ) : (
-            <FlatList
+            <FlashList
               ref={flatListRef}
               data={displayContent}
               keyExtractor={getItemId}
               numColumns={numColumns}
+              // Force a fresh recycler when type or column count changes so
+              // we don't recycle a movie cell into a series cell shape.
               key={`content-${type}-${numColumns}`}
               contentContainerStyle={{
                 paddingHorizontal: CONTENT_PAD,
                 paddingTop: Spacing.xs,
                 paddingBottom: padB,
-                gap,
               }}
-              columnWrapperStyle={numColumns > 1 ? { gap } : undefined}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
-              initialNumToRender={type === "live" ? 16 : 12}
-              maxToRenderPerBatch={type === "live" ? 16 : 12}
-              updateCellsBatchingPeriod={32}
-              // Wider render window + clipped-subviews disabled means the
-              // next row is already mounted (and focusable) when the user
-              // presses D-pad down at the bottom of the visible window —
-              // focus moves IMMEDIATELY on the same press, instead of the
-              // list scrolling first and only moving focus on the next
-              // press. Disabling removeClippedSubviews on Android also
-              // stops the "black gap" flicker during fast scrolling — the
-              // native side was unmounting visible rows too aggressively
-              // and the next batch hadn't mounted yet, leaving black
-              // rectangles where cards should be.
-              windowSize={21}
-              removeClippedSubviews={false}
-              getItemLayout={getItemLayout}
+              // FlashList v2 recycles cell views (RecyclerView-style) and
+              // auto-measures item size — memory and mount cost stay constant
+              // whether the list has 30 items or 30,000. That's the whole
+              // reason we switched away from FlatList for huge IPTV catalogues.
+              //
+              // drawDistance keeps a generous overscan rendered so the next
+              // row down is already mounted + focusable when the user presses
+              // D-pad down at the bottom of the visible window. Replaces
+              // FlatList's old `windowSize=21` for TV remote feel.
+              drawDistance={Math.max(800, rowHeight * 3)}
               renderItem={renderContentItem}
               ListEmptyComponent={
                 isSearching ? (
