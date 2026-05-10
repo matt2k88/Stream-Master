@@ -351,17 +351,7 @@ class XtreamAPI {
     return response.json();
   }
 
-  // Primary live URL = HLS (.m3u8). Most Xtream panels remux/transcode the
-  // live source on the HLS path, which often replaces problematic audio
-  // codecs (AC3/EAC3) with AAC — playable on every device. PlayerScreen
-  // falls back to the raw .ts variant (getLiveStreamUrlTs) on first error.
   getLiveStreamUrl(streamId: number): string {
-    return `${this.getBaseUrl()}/live/${this.credentials?.username}/${this.credentials?.password}/${streamId}.m3u8`;
-  }
-
-  // Raw MPEG-TS variant — used as fallback when the panel doesn't expose
-  // an HLS endpoint for a given channel (returns 404/4xx on .m3u8).
-  getLiveStreamUrlTs(streamId: number): string {
     return `${this.getBaseUrl()}/live/${this.credentials?.username}/${this.credentials?.password}/${streamId}.ts`;
   }
 
