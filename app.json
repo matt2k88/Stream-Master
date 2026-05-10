@@ -52,7 +52,10 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "packagingOptions": {
+              "pickFirst": ["**/libc++_shared.so"]
+            }
           }
         }
       ],
@@ -60,10 +63,6 @@
       [
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
-      ],
-      [
-        "react-native-vlc-media-player",
-        { "android": {} }
       ]
     ],
     "experiments": {
