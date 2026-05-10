@@ -62,11 +62,13 @@
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
       ],
-      "react-native-vlc-media-player",
-      "./plugins/withVlcLibcppFix"
+      [
+        "react-native-vlc-media-player",
+        { "android": {} }
+      ]
     ],
     "experiments": {
-      "reactCompiler": false
+      "reactCompiler": true
     },
     "extra": {
       "apiUrl": "https://stream-master--matt2k88.replit.app",
