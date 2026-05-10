@@ -43,10 +43,6 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 
 - **Holiday Themes (admin-controlled)**: Whole-app dashboard imagery + accent palette are driven by a single Supabase `app_theme` row the admin flips from an external panel. Clients fetch `GET /api/app-theme` on launch (cached in AsyncStorage for a snappy second launch) and apply the palette. Available keys: `default` (orange/black neon, vector icons — original look), `halloween` (orange + pumpkin imagery), `bonfire` (multi-coloured neon + firework imagery), `christmas` (red/white + christmas imagery), `valentines` (pink neon + love imagery), `newyear` (gold + celebratory imagery). Themed icon PNGs live under `assets/images/themes/{theme}/{liveTv,movies,series,catchUp,tvGuide}.png`. The dashboard LIVE TV / MOVIES / SERIES / CATCH UP / TV GUIDE buttons swap to themed images via `ThemeContext`. The accent palette mutation updates inline runtime references (e.g. dynamic icon colour, count chip, header chevrons), but **module-scope `StyleSheet.create({ borderColor: Colors.dark.accent })` styles are frozen at import and keep the original orange** — accepted by design ("don't change colours where it doesn't make sense"; VPN badge / profile selector / other branded surfaces stay orange). Users have no in-app toggle — flip the `app_theme.theme_key` row in Supabase and every client picks it up on next launch. DB row enforces a CHECK constraint so only the 6 valid keys can be saved.
 
-## APK Build Notes
-
-- **v1.2.0** (current): switched playback engine from `expo-video` to `react-native-vlc-media-player` to fix Firestick playback failures on certain FHD live streams, music channels, and films using AC3/EAC3 audio (same 1.1.1 APK worked on phone, failed on Firestick). New Architecture is disabled to support VLC's Old Architecture native module. After merging this change, run `eas build -p android --profile production` to ship the new APK.
-
 ## Database Migrations
 SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending:
 - `migrations/001_continue_watching.sql` — adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`
@@ -61,14 +57,7 @@ SQL migrations the user must run in Supabase SQL Editor live under `migrations/`
 - **Navigation**: React Navigation 7+
 - **State Management**: AuthContext (auth) + DataContext (all IPTV content cache)
 - **Data Fetching**: TanStack React Query + direct xtreamApi calls in DataContext
-- **Video Playback**: react-native-vlc-media-player on native (Android APK), expo-video on web — wired through a shim at `client/lib/video-player.tsx` (native) + `client/lib/video-player.web.tsx` (web) that exposes the expo-video API surface (`useVideoPlayer`, `VideoView`, `SubtitleTrack`, `AudioTrack`). All player screens import from `@/lib/video-player` only and never reference VLC/expo-video directly.
-
-  **VLC notes** (Android APK, v1.2.0+):
-  - Requires `newArchEnabled: false` in app.json (VLC native module is Old Architecture only).
-  - Requires `minSdkVersion: 26` (set via `expo-build-properties`).
-  - Plugin entry `["react-native-vlc-media-player", { "android": {} }]` adds the gradle task that strips VLC's bundled `libc++_shared.so` so it doesn't collide with React Native's copy.
-  - Time units: VLC's `onProgress`/`onLoad` payloads are in **milliseconds**; the shim converts to seconds. Seek is a **fraction 0–1** of duration; the shim translates `player.currentTime = seconds`.
-  - Track selection: VLC uses numeric track IDs. The shim stores the picked `SubtitleTrack`/`AudioTrack` and passes `audioTrack`/`textTrack={parseInt(id)}` props. `subtitleTrack = null` → `textTrack=-1` (disabled).
+- **Video Playback**: expo-video
 - **Styling**: React Native StyleSheet, orange/black neon theme, expo-linear-gradient
 - **Database**: Supabase (server-side only via SUPABASE_URL + SUPABASE_ANON_KEY secrets)
 
