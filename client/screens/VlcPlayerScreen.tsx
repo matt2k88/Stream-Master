@@ -18,10 +18,20 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
-// VLC is native-only — guarded import keeps web/build-time analysis safe.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const VLCPlayer: any =
-  Platform.OS === "web" ? null : require("react-native-vlc-media-player").VLCPlayer;
+// VLC is native-only and depends on a native module that must be linked into
+// the APK at build time. Wrap the require in try/catch so a missing native
+// module (e.g. APK built without the plugin running) shows a friendly error
+// instead of crashing the entire app on launch.
+let VLCPlayer: any = null;
+let VLC_LOAD_ERROR: string | null = null;
+if (Platform.OS !== "web") {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    VLCPlayer = require("react-native-vlc-media-player").VLCPlayer;
+  } catch (e: any) {
+    VLC_LOAD_ERROR = e?.message || String(e);
+  }
+}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -321,10 +331,14 @@ export default function VlcPlayerScreen(props: VlcPlayerScreenProps) {
 
   if (Platform.OS === "web" || !VLCPlayer) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+      <View style={[styles.container, styles.errorOverlay, { paddingTop: insets.top + 16 }]}>
+        <Feather name="alert-circle" size={36} color={Colors.dark.error} />
         <ThemedText style={styles.errorTitle}>VLC Player Unavailable</ThemedText>
         <ThemedText style={styles.errorSubtitle}>
-          The VLC engine isn’t available on web. Switch back to the Default player from Account.
+          {Platform.OS === "web"
+            ? "The VLC engine isn’t available on web. Switch back to the Default player from Account."
+            : "The VLC native module isn’t included in this build. Switch back to the Default player in Account, or rebuild the app with the VLC plugin enabled."}
+          {VLC_LOAD_ERROR ? `\n\n${VLC_LOAD_ERROR}` : ""}
         </ThemedText>
         <Pressable style={styles.errorBtn} onPress={() => navigation.goBack()}>
           <ThemedText style={styles.errorBtnText}>Back</ThemedText>
