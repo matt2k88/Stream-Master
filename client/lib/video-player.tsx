@@ -222,13 +222,21 @@ class VideoPlayerHandle {
   play() {
     this._clearPendingRepause();
     this._paused = false;
-    // The declarative `paused` prop on react-native-vlc-media-player is
-    // unreliable for resume — the native side doesn't always exit the
-    // paused state when it goes false. The library's imperative
-    // resume(true) call is the reliable path. Fire it AND re-render so
-    // both code paths get exercised.
+    // CRITICAL: do NOT use the library's `resume(true)` method here. It
+    // sets a `resume: true` native prop which is STICKY on the Android
+    // side — the flag is never cleared and any subsequent
+    // `setNativeProps({ seek })` call gets combined with the still-
+    // active resume flag, with the result that VLC "resumes from
+    // position 0" instead of seeking to the requested position. That's
+    // why every seek/skip after a pause→resume cycle was reverting to
+    // the start of the content.
+    //
+    // Instead, set paused=false directly via setNativeProps — the same
+    // imperative mechanism the seek-while-paused workaround uses — and
+    // re-render so the declarative path matches. No sticky props get
+    // touched, so subsequent seeks behave normally.
     try {
-      this._vlcRef.current?.resume?.(true);
+      this._vlcRef.current?.setNativeProps?.({ paused: false });
     } catch {}
     // Optimistic UI update — don't make the play/pause icon wait for
     // VLC's onPlaying callback to round-trip from native.
