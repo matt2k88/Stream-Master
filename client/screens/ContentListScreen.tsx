@@ -776,15 +776,12 @@ export default function ContentListScreen() {
       }
     } else if (type === "movies") {
       const s = item as VodStream;
-      const watch = getByStreamId(s.stream_id);
-      const resume = watch && !watch.is_completed ? (watch.current_time ?? 0) : 0;
-      navigation.navigate("Player", {
-        streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension),
-        title: s.name,
-        type: "vod",
-        thumbnail: s.stream_icon ?? undefined,
-        streamId: String(s.stream_id),
-        resumeTime: resume,
+      navigation.navigate("MovieInfo", {
+        streamId: s.stream_id,
+        name: s.name,
+        streamIcon: s.stream_icon ?? undefined,
+        containerExtension: s.container_extension,
+        categoryId: s.category_id,
       });
     } else {
       const s = item as Series;

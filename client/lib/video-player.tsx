@@ -177,10 +177,10 @@ class VideoPlayerHandle {
     this._render?.();
   }
   pause() {
+    // For pause we ONLY set the declarative `paused` prop and re-render
+    // — this VLC library's `resume(false)` imperative call is treated
+    // as "stop and reset position to 0", which is not what we want.
     this._paused = true;
-    try {
-      this._vlcRef.current?.resume?.(false);
-    } catch {}
     this._setIsPlaying(false);
     this._render?.();
   }

@@ -253,7 +253,13 @@ export default function SearchScreen() {
       navigation.navigate("LivePreview", { streamId: s.stream_id, name: s.name, streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), thumbnail: s.stream_icon ?? undefined, streamIcon: s.stream_icon ?? undefined, initialFullscreen: true });
     } else if (type === "movies") {
       const s = item as VodStream;
-      navigation.navigate("Player", { streamUrl: xtreamApi.getVodStreamUrl(s.stream_id, s.container_extension), title: s.name, type: "vod", thumbnail: s.stream_icon ?? undefined, streamId: String(s.stream_id) });
+      navigation.navigate("MovieInfo", {
+        streamId: s.stream_id,
+        name: s.name,
+        streamIcon: s.stream_icon ?? undefined,
+        containerExtension: s.container_extension,
+        categoryId: s.category_id,
+      });
     } else {
       const s = item as Series;
       navigation.navigate("SeriesDetail", { seriesId: s.series_id, seriesName: s.name, cover: s.cover });

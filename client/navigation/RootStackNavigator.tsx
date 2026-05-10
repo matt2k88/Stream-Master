@@ -13,6 +13,7 @@ import HomeScreen from "@/screens/HomeScreen";
 import CategoryScreen from "@/screens/CategoryScreen";
 import ContentListScreen from "@/screens/ContentListScreen";
 import SeriesDetailScreen from "@/screens/SeriesDetailScreen";
+import MovieInfoScreen from "@/screens/MovieInfoScreen";
 import PlayerScreen from "@/screens/PlayerScreen";
 import AccountInfoScreen from "@/screens/AccountInfoScreen";
 import ProfilePickerScreen from "@/screens/ProfilePickerScreen";
@@ -40,6 +41,13 @@ export type RootStackParamList = {
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
   SeriesDetail: { seriesId: number; seriesName: string; cover: string; initialSeason?: number };
+  MovieInfo: {
+    streamId: number;
+    name: string;
+    streamIcon?: string;
+    containerExtension?: string;
+    categoryId?: string;
+  };
   Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number };
   LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string; categoryId?: string; initialFullscreen?: boolean };
   AccountInfo: undefined;
@@ -77,6 +85,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="Category" component={CategoryScreen} />
             <Stack.Screen name="ContentList" component={ContentListScreen} />
             <Stack.Screen name="SeriesDetail" component={SeriesDetailScreen} />
+            <Stack.Screen name="MovieInfo" component={MovieInfoScreen} />
             <Stack.Screen
               name="Player"
               component={PlayerScreen}

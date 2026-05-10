@@ -277,26 +277,85 @@ export default function SeriesDetailScreen() {
       <View style={[styles.divider, { marginHorizontal: padH }]} />
 
       <View style={[styles.body, { paddingHorizontal: padH, flexDirection: isLandscape ? "row" : "column" }]}>
-        {/* Sidebar */}
-        <View style={[styles.sidebar, isLandscape ? styles.sidebarLandscape : styles.sidebarPortrait]}>
-          <View style={styles.cover}>
-            {cover ? (
-              <Image source={{ uri: cover }} style={styles.coverImg} contentFit="cover" transition={200} />
-            ) : (
-              <View style={styles.coverPlaceholder}>
-                <Feather name="grid" size={36} color={Colors.dark.border} />
-              </View>
-            )}
-          </View>
-          {seriesInfo?.info?.genre ? (
-            <View style={styles.genreBadge}>
-              <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+        {/* Sidebar — landscape: vertical column with cover, genre, scrollable plot + cast.
+            Portrait: top block with cover next to text (genre + truncated plot preview). */}
+        {isLandscape ? (
+          <View style={[styles.sidebar, styles.sidebarLandscape]}>
+            <View style={styles.cover}>
+              {cover ? (
+                <Image source={{ uri: cover }} style={styles.coverImg} contentFit="cover" transition={200} />
+              ) : (
+                <View style={styles.coverPlaceholder}>
+                  <Feather name="grid" size={36} color={Colors.dark.border} />
+                </View>
+              )}
             </View>
-          ) : null}
-          {seriesInfo?.info?.plot && isLandscape ? (
-            <ThemedText style={styles.plotText} numberOfLines={6}>{seriesInfo.info.plot}</ThemedText>
-          ) : null}
-        </View>
+            {seriesInfo?.info?.genre ? (
+              <View style={styles.genreBadge}>
+                <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+              </View>
+            ) : null}
+            <ScrollView
+              style={styles.sidebarScroll}
+              contentContainerStyle={styles.sidebarScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {seriesInfo?.info?.plot ? (
+                <ThemedText style={styles.plotText}>{seriesInfo.info.plot}</ThemedText>
+              ) : null}
+              {seriesInfo?.info?.cast ? (
+                <View style={styles.metaSection}>
+                  <ThemedText style={styles.metaLabel}>CAST</ThemedText>
+                  <ThemedText style={styles.metaValue}>{seriesInfo.info.cast}</ThemedText>
+                </View>
+              ) : null}
+              {seriesInfo?.info?.director ? (
+                <View style={styles.metaSection}>
+                  <ThemedText style={styles.metaLabel}>DIRECTOR</ThemedText>
+                  <ThemedText style={styles.metaValue}>{seriesInfo.info.director}</ThemedText>
+                </View>
+              ) : null}
+              {seriesInfo?.info?.releaseDate ? (
+                <View style={styles.metaSection}>
+                  <ThemedText style={styles.metaLabel}>RELEASED</ThemedText>
+                  <ThemedText style={styles.metaValue}>{seriesInfo.info.releaseDate}</ThemedText>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        ) : (
+          <View style={styles.portraitTop}>
+            <View style={styles.portraitTopRow}>
+              <View style={styles.cover}>
+                {cover ? (
+                  <Image source={{ uri: cover }} style={styles.coverImg} contentFit="cover" transition={200} />
+                ) : (
+                  <View style={styles.coverPlaceholder}>
+                    <Feather name="grid" size={36} color={Colors.dark.border} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.portraitMeta}>
+                {seriesInfo?.info?.genre ? (
+                  <View style={[styles.genreBadge, { alignSelf: "flex-start" }]}>
+                    <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+                  </View>
+                ) : null}
+                {seriesInfo?.info?.plot ? (
+                  <ThemedText style={styles.plotText} numberOfLines={5}>
+                    {seriesInfo.info.plot}
+                  </ThemedText>
+                ) : null}
+                {seriesInfo?.info?.cast ? (
+                  <ThemedText style={styles.portraitCast} numberOfLines={2}>
+                    <ThemedText style={styles.portraitCastLabel}>Cast: </ThemedText>
+                    {seriesInfo.info.cast}
+                  </ThemedText>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Episodes section */}
         <View style={styles.episodesSection}>
@@ -387,15 +446,57 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   sidebar: {},
-  sidebarPortrait: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.md,
-  },
   sidebarLandscape: {
-    width: 150,
+    width: 200,
     alignItems: "center",
     gap: Spacing.sm,
+  },
+  sidebarScroll: {
+    width: "100%",
+    flex: 1,
+  },
+  sidebarScrollContent: {
+    gap: Spacing.sm,
+    paddingBottom: Spacing.lg,
+  },
+  metaSection: {
+    gap: 2,
+    marginTop: Spacing.xs,
+  },
+  metaLabel: {
+    color: Colors.dark.accent,
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  metaValue: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  portraitTop: {
+    gap: Spacing.sm,
+  },
+  portraitTopRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    alignItems: "flex-start",
+  },
+  portraitMeta: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
+  portraitCast: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  portraitCastLabel: {
+    color: Colors.dark.accent,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
   },
   cover: {
     borderRadius: BorderRadius.sm,

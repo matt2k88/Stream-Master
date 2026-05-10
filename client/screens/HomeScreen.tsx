@@ -761,8 +761,8 @@ export default function HomeScreen() {
               refreshKey={recentRefreshKey}
               maxItems={2}
               onPress={(item) => {
-                if (!item.stream_url) return;
                 if (item.content_type === "live") {
+                  if (!item.stream_url) return;
                   navigation.navigate("LivePreview", {
                     streamId: Number(item.stream_id) || 0,
                     name: item.name,
@@ -773,6 +773,15 @@ export default function HomeScreen() {
                   });
                   return;
                 }
+                if (item.content_type === "movie" && item.stream_id) {
+                  navigation.navigate("MovieInfo", {
+                    streamId: Number(item.stream_id),
+                    name: item.name,
+                    streamIcon: item.thumbnail_url ?? undefined,
+                  });
+                  return;
+                }
+                if (!item.stream_url) return;
                 navigation.navigate("Player", {
                   streamUrl: item.stream_url,
                   title: item.name,
@@ -867,8 +876,8 @@ export default function HomeScreen() {
             refreshKey={recentRefreshKey}
             maxItems={2}
             onPress={(item) => {
-              if (!item.stream_url) return;
               if (item.content_type === "live") {
+                if (!item.stream_url) return;
                 navigation.navigate("LivePreview", {
                   streamId: Number(item.stream_id) || 0,
                   name: item.name,
@@ -879,6 +888,15 @@ export default function HomeScreen() {
                 });
                 return;
               }
+              if (item.content_type === "movie" && item.stream_id) {
+                navigation.navigate("MovieInfo", {
+                  streamId: Number(item.stream_id),
+                  name: item.name,
+                  streamIcon: item.thumbnail_url ?? undefined,
+                });
+                return;
+              }
+              if (!item.stream_url) return;
               navigation.navigate("Player", {
                 streamUrl: item.stream_url,
                 title: item.name,
