@@ -1145,8 +1145,11 @@ export default function ContentListScreen() {
             renderItem={renderSidebarItem}
             initialNumToRender={20}
             maxToRenderPerBatch={20}
-            windowSize={11}
-            removeClippedSubviews={Platform.OS === "android"}
+            // Same reasoning as the content list below — keep the next
+            // sidebar row mounted so D-pad focus moves on the first press
+            // and never leaves a black gap during fast scrolling.
+            windowSize={21}
+            removeClippedSubviews={false}
           />
         </View>
 
@@ -1206,12 +1209,18 @@ export default function ContentListScreen() {
               initialNumToRender={type === "live" ? 16 : 12}
               maxToRenderPerBatch={type === "live" ? 16 : 12}
               updateCellsBatchingPeriod={32}
-              // Keeps ~5 viewports of rows mounted on each side — enough that
-              // the next row down (or up) is already mounted and focusable
-              // when the D-pad is pressed at the edge, but small enough to
-              // keep memory + reconciliation cheap during fast scrolling.
-              windowSize={11}
-              removeClippedSubviews={Platform.OS === "android"}
+              // Wider render window + clipped-subviews disabled means the
+              // next row is already mounted (and focusable) when the user
+              // presses D-pad down at the bottom of the visible window —
+              // focus moves IMMEDIATELY on the same press, instead of the
+              // list scrolling first and only moving focus on the next
+              // press. Disabling removeClippedSubviews on Android also
+              // stops the "black gap" flicker during fast scrolling — the
+              // native side was unmounting visible rows too aggressively
+              // and the next batch hadn't mounted yet, leaving black
+              // rectangles where cards should be.
+              windowSize={21}
+              removeClippedSubviews={false}
               getItemLayout={getItemLayout}
               renderItem={renderContentItem}
               ListEmptyComponent={
