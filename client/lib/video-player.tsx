@@ -405,14 +405,13 @@ export function VideoView({
         ? {
             uri: src,
             initOptions: [
-              // Network buffer for HTTP(S) / TS streams. Lowered from
-              // 1500ms to reduce the steady-state RAM footprint on
-              // memory-constrained TV boxes (Firestick Lite ≈ 1GB).
-              // 1000ms is still well above libVLC's 300ms default and
-              // is comfortable for IPTV.
-              "--network-caching=1000",
-              "--live-caching=1000",
-              "--file-caching=1000",
+              // Network buffer for HTTP(S) / TS streams. 1500ms gives
+              // plenty of headroom for WiFi jitter without any
+              // meaningful RAM cost on a modern TV box (Firestick 4K
+              // Max ≈ 2GB, Shield 3GB+).
+              "--network-caching=1500",
+              "--live-caching=1500",
+              "--file-caching=1500",
               // Prefer the NDK MediaCodec API over the older JNI
               // MediaCodec on Android/Fire OS. The legacy JNI path on
               // Amazon Fire devices is well-known for leaking decoder
