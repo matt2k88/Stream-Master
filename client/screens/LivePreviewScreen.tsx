@@ -492,7 +492,7 @@ export default function LivePreviewScreen() {
     lastTimeAtRef.current = Date.now();
     stallTimerRef.current = setInterval(() => {
       const now = Date.now();
-      if (!(player as any)._isPlaying) {
+      if (!player.playing) {
         lastTimeAtRef.current = now;
         return;
       }

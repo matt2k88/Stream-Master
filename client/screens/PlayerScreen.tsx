@@ -787,7 +787,7 @@ export default function PlayerScreen() {
       const now = Date.now();
       // Gate 1: don't count toward stall while the player isn't actively
       // playing (buffering, paused, ad-break, etc.).
-      if (!player._isPlaying) {
+      if (!player.playing) {
         lastLiveTimeAtRef.current = now;
         return;
       }
