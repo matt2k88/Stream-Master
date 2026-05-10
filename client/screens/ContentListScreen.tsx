@@ -258,7 +258,7 @@ function StarBadge({ visible }: { visible: boolean }) {
   );
 }
 
-function ContentCard({
+const ContentCard = React.memo(function ContentCard({
   item,
   type,
   onPress,
@@ -272,8 +272,9 @@ function ContentCard({
 }: {
   item: ContentItem;
   type: string;
-  onPress: () => void;
-  onLongPress: () => void;
+  // Item-aware so parents can pass stable refs (no new closures per render).
+  onPress: (item: ContentItem) => void;
+  onLongPress: (item: ContentItem) => void;
   isFavourited: boolean;
   cardWidth: number;
   cardHeight: number;
@@ -307,12 +308,12 @@ function ContentCard({
       ]}
       onPress={() => {
         if (longFiredRef.current) { longFiredRef.current = false; return; }
-        onPress();
+        onPress(item);
       }}
       onLongPress={() => {
         if (editMode) return;
         longFiredRef.current = true;
-        onLongPress();
+        onLongPress(item);
       }}
       delayLongPress={Platform.isTV ? 700 : 500}
       onPressIn={() => {
@@ -329,7 +330,7 @@ function ContentCard({
           (Date.now() - pressInTimeRef.current) >= 600
         ) {
           longFiredRef.current = true;
-          onLongPress();
+          onLongPress(item);
         }
       }}
       onFocus={() => setFocused(true)}
@@ -412,14 +413,14 @@ function ContentCard({
       {isActive ? <View style={styles.activeBar} /> : null}
     </Pressable>
   );
-}
+});
 
 interface SidebarCat {
   category_id: string;
   category_name: string;
 }
 
-function CategorySidebarItem({
+const CategorySidebarItem = React.memo(function CategorySidebarItem({
   item,
   isSelected,
   onPress,
@@ -428,7 +429,8 @@ function CategorySidebarItem({
 }: {
   item: SidebarCat;
   isSelected: boolean;
-  onPress: () => void;
+  // Item-aware so parents can pass a single stable callback ref.
+  onPress: (item: SidebarCat) => void;
   isFav?: boolean;
   isRecent?: boolean;
 }) {
@@ -445,7 +447,7 @@ function CategorySidebarItem({
         isSelected && styles.sidebarItemSelected,
         isActive && !isSelected && styles.sidebarItemHover,
       ]}
-      onPress={onPress}
+      onPress={() => onPress(item)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
@@ -492,7 +494,7 @@ function CategorySidebarItem({
       {isSelected ? <View style={styles.sidebarActiveBar} /> : null}
     </Pressable>
   );
-}
+});
 
 export default function ContentListScreen() {
   const insets = useSafeAreaInsets();
@@ -751,7 +753,7 @@ export default function ContentListScreen() {
     [fullDisplayContent, renderLimit],
   );
 
-  const handleItemPress = (item: ContentItem) => {
+  const handleItemPress = useCallback((item: ContentItem) => {
     if (type === "live") {
       const s = item as LiveStream;
       if (selectedCategoryId === "favourites") {
@@ -795,7 +797,7 @@ export default function ContentListScreen() {
         initialSeason,
       });
     }
-  };
+  }, [type, selectedCategoryId, navigation, getBySeriesId]);
 
   // Refresh watch history when this screen comes into focus
   useFocusEffect(
@@ -819,7 +821,7 @@ export default function ContentListScreen() {
     }
   }, [isFavouritesView, isRecentlyView, type, clearAllFavourites, clearHistory]);
 
-  const handleLongPress = (item: ContentItem) => {
+  const handleLongPress = useCallback((item: ContentItem) => {
     if (isSearching) return;
     const streamId = getStreamId(item, type);
     toggleFavourite({
@@ -829,7 +831,7 @@ export default function ContentListScreen() {
       streamIcon: getIconUrl(item),
       categoryId: "category_id" in item ? (item as any).category_id : null,
     });
-  };
+  }, [isSearching, type, toggleFavourite]);
 
   // Edit-mode action: delete from fav/recent lists, or toggle favourite on
   // normal categories. Single tap on a focused card — fully D-pad-friendly.
@@ -884,11 +886,106 @@ export default function ContentListScreen() {
   const editAction: "delete" | "favourite" =
     isFavouritesView || isRecentlyView ? "delete" : "favourite";
 
-  const getItemId = (item: ContentItem) => {
+  // O(1) favourite lookup per card. Built once per favourites change instead
+  // of running an O(n) `favourites.some()` inside every visible card on every
+  // re-render — a major win when scrolling through a long list with many
+  // favourites stored.
+  const favIdSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const f of getFavouritesByType(type as "live" | "movies" | "series")) {
+      set.add(f.stream_id);
+    }
+    return set;
+  }, [getFavouritesByType, type]);
+
+  const getItemId = useCallback((item: ContentItem) => {
     if ("stream_id" in item) return String((item as LiveStream | VodStream).stream_id);
     if ("series_id" in item) return String((item as Series).series_id);
     return String(item.num);
-  };
+  }, []);
+
+  // Stable per-card handlers so React.memo on ContentCard actually skips
+  // re-renders. Without these, every parent state change (focus on any other
+  // card, search keystroke, etc.) would create new arrow functions and
+  // re-render every visible card — the root cause of the "selector lags
+  // behind scrolling" feeling on TV remotes.
+  const onCardPress = useCallback(
+    (item: ContentItem) => (editMode ? handleEditPress(item) : handleItemPress(item)),
+    [editMode, handleEditPress, handleItemPress],
+  );
+
+  // Row height for FlatList — lets it skip per-row measurement and locate
+  // any row instantly. Crucial for TV focus auto-scroll: when the focused
+  // card moves off-screen the list jumps to the right offset on the same
+  // frame instead of measuring rows progressively.
+  const rowHeight = cardTotalH + gap;
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<ContentItem> | null | undefined, index: number) => {
+      const row = Math.floor(index / Math.max(1, numColumns));
+      return { length: rowHeight, offset: row * rowHeight + Spacing.xs, index };
+    },
+    [rowHeight, numColumns],
+  );
+
+  const renderContentItem = useCallback(
+    ({ item }: { item: ContentItem }) => {
+      const sid = getStreamId(item, type);
+      const watchEntry =
+        type === "series"
+          ? getBySeriesId((item as Series).series_id)
+          : type !== "live"
+            ? getByStreamId(sid)
+            : undefined;
+      return (
+        <ContentCard
+          item={item}
+          type={type}
+          onPress={onCardPress}
+          onLongPress={handleLongPress}
+          isFavourited={!isSearching && favIdSet.has(sid)}
+          cardWidth={cardWidth}
+          cardHeight={cardTotalH}
+          watchEntry={watchEntry}
+          editMode={editMode && !isSearching}
+          editAction={editAction}
+        />
+      );
+    },
+    [
+      type, onCardPress, handleLongPress, isSearching, favIdSet,
+      cardWidth, cardTotalH, editMode, editAction, getByStreamId, getBySeriesId,
+    ],
+  );
+
+  // Stable sidebar press handler — referenced by every sidebar item so
+  // CategorySidebarItem (memo'd) doesn't re-render when an unrelated
+  // sibling gains focus.
+  const handleSidebarPress = useCallback(
+    (item: SidebarCat) => {
+      if (item.category_id === selectedCategoryId) return;
+      setCategorySwitching(true);
+      const nextId = item.category_id;
+      const nextName = item.category_name;
+      requestAnimationFrame(() => {
+        setSelectedCategoryId(nextId);
+        setSelectedCategoryName(nextName);
+      });
+    },
+    [selectedCategoryId],
+  );
+
+  const renderSidebarItem = useCallback(
+    ({ item }: { item: SidebarCat }) => (
+      <CategorySidebarItem
+        item={item}
+        isSelected={item.category_id === selectedCategoryId}
+        isFav={item.category_id === "favourites"}
+        isRecent={item.category_id === "recently"}
+        onPress={handleSidebarPress}
+      />
+    ),
+    [selectedCategoryId, handleSidebarPress],
+  );
 
   const sectionPlaceholder =
     type === "live" ? "Search all live channels..." :
@@ -1045,27 +1142,11 @@ export default function ContentListScreen() {
             data={sidebarData}
             keyExtractor={(item) => item.category_id}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <CategorySidebarItem
-                item={item}
-                isSelected={item.category_id === selectedCategoryId}
-                isFav={item.category_id === "favourites"}
-                isRecent={item.category_id === "recently"}
-                onPress={() => {
-                  if (item.category_id === selectedCategoryId) return;
-                  // Show the spinner first, then defer the heavy
-                  // re-render (filtering / FlatList rebuild) to the next
-                  // frame so the spinner has time to paint on slower TVs.
-                  setCategorySwitching(true);
-                  const nextId = item.category_id;
-                  const nextName = item.category_name;
-                  requestAnimationFrame(() => {
-                    setSelectedCategoryId(nextId);
-                    setSelectedCategoryName(nextName);
-                  });
-                }}
-              />
-            )}
+            renderItem={renderSidebarItem}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === "android"}
           />
         </View>
 
@@ -1125,35 +1206,14 @@ export default function ContentListScreen() {
               initialNumToRender={type === "live" ? 16 : 12}
               maxToRenderPerBatch={type === "live" ? 16 : 12}
               updateCellsBatchingPeriod={32}
-              // Wider render window + clipped-subviews disabled means the next
-              // row is already mounted (and focusable) when the user presses
-              // D-pad down at the bottom of the visible window — focus moves
-              // immediately on the same press, instead of the list scrolling
-              // first and only moving focus on the next press.
-              windowSize={21}
-              removeClippedSubviews={false}
-              renderItem={({ item }) => {
-                const watchEntry =
-                  type === "series"
-                    ? getBySeriesId((item as Series).series_id)
-                    : type !== "live"
-                      ? getByStreamId((item as VodStream).stream_id)
-                      : undefined;
-                return (
-                  <ContentCard
-                    item={item}
-                    type={type}
-                    onPress={() => (editMode ? handleEditPress(item) : handleItemPress(item))}
-                    onLongPress={() => handleLongPress(item)}
-                    isFavourited={!isSearching && isFavourite(getStreamId(item, type), type)}
-                    cardWidth={cardWidth}
-                    cardHeight={cardTotalH}
-                    watchEntry={watchEntry}
-                    editMode={editMode && !isSearching}
-                    editAction={editAction}
-                  />
-                );
-              }}
+              // Keeps ~5 viewports of rows mounted on each side — enough that
+              // the next row down (or up) is already mounted and focusable
+              // when the D-pad is pressed at the edge, but small enough to
+              // keep memory + reconciliation cheap during fast scrolling.
+              windowSize={11}
+              removeClippedSubviews={Platform.OS === "android"}
+              getItemLayout={getItemLayout}
+              renderItem={renderContentItem}
               ListEmptyComponent={
                 isSearching ? (
                   <View style={styles.centeredInline}>

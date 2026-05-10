@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   TextInput,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -200,7 +201,7 @@ function FavRecentRow({
   );
 }
 
-function CategoryCard({
+const CategoryCard = React.memo(function CategoryCard({
   item,
   icon,
   onPress,
@@ -209,7 +210,7 @@ function CategoryCard({
 }: {
   item: Category;
   icon: keyof typeof Feather.glyphMap;
-  onPress: () => void;
+  onPress: (item: Category) => void;
   width: number;
   height: number;
 }) {
@@ -221,7 +222,7 @@ function CategoryCard({
   return (
     <Pressable
       style={[styles.card, { width: cardWidth, height: cardHeight }, isActive && styles.cardActive]}
-      onPress={onPress}
+      onPress={() => onPress(item)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
@@ -245,9 +246,9 @@ function CategoryCard({
       {isActive ? <View style={styles.cardGlow} /> : null}
     </Pressable>
   );
-}
+});
 
-function StreamCard({
+const StreamCard = React.memo(function StreamCard({
   item,
   type,
   cardWidth,
@@ -256,7 +257,7 @@ function StreamCard({
   item: AnyStream;
   type: "live" | "movies" | "series";
   cardWidth: number;
-  onPress: () => void;
+  onPress: (item: AnyStream) => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -271,7 +272,7 @@ function StreamCard({
   return (
     <Pressable
       style={[styles.streamCard, { width: cardWidth }, isActive && styles.streamCardActive]}
-      onPress={onPress}
+      onPress={() => onPress(item)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
@@ -303,7 +304,7 @@ function StreamCard({
       {isActive ? <View style={styles.streamActiveBar} /> : null}
     </Pressable>
   );
-}
+});
 
 export default function CategoryScreen() {
   const insets = useSafeAreaInsets();
@@ -399,7 +400,7 @@ export default function CategoryScreen() {
       .slice(0, SEARCH_LIMIT);
   }, [trimmedQuery, allStreams]);
 
-  const handleStreamPress = (item: AnyStream) => {
+  const handleStreamPress = useCallback((item: AnyStream) => {
     if (type === "live") {
       const s = item as LiveStream;
       navigation.navigate("LivePreview", { streamId: s.stream_id, name: s.name, streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id), thumbnail: s.stream_icon ?? undefined, streamIcon: s.stream_icon ?? undefined, initialFullscreen: true });
@@ -416,12 +417,61 @@ export default function CategoryScreen() {
       const s = item as Series;
       navigation.navigate("SeriesDetail", { seriesId: s.series_id, seriesName: s.name, cover: s.cover });
     }
-  };
+  }, [type, navigation]);
 
-  const getStreamKey = (item: AnyStream) => {
+  const getStreamKey = useCallback((item: AnyStream) => {
     if ("stream_id" in item) return String((item as LiveStream | VodStream).stream_id);
     return String((item as Series).series_id);
-  };
+  }, []);
+
+  // Stable, memoized renderers — without these, React.memo on the cards is
+  // useless because new arrow refs are created every parent render (search
+  // keystrokes, focus changes elsewhere) and re-render every visible card.
+  const renderSearchItem = useCallback(
+    ({ item }: { item: AnyStream }) => (
+      <StreamCard
+        item={item}
+        type={type}
+        cardWidth={searchCardWidth}
+        onPress={handleStreamPress}
+      />
+    ),
+    [type, searchCardWidth, handleStreamPress],
+  );
+
+  const categoryIconName = getIcon();
+  const navigateToContent = useCallback(
+    (item: Category) => {
+      navigation.navigate("ContentList", {
+        type,
+        categoryId: item.category_id,
+        categoryName: item.category_name,
+      });
+    },
+    [navigation, type],
+  );
+
+  const renderCategoryItem = useCallback(
+    ({ item }: { item: Category }) => (
+      <CategoryCard
+        item={item}
+        icon={categoryIconName}
+        onPress={navigateToContent}
+        width={catCardWidth}
+        height={catCardHeight}
+      />
+    ),
+    [categoryIconName, navigateToContent, catCardWidth, catCardHeight],
+  );
+
+  const catRowHeight = catCardHeight + gap;
+  const getCatItemLayout = useCallback(
+    (_data: ArrayLike<Category> | null | undefined, index: number) => {
+      const row = Math.floor(index / Math.max(1, numCatCols));
+      return { length: catRowHeight, offset: row * catRowHeight + Spacing.sm, index };
+    },
+    [catRowHeight, numCatCols],
+  );
 
   const placeholder =
     type === "live" ? "Search live channels..." :
@@ -620,14 +670,11 @@ export default function CategoryScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          renderItem={({ item }) => (
-            <StreamCard
-              item={item}
-              type={type}
-              cardWidth={searchCardWidth}
-              onPress={() => handleStreamPress(item)}
-            />
-          )}
+          renderItem={renderSearchItem}
+          initialNumToRender={type === "live" ? 16 : 12}
+          maxToRenderPerBatch={type === "live" ? 16 : 12}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === "android"}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Feather name="inbox" size={40} color={Colors.dark.border} />
@@ -654,22 +701,10 @@ export default function CategoryScreen() {
           keyboardDismissMode="on-drag"
           initialNumToRender={20}
           maxToRenderPerBatch={20}
-          windowSize={10}
-          renderItem={({ item }) => (
-            <CategoryCard
-              item={item}
-              icon={getIcon()}
-              onPress={() =>
-                navigation.navigate("ContentList", {
-                  type,
-                  categoryId: item.category_id,
-                  categoryName: item.category_name,
-                })
-              }
-              width={catCardWidth}
-              height={catCardHeight}
-            />
-          )}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === "android"}
+          getItemLayout={getCatItemLayout}
+          renderItem={renderCategoryItem}
         />
       )}
     </ThemedView>
