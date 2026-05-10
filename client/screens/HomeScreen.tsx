@@ -26,6 +26,7 @@ import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface NavButtonProps {
+  hideCount?: boolean;
   title: string;
   icon: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -48,7 +49,7 @@ function formatCount(n: number) {
 
 function NavButton({
   title, icon, mciIcon, iconKey, onPress, style, iconSize = 30, textSize = 16,
-  compact = false, loading = false, count, countLabel,
+  compact = false, loading = false, count, countLabel, hideCount = false,
 }: NavButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -58,7 +59,7 @@ function NavButton({
   // Only scale the label — leaving icon size untouched preserves the carefully
   // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
   const scaledTextSize = scaleFont(textSize);
-  const showCount = typeof count === "number";
+  const showCount = typeof count === "number" && !hideCount;
   const accent = useAccent();
   const iconColor = isActive ? accent.hover : accent.accent;
   const themedIcon = iconKey ? getIcon(iconKey) : undefined;
@@ -106,6 +107,7 @@ function NavButton({
           styles.navButtonText,
           { fontSize: scaledTextSize },
           isActive && styles.navButtonTextActive,
+          isActive && { color: accent.accent, textShadowColor: accent.accent, textShadowRadius: 8 },
         ]}
         numberOfLines={1}
       >
@@ -139,7 +141,7 @@ function NavButton({
           ) : null}
         </View>
       ) : null}
-      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent }]} /> : null}
+      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent, shadowColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
@@ -175,6 +177,7 @@ function SearchButton({ onPress }: { onPress: () => void }) {
           styles.searchBtnIconWrap,
           { borderColor: accent.accent, backgroundColor: accent.accentDim },
           isActive && styles.searchBtnIconWrapActive,
+          isActive && { backgroundColor: accent.withAlpha(accent.accent, 0.3) },
         ]}
       >
         <Feather name="search" size={18} color={accent.accent} />
@@ -192,7 +195,7 @@ function SearchButton({ onPress }: { onPress: () => void }) {
         <ThemedText style={styles.searchBtnHint}>channels, movies, series</ThemedText>
       </View>
       <Feather name="chevron-right" size={16} color={accent.withAlpha(accent.accent, 0.55)} />
-      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent }]} /> : null}
+      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent, shadowColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
@@ -694,6 +697,7 @@ export default function HomeScreen() {
             style={styles.portraitTopFull}
             iconSize={42}
             textSize={18}
+            hideCount
           />
           {/* Portrait mid row: Movies + Series */}
           <View style={styles.portraitSubRowMain}>
@@ -709,6 +713,7 @@ export default function HomeScreen() {
               style={styles.portraitSubBtnMain}
               iconSize={36}
               textSize={16}
+              hideCount
             />
             <NavButton
               title="SERIES"
@@ -722,6 +727,7 @@ export default function HomeScreen() {
               style={styles.portraitSubBtnMain}
               iconSize={36}
               textSize={16}
+              hideCount
             />
           </View>
           {/* Portrait small row: Catch Up + TV Guide */}
