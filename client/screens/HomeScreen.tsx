@@ -62,7 +62,9 @@ function NavButton({
   const showCount = typeof count === "number" && !hideCount;
   const accent = useAccent();
   const iconColor = isActive ? accent.hover : accent.accent;
-  const themedIcon = iconKey ? getIcon(iconKey) : undefined;
+  // Themed icon images intentionally disabled — keep the original vector
+  // glyphs and let them re-tint via the theme accent instead.
+  void iconKey; void getIcon;
 
   return (
     <Pressable
@@ -90,12 +92,6 @@ function NavButton({
       <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
         {loading ? (
           <ActivityIndicator size={Math.max(18, iconSize - 4)} color={accent.accent} />
-        ) : themedIcon ? (
-          <Image
-            source={themedIcon}
-            style={{ width: iconSize * 1.5, height: iconSize * 1.5 }}
-            resizeMode="contain"
-          />
         ) : mciIcon ? (
           <MaterialCommunityIcons name={mciIcon} size={iconSize} color={iconColor} />
         ) : (
