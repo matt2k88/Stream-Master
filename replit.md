@@ -66,7 +66,8 @@ SQL migrations the user must run in Supabase SQL Editor live under `migrations/`
   **VLC notes** (Android APK, v1.2.0+):
   - Requires `newArchEnabled: false` in app.json (VLC native module is Old Architecture only).
   - Requires `minSdkVersion: 26` (set via `expo-build-properties`).
-  - Plugin entry `["react-native-vlc-media-player", { "android": {} }]` adds the gradle task that strips VLC's bundled `libc++_shared.so` so it doesn't collide with React Native's copy.
+  - Plugin entry is `"react-native-vlc-media-player"` with **no `{ android: {} }` options**. Passing the android options triggers the library's `withGradleTasks` plugin, which anchors against `applyNativeModulesAppBuildGradle(project)` — a marker that no longer exists in Expo SDK 54's `app/build.gradle` (autolinking moved to `settings.gradle`) — and crashes `npx expo prebuild` with a `mergeContents` failure.
+  - Instead, the local plugin `plugins/withVlcLibcppFix.js` appends a `packagingOptions { pickFirst "**/libc++_shared.so" }` block to `app/build.gradle` so VLC's bundled native lib doesn't collide with the one shipped by React Native's Gradle Plugin.
   - Time units: VLC's `onProgress`/`onLoad` payloads are in **milliseconds**; the shim converts to seconds. Seek is a **fraction 0–1** of duration; the shim translates `player.currentTime = seconds`.
   - Track selection: VLC uses numeric track IDs. The shim stores the picked `SubtitleTrack`/`AudioTrack` and passes `audioTrack`/`textTrack={parseInt(id)}` props. `subtitleTrack = null` → `textTrack=-1` (disabled).
 - **Styling**: React Native StyleSheet, orange/black neon theme, expo-linear-gradient

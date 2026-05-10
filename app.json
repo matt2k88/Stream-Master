@@ -62,10 +62,8 @@
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
       ],
-      [
-        "react-native-vlc-media-player",
-        { "android": {} }
-      ]
+      "react-native-vlc-media-player",
+      "./plugins/withVlcLibcppFix"
     ],
     "experiments": {
       "reactCompiler": true
