@@ -27,6 +27,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
+import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -83,17 +84,29 @@ function InfoRow({
   label,
   value,
   icon,
+  valueColor,
+  iconColor,
 }: {
   label: string;
   value: string;
   icon: keyof typeof Feather.glyphMap;
+  valueColor?: string;
+  iconColor?: string;
 }) {
   return (
     <View style={styles.infoRow}>
-      <Feather name={icon} size={14} color={Colors.dark.accent} />
+      <Feather name={icon} size={14} color={iconColor ?? Colors.dark.accent} />
       <View style={styles.infoContent}>
         <ThemedText style={styles.infoLabel}>{label}</ThemedText>
-        <ThemedText style={styles.infoValue} numberOfLines={1}>{value}</ThemedText>
+        <ThemedText
+          style={[
+            styles.infoValue,
+            valueColor ? { color: valueColor, fontWeight: "700" } : null,
+          ]}
+          numberOfLines={1}
+        >
+          {value}
+        </ThemedText>
       </View>
     </View>
   );
@@ -153,7 +166,8 @@ export default function AccountInfoScreen() {
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
   const [updateChecking, setUpdateChecking] = useState(false);
-  const [isLifetime, setIsLifetime] = useState(false);
+  const expiryStatus = useExpiryStatus();
+  const isLifetime = expiryStatus.isLifetime;
   const [notesVisible, setNotesVisible] = useState(false);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notes, setNotes] = useState<AppNote[]>([]);
@@ -209,18 +223,6 @@ export default function AccountInfoScreen() {
     handleRefresh();
     fetchDevDetails();
   }, []);
-
-  // Check lifetime DB whenever username is known
-  useEffect(() => {
-    const username = userInfo?.user_info?.username;
-    if (!username) return;
-    const url = new URL("/api/lifetime-check", getApiUrl());
-    url.searchParams.set("username", username);
-    fetch(url.toString())
-      .then((r) => r.ok ? r.json() : { isLifetime: false })
-      .then((d) => setIsLifetime(!!d?.isLifetime))
-      .catch(() => {});
-  }, [userInfo?.user_info?.username]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -458,7 +460,25 @@ export default function AccountInfoScreen() {
                         <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
                       </View>
                     ) : (
-                      <InfoRow label="Expires" value={formatDate(user.exp_date)} icon="calendar" />
+                      (() => {
+                        // Only colour the date red once the lifetime check
+                        // has definitively resolved — avoids flashing a
+                        // warning to true-lifetime users on the first load
+                        // while /api/lifetime-check is in flight.
+                        const warn =
+                          !expiryStatus.loading &&
+                          (expiryStatus.isExpired || expiryStatus.isExpiringSoon);
+                        const color = warn ? Colors.dark.error : undefined;
+                        return (
+                          <InfoRow
+                            label="Expires"
+                            value={formatDate(user.exp_date)}
+                            icon="calendar"
+                            valueColor={color}
+                            iconColor={color}
+                          />
+                        );
+                      })()
                     )}
                     <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
                     <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />

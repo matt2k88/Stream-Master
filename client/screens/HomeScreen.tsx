@@ -22,8 +22,47 @@ import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
+import { useExpiryStatus } from "@/hooks/useExpiryStatus";
+import { formatExpiryNotice } from "@/lib/expiry";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+function ExpiryBanner({ padH, onPress }: { padH: number; onPress: () => void }) {
+  const status = useExpiryStatus();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = hovered || focused || pressed;
+
+  if (status.loading) return null;
+  if (status.isLifetime) return null;
+  if (!status.isExpiringSoon && !status.isExpired) return null;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.expiryBanner,
+        { marginHorizontal: padH },
+        isActive && styles.expiryBannerActive,
+      ]}
+    >
+      <Feather name="alert-circle" size={13} color={Colors.dark.error} />
+      <ThemedText style={styles.expiryBannerText} numberOfLines={1}>
+        {formatExpiryNotice(status)}
+      </ThemedText>
+      <ThemedText style={styles.expiryBannerHint} numberOfLines={1}>
+        Tap for details
+      </ThemedText>
+    </Pressable>
+  );
+}
 
 interface NavButtonProps {
   hideCount?: boolean;
@@ -565,6 +604,12 @@ export default function HomeScreen() {
 
       <View style={[styles.headerDivider, { marginHorizontal: padH }]} />
 
+      {/* ── Expiry warning ──────────────────────────────────────────────────── */}
+      {/* Subtle one-line banner that only appears when the user's subscription
+          is within EXPIRY_WARNING_DAYS (7) of expiring or has expired. Lifetime
+          accounts never see this. Tapping opens Account Info. */}
+      <ExpiryBanner padH={padH} onPress={() => navigation.navigate("AccountInfo")} />
+
       {/* ── Announcement Ticker ─────────────────────────────────────────────── */}
       <AnnouncementTicker />
 
@@ -1052,6 +1097,37 @@ const styles = StyleSheet.create({
   },
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
+
+  expiryBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    alignSelf: "flex-start",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    marginTop: 4,
+    marginBottom: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.dark.error + "66",
+    backgroundColor: Colors.dark.error + "14",
+  },
+  expiryBannerActive: {
+    borderColor: Colors.dark.error,
+    backgroundColor: Colors.dark.error + "26",
+  },
+  expiryBannerText: {
+    color: Colors.dark.error,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  expiryBannerHint: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    fontWeight: "500",
+    marginLeft: 4,
+  },
 
   // ── Landscape body ───────────────────────────────────────────────────────
   bodyLandscape: {
