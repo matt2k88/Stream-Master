@@ -53,6 +53,7 @@
         {
           "android": {
             "usesCleartextTraffic": true,
+            "minSdkVersion": 26,
             "packagingOptions": {
               "pickFirst": ["**/libc++_shared.so"]
             }
