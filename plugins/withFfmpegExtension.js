@@ -11,10 +11,11 @@
 //        ExoPlayer renderer factory uses EXTENSION_RENDERER_MODE_PREFER
 //        (extension decoders are tried before the platform/MediaCodec ones).
 //
-//     2. Adds JitPack to the project's centralized
-//        `dependencyResolutionManagement` block in `android/settings.gradle`
-//        (Expo SDK 54 uses `FAIL_ON_PROJECT_REPOS`, so per-module repo
-//        declarations get ignored).
+//     2. Adds JitPack to the root `android/build.gradle`'s
+//        `allprojects { repositories { ... } }` block — that's where
+//        Expo SDK 54's React Native template still aggregates repos.
+//        (Earlier "project declares repositories" Gradle warnings are a
+//        deprecation notice for Gradle 9, not a hard build failure.)
 //
 //     3. Adds the prebuilt FFmpeg extension for Media3 published by
 //        anilbeesetti (https://github.com/anilbeesetti/nextlib) to the
@@ -38,7 +39,7 @@
 //   See https://github.com/anilbeesetti/nextlib/releases for available
 //   tags. The release tag must exist on GitHub or JitPack returns 404.
 
-const { withDangerousMod, withAppBuildGradle, withSettingsGradle } = require("@expo/config-plugins");
+const { withDangerousMod, withAppBuildGradle, withProjectBuildGradle } = require("@expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
@@ -106,35 +107,33 @@ const withFfmpegExtension = (config) => {
     },
   ]);
 
-  // 2) Inject JitPack into the project's centralized repository list.
-  //    Expo SDK 54's settings.gradle uses dependencyResolutionManagement
-  //    with FAIL_ON_PROJECT_REPOS, so repo declarations inside
-  //    app/build.gradle would be ignored.
-  config = withSettingsGradle(config, (cfg) => {
+  // 2) Inject JitPack into the root android/build.gradle's allprojects
+  //    repositories block. Expo SDK 54's template aggregates repos there
+  //    (settings.gradle is just autolinking + RN gradle plugin).
+  config = withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.contents.includes(JITPACK_MARKER)) {
       return cfg;
     }
     const contents = cfg.modResults.contents;
 
-    // Strategy: find the `dependencyResolutionManagement { ... repositories {`
-    // block and append a JitPack maven entry inside it. Falls back to a
-    // top-level allprojects { repositories { ... } } append if not found.
-    const drmReposRegex =
-      /(dependencyResolutionManagement\s*\{[\s\S]*?repositories\s*\{)/;
-    if (drmReposRegex.test(contents)) {
+    // Match the first `repositories {` inside `allprojects { ... }`.
+    const allprojectsReposRegex =
+      /(allprojects\s*\{[\s\S]*?repositories\s*\{)/;
+    if (allprojectsReposRegex.test(contents)) {
       cfg.modResults.contents = contents.replace(
-        drmReposRegex,
+        allprojectsReposRegex,
         `$1\n        maven { url 'https://jitpack.io' } ${JITPACK_MARKER}`,
       );
       return cfg;
     }
 
-    // Fallback: append a top-level allprojects block at the end of the file.
+    // Fallback: append a fresh allprojects block at the end of the file.
+    // This IS valid in root build.gradle (unlike settings.gradle).
     cfg.modResults.contents =
       contents +
       `\n\n// ${JITPACK_MARKER}\nallprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }\n    }\n}\n`;
     console.warn(
-      "[withFfmpegExtension] dependencyResolutionManagement block not found in settings.gradle — appended fallback allprojects block. Verify the build still finds JitPack.",
+      "[withFfmpegExtension] allprojects.repositories block not found in android/build.gradle — appended fallback block. Verify the build still finds JitPack.",
     );
     return cfg;
   });
