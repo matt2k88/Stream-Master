@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "iptvplayer",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.iptv.player"
@@ -49,17 +49,6 @@
         }
       ],
       [
-        "react-native-video",
-        {
-          "androidExtensions": {
-            "useExoplayerHls": true,
-            "useExoplayerDash": true,
-            "useExoplayerSmoothStreaming": true,
-            "useExoplayerRtsp": true
-          }
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "android": {
@@ -68,7 +57,7 @@
         }
       ],
       "./plugins/withCleartextTraffic",
-      "./plugins/withFfmpegExtension",
+      "react-native-vlc-media-player",
       [
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
