@@ -7,7 +7,7 @@ import {
   Animated,
   ActivityIndicator,
 } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useVideoPlayer, VideoView } from "@/lib/video-player";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { getApiUrl } from "@/lib/query-client";

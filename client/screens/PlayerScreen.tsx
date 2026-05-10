@@ -17,8 +17,8 @@ import {
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "expo-video";
-import type { SubtitleTrack, AudioTrack } from "expo-video";
+import { useVideoPlayer, VideoView } from "@/lib/video-player";
+import type { SubtitleTrack, AudioTrack } from "@/lib/video-player";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";

@@ -49,9 +49,14 @@
         }
       ],
       [
-        "expo-av",
+        "react-native-video",
         {
-          "microphonePermission": false
+          "androidExtensions": {
+            "useExoplayerHls": true,
+            "useExoplayerDash": true,
+            "useExoplayerSmoothStreaming": true,
+            "useExoplayerRtsp": true
+          }
         }
       ],
       [
