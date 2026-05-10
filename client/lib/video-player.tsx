@@ -31,7 +31,7 @@
 //                     |'timeUpdate'    → onProgress.
 //                     |'playToEnd'     → onEnd.
 //                     |'available...'  → onLoad.audioTracks/textTracks.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { StyleProp, ViewStyle, View, StyleSheet } from "react-native";
 import { VLCPlayer } from "react-native-vlc-media-player";
 
@@ -92,6 +92,15 @@ class VideoPlayerHandle {
   // a movie at the moment readyToPlay fires — `onLoad` may not have
   // arrived yet). Applied automatically once `_duration` becomes known.
   _pendingSeekSeconds: number | null = null;
+  // Timer that re-pauses VLC after a seek-while-paused workaround. See
+  // the `currentTime` setter for the full explanation.
+  _pendingRepauseTimer: ReturnType<typeof setTimeout> | null = null;
+  // Bumped on every `replace()` call (even when the URL is unchanged)
+  // so the source memo in VideoView invalidates and the native VLC
+  // view re-loads. The live-TV auto-reconnect path calls
+  // `replace(streamUrl)` with the SAME url to force a fresh decoder —
+  // without this version, URI-only memoization would make that a no-op.
+  _sourceVersion = 0;
 
   private listeners = new Map<EventName, Set<Listener>>();
   // Bound by VideoView — forces a re-render so declarative props on
@@ -113,25 +122,45 @@ class VideoPlayerHandle {
       // Convert seconds → fraction (0..1) — VLC's seek API is positional.
       const frac = Math.max(0, Math.min(1, v / this._duration));
       this._pendingSeekSeconds = null;
-      // CRITICAL: seek imperatively via the live <VLCPlayer> ref and do NOT
-      // trigger _render(). Re-rendering after a seek re-asserts the
-      // declarative `paused` prop on the native side; on Android Media3
-      // VLC builds that re-assertion is interpreted as "stop and reset
-      // playback to position 0", which would silently undo the seek
-      // we just performed (and corrupt currentTime to 0 via the next
-      // onProgress tick). The pure imperative path is the only one that
-      // survives a paused→seek→paused sequence.
+      const ref = this._vlcRef.current;
+      // Cancel any in-flight re-pause timer from a previous seek so
+      // rapid drag/skip events don't fight each other.
+      this._clearPendingRepause();
       let imperativeOk = false;
-      if (this._vlcRef.current?.seek) {
+      if (ref?.setNativeProps) {
         try {
-          this._vlcRef.current.seek(frac);
+          if (this._paused) {
+            // CRITICAL workaround for react-native-vlc-media-player:
+            // setting the `seek` prop while `paused=true` is broken on
+            // Android — the native side ignores the requested position
+            // and resets playback to 0 (then onProgress reports 0,
+            // which can corrupt currentTime in the consumer). Bundle
+            // `paused: false` + `seek` in a single setNativeProps call
+            // so VLC accepts the seek, then re-pause ~400ms later via
+            // another setNativeProps. The JS-side `_paused` stays true
+            // throughout, so the UI keeps showing the paused state and
+            // any unrelated render naturally re-asserts paused={true}.
+            ref.setNativeProps({ paused: false, seek: frac });
+            this._pendingRepauseTimer = setTimeout(() => {
+              this._pendingRepauseTimer = null;
+              // Re-check _paused — user may have hit play during the
+              // 400ms window, in which case we must NOT re-pause.
+              if (!this._paused) return;
+              try {
+                this._vlcRef.current?.setNativeProps?.({ paused: true });
+              } catch {}
+            }, 400);
+          } else {
+            // Playing — straight imperative seek, no re-pause needed.
+            ref.seek(frac);
+          }
           imperativeOk = true;
         } catch {
           imperativeOk = false;
         }
       }
       if (!imperativeOk) {
-        // Native view not mounted yet OR imperative seek threw — fall
+        // Native view not mounted yet OR imperative call threw — fall
         // back to the declarative-prop path so VideoView's effect picks
         // up the new token on next render. Better to risk the
         // paused-prop reassertion than silently drop the seek.
@@ -144,6 +173,12 @@ class VideoPlayerHandle {
       // and let the onLoad/onProgress handler fire the actual seek
       // once duration becomes known.
       this._pendingSeekSeconds = v;
+    }
+  }
+  _clearPendingRepause() {
+    if (this._pendingRepauseTimer) {
+      clearTimeout(this._pendingRepauseTimer);
+      this._pendingRepauseTimer = null;
     }
   }
   get duration() {
@@ -185,6 +220,7 @@ class VideoPlayerHandle {
   }
 
   play() {
+    this._clearPendingRepause();
     this._paused = false;
     // The declarative `paused` prop on react-native-vlc-media-player is
     // unreliable for resume — the native side doesn't always exit the
@@ -200,6 +236,7 @@ class VideoPlayerHandle {
     this._render?.();
   }
   pause() {
+    this._clearPendingRepause();
     // For pause we ONLY set the declarative `paused` prop and re-render
     // — this VLC library's `resume(false)` imperative call is treated
     // as "stop and reset position to 0", which is not what we want.
@@ -208,7 +245,9 @@ class VideoPlayerHandle {
     this._render?.();
   }
   replace(url: string | null) {
+    this._clearPendingRepause();
     this._src = url;
+    this._sourceVersion = (this._sourceVersion + 1) | 0;
     this._currentTime = 0;
     this._duration = 0;
     this._subtitleTrack = null;
@@ -221,6 +260,7 @@ class VideoPlayerHandle {
     this._fire("statusChange", { status: "loading", error: null });
   }
   release() {
+    this._clearPendingRepause();
     // Soft-release: stop native playback, drop the source so <VLCPlayer>
     // unmounts, and clear listeners so any late-fire events from the
     // dying native instance are ignored. The handle stays usable.
@@ -341,7 +381,35 @@ export function VideoView({
           ? "none"
           : "contain";
 
-  if (!player._src) return null;
+  // Memoize the source object by URI so it stays referentially stable
+  // across re-renders. Without this, every parent re-render (timeUpdate
+  // ticks fire ~4×/s during playback, plus countless other state
+  // updates) would create a fresh source object → propagate to the
+  // native VLC view → trigger source-prop diffing on the native side.
+  // Over hundreds of re-renders during a long live-TV session that
+  // accumulates native allocations and is a likely contributor to the
+  // 5-10 minute crash on memory-constrained devices like Firestick.
+  const src = player._src;
+  const sourceVersion = player._sourceVersion;
+  const memoSource = useMemo(
+    () =>
+      src
+        ? {
+            uri: src,
+            initOptions: [
+              "--network-caching=1500",
+              "--live-caching=1500",
+              "--file-caching=1500",
+            ],
+          }
+        : null,
+    // Re-create the source object whenever the URL changes OR the
+    // source version is bumped (replace() called with same URL — used
+    // by the live auto-reconnect path to force a fresh decoder).
+    [src, sourceVersion],
+  );
+
+  if (!player._src || !memoSource) return null;
 
   const VLCAny = VLCPlayer as unknown as React.ComponentType<any>;
 
@@ -350,7 +418,7 @@ export function VideoView({
       <VLCAny
         ref={ref}
         style={StyleSheet.absoluteFill as any}
-        source={{ uri: player._src, initOptions: ["--network-caching=1500"] }}
+        source={memoSource}
         paused={player._paused}
         muted={player._muted}
         repeat={player._loop}

@@ -979,7 +979,7 @@ export default function PlayerScreen() {
     seekGuardTimerRef.current = setTimeout(() => {
       isSeekingRef.current = false;
       seekGuardTimerRef.current = null;
-    }, 800);
+    }, 1200);
   }, []);
   useEffect(() => { armSeekGuardRef.current = armSeekGuard; }, [armSeekGuard]);
   useEffect(() => {
