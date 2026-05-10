@@ -429,6 +429,25 @@ export function VideoView({
               // Keep the on-screen-display engine off — we render our
               // own controls in React, so VLC's OSD only burns RAM.
               "--no-osd",
+              // CRITICAL for Fire TV (especially 4K Max with Dolby
+              // Atmos hardware): route audio through OpenSL ES instead
+              // of Android AudioTrack. The AudioTrack path on Fire OS
+              // negotiates HDMI audio capabilities with the TV every
+              // time the stream's audio format changes (e.g. an IPTV
+              // channel that flips between AC3 / EAC3 / AAC mid-stream,
+              // or VLC re-opening the audio sink after a buffer event).
+              // That handshake is buggy on Fire OS and can stall the
+              // entire HDMI output for several seconds — the TV sees
+              // "no signal" and drops to screensaver / black, which
+              // looks identical to an app crash from the user's side.
+              // OpenSL ES decodes everything in software and feeds the
+              // OS mixer plain PCM, so HDMI never renegotiates and the
+              // stall can't happen. Tradeoff: AC3 / EAC3 5.1 tracks
+              // get downmixed to stereo PCM (no surround passthrough),
+              // which is acceptable for IPTV — almost all streams are
+              // stereo anyway, and reliability beats surround for the
+              // tiny minority on a home-theater setup.
+              "--aout=opensles",
             ],
           }
         : null,
