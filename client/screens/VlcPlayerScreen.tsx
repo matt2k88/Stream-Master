@@ -548,11 +548,28 @@ export default function VlcPlayerScreen(props: VlcPlayerScreenProps) {
   };
 
   // ── Source — memoised so VLC doesn't reload on every render ───────────────
+  // Force software decoding on Android (esp. Fire TV) — Fire Stick's MediaCodec
+  // implementation is unstable and can power-cycle the device on certain
+  // streams (FHD HEVC, AC3/EAC3, etc.). Disabling MediaCodec / OMXIL and
+  // forcing avcodec software decode is the standard Fire TV workaround.
+  // iOS uses VideoToolbox which is fine; web is unsupported.
   const source = useMemo(() => ({
     uri: props.streamUrl,
     initType: 2 as const,
-    // Generous network-cache for IPTV; --no-stats keeps logging quiet.
-    initOptions: ["--network-caching=1500", "--no-stats", "--codec=avcodec"],
+    hwDecoderEnabled: 0,
+    hwDecoderForced: 0,
+    initOptions: Platform.OS === "android"
+      ? [
+          "--no-mediacodec",
+          "--no-omxil",
+          "--avcodec-hw=none",
+          "--network-caching=3000",
+          "--clock-jitter=0",
+          "--clock-synchro=0",
+          "--no-stats",
+          "--codec=avcodec",
+        ]
+      : ["--network-caching=1500", "--no-stats", "--codec=avcodec"],
   }), [props.streamUrl]);
 
   // ── Report modal node ─────────────────────────────────────────────────────
@@ -663,6 +680,8 @@ export default function VlcPlayerScreen(props: VlcPlayerScreenProps) {
           paused={paused}
           muted={muted}
           autoplay
+          hwDecoderEnabled={0}
+          hwDecoderForced={0}
           resizeMode="contain"
           seek={seekTarget}
           audioTrack={selectedAudio}
