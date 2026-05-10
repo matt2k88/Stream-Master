@@ -760,16 +760,38 @@ export default function PlayerScreen() {
 
   // ── Live freeze/stall detector ───────────────────────────────────────────
   // While playing a live stream poll currentTime; if it hasn't advanced for
-  // ~8s the stream froze (common on flaky IPTV connections) → reload.
+  // ~15s the stream froze (common on flaky IPTV connections) → reload.
+  //
+  // Two safety gates prevent false reconnects on streams where currentTime
+  // is unreliable (some raw MPEG-TS / unbounded live HLS streams under
+  // react-native-video Media3 report currentTime=0 or a fixed value even
+  // while playing perfectly):
+  //   1. Only count when the player reports isPlaying=true. Buffering/paused
+  //      states reset the "last advance" timestamp so they don't accumulate.
+  //   2. Only count once we've ever observed a positive currentTime. If
+  //      currentTime is structurally broken for this stream we never enter
+  //      the countdown — we rely on the player's own onError instead.
   useEffect(() => {
     clearStallTimer();
     if (!isLive || isLoading || reconnecting || error) return;
     lastLiveTimeRef.current = -1;
     lastLiveTimeAtRef.current = Date.now();
     stallTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      // Gate 1: don't count toward stall while the player isn't actively
+      // playing (buffering, paused, ad-break, etc.).
+      if (!player._isPlaying) {
+        lastLiveTimeAtRef.current = now;
+        return;
+      }
       let t = 0;
       try { t = player.currentTime ?? 0; } catch { t = 0; }
-      const now = Date.now();
+      // Gate 2: streams where currentTime never reports a positive value
+      // can't be evaluated by this detector — bail and trust onError.
+      if (t <= 0) {
+        lastLiveTimeAtRef.current = now;
+        return;
+      }
       if (lastLiveTimeRef.current === -1) {
         lastLiveTimeRef.current = t;
         lastLiveTimeAtRef.current = now;
@@ -780,7 +802,7 @@ export default function PlayerScreen() {
         lastLiveTimeAtRef.current = now;
         return;
       }
-      if (now - lastLiveTimeAtRef.current >= 8000) {
+      if (now - lastLiveTimeAtRef.current >= 15000) {
         clearStallTimer();
         scheduleLiveRetry();
       }

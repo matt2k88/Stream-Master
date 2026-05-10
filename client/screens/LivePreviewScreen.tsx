@@ -477,16 +477,31 @@ export default function LivePreviewScreen() {
   }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleAutoRetry, resetRetryState, clearLoadingTimeout]);
 
   // ── Stall detector: while we believe we're playing, poll currentTime.
-  // If it hasn't advanced for ~8s the stream has frozen and we need to reload.
+  // If it hasn't advanced for ~15s the stream has frozen and we need to reload.
+  //
+  // Two gates prevent false reconnects on streams where currentTime is
+  // unreliable under react-native-video Media3 (some raw MPEG-TS /
+  // unbounded live HLS streams report currentTime=0 or a fixed value even
+  // while playing perfectly):
+  //   1. Only count when the player reports isPlaying=true.
+  //   2. Only count once we've ever observed a positive currentTime.
   useEffect(() => {
     clearStallTimer();
     if (playStatus !== "playing") return;
     lastTimeRef.current = -1; // sentinel: capture first value on next tick
     lastTimeAtRef.current = Date.now();
     stallTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      if (!(player as any)._isPlaying) {
+        lastTimeAtRef.current = now;
+        return;
+      }
       let t = 0;
       try { t = player.currentTime ?? 0; } catch { t = 0; }
-      const now = Date.now();
+      if (t <= 0) {
+        lastTimeAtRef.current = now;
+        return;
+      }
       if (lastTimeRef.current === -1) {
         lastTimeRef.current = t;
         lastTimeAtRef.current = now;
@@ -498,8 +513,8 @@ export default function LivePreviewScreen() {
         lastTimeAtRef.current = now;
         return;
       }
-      if (now - lastTimeAtRef.current >= 8000) {
-        // Frozen for 8s+ — auto-reconnect.
+      if (now - lastTimeAtRef.current >= 15000) {
+        // Frozen for 15s+ — auto-reconnect.
         clearStallTimer();
         scheduleAutoRetry();
       }
