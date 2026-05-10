@@ -526,6 +526,9 @@ export default function PlayerScreen() {
   const playerRef = useRef(player);
   const showAndResetRef = useRef(showAndReset);
   const isLiveRef = useRef(isLive);
+  // Forward-ref to armSeekGuard (defined later). Stays a no-op until the
+  // effect below patches it once armSeekGuard exists.
+  const armSeekGuardRef = useRef<() => void>(() => {});
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { showAndResetRef.current = showAndReset; }, [showAndReset]);
   useEffect(() => { isLiveRef.current = isLive; }, [isLive]);
@@ -556,8 +559,10 @@ export default function PlayerScreen() {
         else step = 5;
         const delta = evt.eventType === "left" ? -step : step;
         const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+        armSeekGuardRef.current();
         playerRef.current.currentTime = newTime;
         setCurrentTime(newTime);
+        currentTimeRef.current = newTime;
         showAndResetRef.current();
       });
     } catch {
@@ -582,8 +587,10 @@ export default function PlayerScreen() {
       e.preventDefault();
       const delta = e.key === "ArrowLeft" ? -10 : 10;
       const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
+      armSeekGuardRef.current();
       try { playerRef.current.currentTime = newTime; } catch {}
       setCurrentTime(newTime);
+      currentTimeRef.current = newTime;
       showAndResetRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -960,19 +967,42 @@ export default function PlayerScreen() {
     showAndReset();
   }, [isPlaying, player, showAndReset]);
 
+  // Suppress spurious timeUpdate=0 ticks the native player can fire during
+  // a seek round-trip (especially while paused). Without this gate, the
+  // first timeUpdate after a seek can clobber currentTime back to 0,
+  // which then breaks every subsequent skip (because handleSkip computes
+  // from currentTimeRef.current).
+  const seekGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armSeekGuard = useCallback(() => {
+    isSeekingRef.current = true;
+    if (seekGuardTimerRef.current) clearTimeout(seekGuardTimerRef.current);
+    seekGuardTimerRef.current = setTimeout(() => {
+      isSeekingRef.current = false;
+      seekGuardTimerRef.current = null;
+    }, 800);
+  }, []);
+  useEffect(() => { armSeekGuardRef.current = armSeekGuard; }, [armSeekGuard]);
+  useEffect(() => {
+    return () => { if (seekGuardTimerRef.current) clearTimeout(seekGuardTimerRef.current); };
+  }, []);
+
   const handleSkipBack = useCallback(() => {
     const newTime = Math.max(0, currentTimeRef.current - 10);
+    armSeekGuard();
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    currentTimeRef.current = newTime;
     showAndReset();
-  }, [showAndReset]);
+  }, [showAndReset, armSeekGuard]);
 
   const handleSkipForward = useCallback(() => {
     const newTime = Math.min(tvDurationRef.current, currentTimeRef.current + 10);
+    armSeekGuard();
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    currentTimeRef.current = newTime;
     showAndReset();
-  }, [showAndReset]);
+  }, [showAndReset, armSeekGuard]);
 
   const resetLargeSkipAccel = useCallback(() => {
     if (largeSkipResetTimerRef.current) clearTimeout(largeSkipResetTimerRef.current);
@@ -998,11 +1028,13 @@ export default function PlayerScreen() {
     setLargeStepBack(step);
     setLargeStepFwd(60);
     const newTime = Math.max(0, currentTimeRef.current - step);
+    armSeekGuard();
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    currentTimeRef.current = newTime;
     resetLargeSkipAccel();
     showAndReset();
-  }, [showAndReset, resetLargeSkipAccel]);
+  }, [showAndReset, resetLargeSkipAccel, armSeekGuard]);
 
   const handleSkipForwardLarge = useCallback(() => {
     const accel = largeSkipAccelRef.current;
@@ -1018,18 +1050,21 @@ export default function PlayerScreen() {
     setLargeStepFwd(step);
     setLargeStepBack(60);
     const newTime = Math.min(tvDurationRef.current, currentTimeRef.current + step);
+    armSeekGuard();
     try { playerRef.current.currentTime = newTime; } catch {}
     setCurrentTime(newTime);
+    currentTimeRef.current = newTime;
     resetLargeSkipAccel();
     showAndReset();
-  }, [showAndReset, resetLargeSkipAccel]);
+  }, [showAndReset, resetLargeSkipAccel, armSeekGuard]);
 
   const handleSeek = useCallback((time: number) => {
+    armSeekGuard();
     player.currentTime = time;
     setCurrentTime(time);
-    isSeekingRef.current = false;
+    currentTimeRef.current = time;
     showAndReset();
-  }, [player, showAndReset]);
+  }, [player, showAndReset, armSeekGuard]);
 
   const handleScreenTap = useCallback(() => {
     if (activePanel) { activePanelRef.current = null; setActivePanel(null); showAndReset(); return; }
@@ -1225,6 +1260,7 @@ export default function PlayerScreen() {
           const delta = isLeft ? -step : step;
           const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
           currentTimeRef.current = newTime;
+          armSeekGuardRef.current();
           try { playerRef.current.currentTime = newTime; } catch {}
           setCurrentTime(newTime);
         } : undefined}

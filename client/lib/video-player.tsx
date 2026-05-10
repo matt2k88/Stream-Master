@@ -112,10 +112,33 @@ class VideoPlayerHandle {
     if (this._duration > 0) {
       // Convert seconds → fraction (0..1) — VLC's seek API is positional.
       const frac = Math.max(0, Math.min(1, v / this._duration));
-      this._seekFraction = frac;
-      this._seekToken = (this._seekToken + 1) | 0;
       this._pendingSeekSeconds = null;
-      this._render?.();
+      // CRITICAL: seek imperatively via the live <VLCPlayer> ref and do NOT
+      // trigger _render(). Re-rendering after a seek re-asserts the
+      // declarative `paused` prop on the native side; on Android Media3
+      // VLC builds that re-assertion is interpreted as "stop and reset
+      // playback to position 0", which would silently undo the seek
+      // we just performed (and corrupt currentTime to 0 via the next
+      // onProgress tick). The pure imperative path is the only one that
+      // survives a paused→seek→paused sequence.
+      let imperativeOk = false;
+      if (this._vlcRef.current?.seek) {
+        try {
+          this._vlcRef.current.seek(frac);
+          imperativeOk = true;
+        } catch {
+          imperativeOk = false;
+        }
+      }
+      if (!imperativeOk) {
+        // Native view not mounted yet OR imperative seek threw — fall
+        // back to the declarative-prop path so VideoView's effect picks
+        // up the new token on next render. Better to risk the
+        // paused-prop reassertion than silently drop the seek.
+        this._seekFraction = frac;
+        this._seekToken = (this._seekToken + 1) | 0;
+        this._render?.();
+      }
     } else {
       // Duration unknown yet (resume-on-load case). Stash the seconds
       // and let the onLoad/onProgress handler fire the actual seek
