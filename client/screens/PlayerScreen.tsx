@@ -29,6 +29,11 @@ import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
+// Lazy-require VlcPlayerScreen ONLY on Android — react-native-vlc-media-player
+// has no web shim and crashes at module-load time on web/iOS Expo Go.
+const VlcPlayerScreen: React.ComponentType<{}> | null =
+  Platform.OS === "android" ? require("@/screens/VlcPlayerScreen").default : null;
+
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type PlayerRouteProp = RouteProp<RootStackParamList, "Player">;
 
@@ -341,8 +346,23 @@ function TrackPanel({
   );
 }
 
-// ─── Main screen ──────────────────────────────────────────────────────────────
+// ─── Router: pick dedicated VLC screen for Android VOD/series ────────────────
 export default function PlayerScreen() {
+  const route = useRoute<PlayerRouteProp>();
+  const { activeProfile } = useProfile();
+  const isLive = route.params.type === "live";
+  const engine = (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
+    ? "expo" : "vlc";
+  // Android + VLC + non-live → use the dedicated raw-VLC screen.
+  // Live TV, web, iOS, and the expo engine all keep the legacy screen.
+  if (Platform.OS === "android" && engine === "vlc" && !isLive && VlcPlayerScreen) {
+    return <VlcPlayerScreen />;
+  }
+  return <LegacyPlayerScreen />;
+}
+
+// ─── Legacy expo-video / live-TV PlayerScreen ─────────────────────────────────
+function LegacyPlayerScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<PlayerRouteProp>();
   const {
