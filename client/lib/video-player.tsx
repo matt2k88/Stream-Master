@@ -82,8 +82,10 @@ export class VideoPlayer {
   /** @internal */ _textTrackId: number | undefined;
   /** @internal */ _currentTime: number = 0;
   /** @internal */ _pendingSeekFrac: number | null = null;
-  /** @internal — resume-seek queued before duration is known (seconds) */
+  /** @internal — resume-seek queued before VLC is actually seekable (seconds) */
   _pendingResumeSeconds: number | null = null;
+  /** @internal — set true on first real onProgress; gates safe seeking */
+  _hasProgressed: boolean = false;
   /** @internal */ _released: boolean = false;
 
   // Event bus
@@ -99,19 +101,22 @@ export class VideoPlayer {
   set loop(v: boolean) { if (this._loop !== v) { this._loop = v; this.rerender(); } }
 
   // currentTime is read-as-current-position, written-as-seek.
-  // If duration isn't known yet (early resume after readyToPlay), queue
-  // the absolute seek and apply it as soon as the first onProgress / onLoad
-  // event populates duration. This fixes a race where PlayerScreen's
-  // resume-from-saved-position could be silently dropped on slow streams.
+  // VLC is only reliably seekable AFTER it has actually started decoding
+  // (i.e. emitted at least one onProgress with currentTime > 0).
+  // Seeking before that — which is exactly what PlayerScreen does for
+  // "Continue Watching" / resume-from-saved-position — leaves VLC in
+  // an infinite-buffering state. So we queue any seek that happens
+  // before the first real progress tick and flush it from _onProgress.
   get currentTime() { return this._currentTime; }
   set currentTime(seconds: number) {
     if (!isFinite(seconds) || seconds < 0) return;
-    if (this.duration > 0) {
+    if (this._hasProgressed && this.duration > 0) {
       this._pendingSeekFrac = Math.min(1, seconds / this.duration);
       this._currentTime = seconds;
       this._pendingResumeSeconds = null;
       this.rerender();
     } else {
+      // Defer until VLC is actually seekable.
       this._pendingResumeSeconds = seconds;
     }
   }
@@ -162,6 +167,7 @@ export class VideoPlayer {
     this._paused = false;
     this._pendingSeekFrac = null;
     this._pendingResumeSeconds = null;
+    this._hasProgressed = false;
     this.rerender();
   }
 
@@ -202,10 +208,11 @@ export class VideoPlayer {
   _onPlaying(e: any) {
     this.playing = true;
     const dur = msToSeconds(e?.duration);
-    if (dur > 0) {
-      this.duration = dur;
-      this._tryFlushResumeSeek();
-    }
+    if (dur > 0) this.duration = dur;
+    // Note: do NOT flush pending seeks here — VLC fires onPlaying as
+    // soon as it has the demuxer open, but seeking before the first
+    // decoded frame causes infinite buffering. The actual flush
+    // happens from _onProgress once we know decoding has started.
     this._emit("statusChange", { status: "readyToPlay" });
     this._emit("playingChange", { isPlaying: true });
   }
@@ -223,10 +230,18 @@ export class VideoPlayer {
     // milliseconds (Android: MediaPlayer.getTime/getLength; iOS:
     // VLCMediaPlayer.time / media.length). Normalise both to seconds
     // so the consumer-facing API matches expo-video.
-    this._currentTime = msToSeconds(e?.currentTime);
+    const ct = msToSeconds(e?.currentTime);
+    this._currentTime = ct;
     const dur = msToSeconds(e?.duration);
     if (dur > 0 && dur !== this.duration) {
       this.duration = dur;
+    }
+    // First real progress tick → VLC is decoding and now safe to seek.
+    // Flush any queued resume / mid-load seeks here.
+    if (!this._hasProgressed && ct > 0) {
+      this._hasProgressed = true;
+      this._tryFlushResumeSeek();
+    } else if (this._pendingResumeSeconds != null && this.duration > 0) {
       this._tryFlushResumeSeek();
     }
     this._emit("timeUpdate", { currentTime: this._currentTime });
@@ -235,10 +250,9 @@ export class VideoPlayer {
   /** @internal — VLC onLoad */
   _onLoad(e: any) {
     const dur = msToSeconds(e?.duration);
-    if (dur > 0) {
-      this.duration = dur;
-      this._tryFlushResumeSeek();
-    }
+    if (dur > 0) this.duration = dur;
+    // Same reason as _onPlaying — wait for first decoded frame before
+    // applying any queued seek.
     const audio: AudioTrack[] = (e?.audioTracks ?? []).map((t: any) => ({
       id: typeof t.id === "number" ? t.id : Number(t.id),
       label: t.name || `Audio ${t.id}`,
@@ -268,16 +282,26 @@ export class VideoPlayer {
     });
   }
 
-  /** @internal — VLC onBuffering */
-  _onBuffering() {
-    // expo-video's "loading" status — used by PlayerScreen to show
-    // spinner during channel switches and reconnects.
-    this._emit("statusChange", { status: "loading" });
-  }
+  /** @internal — VLC onBuffering
+   *
+   * Intentionally a no-op. VLC fires onBuffering CONSTANTLY during
+   * normal IPTV playback (every time the network buffer tops up).
+   * Forwarding it as `statusChange: loading` would cause the
+   * "Loading stream..." overlay in PlayerScreen / LivePreviewScreen
+   * to flicker on every few seconds even while video plays fine.
+   * The initial-load spinner is already handled by PlayerScreen's
+   * own `playStatus` state, which starts in "loading" and flips to
+   * "playing" on `readyToPlay`.
+   */
+  _onBuffering() {}
 
-  /** @internal — apply a queued resume seek now that duration is known */
+  /** @internal — apply a queued resume seek now that VLC is seekable */
   _tryFlushResumeSeek() {
-    if (this._pendingResumeSeconds == null || this.duration <= 0) return;
+    if (
+      this._pendingResumeSeconds == null ||
+      this.duration <= 0 ||
+      !this._hasProgressed
+    ) return;
     const target = this._pendingResumeSeconds;
     this._pendingResumeSeconds = null;
     this._pendingSeekFrac = Math.max(0, Math.min(1, target / this.duration));
