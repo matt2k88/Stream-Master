@@ -87,6 +87,12 @@ export class VideoPlayer {
   /** @internal — set true on first real onProgress; gates safe seeking */
   _hasProgressed: boolean = false;
   /** @internal */ _released: boolean = false;
+  /** @internal — wall-clock ms when the last seek was dispatched */
+  _lastSeekAtMs: number = 0;
+  /** @internal — last seek target in seconds (for snap-back detection) */
+  _lastSeekTargetSec: number = -1;
+  /** @internal — VideoView re-issues paused=false after this flips */
+  _needsPlayKick: boolean = false;
 
   // Event bus
   private listeners = new Map<string, Set<Listener>>();
@@ -113,6 +119,9 @@ export class VideoPlayer {
     if (this._hasProgressed && this.duration > 0) {
       this._pendingSeekFrac = Math.min(1, seconds / this.duration);
       this._currentTime = seconds;
+      this._lastSeekTargetSec = seconds;
+      this._lastSeekAtMs = Date.now();
+      this._needsPlayKick = true;
       this._pendingResumeSeconds = null;
       this.rerender();
     } else {
@@ -168,6 +177,9 @@ export class VideoPlayer {
     this._pendingSeekFrac = null;
     this._pendingResumeSeconds = null;
     this._hasProgressed = false;
+    this._lastSeekAtMs = 0;
+    this._lastSeekTargetSec = -1;
+    this._needsPlayKick = false;
     this.rerender();
   }
 
@@ -176,6 +188,9 @@ export class VideoPlayer {
     this._released = true;
     this._paused = true;
     this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this._lastSeekAtMs = 0;
+    this._lastSeekTargetSec = -1;
+    this._needsPlayKick = false;
     this.rerender();
   }
 
@@ -231,11 +246,41 @@ export class VideoPlayer {
     // VLCMediaPlayer.time / media.length). Normalise both to seconds
     // so the consumer-facing API matches expo-video.
     const ct = msToSeconds(e?.currentTime);
-    this._currentTime = ct;
     const dur = msToSeconds(e?.duration);
     if (dur > 0 && dur !== this.duration) {
       this.duration = dur;
     }
+
+    // ── Seek snap-back guard ─────────────────────────────────────────────
+    // After we issue a seek, VLC keeps emitting onProgress for a moment
+    // with the OLD pre-seek position (libvlc's position observer lags
+    // the actual seek by one or two ticks, especially on TS streams).
+    // If we let those stale values overwrite `_currentTime` and forward
+    // them as `timeUpdate`, the UI scrub bar visibly jumps back to the
+    // pre-seek position, the user thinks the seek failed and tries again,
+    // and the perception is "plays a frame, snaps back, repeats".
+    //
+    // For a brief window after a seek, only accept progress values that
+    // are within ~3s of our seek target. Once VLC catches up (or the
+    // window expires), normal updates resume.
+    const now = Date.now();
+    const sinceSeekMs = now - this._lastSeekAtMs;
+    if (
+      this._lastSeekAtMs > 0 &&
+      sinceSeekMs < 2000 &&
+      this._lastSeekTargetSec >= 0 &&
+      Math.abs(ct - this._lastSeekTargetSec) > 3
+    ) {
+      // Stale tick — drop it. Don't update _currentTime, don't emit.
+      return;
+    }
+    if (sinceSeekMs >= 2000) {
+      // Seek window closed — clear tracking so this guard goes dormant.
+      this._lastSeekAtMs = 0;
+      this._lastSeekTargetSec = -1;
+    }
+
+    this._currentTime = ct;
     // First real progress tick → VLC is decoding and now safe to seek.
     // Flush any queued resume / mid-load seeks here.
     if (!this._hasProgressed && ct > 0) {
@@ -306,7 +351,35 @@ export class VideoPlayer {
     this._pendingResumeSeconds = null;
     this._pendingSeekFrac = Math.max(0, Math.min(1, target / this.duration));
     this._currentTime = target;
+    this._lastSeekTargetSec = target;
+    this._lastSeekAtMs = Date.now();
+    this._needsPlayKick = true;
     this.rerender();
+  }
+
+  /** @internal — VLC onStopped
+   *
+   * VLCPlayer.js's internal _onStopped handler unconditionally calls
+   * `setNativeProps({ paused: true })` on every stop event. Some Android
+   * VLC builds emit "Stopped" briefly while seeking across a TS
+   * discontinuity — which silently pauses the native player without our
+   * React tree knowing about it (our `paused` prop stays false, so React
+   * never re-issues `false` to revert it). Re-arm a play kick so the
+   * next render re-asserts paused=false on the native side.
+   */
+  _onStopped() {
+    // Only auto-recover if the stop happened RIGHT AFTER a seek — otherwise
+    // it's a real end-of-stream / source switch / network drop and we must
+    // NOT try to play through it (would cause infinite reconnect churn on
+    // dead streams).
+    if (
+      !this._paused &&
+      this._lastSeekAtMs > 0 &&
+      Date.now() - this._lastSeekAtMs < 3000
+    ) {
+      this._needsPlayKick = true;
+      this.rerender();
+    }
   }
 }
 
@@ -377,14 +450,27 @@ export function VideoView({
   // unreliable when a user seeks to the same position twice. Going
   // through the ref method is what react-native-vlc-media-player itself
   // uses internally.
+  //
+  // After every seek we also re-issue paused=false via setNativeProps to
+  // defeat VLCPlayer.js's _onStopped handler which silently pauses the
+  // native player on certain Android stop events (seek across a TS
+  // discontinuity, end-of-buffer flush, etc.).
   useEffect(() => {
     const frac = player._pendingSeekFrac;
-    if (frac == null) return;
-    if (vlcRef.current?.seek) {
-      try { vlcRef.current.seek(frac); } catch {}
+    if (frac != null) {
+      // Null FIRST so any re-render this triggers can't re-issue the seek.
+      player._pendingSeekFrac = null;
+      lastSeekRef.current = frac;
+      if (vlcRef.current?.seek) {
+        try { vlcRef.current.seek(frac); } catch {}
+      }
     }
-    player._pendingSeekFrac = null;
-    lastSeekRef.current = frac;
+    if (player._needsPlayKick && !player._paused) {
+      player._needsPlayKick = false;
+      if (vlcRef.current?.setNativeProps) {
+        try { vlcRef.current.setNativeProps({ paused: false }); } catch {}
+      }
+    }
   });
 
   // No source yet (or released) — render an empty View so the layout
@@ -418,6 +504,7 @@ export function VideoView({
       onEnd={() => player._onEnd()}
       onError={(e: any) => player._onError(e)}
       onBuffering={() => player._onBuffering()}
+      onStopped={() => player._onStopped()}
     />
   );
 }
