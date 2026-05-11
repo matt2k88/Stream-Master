@@ -1,28 +1,27 @@
-// Dual-engine video player shim.
+// Single-engine video player shim around react-native-video v6 on native,
+// expo-video on web (rnv has no usable web target).
 //
-// Exposes the expo-video API surface (useVideoPlayer + VideoView) but
-// dispatches to one of two underlying engines based on the user's
-// per-device preference (PlayerEngineContext + AsyncStorage):
+// Why rnv on native: the FFmpeg software audio decoders (AC3 / EAC3 /
+// DTS / MP2) needed to play certain IPTV streams on Firestick are
+// loaded by ExoPlayer's DefaultRenderersFactory in PREFER extension
+// mode. react-native-video constructs the renderers factory itself
+// and hardcodes EXTENSION_RENDERER_MODE_OFF — which we patch to
+// PREFER via the plugins/withFfmpegAudioRenderer.js Expo config
+// plugin during prebuild. expo-video doesn't expose the renderers
+// factory at all, so it can't be made to use FFmpeg audio.
 //
-//   - "expo" : expo-video (Google Media3 / AVFoundation, default)
-//   - "rnv"  : react-native-video v6 (also Media3 / AVFoundation but a
-//              different wrapper with different config knobs — custom
-//              HTTP headers, granular buffer config, decoder fallback)
+// The rnv shim below mirrors the expo-video API surface that
+// PlayerScreen / LivePreviewScreen / IntroOverlay use, so consumers
+// don't need to know which engine is active.
 //
-// Web always uses expo-video. The engine is captured per-player on
-// first render via useState init so it stays stable for the lifetime
-// of any given player instance (no rules-of-hooks violation).
-//
-// Consumer screens (PlayerScreen, LivePreviewScreen, IntroOverlay)
-// keep importing from "@/lib/video-player" with no API changes.
+// Web always uses expo-video (rnv has no web build).
 
-import React, { useEffect, useReducer, useRef, useState } from "react";
+import React, { useEffect, useReducer, useRef } from "react";
 import { Platform } from "react-native";
 import * as ExpoVideo from "expo-video";
-import { getActiveEngine } from "@/contexts/PlayerEngineContext";
 
-// Hoisted lazy require — resolved once on first import of this module on
-// native, never touched on web (we never reach the rnv branch on web).
+// Hoisted lazy require — resolved once on first import on native,
+// never touched on web (we never reach the rnv branch on web).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _RnvVideo: any = null;
 function getRnvVideo() {
@@ -32,6 +31,8 @@ function getRnvVideo() {
   _RnvVideo = require("react-native-video").default;
   return _RnvVideo;
 }
+
+const USE_RNV = Platform.OS !== "web";
 
 export type SubtitleTrack = ExpoVideo.SubtitleTrack;
 export type AudioTrack = ExpoVideo.AudioTrack;
@@ -43,36 +44,30 @@ type Listener = (e: any) => void;
 class RnvPlayerImpl {
   __engine = "rnv" as const;
 
-  // Surface state (read by VideoView as React props on <Video>)
   source: { uri: string };
   paused = false;
   muted = false;
   loop = false;
-  _timeIntervalSec = 0.25; // expo-video uses seconds; rnv uses ms
+  _timeIntervalSec = 0.25;
   _selectedSubtitle: SubtitleTrack | null = null;
   _selectedAudio: AudioTrack | null = null;
 
-  // Reported state (written by VideoView callbacks)
   _currentTime = 0;
   _duration = 0;
   _playing = false;
   _subtitleTracks: SubtitleTrack[] = [];
   _audioTracks: AudioTrack[] = [];
 
-  // Wiring
   _videoRef: React.MutableRefObject<any> | null = null;
   _subscribers = new Set<() => void>();
   _listeners = new Map<string, Set<Listener>>();
   _released = false;
-  // Bump every time `source` changes so VideoView can force-recreate the
-  // underlying <Video> (clean way to drop the old MediaCodec session).
   _sourceVersion = 0;
 
   constructor(uri: string) {
     this.source = { uri };
   }
 
-  // ─ public expo-video-shaped API ─
   play() {
     this.paused = false;
     this._notify();
@@ -146,7 +141,6 @@ class RnvPlayerImpl {
     this._notify();
   }
 
-  // ─ event API (mirrors expo-video) ─
   addListener(event: string, fn: Listener) {
     if (!this._listeners.has(event)) this._listeners.set(event, new Set());
     this._listeners.get(event)!.add(fn);
@@ -157,7 +151,6 @@ class RnvPlayerImpl {
     };
   }
 
-  // ─ internal ─
   _emit(event: string, payload: any) {
     if (this._released) return;
     const set = this._listeners.get(event);
@@ -194,14 +187,12 @@ interface RnvVideoViewProps {
   style?: any;
   contentFit?: "contain" | "cover" | "fill";
   nativeControls?: boolean;
-  // Accept (and ignore) the expo-video-only props so callers don't have to branch
   allowsFullscreen?: boolean;
   allowsPictureInPicture?: boolean;
   [k: string]: any;
 }
 
 function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoViewProps) {
-  // Force-rerender when player props change
   const [, force] = useReducer((x) => x + 1, 0);
   const videoRef = useRef<any>(null);
   const Video = getRnvVideo();
@@ -218,11 +209,8 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
   const resizeMode =
     contentFit === "cover" ? "cover" : contentFit === "fill" ? "stretch" : "contain";
 
-  // Build rnv track-selection objects from the shim's selected track.
-  // We look up by id first (stable across a single onLoad), but fall back
-  // to language if onLoad fired more than once and reshuffled the indices
-  // — keeps the user's chosen audio/subtitle pinned across HLS variant
-  // switches that re-emit the track list.
+  // Track lookup with id-first, language-fallback so HLS variant switches
+  // that re-emit the track list don't lose the user's selection.
   const lookup = <T extends { id: string; language?: string | null }>(
     list: T[],
     sel: T | null,
@@ -241,9 +229,6 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
 
   return (
     <Video
-      // Re-mounting on source change forces a clean MediaCodec teardown,
-      // which has been more reliable than relying on rnv to swap sources
-      // in-place (Firestick especially can leak the old surface).
       key={`src-${player._sourceVersion}`}
       ref={videoRef}
       source={player.source}
@@ -254,11 +239,7 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
       resizeMode={resizeMode}
       controls={!!nativeControls}
       progressUpdateInterval={Math.max(100, Math.round(player._timeIntervalSec * 1000))}
-      // Try to recover from transient network blips instead of erroring out;
-      // PlayerScreen has its own retry loop layered on top.
       disableDisconnectError={true}
-      // Default to texture surface — seems to play nicer on Android TV
-      // when re-mounting around fullscreen transitions.
       useTextureView={true}
       selectedTextTrack={
         subIdx >= 0 ? { type: "index", value: subIdx } : { type: "disabled" }
@@ -269,7 +250,7 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
       onLoadStart={() => player._emit("statusChange", { status: "loading" })}
       onLoad={(d: any) => {
         player._duration = typeof d?.duration === "number" ? d.duration : 0;
-        const audio: SubtitleTrack[] = Array.isArray(d?.audioTracks)
+        const audio: AudioTrack[] = Array.isArray(d?.audioTracks)
           ? d.audioTracks.map((t: any, i: number) => ({
               id: String(i),
               label: t?.title || t?.language || `Audio ${i + 1}`,
@@ -283,8 +264,8 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
               language: t?.language ?? null,
             }))
           : [];
-        player._audioTracks = audio as any;
-        player._subtitleTracks = text as any;
+        player._audioTracks = audio;
+        player._subtitleTracks = text;
         player._emit("availableAudioTracksChange", { availableAudioTracks: audio });
         player._emit("availableSubtitleTracksChange", { availableSubtitleTracks: text });
         player._emit("statusChange", { status: "readyToPlay" });
@@ -322,15 +303,7 @@ function RnvVideoView({ player, style, contentFit, nativeControls }: RnvVideoVie
 
 // ─── Public hooks / components ──────────────────────────────────────────────
 export function useVideoPlayer(uri: string, setup?: (p: any) => void) {
-  // Capture engine ONCE per player instance via useState init. This locks
-  // the engine for the lifetime of this component instance, so the conditional
-  // hook call below always takes the same branch on every re-render of the
-  // same instance — satisfying React's rules-of-hooks at runtime.
-  const [engine] = useState<"expo" | "rnv">(() =>
-    Platform.OS === "web" ? "expo" : getActiveEngine(),
-  );
-
-  if (engine === "rnv") {
+  if (USE_RNV) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const playerRef = useRef<RnvPlayerImpl | null>(null);
     if (!playerRef.current) {
@@ -344,7 +317,7 @@ export function useVideoPlayer(uri: string, setup?: (p: any) => void) {
     return playerRef.current as any;
   }
 
-  // expo-video path
+  // Web — expo-video
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const player = ExpoVideo.useVideoPlayer(uri, setup as any);
   (player as any).__engine = "expo";

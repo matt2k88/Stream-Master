@@ -3,7 +3,7 @@
     "name": "Ultra Cast v3",
     "slug": "stream-master",
     "owner": "mgcultra",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "iptvplayer",
@@ -61,6 +61,7 @@
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
       ],
+      "./plugins/withFfmpegAudioRenderer",
       [
         "react-native-video",
         {

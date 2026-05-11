@@ -21,7 +21,6 @@ import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
-import { PlayerEngineProvider } from "@/contexts/PlayerEngineContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
@@ -79,7 +78,6 @@ export default function App() {
                 <DataProvider>
                   <ProfileProvider>
                     <UISettingsProvider>
-                    <PlayerEngineProvider>
                     <CategoryOrderProvider>
                     <FavouritesProvider>
                       <WatchHistoryProvider>
@@ -97,7 +95,6 @@ export default function App() {
                       </WatchHistoryProvider>
                     </FavouritesProvider>
                     </CategoryOrderProvider>
-                    </PlayerEngineProvider>
                     </UISettingsProvider>
                   </ProfileProvider>
                 </DataProvider>
