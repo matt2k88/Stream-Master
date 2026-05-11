@@ -666,12 +666,26 @@ export default function VlcPlayerScreen() {
   }, [seekTo, showAndReset]);
 
   // ─── Source ──────────────────────────────────────────────────────────────
+  // libvlc init options.
+  //
+  // The codec chain `mediacodec_ndk,mediacodec,all` matches what VLC's own
+  // Android app uses: try the modern NDK MediaCodec first, fall back to the
+  // legacy MediaCodec wrapper, then to anything else (software). This is
+  // critical for 4K/HDR — hardware decoding hands frames directly to the
+  // Android Surface in their native pixel format, so the OS can negotiate
+  // HDR10 / Dolby Vision tone-mapping with the connected display. Pure
+  // software decoding (the previous behaviour) renders to SDR Rec.709 and
+  // can never engage the panel's HDR pipeline → the "bland" look on UHD
+  // channels. The chained fallback means any stream HW can't handle still
+  // plays via SW — nothing should regress.
   const source = useMemo(() => ({
     uri: streamUrl,
     initOptions: [
       "--http-reconnect",
       "--network-caching=1500",
       "--file-caching=1500",
+      "--codec=mediacodec_ndk,mediacodec,all",
+      "--avcodec-hw=mediacodec",
     ],
   }), [streamUrl]);
 
