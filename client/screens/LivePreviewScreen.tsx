@@ -11,7 +11,6 @@ import {
   Platform,
   Modal,
   TextInput,
-  useTVEventHandler,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -457,25 +456,40 @@ export default function LivePreviewScreen() {
     resetFsHideTimer();
   }, [categoryChannels, selectedId, switchToChannel, resetFsHideTimer]);
 
-  // useTVEventHandler registers once and isn't reactive to deps, so route
-  // events through a ref that always points at the latest closure.
-  const tvHandlerRef = useRef<(evt: { eventType: string }) => void>(() => {});
+  // Keep a ref to the latest channel-step closure so the Android onKeyDown
+  // handler (attached once to a Pressable) and the web keydown listener
+  // never read stale state.
+  const stepRef = useRef<(dir: -1 | 1) => void>(() => {});
+  const fsStateRef = useRef({ isFullscreen: false, showReport: false });
   useEffect(() => {
-    tvHandlerRef.current = (evt) => {
-      if (!isFullscreen) return;
-      // Don't intercept D-pad while the report modal is open — it needs
-      // up/down to navigate the reason list.
-      if (showReport) return;
-      if (evt.eventType === "up") stepChannelInFullscreen(-1);
-      else if (evt.eventType === "down") stepChannelInFullscreen(1);
-      else if (evt.eventType === "select" || evt.eventType === "playPause") {
-        // Any select press while overlay is hidden re-shows it
-        setShowFsOverlay(true);
-        resetFsHideTimer();
-      }
+    stepRef.current = stepChannelInFullscreen;
+    fsStateRef.current = { isFullscreen, showReport };
+  }, [stepChannelInFullscreen, isFullscreen, showReport]);
+
+  // Web: listen for ArrowUp / ArrowDown while in fullscreen.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const onKey = (e: KeyboardEvent) => {
+      const { isFullscreen: fs, showReport: rep } = fsStateRef.current;
+      if (!fs || rep) return;
+      if (e.key === "ArrowUp") { e.preventDefault(); stepRef.current(-1); }
+      else if (e.key === "ArrowDown") { e.preventDefault(); stepRef.current(1); }
     };
-  }, [isFullscreen, showReport, stepChannelInFullscreen, resetFsHideTimer]);
-  useTVEventHandler((evt: any) => tvHandlerRef.current(evt));
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Android TV / Fire TV: handler attached to the focused fullscreen
+  // Pressable. Returns nothing — React Native swallows the event when we
+  // call stepRef which performs the navigation.
+  const handleFsKeyDown = useCallback(({ nativeEvent }: any) => {
+    const { isFullscreen: fs, showReport: rep } = fsStateRef.current;
+    if (!fs || rep) return;
+    const { keyCode } = nativeEvent;
+    // 19 = DPAD_UP, 20 = DPAD_DOWN, 166 = CHANNEL_UP, 167 = CHANNEL_DOWN
+    if (keyCode === 19 || keyCode === 166) stepRef.current(-1);
+    else if (keyCode === 20 || keyCode === 167) stepRef.current(1);
+  }, []);
 
   const handleRetry = useCallback(() => {
     resetRetryState();
@@ -798,10 +812,14 @@ export default function LivePreviewScreen() {
         <>
           {/* Tap target: catches all taps to toggle overlay. zIndex above
               the playerWrap (50) but below the controls (70). Transparent,
-              so the SurfaceView underneath shows through. */}
+              so the SurfaceView underneath shows through. Focusable on
+              Android TV / Fire TV so D-pad up/down events route to
+              onKeyDown for quick channel switching. */}
           <Pressable
             style={[StyleSheet.absoluteFill, { zIndex: 60 }]}
             onPress={handlePlayerTap}
+            focusable={Platform.OS === "android"}
+            onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
           />
 
           {showFsOverlay && (
@@ -819,6 +837,7 @@ export default function LivePreviewScreen() {
                   onBlur={() => setBackFocused(false)}
                   onPressIn={() => setBackPressed(true)}
                   onPressOut={() => setBackPressed(false)}
+                  onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                   hasTVPreferredFocus
                 >
                   <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
