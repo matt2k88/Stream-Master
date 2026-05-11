@@ -52,7 +52,8 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "minSdkVersion": 26
           }
         }
       ],
@@ -60,6 +61,13 @@
       [
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }
+      ],
+      [
+        "react-native-vlc-media-player",
+        {
+          "android": {},
+          "ios": { "includeVLCKit": false }
+        }
       ]
     ],
     "experiments": {

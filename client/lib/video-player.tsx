@@ -1,24 +1,403 @@
-// Thin re-export of expo-video.
+// Native (iOS / Android / Fire TV) player shim.
 //
-// Historically this file was a compatibility shim that backed the same
-// expo-video-shaped API with react-native-video, then with libVLC, in
-// search of broader codec support. Both attempts had Fire OS stability
-// issues — particularly the 4K Max black-screen / HDMI-handshake hang.
-// Reverting to expo-video (Google's official AndroidX Media3 path,
-// which is what Fire OS itself is tuned for) restores the rock-solid
-// stability the app had originally.
+// Bridges react-native-vlc-media-player behind an expo-video-shaped API
+// so consumer screens (PlayerScreen, LivePreviewScreen, IntroOverlay)
+// don't have to know which engine is underneath.
 //
-// Tradeoff accepted: expo-video doesn't ship the AC3 / EAC3 audio
-// codecs or some exotic raw MPEG-TS variants. A small number of IPTV
-// channels with surround audio may not play. That's the cost of
-// Firestick stability.
+// Why VLC?
+//   expo-video (Media3) is rock-solid on Fire TV but ships without
+//   AC3/EAC3 audio and a few exotic raw MPEG-TS variants, so a small
+//   number of IPTV channels with surround audio can't play. VLC covers
+//   essentially every IPTV codec / container in existence.
 //
-// Consumer screens (PlayerScreen, LivePreviewScreen, IntroOverlay)
-// keep importing from "@/lib/video-player" so this module stays the
-// single point where the engine could be swapped again later.
-export { useVideoPlayer, VideoView } from "expo-video";
-export type {
-  SubtitleTrack,
-  AudioTrack,
-  VideoPlayer,
-} from "expo-video";
+// Why a shim?
+//   expo-video uses a hook + imperative-player API:
+//     const player = useVideoPlayer(url, p => p.play());
+//     <VideoView player={player} />
+//     player.replace(newUrl); player.currentTime = 30; player.pause();
+//   VLC ships a pure-component, prop-driven API. Bridging the two means
+//   the consumer screens stay identical and we can swap engines again
+//   later without touching them.
+//
+// Web is handled separately by `video-player.web.tsx`, which transparently
+// falls back to expo-video so the dev preview keeps working.
+//
+// Keep-awake: the app already calls `useKeepAwake()` at the App root, so
+// the device won't fall asleep mid-playback regardless of which engine
+// is active. No engine-specific work needed.
+
+import React, { useEffect, useReducer, useRef } from "react";
+import { Platform, View, StyleProp, ViewStyle } from "react-native";
+// @ts-ignore — package ships a CJS index without ESM types
+import * as VlcPkg from "react-native-vlc-media-player";
+
+const VLCPlayer: any =
+  (VlcPkg as any).VLCPlayer ??
+  (VlcPkg as any).default?.VLCPlayer ??
+  (VlcPkg as any).default ??
+  VlcPkg;
+
+// ─── Public types (compat with expo-video) ────────────────────────────────
+export type SubtitleTrack = {
+  id: number;
+  label: string;
+  language?: string;
+};
+
+export type AudioTrack = {
+  id: number;
+  label: string;
+  language?: string;
+};
+
+type Listener = (payload: any) => void;
+type Subscription = { remove: () => void };
+
+// Default VLC init options. Lower the network buffer a bit so live
+// channel switches feel snappier than VLC's 1500ms default.
+const DEFAULT_INIT_OPTIONS = ["--network-caching=300"];
+
+// ─── Player bridge ────────────────────────────────────────────────────────
+//
+// Carries the engine state and is the object handed back from
+// `useVideoPlayer`. Consumer code mutates simple properties on it
+// (`player.muted = false`, `player.currentTime = 30`, `player.play()`)
+// and the attached `<VideoView>` re-renders the underlying VLCPlayer
+// with the new props. Events from VLC are forwarded back through the
+// internal event bus, exposed via `addListener()`.
+
+export class VideoPlayer {
+  // ── Public read-only state ──────────────────────────────────────────────
+  playing: boolean = false;
+  duration: number = 0; // seconds
+  // ── Internal state mirrored to <VLCPlayer> props ────────────────────────
+  /** @internal */ _source: { uri: string; initOptions: string[] } = {
+    uri: "",
+    initOptions: [...DEFAULT_INIT_OPTIONS],
+  };
+  /** @internal */ _paused: boolean = true;
+  /** @internal */ _muted: boolean = false;
+  /** @internal */ _loop: boolean = false;
+  /** @internal */ _audioTrackId: number | undefined;
+  /** @internal */ _textTrackId: number | undefined;
+  /** @internal */ _currentTime: number = 0;
+  /** @internal */ _pendingSeekFrac: number | null = null;
+  /** @internal — resume-seek queued before duration is known (seconds) */
+  _pendingResumeSeconds: number | null = null;
+  /** @internal */ _released: boolean = false;
+
+  // Event bus
+  private listeners = new Map<string, Set<Listener>>();
+  // VideoView subscriber — triggers a re-render when state changes
+  private rerender: () => void = () => {};
+
+  // ── Setters that need a re-render ──────────────────────────────────────
+  get muted() { return this._muted; }
+  set muted(v: boolean) { if (this._muted !== v) { this._muted = v; this.rerender(); } }
+
+  get loop() { return this._loop; }
+  set loop(v: boolean) { if (this._loop !== v) { this._loop = v; this.rerender(); } }
+
+  // currentTime is read-as-current-position, written-as-seek.
+  // If duration isn't known yet (early resume after readyToPlay), queue
+  // the absolute seek and apply it as soon as the first onProgress / onLoad
+  // event populates duration. This fixes a race where PlayerScreen's
+  // resume-from-saved-position could be silently dropped on slow streams.
+  get currentTime() { return this._currentTime; }
+  set currentTime(seconds: number) {
+    if (!isFinite(seconds) || seconds < 0) return;
+    if (this.duration > 0) {
+      this._pendingSeekFrac = Math.min(1, seconds / this.duration);
+      this._currentTime = seconds;
+      this._pendingResumeSeconds = null;
+      this.rerender();
+    } else {
+      this._pendingResumeSeconds = seconds;
+    }
+  }
+
+  set subtitleTrack(t: SubtitleTrack | null) {
+    // -1 disables text tracks in VLC
+    this._textTrackId = t ? t.id : -1;
+    this.rerender();
+  }
+  get subtitleTrack(): SubtitleTrack | null {
+    return null; // expo-video also doesn't expose a robust getter; consumer tracks selection in state
+  }
+
+  set audioTrack(t: AudioTrack | null) {
+    if (t) this._audioTrackId = t.id;
+    this.rerender();
+  }
+  get audioTrack(): AudioTrack | null {
+    return null;
+  }
+
+  // No-op for compat with PlayerScreen (which sets this on expo-video).
+  // VLC fires onProgress at ~250ms anyway.
+  set timeUpdateEventInterval(_n: number) {}
+  get timeUpdateEventInterval() { return 1; }
+
+  // ── Imperative methods ─────────────────────────────────────────────────
+  play() {
+    if (this._released) return;
+    if (!this._paused) return;
+    this._paused = false;
+    this.rerender();
+  }
+
+  pause() {
+    if (this._paused) return;
+    this._paused = true;
+    this.rerender();
+  }
+
+  /** Swap the source URL and immediately start playing it. */
+  replace(uri: string) {
+    if (this._released) return;
+    this._source = { uri: uri ?? "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this._currentTime = 0;
+    this.duration = 0;
+    this.playing = false;
+    this._paused = false;
+    this._pendingSeekFrac = null;
+    this._pendingResumeSeconds = null;
+    this.rerender();
+  }
+
+  /** Tear down — drops the source so the native view stops decoding. */
+  release() {
+    this._released = true;
+    this._paused = true;
+    this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this.rerender();
+  }
+
+  addListener(event: string, fn: Listener): Subscription {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    const set = this.listeners.get(event)!;
+    set.add(fn);
+    return {
+      remove: () => {
+        set.delete(fn);
+      },
+    };
+  }
+
+  // ── Internals used by VideoView ────────────────────────────────────────
+  /** @internal */ _attachView(rerender: () => void) {
+    this.rerender = rerender;
+    return () => { this.rerender = () => {}; };
+  }
+
+  /** @internal */ _emit(event: string, payload?: any) {
+    const set = this.listeners.get(event);
+    if (!set) return;
+    set.forEach((fn) => {
+      try { fn(payload); } catch {}
+    });
+  }
+
+  /** @internal — VLC onPlaying */
+  _onPlaying(e: any) {
+    this.playing = true;
+    const dur = msToSeconds(e?.duration);
+    if (dur > 0) {
+      this.duration = dur;
+      this._tryFlushResumeSeek();
+    }
+    this._emit("statusChange", { status: "readyToPlay" });
+    this._emit("playingChange", { isPlaying: true });
+  }
+
+  /** @internal — VLC onPaused */
+  _onPaused() {
+    if (!this.playing) return;
+    this.playing = false;
+    this._emit("playingChange", { isPlaying: false });
+  }
+
+  /** @internal — VLC onProgress */
+  _onProgress(e: any) {
+    // Underlying native code emits both currentTime and duration in
+    // milliseconds (Android: MediaPlayer.getTime/getLength; iOS:
+    // VLCMediaPlayer.time / media.length). Normalise both to seconds
+    // so the consumer-facing API matches expo-video.
+    this._currentTime = msToSeconds(e?.currentTime);
+    const dur = msToSeconds(e?.duration);
+    if (dur > 0 && dur !== this.duration) {
+      this.duration = dur;
+      this._tryFlushResumeSeek();
+    }
+    this._emit("timeUpdate", { currentTime: this._currentTime });
+  }
+
+  /** @internal — VLC onLoad */
+  _onLoad(e: any) {
+    const dur = msToSeconds(e?.duration);
+    if (dur > 0) {
+      this.duration = dur;
+      this._tryFlushResumeSeek();
+    }
+    const audio: AudioTrack[] = (e?.audioTracks ?? []).map((t: any) => ({
+      id: typeof t.id === "number" ? t.id : Number(t.id),
+      label: t.name || `Audio ${t.id}`,
+    }));
+    const subs: SubtitleTrack[] = (e?.textTracks ?? []).map((t: any) => ({
+      id: typeof t.id === "number" ? t.id : Number(t.id),
+      label: t.name || `Subtitle ${t.id}`,
+    }));
+    if (audio.length) {
+      this._emit("availableAudioTracksChange", { availableAudioTracks: audio });
+    }
+    if (subs.length) {
+      this._emit("availableSubtitleTracksChange", { availableSubtitleTracks: subs });
+    }
+  }
+
+  /** @internal — VLC onEnd */
+  _onEnd() {
+    this._emit("playToEnd");
+  }
+
+  /** @internal — VLC onError */
+  _onError(_e: any) {
+    this._emit("statusChange", {
+      status: "error",
+      error: { message: "Playback failed" },
+    });
+  }
+
+  /** @internal — VLC onBuffering */
+  _onBuffering() {
+    // expo-video's "loading" status — used by PlayerScreen to show
+    // spinner during channel switches and reconnects.
+    this._emit("statusChange", { status: "loading" });
+  }
+
+  /** @internal — apply a queued resume seek now that duration is known */
+  _tryFlushResumeSeek() {
+    if (this._pendingResumeSeconds == null || this.duration <= 0) return;
+    const target = this._pendingResumeSeconds;
+    this._pendingResumeSeconds = null;
+    this._pendingSeekFrac = Math.max(0, Math.min(1, target / this.duration));
+    this._currentTime = target;
+    this.rerender();
+  }
+}
+
+// react-native-vlc-media-player's native code emits both currentTime
+// and duration in milliseconds on iOS and Android. Convert to seconds
+// for parity with the expo-video API consumer screens were written
+// against. Returns 0 for unknown / invalid values.
+function msToSeconds(d: unknown): number {
+  if (typeof d !== "number" || !isFinite(d) || d <= 0) return 0;
+  return d / 1000;
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────
+export function useVideoPlayer(
+  source: string,
+  setup?: (player: VideoPlayer) => void,
+): VideoPlayer {
+  const ref = useRef<VideoPlayer | null>(null);
+  if (!ref.current) {
+    const p = new VideoPlayer();
+    if (source) {
+      p._source = { uri: source, initOptions: [...DEFAULT_INIT_OPTIONS] };
+      p._paused = false;
+    }
+    try { setup?.(p); } catch {}
+    ref.current = p;
+  }
+  // Tear down the engine on unmount so the native view stops decoding
+  // immediately rather than waiting on GC of the JS object.
+  useEffect(() => {
+    const p = ref.current!;
+    return () => {
+      try { p.release(); } catch {}
+    };
+  }, []);
+  return ref.current!;
+}
+
+// ─── VideoView ────────────────────────────────────────────────────────────
+type ContentFit = "contain" | "cover" | "fill";
+
+export interface VideoViewProps {
+  player: VideoPlayer;
+  style?: StyleProp<ViewStyle>;
+  contentFit?: ContentFit;
+  // The next three are accepted for expo-video API parity but ignored —
+  // VLC has no built-in PiP/fullscreen UI in this binding, and the app
+  // implements its own controls anyway.
+  nativeControls?: boolean;
+  allowsFullscreen?: boolean;
+  allowsPictureInPicture?: boolean;
+}
+
+export function VideoView({
+  player,
+  style,
+  contentFit = "contain",
+}: VideoViewProps) {
+  // Force a re-render whenever the player's state changes.
+  const [, force] = useReducer((x: number) => x + 1, 0);
+  const vlcRef = useRef<any>(null);
+  const lastSeekRef = useRef<number | null>(null);
+
+  useEffect(() => player._attachView(force), [player]);
+
+  // Apply pending seeks imperatively via the ref. VLC's `seek` prop only
+  // triggers a re-seek when the value actually changes, which gets
+  // unreliable when a user seeks to the same position twice. Going
+  // through the ref method is what react-native-vlc-media-player itself
+  // uses internally.
+  useEffect(() => {
+    const frac = player._pendingSeekFrac;
+    if (frac == null) return;
+    if (vlcRef.current?.seek) {
+      try { vlcRef.current.seek(frac); } catch {}
+    }
+    player._pendingSeekFrac = null;
+    lastSeekRef.current = frac;
+  });
+
+  // No source yet (or released) — render an empty View so the layout
+  // box still occupies space. This matches expo-video's behaviour when
+  // `source` is null.
+  if (!player._source.uri) {
+    return <View style={style} />;
+  }
+
+  const resizeMode =
+    contentFit === "cover" ? "cover" :
+    contentFit === "fill" ? "fill" :
+    "contain";
+
+  return (
+    <VLCPlayer
+      ref={vlcRef}
+      style={style}
+      source={player._source}
+      paused={player._paused}
+      muted={player._muted}
+      repeat={player._loop}
+      audioTrack={player._audioTrackId}
+      textTrack={player._textTrackId}
+      resizeMode={resizeMode}
+      autoplay={!player._paused}
+      onPlaying={(e: any) => player._onPlaying(e)}
+      onProgress={(e: any) => player._onProgress(e)}
+      onPaused={() => player._onPaused()}
+      onLoad={(e: any) => player._onLoad(e)}
+      onEnd={() => player._onEnd()}
+      onError={(e: any) => player._onError(e)}
+      onBuffering={() => player._onBuffering()}
+    />
+  );
+}
+
+// Suppress unused-import lint warning on Platform; kept around in case
+// we need a runtime fallback later.
+void Platform;
