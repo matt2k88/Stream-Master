@@ -28,7 +28,55 @@ interface DataContextType {
   vodStreams: VodStream[];
   seriesCategories: Category[];
   seriesList: Series[];
+  // Pre-computed during sync so the "Recently Added" view opens instantly
+  // instead of sorting tens of thousands of items on the JS thread every
+  // time the screen mounts.
+  recentMovies: VodStream[];
+  recentSeries: Series[];
   refresh: () => Promise<void>;
+}
+
+const RECENTLY_ADDED_LIMIT = 30;
+
+function tsOf(s: any, kind: "movies" | "series"): number {
+  const raw = (kind === "series" ? s.last_modified : s.added) ?? s.added ?? s.last_modified;
+  if (!raw) return 0;
+  const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+  if (!isNaN(n) && n > 0) return n;
+  const d = Date.parse(String(raw));
+  return isNaN(d) ? 0 : Math.floor(d / 1000);
+}
+
+function computeRecent<T>(pool: T[], kind: "movies" | "series"): T[] {
+  if (pool.length === 0) return [];
+  // Single-pass top-K via insertion into a small sorted array. Avoids
+  // sorting the entire pool (which can be 50k+ items) — keeps the work
+  // bounded to O(n * K) with K=30, much cheaper than O(n log n).
+  const top: { item: T; ts: number }[] = [];
+  for (const item of pool) {
+    const t = tsOf(item, kind);
+    if (top.length < RECENTLY_ADDED_LIMIT) {
+      top.push({ item, ts: t });
+      if (top.length === RECENTLY_ADDED_LIMIT) {
+        top.sort((a, b) => b.ts - a.ts);
+      }
+      continue;
+    }
+    if (t <= top[top.length - 1].ts) continue;
+    // insert
+    let i = top.length - 1;
+    top[i] = { item, ts: t };
+    while (i > 0 && top[i].ts > top[i - 1].ts) {
+      const tmp = top[i - 1];
+      top[i - 1] = top[i];
+      top[i] = tmp;
+      i--;
+    }
+  }
+  if (top.length < RECENTLY_ADDED_LIMIT) {
+    top.sort((a, b) => b.ts - a.ts);
+  }
+  return top.map((x) => x.item);
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -49,6 +97,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [vodStreams, setVodStreams] = useState<VodStream[]>([]);
   const [seriesCategories, setSeriesCategories] = useState<Category[]>([]);
   const [seriesList, setSeriesList] = useState<Series[]>([]);
+  const [recentMovies, setRecentMovies] = useState<VodStream[]>([]);
+  const [recentSeries, setRecentSeries] = useState<Series[]>([]);
 
   const syncRunning = useRef(false);
 
@@ -82,6 +132,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ]);
         setVodCategories(cats);
         setVodStreams(streams);
+        setRecentMovies(computeRecent(streams, "movies"));
         setSyncProgress((p) => ({ ...p, movies: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, movies: "error" }));
@@ -96,6 +147,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ]);
         setSeriesCategories(cats);
         setSeriesList(list);
+        setRecentSeries(computeRecent(list, "series"));
         setSyncProgress((p) => ({ ...p, series: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, series: "error" }));
@@ -121,6 +173,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setVodStreams([]);
       setSeriesCategories([]);
       setSeriesList([]);
+      setRecentMovies([]);
+      setRecentSeries([]);
     }
   }, [isAuthenticated]);
 
@@ -136,6 +190,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         vodStreams,
         seriesCategories,
         seriesList,
+        recentMovies,
+        recentSeries,
         refresh: sync,
       }}
     >

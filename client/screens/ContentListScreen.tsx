@@ -514,7 +514,7 @@ export default function ContentListScreen() {
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
   const { width } = useWindowDimensions();
-  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, isSyncing, refresh } = useData();
+  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh } = useData();
   const handleRefresh = useCallback(() => {
     if (isSyncing) return;
     refresh();
@@ -616,20 +616,10 @@ export default function ContentListScreen() {
   // Special views (Favourites / Recently Watched / Recently Added).
   const specialContent: ContentItem[] = useMemo(() => {
     if (!isSpecialView) return [];
-    // Recently Added — newest 30 items by `added` (movies) or `last_modified` (series)
+    // Recently Added — pre-computed once during sync (DataContext) so this
+    // screen mounts instantly even with 50k+ movies/series in the catalogue.
     if (isRecentlyAddedView) {
-      const RECENT_LIMIT = 30;
-      const tsOf = (s: any): number => {
-        const raw = (type === "series" ? s.last_modified : s.added) ?? s.added ?? s.last_modified;
-        if (!raw) return 0;
-        const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
-        if (!isNaN(n) && n > 0) return n;
-        const d = Date.parse(String(raw));
-        return isNaN(d) ? 0 : Math.floor(d / 1000);
-      };
-      const pool: ContentItem[] = type === "movies" ? vodStreams : seriesList;
-      const sorted = [...pool].sort((a, b) => tsOf(b) - tsOf(a));
-      return sorted.slice(0, RECENT_LIMIT);
+      return type === "movies" ? recentMovies : recentSeries;
     }
     if (isFavouritesView) {
       const favIds = new Set(
@@ -686,7 +676,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, type, liveStreams, vodStreams, seriesList, getFavouritesByType, watchEntries]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, getFavouritesByType, watchEntries]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
