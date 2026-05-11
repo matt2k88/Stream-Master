@@ -52,30 +52,14 @@ export function useProfile() {
 }
 
 /**
- * Resolve the active player engine for a stream type.
- *
- * Defaults:
- *   - Live  → "vlc"  (covers AC3/EAC3 surround audio that some IPTV
- *                    providers ship on live channels but expo-video /
- *                    Media3 can't decode out of the box)
- *   - VOD   → "expo" (rock-solid seek / continue-watching / skip
- *                    behaviour. VLC's seek on movies & series is flaky
- *                    on TS / non-fragmented MP4 streams — libvlc fires
- *                    spurious Stopped events around the seek and
- *                    recovery is unreliable. expo-video uses Media3 /
- *                    AVPlayer which handle these cleanly.)
- *
- * Users can still override per stream-type in Player Settings when
- * they hit a stream that the default engine struggles with.
+ * Resolve the active player engine for a stream type. Defaults to "vlc"
+ * if the profile is missing or the field hasn't been set yet.
  */
 export function getPlayerEngine(
   profile: Profile | null,
   isLive: boolean,
 ): PlayerEngine {
-  const fallback: PlayerEngine = isLive ? "vlc" : "expo";
-  if (!profile) return fallback;
+  if (!profile) return "vlc";
   const v = isLive ? profile.player_live : profile.player_vod;
-  if (v === "expo") return "expo";
-  if (v === "vlc") return "vlc";
-  return fallback;
+  return v === "expo" ? "expo" : "vlc";
 }
