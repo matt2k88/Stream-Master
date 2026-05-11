@@ -29,6 +29,7 @@ import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { normaliseSearch } from "@/lib/search";
+import { computeSuggestions } from "@/lib/suggestions";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -554,7 +555,8 @@ export default function ContentListScreen() {
   const isFavouritesView = selectedCategoryId === "favourites";
   const isRecentlyView = selectedCategoryId === "recently";
   const isRecentlyAddedView = selectedCategoryId === "recent" && (type === "movies" || type === "series");
-  const isSpecialView = isFavouritesView || isRecentlyView || isRecentlyAddedView;
+  const isSuggestedView = selectedCategoryId === "suggested" && (type === "movies" || type === "series");
+  const isSpecialView = isFavouritesView || isRecentlyView || isRecentlyAddedView || isSuggestedView;
   const trimmedQuery = normaliseSearch(submittedQuery);
   const isSearching = trimmedQuery.length > 0;
 
@@ -583,6 +585,7 @@ export default function ContentListScreen() {
     });
     pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
+      pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
     return [...pinned, ...categories];
@@ -619,13 +622,25 @@ export default function ContentListScreen() {
     return categoryIndex.get(selectedCategoryId) ?? [];
   }, [isSpecialView, selectedCategoryId, categoryIndex]);
 
-  // Special views (Favourites / Recently Watched / Recently Added).
+  // Special views (Favourites / Recently Watched / Recently Added / Suggested).
   const specialContent: ContentItem[] = useMemo(() => {
     if (!isSpecialView) return [];
     // Recently Added — pre-computed once during sync (DataContext) so this
     // screen mounts instantly even with 50k+ movies/series in the catalogue.
     if (isRecentlyAddedView) {
       return type === "movies" ? recentMovies : recentSeries;
+    }
+    // Suggested for You — genre-tally based on watch history. See
+    // client/lib/suggestions.ts for the exact algorithm. Returns []
+    // when the user has no watch history; the UI surfaces a prompt.
+    if (isSuggestedView) {
+      const r = computeSuggestions({
+        type: type as "movies" | "series",
+        items: type === "movies" ? vodStreams : (seriesList as any),
+        categories: type === "movies" ? vodCategories : seriesCategories,
+        watched: watchEntries,
+      });
+      return r.items as any;
     }
     if (isFavouritesView) {
       const favIds = new Set(
@@ -688,7 +703,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, getFavouritesByType, watchEntries]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
@@ -1197,6 +1212,18 @@ export default function ContentListScreen() {
                 {type === "movies"
                   ? "Movies you watch will show up here"
                   : "Series you watch will show up here"}
+              </ThemedText>
+            </View>
+          ) : isSuggestedView && !isSearching && categoryContent.length === 0 ? (
+            <View style={styles.centered}>
+              <Feather name="thumbs-up" size={44} color={Colors.dark.border} />
+              <ThemedText style={styles.emptyTitle}>No Suggestions Yet</ThemedText>
+              <ThemedText style={styles.emptyText}>
+                {watchEntries.some((e) =>
+                  type === "movies" ? e.content_type === "movie" : e.content_type === "series",
+                )
+                  ? "We couldn't detect a genre from your watch history yet — try a few more titles to unlock suggestions."
+                  : "Start watching your favourites to get personalised suggestions"}
               </ThemedText>
             </View>
           ) : (

@@ -25,6 +25,7 @@ import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { computeSuggestions } from "@/lib/suggestions";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CategoryRouteProp = RouteProp<RootStackParamList, "Category">;
@@ -180,15 +181,21 @@ function FavRecentRow({
   type,
   favCount,
   recentCount,
+  suggestedCount,
   onPressFav,
   onPressRecent,
+  onPressSuggested,
 }: {
   type: "live" | "movies" | "series";
   favCount: number;
   recentCount: number;
+  /** Movies/series only — undefined hides the Suggested pill. */
+  suggestedCount?: number;
   onPressFav: () => void;
   onPressRecent: () => void;
+  onPressSuggested?: () => void;
 }) {
+  const showSuggested = type !== "live" && onPressSuggested != null;
   return (
     <View style={styles.favRecentRow}>
       <View style={styles.favRecentCell}>
@@ -202,6 +209,16 @@ function FavRecentRow({
       <View style={styles.favRecentCell}>
         <PillButton icon="star" label="Favourites" count={favCount} onPress={onPressFav} />
       </View>
+      {showSuggested ? (
+        <View style={styles.favRecentCell}>
+          <PillButton
+            icon="thumbs-up"
+            label="Suggested for You"
+            count={suggestedCount ?? 0}
+            onPress={onPressSuggested!}
+          />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -394,6 +411,22 @@ export default function CategoryScreen() {
     }
     return seen.size;
   }, [type, watchEntries]);
+
+  // Suggested-for-you count (movies/series only). 0 when the user has no
+  // watch history yet — the pill button still renders, and tapping it
+  // surfaces the empty-state prompt to start watching.
+  const suggestedCount = useMemo(() => {
+    if (type === "live") return 0;
+    const r = computeSuggestions({
+      type,
+      items: type === "movies" ? vodStreams : (seriesList as any),
+      categories: type === "movies" ? vodCategories : seriesCategories,
+      watched: watchEntries,
+      countOnly: true,
+    });
+    return r.items.length;
+  }, [type, vodStreams, seriesList, vodCategories, seriesCategories, watchEntries]);
+
   const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;
 
@@ -526,6 +559,7 @@ export default function CategoryScreen() {
           type={type}
           favCount={favCount}
           recentCount={recentCount}
+          suggestedCount={suggestedCount}
           onPressFav={() =>
             navigation.navigate("ContentList", {
               type,
@@ -539,6 +573,16 @@ export default function CategoryScreen() {
               categoryId: "recently",
               categoryName: type === "live" ? "Recently Watched" : "Continue Watching",
             })
+          }
+          onPressSuggested={
+            type === "live"
+              ? undefined
+              : () =>
+                  navigation.navigate("ContentList", {
+                    type,
+                    categoryId: "suggested",
+                    categoryName: "Suggested for You",
+                  })
           }
         />
       ) : (
@@ -619,6 +663,7 @@ export default function CategoryScreen() {
               type={type}
               favCount={favCount}
               recentCount={recentCount}
+              suggestedCount={suggestedCount}
               onPressFav={() =>
                 navigation.navigate("ContentList", {
                   type,
@@ -632,6 +677,16 @@ export default function CategoryScreen() {
                   categoryId: "recently",
                   categoryName: type === "live" ? "Recently Watched" : "Continue Watching",
                 })
+              }
+              onPressSuggested={
+                type === "live"
+                  ? undefined
+                  : () =>
+                      navigation.navigate("ContentList", {
+                        type,
+                        categoryId: "suggested",
+                        categoryName: "Suggested for You",
+                      })
               }
             />
             {showRecentlyAdded ? (
