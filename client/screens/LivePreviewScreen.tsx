@@ -35,6 +35,9 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type LivePreviewRouteProp = RouteProp<RootStackParamList, "LivePreview">;
 
 const SIDEBAR_W = 210;
+// Fixed channel row height — must match the rendered ChannelRow's
+// total vertical footprint (paddingVertical 7 * 2 + icon 32 + marginBottom 2).
+const CHANNEL_ROW_H = 48;
 
 function decodeEpgString(s: string): string {
   if (!s) return "";
@@ -378,16 +381,34 @@ export default function LivePreviewScreen() {
     return () => { cancelled = true; };
   }, [selectedId]);
 
-  // Scroll sidebar to selected channel on mount
+  // Scroll sidebar to selected channel once the list has data. Runs only
+  // the first time `categoryChannels` becomes non-empty so it doesn't
+  // hijack scroll position on later channel switches via the sidebar.
+  const didInitialScrollRef = useRef(false);
   useEffect(() => {
+    if (didInitialScrollRef.current) return;
     if (categoryChannels.length === 0) return;
     const idx = categoryChannels.findIndex((s) => s.stream_id === selectedId);
-    if (idx > 0) {
-      setTimeout(() => {
-        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
-      }, 300);
+    if (idx <= 0) {
+      didInitialScrollRef.current = true;
+      return;
     }
-  }, []); // only on mount
+    didInitialScrollRef.current = true;
+    // Two scrolls: first jump-without-animation so distant items get
+    // measured, then a tiny smooth re-align. requestAnimationFrame +
+    // small timeout gives Metro time to lay out the FlatList.
+    const t = setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.3 });
+      } catch {}
+      setTimeout(() => {
+        try {
+          listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+        } catch {}
+      }, 80);
+    }, 50);
+    return () => clearTimeout(t);
+  }, [categoryChannels, selectedId]);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -696,7 +717,30 @@ export default function LivePreviewScreen() {
                 />
               )}
               showsVerticalScrollIndicator={false}
-              onScrollToIndexFailed={() => {}}
+              // Fixed-height rows let scrollToIndex jump to any item,
+              // even hundreds down, without first measuring intermediate
+              // rows (which is why distant channels never appeared).
+              getItemLayout={(_, index) => ({
+                length: CHANNEL_ROW_H,
+                offset: CHANNEL_ROW_H * index,
+                index,
+              })}
+              initialNumToRender={20}
+              windowSize={10}
+              onScrollToIndexFailed={(info) => {
+                // Fallback: scroll to estimated offset, then retry index.
+                const offset = info.averageItemLength * info.index;
+                listRef.current?.scrollToOffset({ offset, animated: false });
+                setTimeout(() => {
+                  try {
+                    listRef.current?.scrollToIndex({
+                      index: info.index,
+                      animated: false,
+                      viewPosition: 0.3,
+                    });
+                  } catch {}
+                }, 50);
+              }}
             />
           </View>
         ) : null}
