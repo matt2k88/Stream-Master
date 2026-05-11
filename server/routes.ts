@@ -411,6 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const {
       profile_id, content_type, stream_id, name, thumbnail_url, stream_url,
       current_time, duration, is_completed, series_id, season_num, episode_num,
+      audio_track, text_track,
     } = req.body;
     if (!profile_id || !content_type || !name) {
       return res.status(400).json({ error: "profile_id, content_type, and name required" });
@@ -432,6 +433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (series_id != null) entry.series_id = String(series_id);
       if (season_num != null) entry.season_num = Number(season_num);
       if (episode_num != null) entry.episode_num = Number(episode_num);
+      if (typeof audio_track === "number") entry.audio_track = audio_track;
+      if (typeof text_track === "number") entry.text_track = text_track;
 
       // Dedup: remove any existing entry for the same stream (also handles re-watch)
       if (stream_id) {

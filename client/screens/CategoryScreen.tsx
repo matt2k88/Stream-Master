@@ -422,10 +422,11 @@ export default function CategoryScreen() {
       items: type === "movies" ? vodStreams : (seriesList as any),
       categories: type === "movies" ? vodCategories : seriesCategories,
       watched: watchEntries,
+      favourites: getFavouritesByType(type),
       countOnly: true,
     });
     return r.items.length;
-  }, [type, vodStreams, seriesList, vodCategories, seriesCategories, watchEntries]);
+  }, [type, vodStreams, seriesList, vodCategories, seriesCategories, watchEntries, getFavouritesByType]);
 
   const trimmedQuery = submittedQuery.trim().toLowerCase();
   const isSearching = trimmedQuery.length > 0;

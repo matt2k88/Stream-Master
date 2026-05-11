@@ -90,7 +90,7 @@ export default function VlcPlayerScreen() {
   } = route.params;
 
   const { activeProfile } = useProfile();
-  const { upsertLocal } = useWatchHistory();
+  const { upsertLocal, getByStreamId } = useWatchHistory();
   const { isFavourite, toggleFavourite } = useFavourites();
 
   // ─── Player state ────────────────────────────────────────────────────────
@@ -131,6 +131,7 @@ export default function VlcPlayerScreen() {
   const savedRef = useRef(false);
   const lastSavedRef = useRef(0);
   const completionPostedRef = useRef(false);
+  const tracksRestoredRef = useRef(false);
 
   // ─── Favourite ────────────────────────────────────────────────────────────
   const favStreamType = type === "live" ? "live" : type === "series" ? "series" : "movies";
@@ -150,7 +151,20 @@ export default function VlcPlayerScreen() {
   const [activePanel, setActivePanel] = useState<"cc" | "audio" | null>(null);
   const activePanelRef = useRef<"cc" | "audio" | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When controls hide and re-show, the previously-focused button has been
+  // pulled out of the focus tree (pointerEvents=none) and TV remote D-pad
+  // navigation has nothing to land on. We bump `ctrlsKey` on every hide→show
+  // transition and use it as a `key` on the centre play button so it
+  // remounts and `hasTVPreferredFocus` re-fires, restoring D-pad focus.
+  const [ctrlsKey, setCtrlsKey] = useState(0);
+  const prevShowControlsRef = useRef(true);
   useEffect(() => { activePanelRef.current = activePanel; }, [activePanel]);
+  useEffect(() => {
+    if (showControls && !prevShowControlsRef.current) {
+      setCtrlsKey((k) => k + 1);
+    }
+    prevShowControlsRef.current = showControls;
+  }, [showControls]);
 
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -287,6 +301,7 @@ export default function VlcPlayerScreen() {
     seekInFlightRef.current = false;
     seekSettledTimeRef.current = 0;
     lastSeekAtRef.current = 0;
+    tracksRestoredRef.current = false;
     setNextEp(null);
     setShowNext(false);
     setCountdown(10);
@@ -394,10 +409,14 @@ export default function VlcPlayerScreen() {
     setPaused(false);
     pausedRef.current = false;
 
-    // First successful playing event — log to recently watched
+    // First successful playing event — log to recently watched. Carry the
+    // previously-saved track prefs forward so the dedup-then-insert on the
+    // server doesn't null them out when the user exits before the periodic
+    // 10s save fires.
     if (activeProfile && !savedRef.current) {
       savedRef.current = true;
       const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
+      const prev = streamId ? getByStreamId(streamId) : undefined;
       saveRecentlyWatched({
         profileId: activeProfile.id,
         contentType,
@@ -408,9 +427,11 @@ export default function VlcPlayerScreen() {
         seriesId: seriesIdParam,
         seasonNum,
         episodeNum,
+        audioTrack: typeof prev?.audio_track === "number" ? prev.audio_track : undefined,
+        textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal]);
+  }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, getByStreamId]);
 
   const onProgress = useCallback((e: any) => {
     if (typeof e?.currentTime !== "number") return;
@@ -445,9 +466,25 @@ export default function VlcPlayerScreen() {
       setDuration(e.duration / 1000);
       durationRef.current = e.duration / 1000;
     }
-    setAudioTracks(normaliseTracks(e?.audioTracks));
-    setTextTracks(normaliseTracks(e?.textTracks));
-  }, []);
+    const aTracks = normaliseTracks(e?.audioTracks);
+    const tTracks = normaliseTracks(e?.textTracks);
+    setAudioTracks(aTracks);
+    setTextTracks(tTracks);
+    // Restore previously-selected tracks for this stream (only once).
+    if (!tracksRestoredRef.current && streamId) {
+      const prev = getByStreamId(streamId);
+      if (prev) {
+        if (typeof prev.audio_track === "number" && aTracks.some((t) => t.id === prev.audio_track)) {
+          setActiveAudio(prev.audio_track);
+        }
+        if (typeof prev.text_track === "number" &&
+            (prev.text_track === -1 || tTracks.some((t) => t.id === prev.text_track))) {
+          setActiveText(prev.text_track);
+        }
+      }
+      tracksRestoredRef.current = true;
+    }
+  }, [streamId, getByStreamId]);
 
   const onPaused = useCallback(() => {
     if (stoppedRecoveryRef.current) return; // ignore the auto-pause on stop
@@ -526,6 +563,7 @@ export default function VlcPlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime: settled, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
+        audioTrack: activeAudio, textTrack: activeText,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -537,9 +575,10 @@ export default function VlcPlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime: settled, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
+        audioTrack: activeAudio, textTrack: activeText,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal]);
+  }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, activeAudio, activeText]);
 
   // ─── Hardware back ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -708,7 +747,7 @@ export default function VlcPlayerScreen() {
         {/* Centre — play/pause + skip */}
         <View style={styles.centerRow}>
           <CtrlBtn icon="rewind" label="10s" onPress={() => skip(-10)} onFocus={showAndReset} />
-          <CtrlBtn icon={paused ? "play" : "pause"} primary preferFocus onPress={togglePlayPause} onFocus={showAndReset} />
+          <CtrlBtn key={`play-${ctrlsKey}`} icon={paused ? "play" : "pause"} primary preferFocus onPress={togglePlayPause} onFocus={showAndReset} />
           <CtrlBtn icon="fast-forward" label="10s" onPress={() => skip(10)} onFocus={showAndReset} />
         </View>
 

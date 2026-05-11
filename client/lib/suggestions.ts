@@ -24,6 +24,7 @@
 
 import type { VodStream, Series } from "./xtream-api";
 import type { RecentlyWatched } from "../components/RecentlyWatchedCard";
+import type { Favourite } from "../contexts/FavouritesContext";
 
 export type SuggestableType = "movies" | "series";
 export type SuggestionItem = VodStream | Series;
@@ -161,10 +162,16 @@ export function computeSuggestions<T extends SuggestionItem>(args: {
   items: T[];
   categories: Category[];
   watched: RecentlyWatched[];
+  /** Active profile's favourites — the favourited items are weighted 2x in
+   *  the genre tally (a deliberate "I love this" signal beats a "I once
+   *  played this") and excluded from the candidate set since the user
+   *  already has them flagged. Pass [] to get the legacy watched-only
+   *  behaviour. */
+  favourites?: Favourite[];
   limit?: number;
   countOnly?: boolean;
 }): SuggestionResult<T> {
-  const { type, items, categories, watched, limit = 20, countOnly = false } = args;
+  const { type, items, categories, watched, favourites = [], limit = 20, countOnly = false } = args;
 
   // Map category_id → genre (skip categories with no detectable genre).
   const catGenre = new Map<string, string>();
@@ -193,29 +200,43 @@ export function computeSuggestions<T extends SuggestionItem>(args: {
 
   // Walk watch history filtered to this section, count genres + collect
   // already-watched ids + average release year (for year-proximity boost).
+  // Favourites are folded into the same tallies with 2x weight — a
+  // favourite is a stronger "more like this please" signal than a single
+  // play that may have been abandoned after 5 minutes.
   const wantedContentType = type === "movies" ? "movie" : "series";
-  const watchedIds = new Set<string>();
+  const wantedFavType = type === "movies" ? "movies" : "series";
+  const excludedIds = new Set<string>();
   const genreCount = new Map<string, number>();
   let yearSum = 0;
   let yearN = 0;
+  const tally = (it: T, weight: number) => {
+    for (const g of genresFor(it)) {
+      genreCount.set(g, (genreCount.get(g) ?? 0) + weight);
+    }
+    const y = itemYear(it);
+    if (y > 0) { yearSum += y * weight; yearN += weight; }
+  };
   for (const e of watched) {
     if (e.content_type !== wantedContentType) continue;
     const k = String(
       type === "movies" ? e.stream_id : (e.series_id ?? e.stream_id),
     );
     if (!k) continue;
-    watchedIds.add(k);
+    excludedIds.add(k);
     const it = itemById.get(k);
-    if (!it) continue;
-    for (const g of genresFor(it)) {
-      genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
-    }
-    const y = itemYear(it);
-    if (y > 0) { yearSum += y; yearN++; }
+    if (it) tally(it, 1);
+  }
+  for (const f of favourites) {
+    if (f.stream_type !== wantedFavType) continue;
+    const k = String(f.stream_id);
+    if (!k) continue;
+    excludedIds.add(k);
+    const it = itemById.get(k);
+    if (it) tally(it, 2);
   }
 
   if (genreCount.size === 0) {
-    return { items: [], topGenres: [], isEmpty: watchedIds.size === 0 };
+    return { items: [], topGenres: [], isEmpty: excludedIds.size === 0 };
   }
 
   // Top 3 genres by watch count.
@@ -232,7 +253,7 @@ export function computeSuggestions<T extends SuggestionItem>(args: {
   // single-genre ones.
   const candidates: Array<{ it: T; genreHits: number }> = [];
   for (const it of items) {
-    if (watchedIds.has(idKey(it))) continue;
+    if (excludedIds.has(idKey(it))) continue;
     const gs = genresFor(it);
     let hits = 0;
     for (const g of gs) if (topGenreSet.has(g)) hits++;

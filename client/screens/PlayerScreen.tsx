@@ -372,7 +372,12 @@ function LegacyPlayerScreen() {
   } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
-  const { upsertLocal } = useWatchHistory();
+  const { upsertLocal, getByStreamId } = useWatchHistory();
+  // Independent latches so audio and subtitle restoration don't race —
+  // whichever `availableTracksChange` event fires first only marks its
+  // own slot done; the other event still gets a chance to restore.
+  const audioRestoredRef = useRef(false);
+  const textRestoredRef = useRef(false);
   const { isFavourite, toggleFavourite } = useFavourites();
   const savedRef = useRef(false);
 
@@ -764,6 +769,12 @@ function LegacyPlayerScreen() {
         if (activeProfile && !savedRef.current) {
           savedRef.current = true;
           const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
+          // Carry the previously-saved track prefs into this first insert
+          // so the row's track columns don't get nulled out by the dedup
+          // (server deletes the prior row before inserting). If the user
+          // exits before the periodic 10s save fires, their track choice
+          // still survives.
+          const prev = streamId ? getByStreamId(streamId) : undefined;
           saveRecentlyWatched({
             profileId: activeProfile.id,
             contentType,
@@ -774,6 +785,8 @@ function LegacyPlayerScreen() {
             seriesId: seriesIdParam,
             seasonNum,
             episodeNum,
+            audioTrack: typeof prev?.audio_track === "number" ? prev.audio_track : undefined,
+            textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
           }).then((entry) => { if (entry) upsertLocal(entry); });
         }
         // Apply resume seek (once)
@@ -871,6 +884,8 @@ function LegacyPlayerScreen() {
     if (isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
     const contentType = type === "series" ? "series" : "movie";
     const remaining = duration - currentTime;
+    const audioTrackId = activeAudio ? Number((activeAudio as any).id) : undefined;
+    const textTrackId = activeSubtitle ? Number((activeSubtitle as any).id) : -1;
     if (remaining <= 30 && !completionPostedRef.current) {
       completionPostedRef.current = true;
       saveRecentlyWatched({
@@ -878,6 +893,7 @@ function LegacyPlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
+        audioTrack: audioTrackId, textTrack: textTrackId,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -889,9 +905,10 @@ function LegacyPlayerScreen() {
         thumbnailUrl: thumbnail, streamUrl,
         currentTime, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
+        audioTrack: audioTrackId, textTrack: textTrackId,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum]);
+  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
 
   // ── Series: pre-fetch next episode ────────────────────────────────────────
   useEffect(() => {
@@ -960,12 +977,42 @@ function LegacyPlayerScreen() {
     if (isLive) return;
     const sub1 = player.addListener("availableSubtitleTracksChange", (e) => {
       setSubtitleTracks(e.availableSubtitleTracks);
+      if (!textRestoredRef.current && streamId) {
+        const prev = getByStreamId(streamId);
+        if (prev && typeof prev.text_track === "number") {
+          if (prev.text_track === -1) {
+            try { player.subtitleTrack = null; setActiveSubtitle(null); } catch {}
+          } else {
+            const match = e.availableSubtitleTracks.find((t: any) => Number(t.id) === prev.text_track);
+            if (match) {
+              try { player.subtitleTrack = match; setActiveSubtitle(match); } catch {}
+            }
+          }
+        }
+        textRestoredRef.current = true;
+      }
     });
     const sub2 = player.addListener("availableAudioTracksChange", (e) => {
       setAudioTracks(e.availableAudioTracks);
+      if (!audioRestoredRef.current && streamId) {
+        const prev = getByStreamId(streamId);
+        if (prev && typeof prev.audio_track === "number" && prev.audio_track >= 0) {
+          const match = e.availableAudioTracks.find((t: any) => Number(t.id) === prev.audio_track);
+          if (match) {
+            try { player.audioTrack = match; setActiveAudio(match); } catch {}
+          }
+        }
+        audioRestoredRef.current = true;
+      }
     });
     return () => { sub1.remove(); sub2.remove(); };
-  }, [isLive, player]);
+  }, [isLive, player, streamId, getByStreamId]);
+
+  // Reset both track-restore latches when stream changes.
+  useEffect(() => {
+    audioRestoredRef.current = false;
+    textRestoredRef.current = false;
+  }, [streamId, streamUrl]);
 
   // ── Hardware back button — close panel before exiting (Android TV) ────────
   useEffect(() => {

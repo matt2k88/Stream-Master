@@ -639,6 +639,7 @@ export default function ContentListScreen() {
         items: type === "movies" ? vodStreams : (seriesList as any),
         categories: type === "movies" ? vodCategories : seriesCategories,
         watched: watchEntries,
+        favourites: getFavouritesByType(type as "movies" | "series"),
       });
       return r.items as any;
     }

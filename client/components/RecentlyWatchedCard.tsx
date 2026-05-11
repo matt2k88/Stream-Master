@@ -23,6 +23,8 @@ export interface RecentlyWatched {
   series_id?: string | null;
   season_num?: number | null;
   episode_num?: number | null;
+  audio_track?: number | null;
+  text_track?: number | null;
 }
 
 const TYPE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
@@ -315,6 +317,8 @@ export async function saveRecentlyWatched(params: {
   seriesId?: string;
   seasonNum?: number;
   episodeNum?: number;
+  audioTrack?: number;
+  textTrack?: number;
 }): Promise<RecentlyWatched | null> {
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
@@ -334,6 +338,8 @@ export async function saveRecentlyWatched(params: {
         series_id: params.seriesId ?? undefined,
         season_num: typeof params.seasonNum === "number" ? params.seasonNum : undefined,
         episode_num: typeof params.episodeNum === "number" ? params.episodeNum : undefined,
+        audio_track: typeof params.audioTrack === "number" ? params.audioTrack : undefined,
+        text_track: typeof params.textTrack === "number" ? params.textTrack : undefined,
       }),
     });
     const data = await res.json();
