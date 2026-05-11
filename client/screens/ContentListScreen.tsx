@@ -438,6 +438,7 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
   onPress,
   isFav,
   isRecent,
+  hasTVPreferredFocus,
 }: {
   item: SidebarCat;
   isSelected: boolean;
@@ -445,6 +446,7 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
   onPress: (item: SidebarCat) => void;
   isFav?: boolean;
   isRecent?: boolean;
+  hasTVPreferredFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -464,6 +466,7 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={hasTVPreferredFocus}
     >
       {isSelected ? (
         <LinearGradient
@@ -967,6 +970,10 @@ export default function ContentListScreen() {
     [selectedCategoryId],
   );
 
+  // Capture the category we entered with so the matching sidebar row gets
+  // initial TV focus on first mount (instead of focus defaulting to the
+  // header back button). Stays stable across category switches afterwards.
+  const initialFocusIdRef = useRef<string>(categoryId);
   const renderSidebarItem = useCallback(
     ({ item }: { item: SidebarCat }) => (
       <CategorySidebarItem
@@ -975,6 +982,7 @@ export default function ContentListScreen() {
         isFav={item.category_id === "favourites"}
         isRecent={item.category_id === "recently"}
         onPress={handleSidebarPress}
+        hasTVPreferredFocus={item.category_id === initialFocusIdRef.current}
       />
     ),
     [selectedCategoryId, handleSidebarPress],
