@@ -548,28 +548,26 @@ export default function VlcPlayerScreen(props: VlcPlayerScreenProps) {
   };
 
   // ── Source — memoised so VLC doesn't reload on every render ───────────────
-  // Force software decoding on Android (esp. Fire TV) — Fire Stick's MediaCodec
-  // implementation is unstable and can power-cycle the device on certain
-  // streams (FHD HEVC, AC3/EAC3, etc.). Disabling MediaCodec / OMXIL and
-  // forcing avcodec software decode is the standard Fire TV workaround.
-  // iOS uses VideoToolbox which is fine; web is unsupported.
+  // On Android (esp. Fire TV), force software decoding via the supported
+  // source-map flags (hwDecoderEnabled/hwDecoderForced=0 → libvlc internally
+  // calls m.setHWDecoderEnabled(false, false)). Avoid CLI options like
+  // --no-mediacodec / --no-omxil — those modules don't exist in libvlc-android
+  // 3.6.3 and unknown CLI options cause libvlc init to fail, breaking ALL
+  // playback. Note: the lib's java loop iterates initOptions with `< size-1`
+  // so we add a harmless trailing sentinel "--no-stats" to absorb the bug.
   const source = useMemo(() => ({
     uri: props.streamUrl,
     initType: 2 as const,
-    hwDecoderEnabled: 0,
-    hwDecoderForced: 0,
+    ...(Platform.OS === "android" ? { hwDecoderEnabled: 0, hwDecoderForced: 0 } : {}),
     initOptions: Platform.OS === "android"
       ? [
-          "--no-mediacodec",
-          "--no-omxil",
-          "--avcodec-hw=none",
           "--network-caching=3000",
           "--clock-jitter=0",
           "--clock-synchro=0",
           "--no-stats",
-          "--codec=avcodec",
+          "--no-stats",
         ]
-      : ["--network-caching=1500", "--no-stats", "--codec=avcodec"],
+      : ["--network-caching=1500", "--no-stats", "--no-stats"],
   }), [props.streamUrl]);
 
   // ── Report modal node ─────────────────────────────────────────────────────
@@ -680,8 +678,6 @@ export default function VlcPlayerScreen(props: VlcPlayerScreenProps) {
           paused={paused}
           muted={muted}
           autoplay
-          hwDecoderEnabled={0}
-          hwDecoderForced={0}
           resizeMode="contain"
           seek={seekTarget}
           audioTrack={selectedAudio}
