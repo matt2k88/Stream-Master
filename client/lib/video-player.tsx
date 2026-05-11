@@ -44,6 +44,41 @@ const VLCPlayer: any =
   (VlcPkg as any).default ??
   VlcPkg;
 
+// ─── Library patch: defang VLCPlayer.js's _onStopped ──────────────────────
+//
+// react-native-vlc-media-player's VLCPlayer.js _onStopped handler
+// unconditionally runs `setNativeProps({ paused: true })` on EVERY
+// Stopped event the native player emits. libvlc fires Stopped briefly
+// during normal seeks (especially on TS / IPTV streams crossing a
+// discontinuity), which means a single user seek puts the native
+// player into a Stopped state behind React's back. Our React tree
+// still thinks `paused === false`, so RN's prop diff never re-issues
+// `paused: false` and the native player is silently stuck.
+//
+// Worse: if we DO recover by re-issuing `paused: false` (as the
+// previous fix attempt did), libvlc treats `play()` after `Stopped`
+// as a *fresh* play session — restarting from the beginning of the
+// media. The user sees: seek to 30s → frame loads → split second of
+// playback from the seek target → libvlc emits Stopped → our kick
+// restarts from 0 → libvlc Stops again → loop.
+//
+// Fix: replace the library's _onStopped with one that just forwards
+// the event to the consumer (us), without touching paused. We then
+// decide what to do with Stopped ourselves (currently: nothing, since
+// the underlying issue is libvlc's spurious Stopped during seek).
+if (
+  VLCPlayer?.prototype &&
+  typeof VLCPlayer.prototype._onStopped === "function" &&
+  !(VLCPlayer.prototype as any).__ultracastStoppedPatched
+) {
+  VLCPlayer.prototype._onStopped = function _onStoppedPatched(this: any) {
+    if (this.props && typeof this.props.onStopped === "function") {
+      try { this.props.onStopped(); } catch {}
+    }
+  };
+  (VLCPlayer.prototype as any).__ultracastStoppedPatched = true;
+}
+
 // ─── Public types (compat with expo-video) ────────────────────────────────
 export type SubtitleTrack = {
   id: number;
@@ -98,8 +133,6 @@ export class VideoPlayer {
   _lastSeekAtMs: number = 0;
   /** @internal — last seek target in seconds (for snap-back detection) */
   _lastSeekTargetSec: number = -1;
-  /** @internal — VideoView re-issues paused=false after this flips */
-  _needsPlayKick: boolean = false;
 
   // Event bus
   private listeners = new Map<string, Set<Listener>>();
@@ -128,7 +161,6 @@ export class VideoPlayer {
       this._currentTime = seconds;
       this._lastSeekTargetSec = seconds;
       this._lastSeekAtMs = Date.now();
-      this._needsPlayKick = true;
       this._pendingResumeSeconds = null;
       this.rerender();
     } else {
@@ -186,7 +218,6 @@ export class VideoPlayer {
     this._hasProgressed = false;
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
-    this._needsPlayKick = false;
     this.rerender();
   }
 
@@ -197,7 +228,6 @@ export class VideoPlayer {
     this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
-    this._needsPlayKick = false;
     this.rerender();
   }
 
@@ -360,32 +390,32 @@ export class VideoPlayer {
     this._currentTime = target;
     this._lastSeekTargetSec = target;
     this._lastSeekAtMs = Date.now();
-    this._needsPlayKick = true;
     this.rerender();
   }
 
   /** @internal — VLC onStopped
    *
-   * VLCPlayer.js's internal _onStopped handler unconditionally calls
-   * `setNativeProps({ paused: true })` on every stop event. Some Android
-   * VLC builds emit "Stopped" briefly while seeking across a TS
-   * discontinuity — which silently pauses the native player without our
-   * React tree knowing about it (our `paused` prop stays false, so React
-   * never re-issues `false` to revert it). Re-arm a play kick so the
-   * next render re-asserts paused=false on the native side.
+   * Two cases to distinguish:
+   * 1. Spurious Stopped during a seek (libvlc fires this briefly when
+   *    crossing a TS discontinuity, etc.). The library's auto-pause is
+   *    already patched out at module load, so we just ignore it and
+   *    let playback continue uninterrupted.
+   * 2. A real stop — end-of-stream (also covered by _onEnd / playToEnd),
+   *    network drop, source teardown, or an explicit pause/release we
+   *    didn't initiate. In that case we must update React state so the
+   *    UI doesn't keep showing "playing" while native is stopped.
+   *
+   * We classify by a short window after the most recent seek (1.5s):
+   * inside the window → spurious, ignore; outside → real, sync state.
    */
   _onStopped() {
-    // Only auto-recover if the stop happened RIGHT AFTER a seek — otherwise
-    // it's a real end-of-stream / source switch / network drop and we must
-    // NOT try to play through it (would cause infinite reconnect churn on
-    // dead streams).
-    if (
-      !this._paused &&
-      this._lastSeekAtMs > 0 &&
-      Date.now() - this._lastSeekAtMs < 3000
-    ) {
-      this._needsPlayKick = true;
-      this.rerender();
+    const sinceSeekMs = this._lastSeekAtMs > 0
+      ? Date.now() - this._lastSeekAtMs
+      : Number.MAX_SAFE_INTEGER;
+    if (sinceSeekMs < 1500) return; // spurious mid-seek stop — ignore
+    if (this.playing) {
+      this.playing = false;
+      this._emit("playingChange", { isPlaying: false });
     }
   }
 }
@@ -501,10 +531,12 @@ function VlcVideoView({
   // through the ref method is what react-native-vlc-media-player itself
   // uses internally.
   //
-  // After every seek we also re-issue paused=false via setNativeProps to
-  // defeat VLCPlayer.js's _onStopped handler which silently pauses the
-  // native player on certain Android stop events (seek across a TS
-  // discontinuity, end-of-buffer flush, etc.).
+  // No play-kick after seek — the library's auto-pause-on-Stopped
+  // behaviour is patched out at module load, so the native player
+  // stays in its existing playing state across the seek. Issuing
+  // `paused: false` after the library's Stopped event would cause
+  // libvlc to treat play() as a fresh session and restart from 0,
+  // which is exactly the snap-back loop we used to see.
   useEffect(() => {
     const frac = player._pendingSeekFrac;
     if (frac != null) {
@@ -513,12 +545,6 @@ function VlcVideoView({
       lastSeekRef.current = frac;
       if (vlcRef.current?.seek) {
         try { vlcRef.current.seek(frac); } catch {}
-      }
-    }
-    if (player._needsPlayKick && !player._paused) {
-      player._needsPlayKick = false;
-      if (vlcRef.current?.setNativeProps) {
-        try { vlcRef.current.setNativeProps({ paused: false }); } catch {}
       }
     }
   });
