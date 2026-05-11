@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Modal,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -23,6 +24,9 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { useData } from "@/contexts/DataContext";
+import { normaliseSearch } from "@/lib/search";
+import type { VodStream, Series } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -88,9 +92,14 @@ function getMediaType(d: ContentDetails | null | undefined): "movie" | "tv" {
   return "movie";
 }
 
+function isAvailableStatus(status: string | null | undefined): boolean {
+  const s = (status || "").toLowerCase();
+  return s === "available" || s === "added" || s === "completed" || s === "approved" || s === "exists";
+}
+
 function statusColor(status: string | null | undefined): { bg: string; text: string; label: string } {
   const s = (status || "pending").toLowerCase();
-  if (s === "available" || s === "added" || s === "completed" || s === "approved") {
+  if (isAvailableStatus(s)) {
     return { bg: "#2ECC71", text: "#08210F", label: status || "Available" };
   }
   if (s === "unavailable" || s === "rejected" || s === "denied") {
@@ -273,6 +282,45 @@ function RequestCard({
   );
 }
 
+// Find a matching library item for a given request title.
+//
+// Both names are normalised (strip spaces / punctuation / accents) then
+// each candidate is scored:
+//   - exact match           +100
+//   - candidate startsWith  +60
+//   - candidate contains    +30
+//   - year also present     +25
+// Short titles (< 3 normalised chars, e.g. "It", "Up") only accept an
+// EXACT match to avoid catching every "Startup" / "Little" in the library.
+// Returns the highest-scoring candidate, or null if nothing scores > 0.
+function findLibraryMatch<T extends { name: string }>(
+  pool: T[],
+  title: string,
+  year: string | null,
+): T | null {
+  const needle = normaliseSearch(title);
+  if (!needle) return null;
+  const shortTitle = needle.length < 3;
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const item of pool) {
+    const n = normaliseSearch(item.name);
+    if (!n) continue;
+    let score = 0;
+    if (n === needle) score = 100;
+    else if (shortTitle) continue; // short needles must match exactly
+    else if (n.startsWith(needle)) score = 60;
+    else if (n.includes(needle)) score = 30;
+    else continue;
+    if (year && n.includes(year)) score += 25;
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+  return best;
+}
+
 function fmtRuntime(min?: number): string | null {
   if (!min || min <= 0) return null;
   const h = Math.floor(min / 60);
@@ -281,16 +329,68 @@ function fmtRuntime(min?: number): string | null {
   return `${m}m`;
 }
 
+function GoToLibraryBtn({
+  mediaType,
+  onPress,
+  scaleFont,
+}: {
+  mediaType: "movie" | "tv";
+  onPress: () => void;
+  scaleFont: (n: number) => number;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  const label = mediaType === "tv" ? "Go to Series" : "Go to Movie";
+  return (
+    <Pressable
+      style={[styles.goToBtn, isActive && styles.goToBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      <LinearGradient
+        colors={isActive ? ["#FF8800", "#FF5500"] : ["rgba(255,102,0,0.22)", "rgba(255,102,0,0.06)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <Feather
+        name={mediaType === "tv" ? "tv" : "film"}
+        size={14}
+        color={isActive ? "#fff" : Colors.dark.accent}
+      />
+      <ThemedText
+        style={{
+          color: isActive ? "#fff" : Colors.dark.accent,
+          fontWeight: "800",
+          fontSize: scaleFont(12),
+          letterSpacing: 0.4,
+        }}
+      >
+        {label.toUpperCase()}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function DetailModal({
   visible,
   request,
   onClose,
   scaleFont,
+  onGoTo,
 }: {
   visible: boolean;
   request: ContentRequest | null;
   onClose: () => void;
   scaleFont: (n: number) => number;
+  onGoTo: (request: ContentRequest, mediaType: "movie" | "tv") => void;
 }) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
@@ -366,6 +466,13 @@ function DetailModal({
             <ThemedText style={[modalStyles.modalTitle, { fontSize: scaleFont(18) }]} numberOfLines={1}>
               Request Details
             </ThemedText>
+            {isAvailableStatus(request.status) ? (
+              <GoToLibraryBtn
+                mediaType={mediaType}
+                scaleFont={scaleFont}
+                onPress={() => onGoTo(request, mediaType)}
+              />
+            ) : null}
             <CloseBtn onPress={onClose} />
           </View>
 
@@ -511,6 +618,8 @@ export default function ContentRequestsScreen() {
   const { scaleFont } = useUISettings();
   const queryClient = useQueryClient();
 
+  const { vodStreams, seriesList } = useData();
+
   const username = userInfo?.user_info?.username ?? null;
 
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
@@ -555,6 +664,47 @@ export default function ContentRequestsScreen() {
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
+
+  const handleGoToLibrary = useCallback(
+    (req: ContentRequest, mediaType: "movie" | "tv") => {
+      const title = getTitle(req.content_details);
+      const year = getYear(req.content_details);
+      if (mediaType === "tv") {
+        const match = findLibraryMatch<Series>(seriesList, title, year);
+        if (!match) {
+          Alert.alert(
+            "Not in your library yet",
+            "We couldn't find this series. It may still be syncing — try searching for it manually.",
+          );
+          return;
+        }
+        setSelectedId(null);
+        navigation.navigate("SeriesDetail", {
+          seriesId: match.series_id,
+          seriesName: match.name,
+          cover: match.cover,
+        });
+      } else {
+        const match = findLibraryMatch<VodStream>(vodStreams, title, year);
+        if (!match) {
+          Alert.alert(
+            "Not in your library yet",
+            "We couldn't find this movie. It may still be syncing — try searching for it manually.",
+          );
+          return;
+        }
+        setSelectedId(null);
+        navigation.navigate("MovieInfo", {
+          streamId: match.stream_id,
+          name: match.name,
+          streamIcon: match.stream_icon ?? undefined,
+          containerExtension: match.container_extension,
+          categoryId: match.category_id,
+        });
+      }
+    },
+    [navigation, vodStreams, seriesList],
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: ContentRequest }) => (
@@ -649,6 +799,7 @@ export default function ContentRequestsScreen() {
         request={selected}
         onClose={() => setSelectedId(null)}
         scaleFont={scaleFont}
+        onGoTo={handleGoToLibrary}
       />
     </ThemedView>
   );
@@ -716,6 +867,21 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,102,0,0.12)",
   },
   retryText: { color: Colors.dark.accent, fontWeight: "700" },
+  goToBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    height: 38,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+    overflow: "hidden",
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  goToBtnActive: {
+    borderColor: "#FFD700",
+  },
   card: {
     borderRadius: BorderRadius.md,
     overflow: "hidden",
