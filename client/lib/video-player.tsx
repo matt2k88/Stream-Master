@@ -135,6 +135,14 @@ export class VideoPlayer {
   _lastSeekTargetSec: number = -1;
   /** @internal — # of automatic retries already issued for the current seek */
   _seekRetries: number = 0;
+  /** @internal — when true, VlcVideoView's effect must call ref.resume(true)
+   *  to bring libvlc out of a Stopped state (libvlc cannot setPosition while
+   *  Stopped — you have to play() first, which restarts from 0, then re-seek
+   *  via the queued resume mechanism). One-shot flag, cleared by the effect. */
+  _pendingResumeKick: boolean = false;
+  /** @internal — # of resume kicks issued for this seek (cap at 3 so a truly
+   *  broken stream can't loop). Reset on a fresh user-initiated seek. */
+  _resumeKickRetries: number = 0;
 
   // Event bus
   private listeners = new Map<string, Set<Listener>>();
@@ -164,6 +172,7 @@ export class VideoPlayer {
       this._lastSeekTargetSec = seconds;
       this._lastSeekAtMs = Date.now();
       this._seekRetries = 0;
+      this._resumeKickRetries = 0;
       this._pendingResumeSeconds = null;
       this.rerender();
     } else {
@@ -218,10 +227,12 @@ export class VideoPlayer {
     this._paused = false;
     this._pendingSeekFrac = null;
     this._pendingResumeSeconds = null;
+    this._pendingResumeKick = false;
     this._hasProgressed = false;
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
     this._seekRetries = 0;
+    this._resumeKickRetries = 0;
     this.rerender();
   }
 
@@ -230,9 +241,14 @@ export class VideoPlayer {
     this._released = true;
     this._paused = true;
     this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this._pendingSeekFrac = null;
+    this._pendingResumeSeconds = null;
+    this._pendingResumeKick = false;
+    this._hasProgressed = false;
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
     this._seekRetries = 0;
+    this._resumeKickRetries = 0;
     this.rerender();
   }
 
@@ -321,13 +337,13 @@ export class VideoPlayer {
     const sinceSeekMs = now - this._lastSeekAtMs;
     if (
       this._lastSeekAtMs > 0 &&
-      sinceSeekMs < 4000 &&
+      sinceSeekMs < 6000 &&
       this._lastSeekTargetSec >= 0 &&
       Math.abs(ct - this._lastSeekTargetSec) > 3
     ) {
       // Stale tick. Try to re-seek (cap retries so we don't loop forever
       // on truly-unseekable streams).
-      if (this._seekRetries < 6 && this.duration > 0) {
+      if (this._seekRetries < 12 && this.duration > 0) {
         this._seekRetries++;
         this._pendingSeekFrac = Math.max(
           0,
@@ -338,11 +354,12 @@ export class VideoPlayer {
       }
       return;
     }
-    if (sinceSeekMs >= 4000) {
+    if (sinceSeekMs >= 6000) {
       // Seek window closed — clear tracking so this guard goes dormant.
       this._lastSeekAtMs = 0;
       this._lastSeekTargetSec = -1;
       this._seekRetries = 0;
+      this._resumeKickRetries = 0;
     }
 
     this._currentTime = ct;
@@ -440,25 +457,41 @@ export class VideoPlayer {
     const sinceSeekMs = this._lastSeekAtMs > 0
       ? Date.now() - this._lastSeekAtMs
       : Number.MAX_SAFE_INTEGER;
-    if (sinceSeekMs < 4000) {
-      // Spurious Stopped fired during/after a recent seek. The native
-      // player may now be sitting at position 0 (libvlc resets on a
-      // hard Stop). Re-issue the seek so the next play tick lands at
-      // the user's intended position. We do NOT touch `paused` — the
-      // RN prop diff for paused:false would cause libvlc to play()
-      // from 0 (restart-from-0 loop). Re-seeking is safe because
-      // setSeek does not call play().
+    // Narrow classification: only treat as seek-related if (a) within
+    // 3s of seek dispatch AND (b) the seek hasn't visibly landed yet
+    // (current position still > 3s away from target). Otherwise this
+    // is almost certainly a real end-of-stream / user pause / source
+    // teardown and we must NOT kick a restart-from-0.
+    const seekUnresolved =
+      this._lastSeekTargetSec >= 0 &&
+      Math.abs(this._currentTime - this._lastSeekTargetSec) > 3;
+    if (sinceSeekMs < 3000 && seekUnresolved) {
+      // Spurious Stopped during a seek. CRITICAL libvlc behaviour:
+      // setPosition() is a NO-OP while the player is in Stopped state
+      // ("This has no effect if playback is not enabled" — libvlc docs).
+      // So re-issuing setSeek here does literally nothing, and the
+      // native view sits frozen on the last decoded frame forever.
+      //
+      // The only way out is to call play() — which transitions libvlc
+      // back to Playing but RESTARTS FROM 0. Then once the first
+      // post-restart progress tick fires (decoder ready again), we
+      // flush a queued resume seek to land at the user's target.
+      //
+      // User experience: brief flicker to start, then jump to seek
+      // target. Acceptable trade-off vs frozen player.
+      //
+      // Cap kicks to avoid looping on truly-broken streams.
       if (
-        this._seekRetries < 6 &&
+        this._resumeKickRetries < 3 &&
         this._lastSeekTargetSec >= 0 &&
         this.duration > 0
       ) {
-        this._seekRetries++;
-        this._pendingSeekFrac = Math.max(
-          0,
-          Math.min(1, this._lastSeekTargetSec / this.duration),
-        );
-        this._lastSeekAtMs = Date.now();
+        this._resumeKickRetries++;
+        this._pendingResumeSeconds = this._lastSeekTargetSec;
+        this._pendingSeekFrac = null;       // wait for post-restart flush
+        this._hasProgressed = false;        // re-arm the resume gate
+        this._seekRetries = 0;
+        this._pendingResumeKick = true;     // VlcVideoView will call ref.resume(true)
         this.rerender();
       }
       return;
@@ -588,6 +621,26 @@ function VlcVideoView({
   // libvlc to treat play() as a fresh session and restart from 0,
   // which is exactly the snap-back loop we used to see.
   useEffect(() => {
+    // Recovery from libvlc Stopped-during-seek: restart playback from 0,
+    // then the queued resume seek will fire on the first onProgress tick.
+    // Must run BEFORE seek flush — otherwise calling seek() while still
+    // in Stopped state is a no-op (libvlc setPosition requires Playing).
+    if (player._pendingResumeKick) {
+      // Acknowledgment-based: only clear the flag AFTER the native call
+      // succeeds. If the ref is transiently null or resume() throws, the
+      // flag stays set so the next render (e.g. when the ref attaches)
+      // can retry. Without this, a single missed kick = permanent freeze.
+      const fn = vlcRef.current?.resume;
+      if (typeof fn === "function") {
+        try {
+          fn.call(vlcRef.current, true);
+          player._pendingResumeKick = false;
+        } catch {
+          // leave flag set so a subsequent render retries
+        }
+      }
+      return;
+    }
     const frac = player._pendingSeekFrac;
     if (frac != null) {
       // Null FIRST so any re-render this triggers can't re-issue the seek.
