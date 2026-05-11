@@ -104,10 +104,12 @@ function ChannelRow({
   item,
   isSelected,
   onPress,
+  hasTVPreferredFocus,
 }: {
   item: LiveStream;
   isSelected: boolean;
   onPress: () => void;
+  hasTVPreferredFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const isActive = focused || isSelected;
@@ -118,6 +120,7 @@ function ChannelRow({
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      hasTVPreferredFocus={hasTVPreferredFocus}
     >
       {isSelected ? (
         <View style={styles.channelRowBar} />
@@ -608,6 +611,22 @@ export default function LivePreviewScreen() {
     resetFsHideTimer();
   }, [resetFsHideTimer]);
 
+  // Initial TV focus target — the channel we entered with. Captured once so
+  // it never re-fires on subsequent channel switches (otherwise focus would
+  // keep jumping back to the original row).
+  const initialFocusStreamRef = useRef<number>(streamId);
+
+  // Channel row press: first press = switch + preview; pressing the same row
+  // again (while it's already the active preview) opens fullscreen directly,
+  // so the user never has to walk over to the "Watch Full Screen" button.
+  const handleChannelRowPress = useCallback((s: LiveStream) => {
+    if (s.stream_id === selectedId) {
+      handleFullScreen();
+      return;
+    }
+    switchToChannel(s);
+  }, [selectedId, switchToChannel, handleFullScreen]);
+
   const exitFullscreen = useCallback(() => {
     if (cameInFullscreenRef.current) {
       // Came in directly fullscreen → leave the screen entirely
@@ -713,7 +732,8 @@ export default function LivePreviewScreen() {
                 <ChannelRow
                   item={item}
                   isSelected={item.stream_id === selectedId}
-                  onPress={() => handleChannelPress(item)}
+                  onPress={() => handleChannelRowPress(item)}
+                  hasTVPreferredFocus={item.stream_id === initialFocusStreamRef.current}
                 />
               )}
               showsVerticalScrollIndicator={false}
@@ -816,7 +836,7 @@ export default function LivePreviewScreen() {
           {/* Watch Full Screen + EPG — hidden in fullscreen */}
           {!isFullscreen && (
             <>
-              <FullScreenButton key={`fs-${selectedId}`} onPress={handleFullScreen} />
+              <FullScreenButton onPress={handleFullScreen} />
               <View style={styles.epgDivider}>
                 <Feather name="calendar" size={11} color={Colors.dark.accent} />
                 <ThemedText style={styles.epgHeaderText}>Programme Guide</ThemedText>
@@ -1120,7 +1140,6 @@ function FullScreenButton({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      hasTVPreferredFocus
     >
       {isActive ? (
         <LinearGradient
