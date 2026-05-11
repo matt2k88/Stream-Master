@@ -25,7 +25,6 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
-import { usePlayerEngine } from "@/contexts/PlayerEngineContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
@@ -163,7 +162,6 @@ export default function AccountInfoScreen() {
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile } = useProfile();
   const { textSize, toggleTextSize } = useUISettings();
-  const { engine, toggleEngine } = usePlayerEngine();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
@@ -306,29 +304,6 @@ export default function AccountInfoScreen() {
           Text Size: {textSize === "large" ? "Large" : "Normal"}
         </ThemedText>
       </HoverBtn>
-      {Platform.OS !== "web" ? (
-        <HoverBtn
-          style={styles.notesBtn}
-          activeStyle={styles.notesBtnActive}
-          onPress={() => {
-            Alert.alert(
-              "Switch Video Player?",
-              engine === "vlc"
-                ? "Switch back to the Default player? Most channels work best with the Default player."
-                : "Switch to VLC? VLC supports more audio codecs (Dolby, DTS, etc.) and exotic formats — useful if some channels won't load on the Default player. Try this if you have channels that fail to load on Firestick.",
-              [
-                { text: "Cancel", style: "cancel" },
-                { text: "Switch", onPress: () => { void toggleEngine(); } },
-              ],
-            );
-          }}
-        >
-          <Feather name="film" size={13} color={Colors.dark.accent} />
-          <ThemedText style={styles.updateBtnText}>
-            Player: {engine === "vlc" ? "VLC" : "Default"}
-          </ThemedText>
-        </HoverBtn>
-      ) : null}
     </View>
   );
 

@@ -15,9 +15,6 @@ import ContentListScreen from "@/screens/ContentListScreen";
 import SeriesDetailScreen from "@/screens/SeriesDetailScreen";
 import MovieInfoScreen from "@/screens/MovieInfoScreen";
 import PlayerScreen from "@/screens/PlayerScreen";
-import VlcPlayerScreen from "@/screens/VlcPlayerScreen";
-import { usePlayerEngine } from "@/contexts/PlayerEngineContext";
-import { useRoute, RouteProp } from "@react-navigation/native";
 import AccountInfoScreen from "@/screens/AccountInfoScreen";
 import ProfilePickerScreen from "@/screens/ProfilePickerScreen";
 import CreateProfileScreen from "@/screens/CreateProfileScreen";
@@ -61,48 +58,6 @@ export type RootStackParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// ── Engine routers — keep route names stable, switch implementation
-//    based on the user's selected player engine (Account → Video Player).
-function PlayerRouter() {
-  const { engine } = usePlayerEngine();
-  const route = useRoute<RouteProp<RootStackParamList, "Player">>();
-  if (engine === "vlc") {
-    return (
-      <VlcPlayerScreen
-        streamUrl={route.params.streamUrl}
-        title={route.params.title}
-        type={route.params.type}
-        thumbnail={route.params.thumbnail}
-        streamId={route.params.streamId}
-        seriesId={route.params.seriesId}
-        seriesName={route.params.seriesName}
-        seasonNum={route.params.seasonNum}
-        episodeNum={route.params.episodeNum}
-        resumeTime={route.params.resumeTime}
-      />
-    );
-  }
-  return <PlayerScreen />;
-}
-
-function LivePreviewRouter() {
-  const { engine } = usePlayerEngine();
-  const route = useRoute<RouteProp<RootStackParamList, "LivePreview">>();
-  // VLC engine has no preview UX — go straight into the VLC fullscreen player.
-  if (engine === "vlc") {
-    return (
-      <VlcPlayerScreen
-        streamUrl={route.params.streamUrl}
-        title={route.params.name}
-        type="live"
-        thumbnail={route.params.streamIcon ?? route.params.thumbnail}
-        streamId={String(route.params.streamId)}
-      />
-    );
-  }
-  return <LivePreviewScreen />;
-}
-
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions({ transparent: false });
   const { isAuthenticated, isLoading } = useAuth();
@@ -133,12 +88,12 @@ export default function RootStackNavigator() {
             <Stack.Screen name="MovieInfo" component={MovieInfoScreen} />
             <Stack.Screen
               name="Player"
-              component={PlayerRouter}
+              component={PlayerScreen}
               options={{ animation: "fade", orientation: "landscape" }}
             />
             <Stack.Screen
               name="LivePreview"
-              component={LivePreviewRouter}
+              component={LivePreviewScreen}
               options={{ animation: "fade" }}
             />
             <Stack.Screen name="TvGuide" component={TvGuideScreen} />
