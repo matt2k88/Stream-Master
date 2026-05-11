@@ -25,6 +25,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { usePlayerEngine } from "@/contexts/PlayerEngineContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
@@ -162,6 +163,7 @@ export default function AccountInfoScreen() {
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile } = useProfile();
   const { textSize, toggleTextSize } = useUISettings();
+  const { engine, setEngine } = usePlayerEngine();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
@@ -302,6 +304,16 @@ export default function AccountInfoScreen() {
         <Feather name="type" size={13} color={Colors.dark.accent} />
         <ThemedText style={styles.updateBtnText}>
           Text Size: {textSize === "large" ? "Large" : "Normal"}
+        </ThemedText>
+      </HoverBtn>
+      <HoverBtn
+        style={styles.notesBtn}
+        activeStyle={styles.notesBtnActive}
+        onPress={() => { void setEngine(engine === "expo" ? "rnv" : "expo"); }}
+      >
+        <Feather name="play-circle" size={13} color={Colors.dark.accent} />
+        <ThemedText style={styles.updateBtnText}>
+          Player: {engine === "rnv" ? "Player 2" : "Player 1"}
         </ThemedText>
       </HoverBtn>
     </View>
