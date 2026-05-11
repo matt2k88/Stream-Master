@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { useKeepAwake } from "expo-keep-awake";
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
@@ -27,6 +28,15 @@ import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
+  // Keep the device awake the whole time the app is in the foreground.
+  // Fire TV / Android TV otherwise trip their system screensaver/sleep
+  // after ~10 min of no remote input — which previously looked like the
+  // VLC player "crashing" mid-playback, and also caused the menus to
+  // appear to hang/black-out when left idle. expo-video already requests
+  // a wake lock during active playback, but menus and any future
+  // engine swap (VLC, react-native-video) need this app-level lock too.
+  useKeepAwake();
+
   const [introComplete, setIntroComplete] = useState(false);
 
   // NOTE: orientation is no longer globally locked here. The intro locks
