@@ -11,6 +11,7 @@ import {
   Platform,
   Modal,
   TextInput,
+  useTVEventHandler,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -421,7 +422,7 @@ export default function LivePreviewScreen() {
     };
   }, [armLoadingTimeout, clearLoadingTimeout, clearRetryTimer, clearStallTimer]);
 
-  const handleChannelPress = useCallback((s: LiveStream) => {
+  const switchToChannel = useCallback((s: LiveStream) => {
     const newUrl = xtreamApi.getLiveStreamUrl(s.stream_id);
     currentStreamUrlRef.current = newUrl;
     savedChannelRef.current = null; // re-log new channel on next readyToPlay
@@ -436,6 +437,45 @@ export default function LivePreviewScreen() {
     armLoadingTimeout();
     reloadStream();
   }, [reloadStream, armLoadingTimeout, resetRetryState, clearStallTimer]);
+
+  const handleChannelPress = switchToChannel;
+
+  // ── TV remote: D-pad up/down in fullscreen → quick channel change ─────────
+  // Wraps around the current category. Stays in fullscreen and re-shows the
+  // overlay briefly so the viewer sees the new channel name.
+  const stepChannelInFullscreen = useCallback((dir: -1 | 1) => {
+    if (categoryChannels.length === 0) return;
+    const idx = categoryChannels.findIndex((c) => c.stream_id === selectedId);
+    if (idx === -1) return;
+    let nextIdx = idx + dir;
+    if (nextIdx < 0) nextIdx = categoryChannels.length - 1;
+    if (nextIdx >= categoryChannels.length) nextIdx = 0;
+    const next = categoryChannels[nextIdx];
+    if (next.stream_id === selectedId) return;
+    switchToChannel(next);
+    setShowFsOverlay(true);
+    resetFsHideTimer();
+  }, [categoryChannels, selectedId, switchToChannel, resetFsHideTimer]);
+
+  // useTVEventHandler registers once and isn't reactive to deps, so route
+  // events through a ref that always points at the latest closure.
+  const tvHandlerRef = useRef<(evt: { eventType: string }) => void>(() => {});
+  useEffect(() => {
+    tvHandlerRef.current = (evt) => {
+      if (!isFullscreen) return;
+      // Don't intercept D-pad while the report modal is open — it needs
+      // up/down to navigate the reason list.
+      if (showReport) return;
+      if (evt.eventType === "up") stepChannelInFullscreen(-1);
+      else if (evt.eventType === "down") stepChannelInFullscreen(1);
+      else if (evt.eventType === "select" || evt.eventType === "playPause") {
+        // Any select press while overlay is hidden re-shows it
+        setShowFsOverlay(true);
+        resetFsHideTimer();
+      }
+    };
+  }, [isFullscreen, showReport, stepChannelInFullscreen, resetFsHideTimer]);
+  useTVEventHandler((evt: any) => tvHandlerRef.current(evt));
 
   const handleRetry = useCallback(() => {
     resetRetryState();
@@ -718,7 +758,7 @@ export default function LivePreviewScreen() {
           {/* Watch Full Screen + EPG — hidden in fullscreen */}
           {!isFullscreen && (
             <>
-              <FullScreenButton onPress={handleFullScreen} />
+              <FullScreenButton key={`fs-${selectedId}`} onPress={handleFullScreen} />
               <View style={styles.epgDivider}>
                 <Feather name="calendar" size={11} color={Colors.dark.accent} />
                 <ThemedText style={styles.epgHeaderText}>Programme Guide</ThemedText>
@@ -1168,6 +1208,7 @@ const styles = StyleSheet.create({
   playerWrap: {
     aspectRatio: 16 / 9,
     maxHeight: "45%",
+    alignSelf: "center",
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     backgroundColor: "#000",

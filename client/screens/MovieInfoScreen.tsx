@@ -81,11 +81,13 @@ function PlayBtn({
   label,
   icon,
   primary,
+  autoFocus,
   onPress,
 }: {
   label: string;
   icon: keyof typeof Feather.glyphMap;
   primary?: boolean;
+  autoFocus?: boolean;
   onPress: () => void;
 }) {
   const [focused, setFocused] = useState(false);
@@ -103,6 +105,7 @@ function PlayBtn({
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
     >
       {/* Visible hover/focus tint overlay — makes the focus state obvious
           on TV instead of relying on a subtle outer shadow glow. */}
@@ -396,11 +399,11 @@ export default function MovieInfoScreen() {
         <View style={styles.playRow}>
           {resumeSecs > 0 && !ws.isCompleted ? (
             <>
-              <PlayBtn label="RESUME" icon="play" primary onPress={() => handlePlay(false)} />
+              <PlayBtn label="RESUME" icon="play" primary autoFocus onPress={() => handlePlay(false)} />
               <PlayBtn label="START OVER" icon="rotate-ccw" onPress={() => handlePlay(true)} />
             </>
           ) : (
-            <PlayBtn label="PLAY MOVIE" icon="play" primary onPress={() => handlePlay(true)} />
+            <PlayBtn label="PLAY MOVIE" icon="play" primary autoFocus onPress={() => handlePlay(true)} />
           )}
         </View>
 
