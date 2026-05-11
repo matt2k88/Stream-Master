@@ -37,12 +37,26 @@ const TYPE_LABEL: Record<string, string> = {
   series: "Series",
 };
 
+export interface WatchSectionConfig {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  filter: (e: RecentlyWatched) => boolean;
+  emptyText?: string;
+  maxItems?: number;
+}
+
 interface Props {
   style?: any;
   onPress?: (item: RecentlyWatched) => void;
   refreshKey?: number;
   maxItems?: number;
   onLayout?: (e: any) => void;
+  /**
+   * When provided, render N labelled sections inside one card box.
+   * Each section has its own header + filtered items.
+   * When omitted, falls back to legacy single-section "Previously Watched".
+   */
+  sections?: WatchSectionConfig[];
 }
 
 function RecentlyWatchedRow({
@@ -147,7 +161,72 @@ function RecentlyWatchedRow({
   );
 }
 
-export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout }: Props) {
+function dedupe(entries: RecentlyWatched[]): RecentlyWatched[] {
+  const seen = new Set<string>();
+  return entries.filter((e) => {
+    const key = e.stream_id != null ? String(e.stream_id) : `__id_${e.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function WatchSection({
+  cfg,
+  entries,
+  onPress,
+  defaultMax,
+  isLoading,
+  accentColor,
+}: {
+  cfg: WatchSectionConfig;
+  entries: RecentlyWatched[];
+  onPress?: (item: RecentlyWatched) => void;
+  defaultMax?: number;
+  isLoading: boolean;
+  accentColor: string;
+}) {
+  const filtered = dedupe(entries.filter(cfg.filter));
+  const max = cfg.maxItems ?? defaultMax;
+  const items = max ? filtered.slice(0, max) : filtered;
+  const isEmpty = items.length === 0;
+
+  return (
+    <View style={styles.sectionWrap}>
+      <View style={styles.labelRow}>
+        <Feather name={cfg.icon} size={11} color={accentColor} />
+        <ThemedText style={[styles.sectionLabel, { color: accentColor }]}>{cfg.label}</ThemedText>
+      </View>
+
+      {isLoading ? (
+        <View style={styles.emptyBody}>
+          <ThemedText style={styles.emptyText}>Loading...</ThemedText>
+        </View>
+      ) : isEmpty ? (
+        <View style={styles.emptyBody}>
+          <View style={styles.emptyIconRing}>
+            <Feather name="play-circle" size={20} color={Colors.dark.textSecondary} />
+          </View>
+          <ThemedText style={styles.emptyText}>{cfg.emptyText ?? "Nothing yet"}</ThemedText>
+        </View>
+      ) : (
+        <View style={styles.itemsList}>
+          {items.map((item, index) => (
+            <React.Fragment key={item.id}>
+              {index > 0 ? <View style={styles.separator} /> : null}
+              <RecentlyWatchedRow item={item} onPress={() => onPress?.(item)} />
+            </React.Fragment>
+          ))}
+          {items.length === 1 && (max ?? 0) > 1 ? (
+            <View style={[styles.separator, { opacity: 0 }]} />
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
+}
+
+export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout, sections }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
   const accent = useAccent();
 
@@ -157,18 +236,33 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  // Entries are already deduped server-side, but filter again as a safety net
-  const seen = new Set<string>();
-  const dedupedEntries = entries.filter((e) => {
-    const key = e.stream_id != null ? String(e.stream_id) : `__id_${e.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const isLoading = isCtxLoading && entries.length === 0;
 
+  // Multi-section mode
+  if (sections && sections.length > 0) {
+    return (
+      <View style={[styles.card, style]} onLayout={onLayout}>
+        {sections.map((cfg, i) => (
+          <React.Fragment key={`${cfg.label}-${i}`}>
+            {i > 0 ? <View style={styles.sectionDivider} /> : null}
+            <WatchSection
+              cfg={cfg}
+              entries={entries}
+              onPress={onPress}
+              defaultMax={maxItems}
+              isLoading={isLoading}
+              accentColor={accent.accent}
+            />
+          </React.Fragment>
+        ))}
+      </View>
+    );
+  }
+
+  // Legacy single-section mode
+  const dedupedEntries = dedupe(entries);
   const displayItems = maxItems ? dedupedEntries.slice(0, maxItems) : dedupedEntries;
   const isEmpty = displayItems.length === 0;
-  const isLoading = isCtxLoading && entries.length === 0;
 
   return (
     <View style={[styles.card, style]} onLayout={onLayout}>
@@ -199,7 +293,6 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
               />
             </React.Fragment>
           ))}
-          {/* Pad to 2 items so layout stays stable */}
           {displayItems && displayItems.length === 1 ? (
             <View style={[styles.separator, { opacity: 0 }]} />
           ) : null}
@@ -275,6 +368,15 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
 
+  sectionWrap: {
+    gap: Spacing.xs,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: Spacing.xs,
+    opacity: 0.6,
+  },
   labelRow: {
     flexDirection: "row",
     alignItems: "center",

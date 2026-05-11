@@ -577,7 +577,10 @@ export default function ContentListScreen() {
 
   const sidebarData: SidebarCat[] = useMemo(() => {
     const pinned: SidebarCat[] = [];
-    pinned.push({ category_id: "recently", category_name: "Recently Watched" });
+    pinned.push({
+      category_id: "recently",
+      category_name: type === "live" ? "Recently Watched" : "Continue Watching",
+    });
     pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
@@ -650,6 +653,10 @@ export default function ContentListScreen() {
       }
       return out;
     }
+    // Movies/series — "Continue Watching": only in-progress entries
+    // (saved playback time and not yet completed).
+    const inProgress = (e: typeof watchEntries[number]) =>
+      !e.is_completed && (e.current_time ?? 0) > 0;
     if (type === "movies") {
       const out: VodStream[] = [];
       const seen = new Set<string>();
@@ -657,6 +664,7 @@ export default function ContentListScreen() {
       for (const v of vodStreams) idx.set(String(v.stream_id), v);
       for (const e of watchEntries) {
         if (e.content_type !== "movie" || !e.stream_id) continue;
+        if (!inProgress(e)) continue;
         const k = String(e.stream_id);
         if (seen.has(k)) continue;
         const v = idx.get(k);
@@ -671,6 +679,7 @@ export default function ContentListScreen() {
       for (const s of seriesList) idx.set(String(s.series_id), s);
       for (const e of watchEntries) {
         if (e.content_type !== "series" || !e.series_id) continue;
+        if (!inProgress(e)) continue;
         const k = String(e.series_id);
         if (seen.has(k)) continue;
         const s = idx.get(k);

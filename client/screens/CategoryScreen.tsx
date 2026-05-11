@@ -192,7 +192,12 @@ function FavRecentRow({
   return (
     <View style={styles.favRecentRow}>
       <View style={styles.favRecentCell}>
-        <PillButton icon="clock" label="Recently Watched" count={recentCount} onPress={onPressRecent} />
+        <PillButton
+          icon="clock"
+          label={type === "live" ? "Recently Watched" : "Continue Watching"}
+          count={recentCount}
+          onPress={onPressRecent}
+        />
       </View>
       <View style={styles.favRecentCell}>
         <PillButton icon="star" label="Favourites" count={favCount} onPress={onPressFav} />
@@ -367,17 +372,25 @@ export default function CategoryScreen() {
       }
       return seen.size;
     }
+    // For movies/series this is "Continue Watching" — only in-progress
+    // (not completed, with saved playback time) entries should count.
+    const inProgress = (e: typeof watchEntries[number]) =>
+      !e.is_completed && (e.current_time ?? 0) > 0;
     const wantType = type === "movies" ? "movie" : "series";
     if (wantType === "movie") {
       const seen = new Set<string>();
       for (const e of watchEntries) {
-        if (e.content_type === "movie" && e.stream_id) seen.add(String(e.stream_id));
+        if (e.content_type === "movie" && e.stream_id && inProgress(e)) {
+          seen.add(String(e.stream_id));
+        }
       }
       return seen.size;
     }
     const seen = new Set<string>();
     for (const e of watchEntries) {
-      if (e.content_type === "series" && e.series_id) seen.add(String(e.series_id));
+      if (e.content_type === "series" && e.series_id && inProgress(e)) {
+        seen.add(String(e.series_id));
+      }
     }
     return seen.size;
   }, [type, watchEntries]);
@@ -524,7 +537,7 @@ export default function CategoryScreen() {
             navigation.navigate("ContentList", {
               type,
               categoryId: "recently",
-              categoryName: "Recently Watched",
+              categoryName: type === "live" ? "Recently Watched" : "Continue Watching",
             })
           }
         />
@@ -617,7 +630,7 @@ export default function CategoryScreen() {
                 navigation.navigate("ContentList", {
                   type,
                   categoryId: "recently",
-                  categoryName: "Recently Watched",
+                  categoryName: type === "live" ? "Recently Watched" : "Continue Watching",
                 })
               }
             />

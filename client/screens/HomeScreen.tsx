@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { markReplayIntroOnResume } from "@/lib/intro-flag";
@@ -21,7 +21,7 @@ import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
 import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
-import RecentlyWatchedCard from "@/components/RecentlyWatchedCard";
+import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
 import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
@@ -191,19 +191,17 @@ function NavButton({
   );
 }
 
-function SearchButton({ onPress }: { onPress: () => void }) {
-  const [focused, setFocused] = useState(false);
+function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
   const accent = useAccent();
-
   return (
     <Pressable
       style={[
-        styles.searchButton,
-        { borderColor: accent.accent },
-        isActive && styles.searchButtonActive,
-        isActive && { shadowColor: accent.accent },
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
       ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
@@ -211,36 +209,7 @@ function SearchButton({ onPress }: { onPress: () => void }) {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <LinearGradient
-        colors={isActive ? accent.pairStrong : accent.pairSoft}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
-      <View
-        style={[
-          styles.searchBtnIconWrap,
-          { borderColor: accent.accent, backgroundColor: accent.accentDim },
-          isActive && styles.searchBtnIconWrapActive,
-          isActive && { backgroundColor: accent.withAlpha(accent.accent, 0.3) },
-        ]}
-      >
-        <Feather name="search" size={18} color={accent.accent} />
-      </View>
-      <View style={styles.searchBtnTextCol}>
-        <ThemedText
-          style={[
-            styles.searchBtnText,
-            { color: accent.accent },
-            isActive && styles.searchBtnTextActive,
-          ]}
-        >
-          Search All Content
-        </ThemedText>
-        <ThemedText style={styles.searchBtnHint}>channels, movies, series</ThemedText>
-      </View>
-      <Feather name="chevron-right" size={16} color={accent.withAlpha(accent.accent, 0.55)} />
-      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent, shadowColor: accent.accent }]} /> : null}
+      <Feather name="search" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
     </Pressable>
   );
 }
@@ -624,6 +593,28 @@ export default function HomeScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
 
+  // Dashboard watch-history sections — Live (recently watched) + in-progress
+  // movies/series (continue watching), shown inside one shared card box.
+  const watchSections: WatchSectionConfig[] = useMemo(() => [
+    {
+      label: "Recently Watched",
+      icon: "tv",
+      filter: (e) => e.content_type === "live",
+      emptyText: "No live channels watched yet",
+      maxItems: 2,
+    },
+    {
+      label: "Continue Watching",
+      icon: "play-circle",
+      filter: (e) =>
+        e.content_type !== "live" &&
+        !e.is_completed &&
+        (e.current_time ?? 0) > 0,
+      emptyText: "Nothing in progress",
+      maxItems: 2,
+    },
+  ], []);
+
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -652,6 +643,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.headerActions}>
+          <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
           <VpnButton />
           <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
@@ -753,13 +745,12 @@ export default function HomeScreen() {
           <View style={styles.rightPanel}>
             {/* Advert carousel */}
             <AdvertCarousel style={styles.carouselFill} />
-            {/* Search All */}
-            <SearchButton onPress={() => navigation.navigate("Search")} />
-            {/* Previously Watched — fills dead space at bottom */}
+            {/* Recently Watched (live) + Continue Watching (movies/series) */}
             <RecentlyWatchedCard
               style={styles.recentlyWatched}
               refreshKey={recentRefreshKey}
               maxItems={2}
+              sections={watchSections}
               onPress={(item) => {
                 if (item.content_type === "live") {
                   if (!item.stream_url) return;
@@ -875,6 +866,7 @@ export default function HomeScreen() {
             style={styles.portraitRecent}
             refreshKey={recentRefreshKey}
             maxItems={2}
+            sections={watchSections}
             onPress={(item) => {
               if (item.content_type === "live") {
                 if (!item.stream_url) return;
@@ -910,7 +902,6 @@ export default function HomeScreen() {
               });
             }}
           />
-          <SearchButton onPress={() => navigation.navigate("Search")} />
           <View style={styles.portraitCarousel}>
             <AdvertCarousel style={StyleSheet.absoluteFill} />
           </View>
@@ -1374,42 +1365,6 @@ const styles = StyleSheet.create({
   countChipLabelActive: {
     color: "rgba(255,255,255,0.92)",
   },
-
-  // ── Search button ────────────────────────────────────────────────────────
-  searchButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 56,
-    backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    borderColor: Colors.dark.accent,
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.md,
-    overflow: "hidden",
-    flexShrink: 0,
-  },
-  searchButtonActive: {
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 14,
-    elevation: 10,
-  },
-  searchBtnIconWrap: {
-    width: 34, height: 34, borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.accentDim,
-    borderWidth: 1, borderColor: Colors.dark.accent,
-    justifyContent: "center", alignItems: "center",
-    flexShrink: 0,
-  },
-  searchBtnIconWrapActive: { backgroundColor: "rgba(255,102,0,0.3)" },
-  searchBtnTextCol: { flex: 1, gap: 1 },
-  searchBtnText: {
-    color: Colors.dark.accent, fontSize: 15, fontWeight: "700", letterSpacing: 0.2,
-  },
-  searchBtnTextActive: { color: Colors.dark.accent },
-  searchBtnHint: { color: Colors.dark.textSecondary, fontSize: 11 },
 
   activeIndicator: {
     position: "absolute", bottom: 0, left: "20%", right: "20%",
