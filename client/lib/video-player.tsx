@@ -30,6 +30,13 @@ import React, { useEffect, useReducer, useRef } from "react";
 import { Platform, View, StyleProp, ViewStyle } from "react-native";
 // @ts-ignore — package ships a CJS index without ESM types
 import * as VlcPkg from "react-native-vlc-media-player";
+import {
+  useVideoPlayer as useExpoVideoPlayer,
+  VideoView as ExpoVideoView,
+  type VideoPlayer as ExpoVideoPlayer,
+} from "expo-video";
+
+export type PlayerEngine = "vlc" | "expo";
 
 const VLCPlayer: any =
   (VlcPkg as any).VLCPlayer ??
@@ -392,8 +399,8 @@ function msToSeconds(d: unknown): number {
   return d / 1000;
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────
-export function useVideoPlayer(
+// ─── VLC hook ─────────────────────────────────────────────────────────────
+function useVlcPlayer(
   source: string,
   setup?: (player: VideoPlayer) => void,
 ): VideoPlayer {
@@ -418,22 +425,65 @@ export function useVideoPlayer(
   return ref.current!;
 }
 
+// ─── Engine dispatcher ────────────────────────────────────────────────────
+//
+// Captures the engine choice ONCE per mount (lazy useRef init) so that
+// every render of this hook calls the SAME branch of useExpoVideoPlayer /
+// useVlcPlayer in the SAME order — keeping React's rules-of-hooks happy.
+// To switch engines mid-session, callers must remount the parent (we use
+// `key={engine}` on the player wrapper component for that).
+//
+// Both engines expose an identical surface (replace, currentTime,
+// muted, addListener, etc) because the VLC bridge was modelled after
+// expo-video's API.
+export function useVideoPlayer(
+  source: string,
+  setup?: (player: any) => void,
+  opts?: { engine?: PlayerEngine },
+): any {
+  const engineRef = useRef<PlayerEngine>(opts?.engine === "expo" ? "expo" : "vlc");
+  // Always call BOTH hooks (one with the real source, the other with an
+  // empty source) so hook order stays stable across renders. The unused
+  // engine doesn't actually decode anything.
+  const useExpo = engineRef.current === "expo";
+  const expoSetup = useExpo ? setup : undefined;
+  const vlcSetup  = !useExpo ? setup : undefined;
+  // Pass `null` to the unused engine so it stays a true no-op. expo-video
+  // treats null source as "no source" (no decoder, no errors); VLC's
+  // bridge guards against falsy source the same way.
+  const expoPlayer = useExpoVideoPlayer(useExpo ? source : (null as any), expoSetup as any);
+  const vlcPlayer  = useVlcPlayer(!useExpo ? source : "", vlcSetup as any);
+  return useExpo ? expoPlayer : vlcPlayer;
+}
+
 // ─── VideoView ────────────────────────────────────────────────────────────
 type ContentFit = "contain" | "cover" | "fill";
 
 export interface VideoViewProps {
-  player: VideoPlayer;
+  player: any;
   style?: StyleProp<ViewStyle>;
   contentFit?: ContentFit;
-  // The next three are accepted for expo-video API parity but ignored —
-  // VLC has no built-in PiP/fullscreen UI in this binding, and the app
-  // implements its own controls anyway.
+  // The next three are accepted for expo-video API parity but ignored on
+  // the VLC engine — VLC has no built-in PiP/fullscreen UI in this
+  // binding, and the app implements its own controls anyway.
   nativeControls?: boolean;
   allowsFullscreen?: boolean;
   allowsPictureInPicture?: boolean;
+  /** Optional engine override. Must match the engine the player was
+   *  created with. Defaults to "vlc" if omitted. */
+  engine?: PlayerEngine;
 }
 
-export function VideoView({
+export function VideoView(props: VideoViewProps) {
+  const engine: PlayerEngine = props.engine === "expo" ? "expo" : "vlc";
+  if (engine === "expo") {
+    const { engine: _e, ...rest } = props;
+    return <ExpoVideoView {...(rest as any)} />;
+  }
+  return <VlcVideoView {...props} />;
+}
+
+function VlcVideoView({
   player,
   style,
   contentFit = "contain",

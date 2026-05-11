@@ -62,11 +62,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, pin } = req.body;
+    const { name, avatar_icon, avatar_color, pin, player_vod, player_live } = req.body;
     try {
+      // Build a partial update so callers (e.g. PlayerSettingsScreen)
+      // can patch only the fields they care about.
+      const patch: Record<string, any> = {};
+      if (name !== undefined) patch.name = name;
+      if (avatar_icon !== undefined) patch.avatar_icon = avatar_icon;
+      if (avatar_color !== undefined) patch.avatar_color = avatar_color;
+      if (pin !== undefined) patch.pin = pin ?? null;
+      if (player_vod !== undefined) {
+        if (player_vod !== "vlc" && player_vod !== "expo") {
+          return res.status(400).json({ error: "player_vod must be 'vlc' or 'expo'" });
+        }
+        patch.player_vod = player_vod;
+      }
+      if (player_live !== undefined) {
+        if (player_live !== "vlc" && player_live !== "expo") {
+          return res.status(400).json({ error: "player_live must be 'vlc' or 'expo'" });
+        }
+        patch.player_live = player_live;
+      }
       const { data, error } = await supabase
         .from("profiles")
-        .update({ name, avatar_icon, avatar_color, pin: pin ?? null })
+        .update(patch)
         .eq("id", id)
         .select()
         .single();

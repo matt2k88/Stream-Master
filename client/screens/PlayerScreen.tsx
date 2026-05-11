@@ -503,7 +503,19 @@ export default function PlayerScreen() {
     if (!isLive) p.timeUpdateEventInterval = 1;
     p.play();
   });
-  const player = useVideoPlayer(streamUrl, playerSetupRef.current);
+  // Engine choice is captured at mount from the active profile's pref
+  // (see PlayerSettingsScreen). Movies/series use `player_vod`; live TV
+  // uses `player_live`. Default is "vlc" if the profile hasn't migrated
+  // yet. The engine is locked for the lifetime of this PlayerScreen
+  // mount — switching engines requires going back and replaying.
+  const playerEngineRef = useRef<"vlc" | "expo">(
+    (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
+      ? "expo"
+      : "vlc",
+  );
+  const player = useVideoPlayer(streamUrl, playerSetupRef.current, {
+    engine: playerEngineRef.current,
+  });
 
   // ── Controls visibility ───────────────────────────────────────────────────
   const activePanelRef = useRef<"cc" | "audio" | null>(null);
@@ -1220,6 +1232,7 @@ export default function PlayerScreen() {
         player={player}
         contentFit="contain"
         nativeControls={false}
+        engine={playerEngineRef.current}
       />
 
       {/* Loading / reconnecting */}

@@ -242,9 +242,20 @@ export default function LivePreviewScreen() {
 
   const listRef = useRef<FlatList>(null);
 
-  const player = useVideoPlayer(streamUrl, (p) => {
+  // Engine pinned at mount from active profile's `player_live` pref.
+  const playerEngineRef = useRef<"vlc" | "expo">(
+    activeProfile?.player_live === "expo" ? "expo" : "vlc",
+  );
+  // Setup callback MUST be stable — an inline arrow gives expo-video a
+  // new identity each render, which makes useVideoPlayer (Expo path)
+  // recreate the player and reopen the HLS stream. LivePreview re-renders
+  // a lot (EPG ticks, focus changes), so we pin via useRef.
+  const playerSetupRef = useRef((p: any) => {
     p.muted = false;
     p.play();
+  });
+  const player = useVideoPlayer(streamUrl, playerSetupRef.current, {
+    engine: playerEngineRef.current,
   });
 
   // Track current stream URL so we can reload it on focus return
@@ -780,6 +791,7 @@ export default function LivePreviewScreen() {
               nativeControls={false}
               allowsFullscreen={false}
               allowsPictureInPicture={false}
+              engine={playerEngineRef.current}
             />
             {!isFullscreen && (
               <>

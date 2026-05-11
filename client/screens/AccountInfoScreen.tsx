@@ -495,27 +495,51 @@ export default function AccountInfoScreen() {
                 );
               })()}
 
-              {/* Organise Categories button */}
-              <HoverBtn
-                style={styles.organiseBtn}
-                activeStyle={styles.organiseBtnActive}
-                onPress={() => navigation.navigate("OrganiseTypePicker")}
-              >
-                {(active) => (
-                  <>
-                    <Feather name="sliders" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
-                        Organise Categories
-                      </ThemedText>
-                      <ThemedText style={styles.organiseSub}>
-                        Reorder or hide categories per profile
-                      </ThemedText>
-                    </View>
-                    <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                  </>
-                )}
-              </HoverBtn>
+              {/* Organise Categories + Player Settings — split 50/50 row.
+                  Organise was full-width before; we shrunk it to make room
+                  for the new Player Settings entry beside it. */}
+              <View style={styles.settingsRow}>
+                <HoverBtn
+                  style={[styles.organiseBtn, styles.settingsRowItem]}
+                  activeStyle={styles.organiseBtnActive}
+                  onPress={() => navigation.navigate("OrganiseTypePicker")}
+                >
+                  {(active) => (
+                    <>
+                      <Feather name="sliders" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
+                          Organise Categories
+                        </ThemedText>
+                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
+                          Reorder or hide categories
+                        </ThemedText>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                    </>
+                  )}
+                </HoverBtn>
+                <HoverBtn
+                  style={[styles.organiseBtn, styles.settingsRowItem]}
+                  activeStyle={styles.organiseBtnActive}
+                  onPress={() => navigation.navigate("PlayerSettings")}
+                >
+                  {(active) => (
+                    <>
+                      <Feather name="play-circle" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
+                          Player Settings
+                        </ThemedText>
+                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
+                          VLC or Expo per stream type
+                        </ThemedText>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                    </>
+                  )}
+                </HoverBtn>
+              </View>
 
               {/* Developer card — in landscape, the four entries lay out as
                   a 2×2 grid (Name | Contact on top, Website | Renewal on
@@ -934,6 +958,9 @@ const styles = StyleSheet.create({
   },
   organiseTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "700" },
   organiseSub: { color: Colors.dark.textSecondary, fontSize: 11, marginTop: 2 },
+  // 50/50 row holding Organise Categories + Player Settings buttons
+  settingsRow: { flexDirection: "row", gap: Spacing.sm },
+  settingsRowItem: { flex: 1, minWidth: 0 },
 
   // Developer card states
   devLoading: { paddingVertical: Spacing.md, alignItems: "center" },
