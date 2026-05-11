@@ -133,6 +133,8 @@ export class VideoPlayer {
   _lastSeekAtMs: number = 0;
   /** @internal — last seek target in seconds (for snap-back detection) */
   _lastSeekTargetSec: number = -1;
+  /** @internal — # of automatic retries already issued for the current seek */
+  _seekRetries: number = 0;
 
   // Event bus
   private listeners = new Map<string, Set<Listener>>();
@@ -161,6 +163,7 @@ export class VideoPlayer {
       this._currentTime = seconds;
       this._lastSeekTargetSec = seconds;
       this._lastSeekAtMs = Date.now();
+      this._seekRetries = 0;
       this._pendingResumeSeconds = null;
       this.rerender();
     } else {
@@ -218,6 +221,7 @@ export class VideoPlayer {
     this._hasProgressed = false;
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
+    this._seekRetries = 0;
     this.rerender();
   }
 
@@ -228,6 +232,7 @@ export class VideoPlayer {
     this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
     this._lastSeekAtMs = 0;
     this._lastSeekTargetSec = -1;
+    this._seekRetries = 0;
     this.rerender();
   }
 
@@ -300,21 +305,44 @@ export class VideoPlayer {
     // For a brief window after a seek, only accept progress values that
     // are within ~3s of our seek target. Once VLC catches up (or the
     // window expires), normal updates resume.
+    //
+    // CRITICAL: when we see a stale tick we DON'T just drop it — we
+    // re-issue the seek. Two failure modes show up as a stale tick:
+    //   1. iOS [_player isSeekable] returned NO when we first called
+    //      setPosition (typical for the first ~250-500ms after the
+    //      decoder starts), so the seek was silently ignored.
+    //   2. libvlc transitioned through Stopped during the seek (TS
+    //      discontinuity, codec re-init, etc) and lost the position.
+    // In both cases the native player is sitting at the OLD position
+    // with no kick coming. Re-issuing `seek` is safe (it does NOT call
+    // play() — so no restart-from-0) and forces libvlc to honour the
+    // seek as soon as it's actually seekable.
     const now = Date.now();
     const sinceSeekMs = now - this._lastSeekAtMs;
     if (
       this._lastSeekAtMs > 0 &&
-      sinceSeekMs < 2000 &&
+      sinceSeekMs < 4000 &&
       this._lastSeekTargetSec >= 0 &&
       Math.abs(ct - this._lastSeekTargetSec) > 3
     ) {
-      // Stale tick — drop it. Don't update _currentTime, don't emit.
+      // Stale tick. Try to re-seek (cap retries so we don't loop forever
+      // on truly-unseekable streams).
+      if (this._seekRetries < 6 && this.duration > 0) {
+        this._seekRetries++;
+        this._pendingSeekFrac = Math.max(
+          0,
+          Math.min(1, this._lastSeekTargetSec / this.duration),
+        );
+        this._lastSeekAtMs = now; // restart the verify window
+        this.rerender();
+      }
       return;
     }
-    if (sinceSeekMs >= 2000) {
+    if (sinceSeekMs >= 4000) {
       // Seek window closed — clear tracking so this guard goes dormant.
       this._lastSeekAtMs = 0;
       this._lastSeekTargetSec = -1;
+      this._seekRetries = 0;
     }
 
     this._currentTime = ct;
@@ -412,7 +440,29 @@ export class VideoPlayer {
     const sinceSeekMs = this._lastSeekAtMs > 0
       ? Date.now() - this._lastSeekAtMs
       : Number.MAX_SAFE_INTEGER;
-    if (sinceSeekMs < 1500) return; // spurious mid-seek stop — ignore
+    if (sinceSeekMs < 4000) {
+      // Spurious Stopped fired during/after a recent seek. The native
+      // player may now be sitting at position 0 (libvlc resets on a
+      // hard Stop). Re-issue the seek so the next play tick lands at
+      // the user's intended position. We do NOT touch `paused` — the
+      // RN prop diff for paused:false would cause libvlc to play()
+      // from 0 (restart-from-0 loop). Re-seeking is safe because
+      // setSeek does not call play().
+      if (
+        this._seekRetries < 6 &&
+        this._lastSeekTargetSec >= 0 &&
+        this.duration > 0
+      ) {
+        this._seekRetries++;
+        this._pendingSeekFrac = Math.max(
+          0,
+          Math.min(1, this._lastSeekTargetSec / this.duration),
+        );
+        this._lastSeekAtMs = Date.now();
+        this.rerender();
+      }
+      return;
+    }
     if (this.playing) {
       this.playing = false;
       this._emit("playingChange", { isPlaying: false });
