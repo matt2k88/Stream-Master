@@ -58,11 +58,15 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
     }).start(() => onDone());
   }, [fadeAnim, onDone]);
 
-  const player = useVideoPlayer(videoUrl, (p) => {
-    p.muted = false;
-    p.loop = false;
-    p.play();
-  });
+  const player = useVideoPlayer(
+    videoUrl,
+    (p) => {
+      p.muted = false;
+      p.loop = false;
+      p.play();
+    },
+    { engine: "expo" },
+  );
 
   useEffect(() => {
     const sub = player.addListener("statusChange", (e: any) => {
@@ -114,6 +118,7 @@ function IntroPlayer({ videoUrl, onDone }: IntroPlayerProps) {
         nativeControls={false}
         allowsFullscreen={false}
         allowsPictureInPicture={false}
+        engine="expo"
       />
 
       {/* Loading spinner */}
