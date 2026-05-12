@@ -389,11 +389,18 @@ class XtreamAPI {
 
   getCatchupStreamUrl(streamId: number, startTimestamp: number, durationMinutes: number): string {
     const d = new Date(startTimestamp * 1000);
-    const yyyy = d.getUTCFullYear();
-    const MM = (d.getUTCMonth() + 1).toString().padStart(2, "0");
-    const dd = d.getUTCDate().toString().padStart(2, "0");
-    const HH = d.getUTCHours().toString().padStart(2, "0");
-    const mm = d.getUTCMinutes().toString().padStart(2, "0");
+    // Xtream's /timeshift/ endpoint expects the date+time in the
+    // panel's *server-local* timezone, not UTC. UK IPTV setups are
+    // overwhelmingly hosted in the same region as their viewers, so
+    // formatting with the device's local components matches the
+    // server's expectation and lands on the correct broadcast slot.
+    // (Using UTC here was off by the user's UTC offset — e.g. on BST
+    // an 8pm tap would play the 7pm programme.)
+    const yyyy = d.getFullYear();
+    const MM = (d.getMonth() + 1).toString().padStart(2, "0");
+    const dd = d.getDate().toString().padStart(2, "0");
+    const HH = d.getHours().toString().padStart(2, "0");
+    const mm = d.getMinutes().toString().padStart(2, "0");
     const start = `${yyyy}-${MM}-${dd}:${HH}-${mm}`;
     const u = this.credentials?.username ?? "";
     const p = this.credentials?.password ?? "";
