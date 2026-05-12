@@ -53,7 +53,7 @@
         {
           "android": {
             "usesCleartextTraffic": true,
-            "minSdkVersion": 26,
+            "minSdkVersion": 24,
             "packagingOptions": {
               "pickFirsts": [
                 "lib/x86/libc++_shared.so",
@@ -66,6 +66,7 @@
         }
       ],
       "./plugins/withCleartextTraffic",
+      "./plugins/withVlcMinSdkOverride",
       [
         "./plugins/withTvBanner",
         { "bannerPath": "./assets/images/tv-banner.png" }

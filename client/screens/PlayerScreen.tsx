@@ -351,8 +351,15 @@ export default function PlayerScreen() {
   const route = useRoute<PlayerRouteProp>();
   const { activeProfile } = useProfile();
   const isLive = route.params.type === "live";
-  const engine = (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
+  // VLC's native code requires Android 8.0+ (API 26). On API 24/25
+  // (Fire OS 6 / Fire TV 4K 1st-gen) the binding will crash on init,
+  // so force the Expo engine regardless of the user's profile choice.
+  // Mirrors the same guard in `client/lib/video-player.tsx`.
+  const vlcUnsupported =
+    Platform.OS === "android" && typeof Platform.Version === "number" && Platform.Version < 26;
+  const profileEngine = (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
     ? "expo" : "vlc";
+  const engine = vlcUnsupported ? "expo" : profileEngine;
   // Android + VLC + non-live → use the dedicated raw-VLC screen.
   // Live TV, web, iOS, and the expo engine all keep the legacy screen.
   if (Platform.OS === "android" && engine === "vlc" && !isLive && VlcPlayerScreen) {

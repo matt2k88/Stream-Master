@@ -28,6 +28,16 @@
 
 import React, { useEffect, useReducer, useRef } from "react";
 import { Platform, View, StyleProp, ViewStyle } from "react-native";
+
+// VLC's native code (react-native-vlc-media-player) requires Android
+// 8.0+ (API 26) — it calls AudioAttributes / MediaCodec methods that
+// don't exist on older OS versions. We bundle VLC anyway and override
+// the manifest merger via the `withVlcMinSdkOverride` config plugin so
+// the APK installs on Fire OS 6 (API 25) sticks. This flag makes sure
+// we never actually instantiate VLC on those devices — the player
+// factory transparently falls back to the Expo engine instead.
+const ANDROID_VLC_UNSUPPORTED =
+  Platform.OS === "android" && typeof Platform.Version === "number" && Platform.Version < 26;
 // @ts-ignore — package ships a CJS index without ESM types
 import * as VlcPkg from "react-native-vlc-media-player";
 import {
@@ -554,7 +564,9 @@ export function useVideoPlayer(
   setup?: (player: any) => void,
   opts?: { engine?: PlayerEngine },
 ): any {
-  const engineRef = useRef<PlayerEngine>(opts?.engine === "expo" ? "expo" : "vlc");
+  const engineRef = useRef<PlayerEngine>(
+    opts?.engine === "expo" || ANDROID_VLC_UNSUPPORTED ? "expo" : "vlc",
+  );
   // Always call BOTH hooks (one with the real source, the other with an
   // empty source) so hook order stays stable across renders. The unused
   // engine doesn't actually decode anything.
@@ -588,7 +600,8 @@ export interface VideoViewProps {
 }
 
 export function VideoView(props: VideoViewProps) {
-  const engine: PlayerEngine = props.engine === "expo" ? "expo" : "vlc";
+  const engine: PlayerEngine =
+    props.engine === "expo" || ANDROID_VLC_UNSUPPORTED ? "expo" : "vlc";
   if (engine === "expo") {
     const { engine: _e, ...rest } = props;
     return <ExpoVideoView {...(rest as any)} />;

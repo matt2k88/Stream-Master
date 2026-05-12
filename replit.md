@@ -44,6 +44,19 @@ TV-optimized IPTV streaming application with orange/black neon theme. Users can 
 
 - **Holiday Themes (admin-controlled)**: Whole-app dashboard imagery + accent palette are driven by a single Supabase `app_theme` row the admin flips from an external panel. Clients fetch `GET /api/app-theme` on launch (cached in AsyncStorage for a snappy second launch) and apply the palette. Available keys: `default` (orange/black neon, vector icons — original look), `halloween` (orange + pumpkin imagery), `bonfire` (multi-coloured neon + firework imagery), `christmas` (red/white + christmas imagery), `valentines` (pink neon + love imagery), `newyear` (gold + celebratory imagery). Themed icon PNGs live under `assets/images/themes/{theme}/{liveTv,movies,series,catchUp,tvGuide}.png`. The dashboard LIVE TV / MOVIES / SERIES / CATCH UP / TV GUIDE buttons swap to themed images via `ThemeContext`. The accent palette mutation updates inline runtime references (e.g. dynamic icon colour, count chip, header chevrons), but **module-scope `StyleSheet.create({ borderColor: Colors.dark.accent })` styles are frozen at import and keep the original orange** — accepted by design ("don't change colours where it doesn't make sense"; VPN badge / profile selector / other branded surfaces stay orange). Users have no in-app toggle — flip the `app_theme.theme_key` row in Supabase and every client picks it up on next launch. DB row enforces a CHECK constraint so only the 6 valid keys can be saved.
 
+## Android Min SDK / Fire OS 6 Compatibility
+
+`app.json` sets `minSdkVersion: 24` (Android 7.0). The VLC player library
+(`react-native-vlc-media-player`) declares minSdk 26, so the
+`plugins/withVlcMinSdkOverride.js` config plugin injects
+`tools:overrideLibrary="com.yuanzhou.vlc"` into the merged AndroidManifest
+to let the APK install on API 24/25 devices anyway. To prevent VLC from
+actually loading on those devices (its native code crashes on Android 7.x),
+`client/lib/video-player.tsx` checks `Platform.Version < 26` at runtime and
+transparently routes the player to the Expo engine instead. Net effect:
+Fire OS 6 sticks (1st-gen Fire TV 4K) install and run the app, but lose
+AC3/EAC3 surround channels that only VLC handles.
+
 ## Database Migrations
 SQL migrations the user must run in Supabase SQL Editor live under `migrations/`. Current pending:
 - `migrations/001_continue_watching.sql` — adds `current_time`, `duration`, `is_completed`, `series_id`, `season_num`, `episode_num` to `recently_watched`
