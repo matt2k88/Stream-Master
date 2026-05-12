@@ -553,10 +553,17 @@ function LegacyPlayerScreen() {
   // uses `player_live`. Default is "vlc" if the profile hasn't migrated
   // yet. The engine is locked for the lifetime of this PlayerScreen
   // mount — switching engines requires going back and replaying.
+  // A per-route `forceEngine` param (e.g. Catch Up always uses Expo
+  // because VLC can't seek MPEG-TS /timeshift/ streams) takes
+  // precedence over the profile pref — must match the router's
+  // selection above so the right native module is loaded.
+  const routeForceLegacy = route.params.forceEngine === "expo" || route.params.forceEngine === "vlc"
+    ? route.params.forceEngine : null;
   const playerEngineRef = useRef<"vlc" | "expo">(
-    (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
-      ? "expo"
-      : "vlc",
+    routeForceLegacy ??
+      ((isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
+        ? "expo"
+        : "vlc"),
   );
   const player = useVideoPlayer(streamUrl, playerSetupRef.current, {
     engine: playerEngineRef.current,
