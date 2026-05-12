@@ -182,10 +182,12 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       const hasNewEpisodes = !!(
         currentLastModified && base.snapshotLastModified && currentLastModified !== base.snapshotLastModified
       );
-      const isFullyWatched = !hasNewEpisodes
-        && base.totalEpisodes != null
-        && base.totalEpisodes > 0
-        && base.watchedEpisodes >= base.totalEpisodes;
+      // Treat the series as "watched" whenever the most recently played
+      // episode was completed — regardless of whether earlier episodes
+      // were skipped. The moment the provider uploads new episodes the
+      // snapshot's `last_modified` will differ and `hasNewEpisodes` flips
+      // it back to CONTINUE + NEW EPISODES badge.
+      const isFullyWatched = !hasNewEpisodes && !!base.latest.is_completed;
       return {
         latest: base.latest,
         watchedEpisodes: base.watchedEpisodes,
