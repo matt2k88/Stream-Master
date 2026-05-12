@@ -31,6 +31,35 @@ function fmtTime(ts: number): string {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 }
 
+// Parse Xtream's human-readable "YYYY-MM-DD HH:MM:SS" EPG date as if it
+// were already in the device's local timezone (i.e. ignore offsets,
+// don't run it through UTC). This is needed because the
+// `get_simple_data_table` endpoint used for Catch Up returns
+// `start_timestamp` as server-local-time-treated-as-UTC on most
+// Xtream panels — the value is 1 hour off in BST, etc. The `start`
+// string is the only reliable field, and the server is almost always
+// in the user's region for IPTV setups, so parsing it as local
+// matches what the user actually sees on TV.
+function parseEpgLocal(s: string | undefined | null): Date | null {
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(s);
+  if (!m) return null;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? "0"));
+}
+
+// Returns corrected start/stop epoch seconds for a Catch Up EPG row.
+// Falls back to the raw timestamps if the string fields are missing
+// or malformed, so we never break a programme that does have correct
+// timestamps from a sane provider.
+function correctedTs(prog: EpgListing): { start: number; stop: number } {
+  const s = parseEpgLocal(prog.start);
+  const e = parseEpgLocal(prog.end);
+  return {
+    start: s ? Math.floor(s.getTime() / 1000) : prog.start_timestamp,
+    stop:  e ? Math.floor(e.getTime() / 1000) : prog.stop_timestamp,
+  };
+}
+
 function fmtDayTab(date: Date, isToday: boolean): string {
   if (isToday) return "Today";
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -139,9 +168,10 @@ function ProgrammeRow({ prog, onPress }: { prog: EpgListing; onPress: () => void
   const isActive = focused || pressed;
   const title = b64(prog.title) || "Unknown Programme";
   const desc = b64(prog.description);
-  const startFmt = fmtTime(prog.start_timestamp);
-  const endFmt = fmtTime(prog.stop_timestamp);
-  const durationMins = Math.round((prog.stop_timestamp - prog.start_timestamp) / 60);
+  const { start: startTs, stop: stopTs } = correctedTs(prog);
+  const startFmt = fmtTime(startTs);
+  const endFmt = fmtTime(stopTs);
+  const durationMins = Math.round((stopTs - startTs) / 60);
   return (
     <Pressable
       style={[styles.progRow, isActive && styles.progRowActive]}
@@ -263,16 +293,21 @@ export default function CatchUpScreen() {
     const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
     const s = dayStart.getTime(); const e = dayEnd.getTime();
     return epgData.filter((p) => {
-      const ms = p.start_timestamp * 1000;
+      const ms = correctedTs(p).start * 1000;
       return ms >= s && ms <= e;
-    }).sort((a, b) => a.start_timestamp - b.start_timestamp);
+    }).sort((a, b) => correctedTs(a).start - correctedTs(b).start);
   }, [epgData, days, selectedDayIdx]);
 
   // ── Play a programme as catchup VOD ──────────────────────────────────────
   const playProgramme = useCallback((prog: EpgListing) => {
     if (!selectedChannel) return;
-    const durationMins = Math.max(Math.ceil((prog.stop_timestamp - prog.start_timestamp) / 60), 1);
-    const url = xtreamApi.getCatchupStreamUrl(selectedChannel.stream_id, prog.start_timestamp, durationMins);
+    // Use the corrected timestamps (parsed from the server-local `start`
+    // string) for both duration and URL, so the timeshift request hits
+    // the actual broadcast slot instead of being an hour off when the
+    // panel returns server-local-as-UTC start_timestamps.
+    const { start: startTs, stop: stopTs } = correctedTs(prog);
+    const durationMins = Math.max(Math.ceil((stopTs - startTs) / 60), 1);
+    const url = xtreamApi.getCatchupStreamUrl(selectedChannel.stream_id, startTs, durationMins);
     navigation.navigate("Player", {
       streamUrl: url,
       title: b64(prog.title) || selectedChannel.name,
