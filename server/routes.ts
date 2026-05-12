@@ -305,19 +305,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── App Version ───────────────────────────────────────────────────────────
+  // ── App Version (latest release — used by "Check for Updates") ────────────
   app.get("/api/app-version", async (_req, res) => {
     try {
       const { data, error } = await supabase
-        .from("app_version")
-        .select("id, version, updated_at, downloader_code")
-        .order("updated_at", { ascending: false })
+        .from("app_versions")
+        .select("id, version, released_at, created_at, downloader_code")
+        .order("released_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
-      res.json(data ?? null);
+      // Keep response shape backwards-compatible with the existing client
+      // (which reads `version`, `downloader_code`, and `updated_at`).
+      const payload = data
+        ? {
+            id: data.id,
+            version: data.version,
+            downloader_code: data.downloader_code,
+            updated_at: data.released_at ?? data.created_at,
+          }
+        : null;
+      res.json(payload);
     } catch {
       res.status(500).json({ error: "Failed to fetch app version" });
+    }
+  });
+
+  // ── App Versions (full list — used by "What's New" modal) ─────────────────
+  app.get("/api/app-versions", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("app_versions")
+        .select("id, version, released_at, created_at, downloader_code")
+        .order("released_at", { ascending: false });
+      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch app versions" });
     }
   });
 
@@ -346,7 +370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { data, error } = await supabase
         .from("app_notes")
-        .select("id, type, text, sort_order, created_at")
+        .select("id, type, text, sort_order, created_at, version_id")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: false });
       if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });

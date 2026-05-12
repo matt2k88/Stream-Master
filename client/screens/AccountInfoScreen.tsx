@@ -71,7 +71,18 @@ interface AppNote {
   text: string;
   sort_order?: number;
   created_at?: string;
+  version_id?: string | null;
 }
+
+interface AppVersionRow {
+  id: string;
+  version: string;
+  released_at?: string | null;
+  created_at?: string | null;
+  downloader_code?: string | null;
+}
+
+type NotesTab = "whatsnew" | "issues";
 
 interface DeveloperDetails {
   developer_name?: string;
@@ -171,21 +182,30 @@ export default function AccountInfoScreen() {
   const [notesVisible, setNotesVisible] = useState(false);
   const [notesLoading, setNotesLoading] = useState(false);
   const [notes, setNotes] = useState<AppNote[]>([]);
+  const [versions, setVersions] = useState<AppVersionRow[]>([]);
   const [notesError, setNotesError] = useState<string | null>(null);
+  const [notesTab, setNotesTab] = useState<NotesTab>("whatsnew");
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
     setNotesLoading(true);
     setNotesError(null);
+    setNotesTab("whatsnew");
     try {
-      const url = new URL("/api/app-notes", getApiUrl());
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error("Failed");
-      const data = (await res.json()) as AppNote[];
-      setNotes(Array.isArray(data) ? data : []);
+      const base = getApiUrl();
+      const [notesRes, versionsRes] = await Promise.all([
+        fetch(new URL("/api/app-notes", base).toString()),
+        fetch(new URL("/api/app-versions", base).toString()),
+      ]);
+      if (!notesRes.ok || !versionsRes.ok) throw new Error("Failed");
+      const notesData = (await notesRes.json()) as AppNote[];
+      const versionsData = (await versionsRes.json()) as AppVersionRow[];
+      setNotes(Array.isArray(notesData) ? notesData : []);
+      setVersions(Array.isArray(versionsData) ? versionsData : []);
     } catch {
       setNotesError("Could not load app notes. Try again later.");
       setNotes([]);
+      setVersions([]);
     } finally {
       setNotesLoading(false);
     }
@@ -639,6 +659,26 @@ export default function AccountInfoScreen() {
 
             <View style={styles.notesDivider} />
 
+            {/* Tabs */}
+            {!notesLoading && !notesError ? (
+              <View style={styles.notesTabs}>
+                <NotesTabBtn
+                  label="What's New"
+                  icon="zap"
+                  active={notesTab === "whatsnew"}
+                  onPress={() => setNotesTab("whatsnew")}
+                />
+                <NotesTabBtn
+                  label="Known Issues"
+                  icon="alert-triangle"
+                  active={notesTab === "issues"}
+                  activeTint={Colors.dark.error}
+                  onPress={() => setNotesTab("issues")}
+                  badge={notes.filter((n) => (n.type ?? "").toLowerCase() === "issue").length}
+                />
+              </View>
+            ) : null}
+
             {notesLoading ? (
               <View style={styles.notesCentered}>
                 <ActivityIndicator size="large" color={Colors.dark.accent} />
@@ -651,49 +691,79 @@ export default function AccountInfoScreen() {
                   <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
                 </Pressable>
               </View>
-            ) : notes.length === 0 ? (
-              <View style={styles.notesCentered}>
-                <Feather name="inbox" size={28} color={Colors.dark.border} />
-                <ThemedText style={styles.notesEmpty}>No notes yet.</ThemedText>
-              </View>
             ) : (
               <ScrollView
                 style={{ maxHeight: 460 }}
-                contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.sm }}
+                contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.md }}
                 showsVerticalScrollIndicator={false}
               >
                 {(() => {
                   const changes = notes.filter((n) => (n.type ?? "").toLowerCase() === "change");
                   const issues = notes.filter((n) => (n.type ?? "").toLowerCase() === "issue");
-                  const others = notes.filter(
-                    (n) => !["change", "issue"].includes((n.type ?? "").toLowerCase()),
-                  );
+
+                  if (notesTab === "issues") {
+                    if (issues.length === 0) {
+                      return (
+                        <View style={styles.notesCentered}>
+                          <Feather name="check-circle" size={28} color={Colors.dark.success} />
+                          <ThemedText style={styles.notesEmpty}>
+                            No known issues right now.
+                          </ThemedText>
+                        </View>
+                      );
+                    }
+                    return (
+                      <NotesSection
+                        label="Known Issues"
+                        icon="alert-triangle"
+                        tint={Colors.dark.error}
+                        items={issues}
+                      />
+                    );
+                  }
+
+                  // ── What's New: group changes by version, newest first ──
+                  // Build version order from /api/app-versions (already
+                  // released_at desc). Append an "Other" bucket at the end
+                  // for any change rows whose version_id is NULL OR doesn't
+                  // match a known version row (stale FK).
+                  const knownIds = new Set(versions.map((v) => v.id));
+                  const byVersion = new Map<string, AppNote[]>();
+                  const orphans: AppNote[] = [];
+                  for (const n of changes) {
+                    if (n.version_id && knownIds.has(n.version_id)) {
+                      const arr = byVersion.get(n.version_id) ?? [];
+                      arr.push(n);
+                      byVersion.set(n.version_id, arr);
+                    } else {
+                      orphans.push(n);
+                    }
+                  }
+                  const groups: { version: AppVersionRow | null; items: AppNote[] }[] = [];
+                  for (const v of versions) {
+                    const arr = byVersion.get(v.id);
+                    if (arr && arr.length > 0) groups.push({ version: v, items: arr });
+                  }
+                  if (orphans.length > 0) groups.push({ version: null, items: orphans });
+
+                  if (groups.length === 0) {
+                    return (
+                      <View style={styles.notesCentered}>
+                        <Feather name="inbox" size={28} color={Colors.dark.border} />
+                        <ThemedText style={styles.notesEmpty}>No release notes yet.</ThemedText>
+                      </View>
+                    );
+                  }
                   return (
                     <>
-                      {changes.length > 0 ? (
-                        <NotesSection
-                          label="Latest Changes"
-                          icon="zap"
-                          tint={Colors.dark.accent}
-                          items={changes}
+                      {groups.map((g, idx) => (
+                        <VersionGroup
+                          key={g.version?.id ?? `orphan-${idx}`}
+                          version={g.version}
+                          items={g.items}
+                          isLatest={idx === 0}
                         />
-                      ) : null}
-                      {issues.length > 0 ? (
-                        <NotesSection
-                          label="Known Issues"
-                          icon="alert-triangle"
-                          tint={Colors.dark.error}
-                          items={issues}
-                        />
-                      ) : null}
-                      {others.length > 0 ? (
-                        <NotesSection
-                          label="Notes"
-                          icon="info"
-                          tint={Colors.dark.textSecondary}
-                          items={others}
-                        />
-                      ) : null}
+                      ))}
                     </>
                   );
                 })()}
@@ -703,6 +773,98 @@ export default function AccountInfoScreen() {
         </Pressable>
       </Modal>
     </ThemedView>
+  );
+}
+
+function NotesTabBtn({
+  label,
+  icon,
+  active,
+  onPress,
+  badge,
+  activeTint = Colors.dark.accent,
+}: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  active: boolean;
+  onPress: () => void;
+  badge?: number;
+  activeTint?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isHover = focused || pressed;
+  const tint = active ? activeTint : isHover ? Colors.dark.text : Colors.dark.textSecondary;
+  return (
+    <Pressable
+      style={[
+        styles.notesTabBtn,
+        active && { borderColor: activeTint, backgroundColor: activeTint + "15" },
+        isHover && !active && styles.notesTabBtnHover,
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      <Feather name={icon} size={13} color={tint} />
+      <ThemedText style={[styles.notesTabBtnText, { color: tint }]}>{label}</ThemedText>
+      {badge && badge > 0 ? (
+        <View style={[styles.notesTabBadge, { borderColor: tint + "55", backgroundColor: tint + "20" }]}>
+          <ThemedText style={[styles.notesTabBadgeText, { color: tint }]}>{badge}</ThemedText>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function VersionGroup({
+  version,
+  items,
+  isLatest,
+}: {
+  version: AppVersionRow | null;
+  items: AppNote[];
+  isLatest: boolean;
+}) {
+  const label = version ? `v${version.version}` : "Other Changes";
+  const date = version?.released_at ?? version?.created_at;
+  return (
+    <View style={styles.versionGroup}>
+      <View style={styles.versionHeader}>
+        <View style={styles.versionTitleRow}>
+          <ThemedText style={styles.versionTitle}>{label}</ThemedText>
+          {isLatest ? (
+            <View style={styles.versionLatestPill}>
+              <ThemedText style={styles.versionLatestText}>LATEST</ThemedText>
+            </View>
+          ) : null}
+        </View>
+        {date ? (
+          <ThemedText style={styles.versionDate}>
+            {new Date(date).toLocaleDateString(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })}
+          </ThemedText>
+        ) : null}
+      </View>
+      <View style={{ gap: Spacing.xs }}>
+        {items.map((n) => (
+          <View
+            key={n.id}
+            style={[
+              styles.noteRow,
+              { borderLeftColor: Colors.dark.accent, backgroundColor: "rgba(255,255,255,0.025)" },
+            ]}
+          >
+            <ThemedText style={styles.noteText}>{n.text}</ThemedText>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -887,6 +1049,49 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim,
   },
   notesDivider: { height: 1, backgroundColor: "rgba(255,102,0,0.2)" },
+  notesTabs: {
+    flexDirection: "row", gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.md,
+  },
+  notesTabBtn: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.xs,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  notesTabBtnHover: { borderColor: Colors.dark.textSecondary },
+  notesTabBtnText: { fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
+  notesTabBadge: {
+    paddingHorizontal: 7, paddingVertical: 1,
+    borderRadius: BorderRadius.full, borderWidth: 1, marginLeft: 2,
+  },
+  notesTabBadgeText: { fontSize: 10, fontWeight: "800" },
+  versionGroup: { gap: Spacing.sm },
+  versionHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: Spacing.xs, paddingBottom: Spacing.xs,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,102,0,0.18)",
+  },
+  versionTitleRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  versionTitle: {
+    fontSize: 16, fontWeight: "800", color: Colors.dark.accent,
+    letterSpacing: 0.5,
+  },
+  versionLatestPill: {
+    paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  versionLatestText: {
+    fontSize: 9, fontWeight: "800", color: Colors.dark.accent,
+    letterSpacing: 1.2,
+  },
+  versionDate: {
+    fontSize: 11, fontWeight: "600", color: Colors.dark.textSecondary,
+    letterSpacing: 0.3,
+  },
   notesCentered: {
     paddingVertical: Spacing["3xl"],
     alignItems: "center", gap: Spacing.sm,
