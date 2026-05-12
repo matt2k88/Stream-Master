@@ -185,6 +185,7 @@ export default function AccountInfoScreen() {
   const [versions, setVersions] = useState<AppVersionRow[]>([]);
   const [notesError, setNotesError] = useState<string | null>(null);
   const [notesTab, setNotesTab] = useState<NotesTab>("whatsnew");
+  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
@@ -200,8 +201,19 @@ export default function AccountInfoScreen() {
       if (!notesRes.ok || !versionsRes.ok) throw new Error("Failed");
       const notesData = (await notesRes.json()) as AppNote[];
       const versionsData = (await versionsRes.json()) as AppVersionRow[];
-      setNotes(Array.isArray(notesData) ? notesData : []);
-      setVersions(Array.isArray(versionsData) ? versionsData : []);
+      const safeNotes = Array.isArray(notesData) ? notesData : [];
+      const safeVersions = Array.isArray(versionsData) ? versionsData : [];
+      setNotes(safeNotes);
+      setVersions(safeVersions);
+      // Default the accordion to the latest version that actually has change-notes.
+      const knownIds = new Set(safeVersions.map((v) => v.id));
+      const changeIds = new Set(
+        safeNotes
+          .filter((n) => (n.type ?? "").toLowerCase() === "change" && n.version_id && knownIds.has(n.version_id))
+          .map((n) => n.version_id as string),
+      );
+      const firstWithNotes = safeVersions.find((v) => changeIds.has(v.id));
+      setExpandedVersion(firstWithNotes?.id ?? "__orphan__");
     } catch {
       setNotesError("Could not load app notes. Try again later.");
       setNotes([]);
@@ -618,9 +630,13 @@ export default function AccountInfoScreen() {
         <View style={styles.centered}>
           <Feather name="alert-circle" size={40} color={Colors.dark.error} />
           <ThemedText style={styles.errorText}>Failed to load account info</ThemedText>
-          <Pressable style={styles.retryBtn} onPress={handleRefresh}>
+          <HoverBtn
+            style={styles.retryBtn}
+            activeStyle={styles.retryBtnActive}
+            onPress={handleRefresh}
+          >
             <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-          </Pressable>
+          </HoverBtn>
         </View>
       )}
 
@@ -687,15 +703,21 @@ export default function AccountInfoScreen() {
               <View style={styles.notesCentered}>
                 <Feather name="alert-circle" size={28} color={Colors.dark.error} />
                 <ThemedText style={styles.notesErrorText}>{notesError}</ThemedText>
-                <Pressable style={styles.retryBtn} onPress={handleOpenNotes}>
+                <HoverBtn
+                  style={styles.retryBtn}
+                  activeStyle={styles.retryBtnActive}
+                  onPress={handleOpenNotes}
+                >
                   <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-                </Pressable>
+                </HoverBtn>
               </View>
             ) : (
               <ScrollView
-                style={{ maxHeight: 460 }}
+                style={styles.notesScroll}
                 contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.md }}
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator
+                indicatorStyle="white"
+                nestedScrollEnabled
               >
                 {(() => {
                   const changes = notes.filter((n) => (n.type ?? "").toLowerCase() === "change");
@@ -756,14 +778,20 @@ export default function AccountInfoScreen() {
                   }
                   return (
                     <>
-                      {groups.map((g, idx) => (
-                        <VersionGroup
-                          key={g.version?.id ?? `orphan-${idx}`}
-                          version={g.version}
-                          items={g.items}
-                          isLatest={idx === 0}
-                        />
-                      ))}
+                      {groups.map((g, idx) => {
+                        const key = g.version?.id ?? "__orphan__";
+                        const isOpen = expandedVersion === key;
+                        return (
+                          <VersionGroup
+                            key={key}
+                            version={g.version}
+                            items={g.items}
+                            isLatest={idx === 0}
+                            expanded={isOpen}
+                            onToggle={() => setExpandedVersion(isOpen ? null : key)}
+                          />
+                        );
+                      })}
                     </>
                   );
                 })()}
@@ -823,16 +851,39 @@ function VersionGroup({
   version,
   items,
   isLatest,
+  expanded,
+  onToggle,
 }: {
   version: AppVersionRow | null;
   items: AppNote[];
   isLatest: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isHover = focused || pressed;
   const label = version ? `v${version.version}` : "Other Changes";
   const date = version?.released_at ?? version?.created_at;
   return (
-    <View style={styles.versionGroup}>
-      <View style={styles.versionHeader}>
+    <View style={[styles.versionGroup, expanded && styles.versionGroupOpen]}>
+      <Pressable
+        style={[
+          styles.versionHeaderBtn,
+          isHover && styles.versionHeaderBtnHover,
+          expanded && styles.versionHeaderBtnActive,
+        ]}
+        onPress={onToggle}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+      >
+        <Feather
+          name={expanded ? "chevron-down" : "chevron-right"}
+          size={18}
+          color={Colors.dark.accent}
+        />
         <View style={styles.versionTitleRow}>
           <ThemedText style={styles.versionTitle}>{label}</ThemedText>
           {isLatest ? (
@@ -840,6 +891,9 @@ function VersionGroup({
               <ThemedText style={styles.versionLatestText}>LATEST</ThemedText>
             </View>
           ) : null}
+          <View style={styles.versionCountChip}>
+            <ThemedText style={styles.versionCountText}>{items.length}</ThemedText>
+          </View>
         </View>
         {date ? (
           <ThemedText style={styles.versionDate}>
@@ -850,20 +904,22 @@ function VersionGroup({
             })}
           </ThemedText>
         ) : null}
-      </View>
-      <View style={{ gap: Spacing.xs }}>
-        {items.map((n) => (
-          <View
-            key={n.id}
-            style={[
-              styles.noteRow,
-              { borderLeftColor: Colors.dark.accent, backgroundColor: "rgba(255,255,255,0.025)" },
-            ]}
-          >
-            <ThemedText style={styles.noteText}>{n.text}</ThemedText>
-          </View>
-        ))}
-      </View>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.versionBody}>
+          {items.map((n) => (
+            <View
+              key={n.id}
+              style={[
+                styles.noteRow,
+                { borderLeftColor: Colors.dark.accent, backgroundColor: "rgba(255,255,255,0.025)" },
+              ]}
+            >
+              <ThemedText style={styles.noteText}>{n.text}</ThemedText>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1014,7 +1070,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
   },
   notesModal: {
-    width: "100%", maxWidth: 640,
+    width: "100%", maxWidth: 640, maxHeight: "90%",
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.lg,
     borderWidth: 1, borderColor: "rgba(255,102,0,0.4)",
@@ -1023,6 +1079,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5, shadowRadius: 20, elevation: 14,
   },
+  notesScroll: { flexShrink: 1 },
   notesHeader: {
     flexDirection: "row", alignItems: "center", gap: Spacing.md,
     paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md,
@@ -1067,13 +1124,41 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full, borderWidth: 1, marginLeft: 2,
   },
   notesTabBadgeText: { fontSize: 10, fontWeight: "800" },
-  versionGroup: { gap: Spacing.sm },
-  versionHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: Spacing.xs, paddingBottom: Spacing.xs,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,102,0,0.18)",
+  versionGroup: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    overflow: "hidden",
   },
-  versionTitleRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  versionGroupOpen: {
+    borderColor: "rgba(255,102,0,0.45)",
+  },
+  versionHeaderBtn: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.md,
+  },
+  versionHeaderBtnHover: {
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  versionHeaderBtnActive: {
+    backgroundColor: "rgba(255,102,0,0.06)",
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,102,0,0.22)",
+  },
+  versionBody: {
+    padding: Spacing.md, gap: Spacing.xs,
+    backgroundColor: "rgba(0,0,0,0.2)",
+  },
+  versionCountChip: {
+    paddingHorizontal: 8, paddingVertical: 1,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    marginLeft: 2,
+  },
+  versionCountText: {
+    fontSize: 10, fontWeight: "800", color: Colors.dark.textSecondary,
+  },
+  versionTitleRow: { flex: 1, flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   versionTitle: {
     fontSize: 16, fontWeight: "800", color: Colors.dark.accent,
     letterSpacing: 0.5,
@@ -1216,6 +1301,13 @@ const styles = StyleSheet.create({
   retryBtn: {
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm,
     backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.sm,
+  },
+  retryBtnActive: {
+    backgroundColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85, shadowRadius: 10, elevation: 6,
+    transform: [{ scale: 1.03 }],
   },
   retryBtnText: { color: "#fff", fontWeight: "700" },
 });
