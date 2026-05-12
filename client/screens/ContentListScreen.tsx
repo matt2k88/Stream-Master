@@ -25,7 +25,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
-import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
+import { useWatchHistory, getWatchState, type SeriesProgress } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { normaliseSearch } from "@/lib/search";
@@ -269,6 +269,7 @@ const ContentCard = React.memo(function ContentCard({
   cardWidth,
   cardHeight,
   watchEntry,
+  seriesProgress,
   editMode,
   editAction,
 }: {
@@ -281,6 +282,7 @@ const ContentCard = React.memo(function ContentCard({
   cardWidth: number;
   cardHeight: number;
   watchEntry?: RecentlyWatched;
+  seriesProgress?: SeriesProgress;
   editMode?: boolean;
   editAction?: "delete" | "favourite";
 }) {
@@ -385,8 +387,49 @@ const ContentCard = React.memo(function ContentCard({
           </View>
         ) : null}
         {(() => {
+          if (type === "live") return null;
+          // Series rows use the aggregate progress (watched-eps vs total
+          // snapshot + last_modified diff) rather than the latest episode's
+          // is_completed flag — so shows don't get "WATCHED" until every
+          // available episode is finished, and they flip back to
+          // "NEW EPISODES" the moment the provider uploads more.
+          if (type === "series" && seriesProgress) {
+            const { hasNewEpisodes, isFullyWatched, latestProgress, latest } = seriesProgress;
+            if (!latest) return null;
+            if (hasNewEpisodes) {
+              return (
+                <View style={styles.newBadge}>
+                  <Feather name="zap" size={9} color="#fff" />
+                  <ThemedText style={styles.newBadgeText}>NEW EPISODES</ThemedText>
+                </View>
+              );
+            }
+            if (isFullyWatched) {
+              return (
+                <View style={styles.watchedBadge}>
+                  <Feather name="check" size={9} color="#fff" />
+                  <ThemedText style={styles.watchedBadgeText}>WATCHED</ThemedText>
+                </View>
+              );
+            }
+            return (
+              <>
+                <View style={styles.continueBadge}>
+                  <Feather name="play" size={9} color={Colors.dark.accent} />
+                  <ThemedText style={styles.continueBadgeText}>CONTINUE</ThemedText>
+                </View>
+                {latestProgress > 0 && latestProgress < 1 ? (
+                  <View style={styles.cardProgressTrack}>
+                    <View style={[styles.cardProgressFill, { width: `${latestProgress * 100}%` }]} />
+                  </View>
+                ) : null}
+              </>
+            );
+          }
+          // Movies (and any other non-series, non-live) keep the legacy
+          // single-entry behaviour.
           const ws = getWatchState(watchEntry);
-          if (!ws.hasProgress || type === "live") return null;
+          if (!ws.hasProgress) return null;
           return (
             <>
               {ws.isCompleted ? (
@@ -525,7 +568,7 @@ export default function ContentListScreen() {
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
   const { applyOrder } = useCategoryOrder();
-  const { entries: watchEntries, getByStreamId, getBySeriesId, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
+  const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -689,13 +732,15 @@ export default function ContentListScreen() {
       return out;
     }
     if (type === "series") {
+      // Series stay in Recently Watched even when fully completed — this
+      // list is the user's "shows I'm watching" shelf. Badging on each
+      // card distinguishes WATCHED / NEW EPISODES / CONTINUE.
       const out: Series[] = [];
       const seen = new Set<string>();
       const idx = new Map<string, Series>();
       for (const s of seriesList) idx.set(String(s.series_id), s);
       for (const e of watchEntries) {
         if (e.content_type !== "series" || !e.series_id) continue;
-        if (!inProgress(e)) continue;
         const k = String(e.series_id);
         if (seen.has(k)) continue;
         const s = idx.get(k);
@@ -957,6 +1002,12 @@ export default function ContentListScreen() {
           : type !== "live"
             ? getByStreamId(sid)
             : undefined;
+      // Series-wide aggregate uses the current Series.last_modified to
+      // detect "new episodes since I last watched" (snapshot stored on
+      // the most recent recently_watched row).
+      const seriesProgress = type === "series"
+        ? getSeriesProgress((item as Series).series_id, (item as Series).last_modified)
+        : undefined;
       return (
         <ContentCard
           item={item}
@@ -967,6 +1018,7 @@ export default function ContentListScreen() {
           cardWidth={cardWidth}
           cardHeight={cardTotalH}
           watchEntry={watchEntry}
+          seriesProgress={seriesProgress}
           editMode={editMode && !isSearching}
           editAction={editAction}
         />
@@ -974,7 +1026,7 @@ export default function ContentListScreen() {
     },
     [
       type, onCardPress, handleLongPress, isSearching, favIdSet,
-      cardWidth, cardTotalH, editMode, editAction, getByStreamId, getBySeriesId,
+      cardWidth, cardTotalH, editMode, editAction, getByStreamId, getBySeriesId, getSeriesProgress,
     ],
   );
 
@@ -1542,6 +1594,15 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(120,255,120,0.5)",
   },
   watchedBadgeText: { color: "#7CFF7C", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
+  newBadge: {
+    position: "absolute", top: 4, left: 4,
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
+  },
+  newBadgeText: { color: "#fff", fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
   continueBadge: {
     position: "absolute", top: 4, left: 4,
     flexDirection: "row", alignItems: "center", gap: 3,

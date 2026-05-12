@@ -11,6 +11,29 @@ import { getApiUrl } from "@/lib/query-client";
 import { useProfile } from "@/contexts/ProfileContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
+export interface SeriesProgress {
+  /** Latest watched episode entry for the series, newest by save time. */
+  latest: RecentlyWatched | undefined;
+  /** Distinct episodes (by stream_id) for this series that the user has
+   *  finished (`is_completed=true`). */
+  watchedEpisodes: number;
+  /** Snapshotted total-episode count for the series from the latest
+   *  saved row. NULL if no episode has ever been saved with the snapshot
+   *  populated (legacy rows / first-ever play before migration). */
+  totalEpisodes: number | null;
+  /** True when the current `last_modified` of the series differs from the
+   *  one snapshotted on the latest entry → new episodes were uploaded
+   *  since the user last played anything. Always false when no current
+   *  value is supplied. */
+  hasNewEpisodes: boolean;
+  /** True when watchedEpisodes >= totalEpisodes (and totalEpisodes is
+   *  known) AND there are no new episodes available. */
+  isFullyWatched: boolean;
+  /** Aggregated playback progress 0..1 for the latest episode (used by
+   *  the Continue Watching mini progress bar). */
+  latestProgress: number;
+}
+
 interface WatchHistoryContextValue {
   entries: RecentlyWatched[];
   byStreamId: Map<string, RecentlyWatched>;
@@ -20,6 +43,13 @@ interface WatchHistoryContextValue {
   upsertLocal: (entry: RecentlyWatched) => void;
   getByStreamId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
   getBySeriesId: (id: string | number | null | undefined) => RecentlyWatched | undefined;
+  /** Series-wide aggregate state — see {@link SeriesProgress}. Pass the
+   *  current `Series.last_modified` to enable the "new episodes" check;
+   *  omit it for cheap series-progress lookups that don't care. */
+  getSeriesProgress: (
+    id: string | number | null | undefined,
+    currentLastModified?: string | null,
+  ) => SeriesProgress;
   clearHistory: (contentType: "movie" | "series" | "live") => Promise<void>;
   removeOne: (id: string) => Promise<void>;
 }
@@ -71,9 +101,10 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     });
   }, []);
 
-  const { byStreamId, bySeriesId } = useMemo(() => {
+  const { byStreamId, bySeriesId, bySeriesIdAll } = useMemo(() => {
     const sMap = new Map<string, RecentlyWatched>();
     const serMap = new Map<string, RecentlyWatched>();
+    const serAll = new Map<string, RecentlyWatched[]>();
     // entries are pre-ordered newest-first by the server; first wins
     for (const e of entries) {
       if (e.stream_id != null) {
@@ -83,9 +114,11 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       if (e.series_id != null) {
         const k = String(e.series_id);
         if (!serMap.has(k)) serMap.set(k, e);
+        const arr = serAll.get(k);
+        if (arr) arr.push(e); else serAll.set(k, [e]);
       }
     }
-    return { byStreamId: sMap, bySeriesId: serMap };
+    return { byStreamId: sMap, bySeriesId: serMap, bySeriesIdAll: serAll };
   }, [entries]);
 
   const getByStreamId = useCallback(
@@ -97,6 +130,72 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     (id: string | number | null | undefined) =>
       id == null ? undefined : bySeriesId.get(String(id)),
     [bySeriesId],
+  );
+
+  // Precompute the per-series base aggregate once per `entries` change so
+  // that FlashList rows can do an O(1) lookup instead of re-walking the
+  // series' rows on every render. The only per-call work left is the cheap
+  // `currentLastModified` comparison (which depends on caller input).
+  const seriesBaseById = useMemo(() => {
+    const out = new Map<string, {
+      latest: RecentlyWatched;
+      watchedEpisodes: number;
+      totalEpisodes: number | null;
+      snapshotLastModified: string | null;
+      latestProgress: number;
+    }>();
+    for (const [k, all] of bySeriesIdAll.entries()) {
+      if (!all || all.length === 0) continue;
+      const latest = all[0];
+      const completedStreams = new Set<string>();
+      for (const e of all) {
+        if (e.is_completed && e.stream_id != null) completedStreams.add(String(e.stream_id));
+      }
+      let latestProgress = 0;
+      if (latest.is_completed) {
+        latestProgress = 1;
+      } else {
+        const dur = latest.duration ?? 0;
+        const cur = latest.current_time ?? 0;
+        if (dur > 0 && cur > 0) latestProgress = Math.max(0.02, Math.min(1, cur / dur));
+      }
+      out.set(k, {
+        latest,
+        watchedEpisodes: completedStreams.size,
+        totalEpisodes: typeof latest.series_total_episodes === "number" ? latest.series_total_episodes : null,
+        snapshotLastModified: latest.series_last_modified ?? null,
+        latestProgress,
+      });
+    }
+    return out;
+  }, [bySeriesIdAll]);
+
+  const getSeriesProgress = useCallback(
+    (id: string | number | null | undefined, currentLastModified?: string | null): SeriesProgress => {
+      const empty: SeriesProgress = {
+        latest: undefined, watchedEpisodes: 0, totalEpisodes: null,
+        hasNewEpisodes: false, isFullyWatched: false, latestProgress: 0,
+      };
+      if (id == null) return empty;
+      const base = seriesBaseById.get(String(id));
+      if (!base) return empty;
+      const hasNewEpisodes = !!(
+        currentLastModified && base.snapshotLastModified && currentLastModified !== base.snapshotLastModified
+      );
+      const isFullyWatched = !hasNewEpisodes
+        && base.totalEpisodes != null
+        && base.totalEpisodes > 0
+        && base.watchedEpisodes >= base.totalEpisodes;
+      return {
+        latest: base.latest,
+        watchedEpisodes: base.watchedEpisodes,
+        totalEpisodes: base.totalEpisodes,
+        hasNewEpisodes,
+        isFullyWatched,
+        latestProgress: base.latestProgress,
+      };
+    },
+    [seriesBaseById],
   );
 
   const clearHistory = useCallback(
@@ -141,10 +240,11 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       upsertLocal,
       getByStreamId,
       getBySeriesId,
+      getSeriesProgress,
       clearHistory,
       removeOne,
     }),
-    [entries, byStreamId, bySeriesId, isLoading, refetch, upsertLocal, getByStreamId, getBySeriesId, clearHistory, removeOne],
+    [entries, byStreamId, bySeriesId, isLoading, refetch, upsertLocal, getByStreamId, getBySeriesId, getSeriesProgress, clearHistory, removeOne],
   );
 
   return (

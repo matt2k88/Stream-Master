@@ -606,10 +606,15 @@ export default function HomeScreen() {
     {
       label: "Continue Watching",
       icon: "play-circle",
+      // Movies disappear when finished. Series stay forever once started —
+      // even fully-watched ones — so weekly-release shows aren't lost. The
+      // dedupe in RecentlyWatchedCard collapses series entries by series_id
+      // so we still only ever see one row per series (the latest episode).
+      // Series-wide badging (WATCHED / NEW EPISODES) is applied at render
+      // time using getSeriesProgress on the row.
       filter: (e) =>
-        e.content_type !== "live" &&
-        !e.is_completed &&
-        (e.current_time ?? 0) > 0,
+        (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
+        (e.content_type === "series" && e.series_id != null),
       emptyText: "Nothing in progress",
       maxItems: 2,
     },

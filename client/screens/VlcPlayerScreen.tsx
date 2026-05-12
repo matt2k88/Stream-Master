@@ -231,6 +231,11 @@ export default function VlcPlayerScreen() {
   const nextPromptShownRef = useRef(false);
   const nextFiredRef = useRef(false);
 
+  // Populated by the prefetch effect so save calls can persist
+  // series_total_episodes + series_last_modified for series-wide state
+  // (fully watched / new episodes) on the dashboard.
+  const seriesSnapshotRef = useRef<{ totalEpisodes?: number; lastModified?: string }>({});
+
   useEffect(() => {
     if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
     let cancelled = false;
@@ -238,6 +243,12 @@ export default function VlcPlayerScreen() {
       try {
         const info = await xtreamApi.getSeriesInfo(parseInt(seriesIdParam, 10));
         if (cancelled || !info?.episodes) return;
+        let total = 0;
+        for (const arr of Object.values(info.episodes)) total += Array.isArray(arr) ? arr.length : 0;
+        seriesSnapshotRef.current = {
+          totalEpisodes: total > 0 ? total : undefined,
+          lastModified: info.info?.last_modified ?? undefined,
+        };
         const eps = info.episodes[String(seasonNum)] || [];
         const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);
         if (next) { setNextEp({ episode: next, season: seasonNum }); return; }
@@ -429,6 +440,8 @@ export default function VlcPlayerScreen() {
         episodeNum,
         audioTrack: typeof prev?.audio_track === "number" ? prev.audio_track : undefined,
         textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, getByStreamId]);
@@ -564,6 +577,8 @@ export default function VlcPlayerScreen() {
         currentTime: settled, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: activeAudio, textTrack: activeText,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -576,6 +591,8 @@ export default function VlcPlayerScreen() {
         currentTime: settled, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: activeAudio, textTrack: activeText,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, activeAudio, activeText]);

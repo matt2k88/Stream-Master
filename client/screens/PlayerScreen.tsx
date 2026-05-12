@@ -479,6 +479,9 @@ function LegacyPlayerScreen() {
   const completionPostedRef = useRef(false);
   const resumeAppliedRef = useRef(false);
   const [nextEp, setNextEp] = useState<{ episode: Episode; season: number } | null>(null);
+  // Populated by the next-ep prefetch effect so save calls can persist
+  // series_total_episodes + series_last_modified.
+  const seriesSnapshotRef = useRef<{ totalEpisodes?: number; lastModified?: string }>({});
   const [showNext, setShowNext] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const nextPromptShownRef = useRef(false);
@@ -787,6 +790,8 @@ function LegacyPlayerScreen() {
             episodeNum,
             audioTrack: typeof prev?.audio_track === "number" ? prev.audio_track : undefined,
             textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
+            seriesLastModified: seriesSnapshotRef.current.lastModified,
+            seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
           }).then((entry) => { if (entry) upsertLocal(entry); });
         }
         // Apply resume seek (once)
@@ -894,6 +899,8 @@ function LegacyPlayerScreen() {
         currentTime, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: audioTrackId, textTrack: textTrackId,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -906,11 +913,17 @@ function LegacyPlayerScreen() {
         currentTime, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: audioTrackId, textTrack: textTrackId,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
 
   // ── Series: pre-fetch next episode ────────────────────────────────────────
+  // Same effect also snapshots series-wide info into `seriesSnapshotRef` so
+  // every saveRecentlyWatched call below can persist `series_total_episodes`
+  // and `series_last_modified`. The dashboard uses these to decide whether
+  // a series is fully watched and whether new episodes are available.
   useEffect(() => {
     if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
     let cancelled = false;
@@ -918,6 +931,12 @@ function LegacyPlayerScreen() {
       try {
         const info = await xtreamApi.getSeriesInfo(parseInt(seriesIdParam, 10));
         if (cancelled || !info?.episodes) return;
+        let total = 0;
+        for (const arr of Object.values(info.episodes)) total += Array.isArray(arr) ? arr.length : 0;
+        seriesSnapshotRef.current = {
+          totalEpisodes: total > 0 ? total : undefined,
+          lastModified: info.info?.last_modified ?? undefined,
+        };
         const seasonKey = String(seasonNum);
         const eps = info.episodes[seasonKey] || [];
         const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);

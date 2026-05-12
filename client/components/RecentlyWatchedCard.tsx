@@ -25,6 +25,8 @@ export interface RecentlyWatched {
   episode_num?: number | null;
   audio_track?: number | null;
   text_track?: number | null;
+  series_last_modified?: string | null;
+  series_total_episodes?: number | null;
 }
 
 const TYPE_ICON: Record<string, keyof typeof Feather.glyphMap> = {
@@ -164,13 +166,27 @@ function RecentlyWatchedRow({
 }
 
 function dedupe(entries: RecentlyWatched[]): RecentlyWatched[] {
-  const seen = new Set<string>();
-  return entries.filter((e) => {
+  // For series rows we collapse by series_id (so a user watching multiple
+  // episodes of the same series only shows up once — the latest entry
+  // wins because the input is newest-first). Movies and live channels
+  // continue to dedupe by stream_id as before.
+  const seenStream = new Set<string>();
+  const seenSeries = new Set<string>();
+  const out: RecentlyWatched[] = [];
+  for (const e of entries) {
+    if (e.content_type === "series" && e.series_id != null) {
+      const k = String(e.series_id);
+      if (seenSeries.has(k)) continue;
+      seenSeries.add(k);
+      out.push(e);
+      continue;
+    }
     const key = e.stream_id != null ? String(e.stream_id) : `__id_${e.id}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    if (seenStream.has(key)) continue;
+    seenStream.add(key);
+    out.push(e);
+  }
+  return out;
 }
 
 function WatchSection({
@@ -319,6 +335,8 @@ export async function saveRecentlyWatched(params: {
   episodeNum?: number;
   audioTrack?: number;
   textTrack?: number;
+  seriesLastModified?: string;
+  seriesTotalEpisodes?: number;
 }): Promise<RecentlyWatched | null> {
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
@@ -340,6 +358,8 @@ export async function saveRecentlyWatched(params: {
         episode_num: typeof params.episodeNum === "number" ? params.episodeNum : undefined,
         audio_track: typeof params.audioTrack === "number" ? params.audioTrack : undefined,
         text_track: typeof params.textTrack === "number" ? params.textTrack : undefined,
+        series_last_modified: typeof params.seriesLastModified === "string" ? params.seriesLastModified : undefined,
+        series_total_episodes: typeof params.seriesTotalEpisodes === "number" ? params.seriesTotalEpisodes : undefined,
       }),
     });
     const data = await res.json();
