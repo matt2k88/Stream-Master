@@ -929,9 +929,39 @@ function LegacyPlayerScreen() {
   }, [isLive, isLoading, reconnecting, error, player, scheduleLiveRetry, clearStallTimer]);
 
   useEffect(() => {
-    const sub = player.addListener("playingChange", (e) => setIsPlaying(e.isPlaying));
+    const sub = player.addListener("playingChange", (e) => {
+      setIsPlaying(e.isPlaying);
+      // ── Save-on-pause ───────────────────────────────────────────────────
+      // The throttled progress effect above only saves while currentTime
+      // ticks (i.e. while playing). If the user pauses mid-stream the last
+      // saved position can be up to ~10s behind reality, and any longer
+      // pause that ends in an app close / crash would resume from there.
+      // Persist immediately on pause so the resume point is always within
+      // ~1s of where the user actually stopped.
+      if (e.isPlaying || isLive || !activeProfile || !streamId) return;
+      const cur = currentTimeRef.current;
+      const dur = tvDurationRef.current;
+      if (cur <= 5 || dur <= 0) return;
+      if (completionPostedRef.current) return;
+      if (dur - cur <= 30) return; // let the completion path handle end
+      const contentType = type === "series" ? "series" : "movie";
+      const audioTrackId = activeAudio ? Number((activeAudio as any).id) : undefined;
+      const textTrackId = activeSubtitle ? Number((activeSubtitle as any).id) : -1;
+      lastSavedRef.current = Date.now();
+      saveRecentlyWatched({
+        profileId: activeProfile.id, contentType, streamId, name: title,
+        thumbnailUrl: thumbnail, streamUrl,
+        currentTime: cur, duration: dur, isCompleted: false,
+        seriesId: seriesIdParam, seasonNum, episodeNum,
+        audioTrack: audioTrackId, textTrack: textTrackId,
+        seriesLastModified: seriesSnapshotRef.current.lastModified,
+        seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
+      }).then((entry) => { if (entry) upsertLocal(entry); });
+    });
     return () => sub.remove();
-  }, [player]);
+  }, [player, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
 
   useEffect(() => {
     if (isLive) return;

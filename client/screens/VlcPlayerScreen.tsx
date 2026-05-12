@@ -550,7 +550,32 @@ export default function VlcPlayerScreen() {
     if (stoppedRecoveryRef.current) return; // ignore the auto-pause on stop
     setPaused(true);
     pausedRef.current = true;
-  }, []);
+    // ── Save-on-pause ─────────────────────────────────────────────────────
+    // The throttled progress effect below only saves while currentTime
+    // ticks (i.e. while playing). If the user pauses for several minutes
+    // and the app crashes / closes, the resume point can be far behind
+    // where they actually stopped. Persist immediately on pause so the
+    // saved position is always within ~1s of reality.
+    if (!activeProfile || !streamId) return;
+    const cur = seekSettledTimeRef.current > 0 ? seekSettledTimeRef.current : currentTimeRef.current;
+    const dur = durationRef.current;
+    if (cur <= 5 || dur <= 0) return;
+    if (completionPostedRef.current) return;
+    if (dur - cur <= 30) return; // let the completion path handle end
+    const contentType = type === "series" ? "series" : "movie";
+    lastSavedRef.current = Date.now();
+    saveRecentlyWatched({
+      profileId: activeProfile.id, contentType, streamId, name: title,
+      thumbnailUrl: thumbnail, streamUrl,
+      currentTime: cur, duration: dur, isCompleted: false,
+      seriesId: seriesIdParam, seasonNum, episodeNum,
+      audioTrack: activeAudio, textTrack: activeText,
+      seriesLastModified: seriesSnapshotRef.current.lastModified,
+      seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+      seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+      seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
+    }).then((entry) => { if (entry) upsertLocal(entry); });
+  }, [activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeText, upsertLocal]);
 
   const onStopped = useCallback(() => {
     // The library auto-applies paused:true on stopped (via setNativeProps),
