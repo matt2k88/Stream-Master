@@ -22,7 +22,6 @@ import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
-import { SpotifyMark } from "@/components/SpotifyLogo";
 import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
@@ -213,28 +212,6 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
     >
       <Feather name="search" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
-    </Pressable>
-  );
-}
-
-function SpotifyButton({ onPress }: { onPress: () => void }) {
-  const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
-  return (
-    <Pressable
-      style={[
-        styles.headerBtn,
-        isActive && styles.headerBtnActive,
-        isActive && { borderColor: "#1DB954", backgroundColor: "rgba(29,185,84,0.15)" },
-      ]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    >
-      <SpotifyMark size={20} />
     </Pressable>
   );
 }
@@ -765,10 +742,7 @@ export default function HomeScreen() {
           <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
           <VpnButton />
-          <SpotifyButton onPress={() => navigation.navigate("Spotify")} />
-          {isLandscape ? (
-            <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
-          ) : null}
+          <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
         </View>
