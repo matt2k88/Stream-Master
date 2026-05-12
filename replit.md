@@ -49,6 +49,8 @@ SQL migrations the user must run in Supabase SQL Editor live under `migrations/`
 - `migrations/002_content_reports.sql` — creates `content_reports` table (id, profile_id, stream_id, stream_name, stream_type, reason, other_text, created_at)
 - `migrations/003_category_prefs.sql` — creates `category_prefs` table (id, profile_id, type, order_ids text[], hidden_ids text[], updated_at) with unique (profile_id, type). Stores per-profile category organise prefs (order + hidden) for Live/Movies/Series so they sync across devices.
 - `migrations/004_app_theme.sql` — creates singleton `app_theme` table (id=1, theme_key text, updated_at) with default row `theme_key='default'`. Admin updates `theme_key` to one of `default|halloween|bonfire|christmas|valentines|newyear` to flip the app-wide theme.
+- `migrations/007_series_progress.sql` — adds nullable `series_last_modified text` and `series_total_episodes integer` to `recently_watched`. Snapshots taken on each play so the dashboard can detect "new episodes uploaded" (snapshot vs current `Series.last_modified`) without a per-row API call.
+- `migrations/008_series_final_episode.sql` — adds nullable `series_final_season int` and `series_final_episode int` to `recently_watched`. Snapshot of the highest-season → highest-episode at play time. Dashboard marks a series WATCHED only when the user has a completed entry matching this final episode (skipping middle episodes is fine). Combined with 007, new content uploads automatically flip the series back to CONTINUE WATCHING + NEW EPISODES badge.
 
 ## Tech Stack
 

@@ -143,6 +143,10 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       totalEpisodes: number | null;
       snapshotLastModified: string | null;
       latestProgress: number;
+      // True iff at least one entry for this series matches the snapshot's
+      // final season+episode AND is marked completed. This is the single
+      // signal for "they finished the FINAL available episode".
+      finalEpisodeCompleted: boolean;
     }>();
     for (const [k, all] of bySeriesIdAll.entries()) {
       if (!all || all.length === 0) continue;
@@ -159,12 +163,28 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
         const cur = latest.current_time ?? 0;
         if (dur > 0 && cur > 0) latestProgress = Math.max(0.02, Math.min(1, cur / dur));
       }
+      // Use the most recent row's snapshot of "what is the final episode?"
+      // — it's the freshest read of the series catalogue we have. If the
+      // provider has since added more episodes, `hasNewEpisodes` will fire
+      // independently and override WATCHED back to CONTINUE.
+      const finalSeason = typeof latest.series_final_season === "number" ? latest.series_final_season : null;
+      const finalEpisode = typeof latest.series_final_episode === "number" ? latest.series_final_episode : null;
+      let finalEpisodeCompleted = false;
+      if (finalSeason != null && finalEpisode != null) {
+        for (const e of all) {
+          if (e.is_completed && e.season_num === finalSeason && e.episode_num === finalEpisode) {
+            finalEpisodeCompleted = true;
+            break;
+          }
+        }
+      }
       out.set(k, {
         latest,
         watchedEpisodes: completedStreams.size,
         totalEpisodes: typeof latest.series_total_episodes === "number" ? latest.series_total_episodes : null,
         snapshotLastModified: latest.series_last_modified ?? null,
         latestProgress,
+        finalEpisodeCompleted,
       });
     }
     return out;
@@ -182,12 +202,13 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
       const hasNewEpisodes = !!(
         currentLastModified && base.snapshotLastModified && currentLastModified !== base.snapshotLastModified
       );
-      // Treat the series as "watched" whenever the most recently played
-      // episode was completed — regardless of whether earlier episodes
-      // were skipped. The moment the provider uploads new episodes the
-      // snapshot's `last_modified` will differ and `hasNewEpisodes` flips
-      // it back to CONTINUE + NEW EPISODES badge.
-      const isFullyWatched = !hasNewEpisodes && !!base.latest.is_completed;
+      // The series is WATCHED only when the user has completed the
+      // FINAL available episode (highest season → highest episode in
+      // that season). Skipping middle episodes is fine — what matters is
+      // there's nothing left after the final one. As soon as the
+      // provider uploads new episodes, `hasNewEpisodes` flips this back
+      // to CONTINUE WATCHING and the NEW EPISODES badge is shown.
+      const isFullyWatched = !hasNewEpisodes && base.finalEpisodeCompleted;
       return {
         latest: base.latest,
         watchedEpisodes: base.watchedEpisodes,

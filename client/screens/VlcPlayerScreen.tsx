@@ -234,7 +234,12 @@ export default function VlcPlayerScreen() {
   // Populated by the prefetch effect so save calls can persist
   // series_total_episodes + series_last_modified for series-wide state
   // (fully watched / new episodes) on the dashboard.
-  const seriesSnapshotRef = useRef<{ totalEpisodes?: number; lastModified?: string }>({});
+  const seriesSnapshotRef = useRef<{
+    totalEpisodes?: number;
+    lastModified?: string;
+    finalSeason?: number;
+    finalEpisode?: number;
+  }>({});
 
   useEffect(() => {
     if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
@@ -245,9 +250,26 @@ export default function VlcPlayerScreen() {
         if (cancelled || !info?.episodes) return;
         let total = 0;
         for (const arr of Object.values(info.episodes)) total += Array.isArray(arr) ? arr.length : 0;
+        let finalSeason: number | undefined;
+        let finalEpisode: number | undefined;
+        const seasonNums = Object.keys(info.episodes)
+          .map((k) => Number(k))
+          .filter((n) => Number.isFinite(n));
+        if (seasonNums.length > 0) {
+          finalSeason = Math.max(...seasonNums);
+          const finalEps = info.episodes[String(finalSeason)] || [];
+          if (finalEps.length > 0) {
+            finalEpisode = finalEps.reduce(
+              (mx, e) => Math.max(mx, Number(e.episode_num) || 0),
+              0,
+            ) || undefined;
+          }
+        }
         seriesSnapshotRef.current = {
           totalEpisodes: total > 0 ? total : undefined,
           lastModified: info.info?.last_modified ?? undefined,
+          finalSeason,
+          finalEpisode,
         };
         const eps = info.episodes[String(seasonNum)] || [];
         const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);
@@ -442,6 +464,8 @@ export default function VlcPlayerScreen() {
         textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
         seriesLastModified: seriesSnapshotRef.current.lastModified,
         seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, getByStreamId]);
@@ -579,6 +603,8 @@ export default function VlcPlayerScreen() {
         audioTrack: activeAudio, textTrack: activeText,
         seriesLastModified: seriesSnapshotRef.current.lastModified,
         seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -593,6 +619,8 @@ export default function VlcPlayerScreen() {
         audioTrack: activeAudio, textTrack: activeText,
         seriesLastModified: seriesSnapshotRef.current.lastModified,
         seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, activeAudio, activeText]);

@@ -481,7 +481,12 @@ function LegacyPlayerScreen() {
   const [nextEp, setNextEp] = useState<{ episode: Episode; season: number } | null>(null);
   // Populated by the next-ep prefetch effect so save calls can persist
   // series_total_episodes + series_last_modified.
-  const seriesSnapshotRef = useRef<{ totalEpisodes?: number; lastModified?: string }>({});
+  const seriesSnapshotRef = useRef<{
+    totalEpisodes?: number;
+    lastModified?: string;
+    finalSeason?: number;
+    finalEpisode?: number;
+  }>({});
   const [showNext, setShowNext] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const nextPromptShownRef = useRef(false);
@@ -792,6 +797,8 @@ function LegacyPlayerScreen() {
             textTrack: typeof prev?.text_track === "number" ? prev.text_track : undefined,
             seriesLastModified: seriesSnapshotRef.current.lastModified,
             seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+            seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+            seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
           }).then((entry) => { if (entry) upsertLocal(entry); });
         }
         // Apply resume seek (once)
@@ -901,6 +908,8 @@ function LegacyPlayerScreen() {
         audioTrack: audioTrackId, textTrack: textTrackId,
         seriesLastModified: seriesSnapshotRef.current.lastModified,
         seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
       return;
     }
@@ -915,6 +924,8 @@ function LegacyPlayerScreen() {
         audioTrack: audioTrackId, textTrack: textTrackId,
         seriesLastModified: seriesSnapshotRef.current.lastModified,
         seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+        seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+        seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
   }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
@@ -933,9 +944,30 @@ function LegacyPlayerScreen() {
         if (cancelled || !info?.episodes) return;
         let total = 0;
         for (const arr of Object.values(info.episodes)) total += Array.isArray(arr) ? arr.length : 0;
+        // Compute the FINAL available episode (highest season → highest
+        // episode_num within that season). Stored on every save so the
+        // dashboard can flag the series WATCHED only when the user has
+        // completed this exact final episode.
+        let finalSeason: number | undefined;
+        let finalEpisode: number | undefined;
+        const seasonNums = Object.keys(info.episodes)
+          .map((k) => Number(k))
+          .filter((n) => Number.isFinite(n));
+        if (seasonNums.length > 0) {
+          finalSeason = Math.max(...seasonNums);
+          const finalEps = info.episodes[String(finalSeason)] || [];
+          if (finalEps.length > 0) {
+            finalEpisode = finalEps.reduce(
+              (mx, e) => Math.max(mx, Number(e.episode_num) || 0),
+              0,
+            ) || undefined;
+          }
+        }
         seriesSnapshotRef.current = {
           totalEpisodes: total > 0 ? total : undefined,
           lastModified: info.info?.last_modified ?? undefined,
+          finalSeason,
+          finalEpisode,
         };
         const seasonKey = String(seasonNum);
         const eps = info.episodes[seasonKey] || [];

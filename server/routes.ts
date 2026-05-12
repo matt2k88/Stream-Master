@@ -413,6 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       current_time, duration, is_completed, series_id, season_num, episode_num,
       audio_track, text_track,
       series_last_modified, series_total_episodes,
+      series_final_season, series_final_episode,
     } = req.body;
     if (!profile_id || !content_type || !name) {
       return res.status(400).json({ error: "profile_id, content_type, and name required" });
@@ -438,6 +439,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof text_track === "number") entry.text_track = text_track;
       if (typeof series_last_modified === "string") entry.series_last_modified = series_last_modified;
       if (typeof series_total_episodes === "number") entry.series_total_episodes = series_total_episodes;
+      if (typeof series_final_season === "number") entry.series_final_season = series_final_season;
+      if (typeof series_final_episode === "number") entry.series_final_episode = series_final_episode;
 
       // Dedup: remove any existing entry for the same stream (also handles re-watch)
       if (stream_id) {
