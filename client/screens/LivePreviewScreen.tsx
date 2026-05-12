@@ -104,11 +104,13 @@ function ChannelRow({
   item,
   isSelected,
   onPress,
+  onFocusItem,
   hasTVPreferredFocus,
 }: {
   item: LiveStream;
   isSelected: boolean;
   onPress: () => void;
+  onFocusItem?: (item: LiveStream) => void;
   hasTVPreferredFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
@@ -118,8 +120,9 @@ function ChannelRow({
     <Pressable
       style={[styles.channelRow, isActive && styles.channelRowActive]}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
+      onFocus={() => { setFocused(true); onFocusItem?.(item); }}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => onFocusItem?.(item)}
       hasTVPreferredFocus={hasTVPreferredFocus}
     >
       {isSelected ? (
@@ -172,6 +175,12 @@ export default function LivePreviewScreen() {
 
   const [epgListings, setEpgListings] = useState<EpgListing[]>([]);
   const [epgLoading, setEpgLoading] = useState(true);
+
+  // Channel currently *previewed* in the EPG panel. Defaults to whatever's
+  // playing, but updates as the user hovers (focuses) channels in the
+  // sidebar via the TV remote — without switching the live player.
+  const [previewedId, setPreviewedId] = useState(streamId);
+  const [previewedName, setPreviewedName] = useState(name);
 
   const { isFavourite, toggleFavourite } = useFavourites();
   const { activeProfile } = useProfile();
@@ -382,18 +391,36 @@ export default function LivePreviewScreen() {
     }, [player, clearRetryTimer, clearLoadingTimeout, clearStallTimer, armLoadingTimeout])
   );
 
-  // Reload EPG whenever the selected channel changes
+  // Reload EPG whenever the *previewed* channel changes (i.e. as the user
+  // moves focus through the sidebar with the TV remote). The previewed
+  // channel is independent of the live player — switching only happens on
+  // OK / press, handled by switchToChannel.
   useEffect(() => {
     let cancelled = false;
     setEpgLoading(true);
     setEpgListings([]);
-    xtreamApi.getShortEpg(selectedId, 4).then((listings) => {
+    xtreamApi.getShortEpg(previewedId, 4).then((listings) => {
       if (!cancelled) { setEpgListings(listings); setEpgLoading(false); }
     }).catch(() => {
       if (!cancelled) setEpgLoading(false);
     });
     return () => { cancelled = true; };
-  }, [selectedId]);
+  }, [previewedId]);
+
+  // Keep the previewed channel in sync whenever the user actually switches
+  // (e.g. presses OK). This stops the EPG from staying stuck on the last
+  // hovered channel after a channel change.
+  useEffect(() => {
+    setPreviewedId(selectedId);
+    setPreviewedName(selectedName);
+  }, [selectedId, selectedName]);
+
+  // Stable focus handler for ChannelRow — updates the EPG preview channel
+  // without triggering a full live-player switch.
+  const handleChannelFocus = useCallback((s: LiveStream) => {
+    setPreviewedId(s.stream_id);
+    setPreviewedName(s.name);
+  }, []);
 
   // Scroll sidebar to selected channel once the list has data. Runs only
   // the first time `categoryChannels` becomes non-empty so it doesn't
@@ -744,6 +771,7 @@ export default function LivePreviewScreen() {
                   item={item}
                   isSelected={item.stream_id === selectedId}
                   onPress={() => handleChannelRowPress(item)}
+                  onFocusItem={handleChannelFocus}
                   hasTVPreferredFocus={item.stream_id === initialFocusStreamRef.current}
                 />
               )}
@@ -851,7 +879,12 @@ export default function LivePreviewScreen() {
               <FullScreenButton onPress={handleFullScreen} />
               <View style={styles.epgDivider}>
                 <Feather name="calendar" size={11} color={Colors.dark.accent} />
-                <ThemedText style={styles.epgHeaderText}>Programme Guide</ThemedText>
+                <ThemedText style={styles.epgHeaderText} numberOfLines={1}>
+                  Programme Guide for{" "}
+                  <ThemedText style={styles.epgHeaderChannel}>
+                    {previewedName}
+                  </ThemedText>
+                </ThemedText>
               </View>
               <View style={styles.epgPanel}>
                 {epgLoading ? (
@@ -1428,11 +1461,16 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   epgHeaderText: {
+    flex: 1,
     fontSize: 10,
     fontWeight: "700",
     color: Colors.dark.accent,
     letterSpacing: 0.8,
     textTransform: "uppercase",
+  },
+  epgHeaderChannel: {
+    color: Colors.dark.text,
+    fontWeight: "700",
   },
 
   epgPanel: { flex: 1 },
