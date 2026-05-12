@@ -17,6 +17,7 @@ import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { SpotifyMark } from "@/components/SpotifyLogo";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import {
   SPOTIFY_SCOPES,
@@ -278,7 +279,7 @@ export default function SpotifyScreen() {
         <Feather name="arrow-left" size={20} color={Colors.dark.text} />
       </Pressable>
       <View style={styles.brand}>
-        <View style={[styles.brandDot, { backgroundColor: SPOTIFY_GREEN }]} />
+        <SpotifyMark size={22} />
         <ThemedText style={styles.brandText}>Spotify</ThemedText>
         {view === "tracks" && activePlaylist ? (
           <ThemedText style={styles.brandSub} numberOfLines={1}>
@@ -314,7 +315,9 @@ export default function SpotifyScreen() {
       <ThemedView style={styles.container}>
         {Header}
         <View style={styles.center}>
-          <View style={[styles.brandDot, styles.bigDot, { backgroundColor: SPOTIFY_GREEN }]} />
+          <View style={{ marginBottom: Spacing.lg }}>
+            <SpotifyMark size={72} />
+          </View>
           <ThemedText style={styles.bigTitle}>Connect Spotify</ThemedText>
           <ThemedText style={styles.bigSub}>
             Sign in with your Spotify account to browse your playlists and library inside Ultra Cast.

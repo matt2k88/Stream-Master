@@ -22,6 +22,7 @@ import type { ThemeIconKey } from "@/constants/themes";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
+import { SpotifyMark } from "@/components/SpotifyLogo";
 import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
@@ -233,7 +234,7 @@ function SpotifyButton({ onPress }: { onPress: () => void }) {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <Feather name="music" size={18} color="#1DB954" />
+      <SpotifyMark size={20} />
     </Pressable>
   );
 }
