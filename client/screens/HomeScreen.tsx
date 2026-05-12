@@ -26,6 +26,8 @@ import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
 import { hasSeenRenewalNotice, markRenewalNoticeSeen } from "@/lib/renewal-notice";
+import { xtreamApi } from "@/lib/xtream-api";
+import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -620,6 +622,95 @@ export default function HomeScreen() {
     },
   ], []);
 
+  // Continue Watching click handler. For series rows where the LAST watched
+  // episode is already completed, asynchronously resolve the next episode
+  // (next ep_num in same season → first ep of next numeric season) and play
+  // THAT episode instead of replaying the finished one. Falls back to the
+  // current episode if no next exists (e.g. user finished the series final).
+  const handleRecentPress = useCallback(async (item: RecentlyWatched) => {
+    if (item.content_type === "live") {
+      if (!item.stream_url) return;
+      navigation.navigate("LivePreview", {
+        streamId: Number(item.stream_id) || 0,
+        name: item.name,
+        streamUrl: item.stream_url,
+        thumbnail: item.thumbnail_url ?? undefined,
+        streamIcon: item.thumbnail_url ?? undefined,
+        initialFullscreen: true,
+      });
+      return;
+    }
+    if (item.content_type === "movie" && item.stream_id) {
+      navigation.navigate("MovieInfo", {
+        streamId: Number(item.stream_id),
+        name: item.name,
+        streamIcon: item.thumbnail_url ?? undefined,
+      });
+      return;
+    }
+
+    // Series flow
+    if (item.content_type === "series") {
+      // If the last episode is completed, try to advance to the next one.
+      if (item.is_completed && item.series_id != null && item.season_num != null && item.episode_num != null) {
+        try {
+          const info = await xtreamApi.getSeriesInfo(Number(item.series_id));
+          if (info?.episodes) {
+            const curSeason = Number(item.season_num);
+            const curEp = Number(item.episode_num);
+            const sameSeasonEps = info.episodes[String(curSeason)] || [];
+            let nextEp = sameSeasonEps.find((e) => Number(e.episode_num) === curEp + 1);
+            let nextSeason = curSeason;
+            if (!nextEp) {
+              const seasonKeys = Object.keys(info.episodes)
+                .map(Number)
+                .filter((n) => !isNaN(n))
+                .sort((a, b) => a - b);
+              const ns = seasonKeys.find((s) => s > curSeason);
+              if (ns != null) {
+                const sEps = info.episodes[String(ns)] || [];
+                if (sEps.length > 0) {
+                  nextEp = sEps[0];
+                  nextSeason = ns;
+                }
+              }
+            }
+            if (nextEp) {
+              navigation.navigate("Player", {
+                streamUrl: xtreamApi.getSeriesStreamUrl(nextEp.id, nextEp.container_extension),
+                title: `${item.name} - ${nextEp.title}`,
+                type: "series",
+                thumbnail: nextEp.info?.movie_image ?? item.thumbnail_url ?? undefined,
+                streamId: String(nextEp.id),
+                seriesId: String(item.series_id),
+                seasonNum: nextSeason,
+                episodeNum: Number(nextEp.episode_num),
+                resumeTime: 0,
+              });
+              return;
+            }
+          }
+        } catch {
+          // Network/API error — fall through to legacy behaviour below.
+        }
+      }
+      // Default series behaviour: resume the saved episode (or replay if
+      // completed but no next episode could be resolved).
+      if (!item.stream_url) return;
+      navigation.navigate("Player", {
+        streamUrl: item.stream_url,
+        title: item.name,
+        type: "series",
+        thumbnail: item.thumbnail_url ?? undefined,
+        streamId: item.stream_id ?? undefined,
+        resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
+        seriesId: item.series_id ?? undefined,
+        seasonNum: item.season_num ?? undefined,
+        episodeNum: item.episode_num ?? undefined,
+      });
+    }
+  }, [navigation]);
+
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -756,40 +847,7 @@ export default function HomeScreen() {
               refreshKey={recentRefreshKey}
               maxItems={2}
               sections={watchSections}
-              onPress={(item) => {
-                if (item.content_type === "live") {
-                  if (!item.stream_url) return;
-                  navigation.navigate("LivePreview", {
-                    streamId: Number(item.stream_id) || 0,
-                    name: item.name,
-                    streamUrl: item.stream_url,
-                    thumbnail: item.thumbnail_url ?? undefined,
-                    streamIcon: item.thumbnail_url ?? undefined,
-                    initialFullscreen: true,
-                  });
-                  return;
-                }
-                if (item.content_type === "movie" && item.stream_id) {
-                  navigation.navigate("MovieInfo", {
-                    streamId: Number(item.stream_id),
-                    name: item.name,
-                    streamIcon: item.thumbnail_url ?? undefined,
-                  });
-                  return;
-                }
-                if (!item.stream_url) return;
-                navigation.navigate("Player", {
-                  streamUrl: item.stream_url,
-                  title: item.name,
-                  type: item.content_type === "series" ? "series" : "vod",
-                  thumbnail: item.thumbnail_url ?? undefined,
-                  streamId: item.stream_id ?? undefined,
-                  resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
-                  seriesId: item.series_id ?? undefined,
-                  seasonNum: item.season_num ?? undefined,
-                  episodeNum: item.episode_num ?? undefined,
-                });
-              }}
+              onPress={handleRecentPress}
             />
           </View>
         </View>
@@ -872,40 +930,7 @@ export default function HomeScreen() {
             refreshKey={recentRefreshKey}
             maxItems={2}
             sections={watchSections}
-            onPress={(item) => {
-              if (item.content_type === "live") {
-                if (!item.stream_url) return;
-                navigation.navigate("LivePreview", {
-                  streamId: Number(item.stream_id) || 0,
-                  name: item.name,
-                  streamUrl: item.stream_url,
-                  thumbnail: item.thumbnail_url ?? undefined,
-                  streamIcon: item.thumbnail_url ?? undefined,
-                  initialFullscreen: true,
-                });
-                return;
-              }
-              if (item.content_type === "movie" && item.stream_id) {
-                navigation.navigate("MovieInfo", {
-                  streamId: Number(item.stream_id),
-                  name: item.name,
-                  streamIcon: item.thumbnail_url ?? undefined,
-                });
-                return;
-              }
-              if (!item.stream_url) return;
-              navigation.navigate("Player", {
-                streamUrl: item.stream_url,
-                title: item.name,
-                type: item.content_type === "series" ? "series" : "vod",
-                thumbnail: item.thumbnail_url ?? undefined,
-                streamId: item.stream_id ?? undefined,
-                resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
-                seriesId: item.series_id ?? undefined,
-                seasonNum: item.season_num ?? undefined,
-                episodeNum: item.episode_num ?? undefined,
-              });
-            }}
+            onPress={handleRecentPress}
           />
           <View style={styles.portraitCarousel}>
             <AdvertCarousel style={StyleSheet.absoluteFill} />

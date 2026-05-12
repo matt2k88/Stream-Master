@@ -1023,6 +1023,30 @@ function LegacyPlayerScreen() {
           finalSeason,
           finalEpisode,
         };
+        // Defensive re-save: the initial readyToPlay save may have fired
+        // before this async fetch resolved, leaving the row in DB with
+        // NULL snapshot columns. Re-save now so the latest row carries
+        // total/final/last_modified — needed for the dashboard to flag
+        // the series WATCHED once the user completes the final episode.
+        if (activeProfile && streamId) {
+          saveRecentlyWatched({
+            profileId: activeProfile.id,
+            contentType: "series",
+            streamId,
+            name: title,
+            thumbnailUrl: thumbnail,
+            streamUrl,
+            currentTime: currentTimeRef.current > 0 ? currentTimeRef.current : undefined,
+            duration: tvDurationRef.current > 0 ? tvDurationRef.current : undefined,
+            seriesId: seriesIdParam,
+            seasonNum,
+            episodeNum,
+            seriesLastModified: seriesSnapshotRef.current.lastModified,
+            seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+            seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+            seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
+          }).then((entry) => { if (entry) upsertLocal(entry); });
+        }
         const seasonKey = String(seasonNum);
         const eps = info.episodes[seasonKey] || [];
         const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);
@@ -1036,7 +1060,7 @@ function LegacyPlayerScreen() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [type, seriesIdParam, seasonNum, episodeNum]);
+  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
 
   // Trigger next-episode prompt when within 30s of end
   useEffect(() => {

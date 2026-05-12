@@ -271,6 +271,29 @@ export default function VlcPlayerScreen() {
           finalSeason,
           finalEpisode,
         };
+        // Defensive re-save: the initial save may have fired before this
+        // async fetch resolved, leaving the row's snapshot columns NULL.
+        // Re-save now so the dashboard can flag the series WATCHED once
+        // the user finishes the final episode.
+        if (activeProfile && streamId) {
+          saveRecentlyWatched({
+            profileId: activeProfile.id,
+            contentType: "series",
+            streamId,
+            name: title,
+            thumbnailUrl: thumbnail,
+            streamUrl,
+            currentTime: currentTimeRef.current > 0 ? currentTimeRef.current : undefined,
+            duration: durationRef.current > 0 ? durationRef.current : undefined,
+            seriesId: seriesIdParam,
+            seasonNum,
+            episodeNum,
+            seriesLastModified: seriesSnapshotRef.current.lastModified,
+            seriesTotalEpisodes: seriesSnapshotRef.current.totalEpisodes,
+            seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
+            seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
+          }).then((entry) => { if (entry) upsertLocal(entry); });
+        }
         const eps = info.episodes[String(seasonNum)] || [];
         const next = eps.find((e) => Number(e.episode_num) === episodeNum + 1);
         if (next) { setNextEp({ episode: next, season: seasonNum }); return; }
@@ -283,7 +306,7 @@ export default function VlcPlayerScreen() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [type, seriesIdParam, seasonNum, episodeNum]);
+  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
 
   useEffect(() => {
     if (nextPromptShownRef.current || !nextEp) return;
