@@ -291,10 +291,9 @@ export default function SearchScreen() {
             onChangeText={setQuery}
             autoFocus
             returnKeyType="search"
-            clearButtonMode="while-editing"
             autoCapitalize="none"
             autoCorrect={false}
-            blurOnSubmit={false}
+            submitBehavior="blurAndSubmit"
             onSubmitEditing={() => setSubmittedQuery(query)}
           />
           {query.length > 0 ? (
