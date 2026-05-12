@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -8,7 +8,7 @@ import {
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -107,9 +107,20 @@ function EngineToggle({
 export default function PlayerSettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { activeProfile, updateActiveProfile } = useProfile();
+  const { activeProfile, updateActiveProfile, refreshActiveProfile } = useProfile();
 
   const [savingKey, setSavingKey] = useState<"player_vod" | "player_live" | null>(null);
+
+  // Pull the latest player_vod / player_live every time this screen
+  // gains focus, so admin-side flips show up without needing to log
+  // out and back in. Skipped while a save is in flight to avoid the
+  // optimistic UI snapping back mid-edit.
+  useFocusEffect(
+    useCallback(() => {
+      if (savingKey) return;
+      refreshActiveProfile();
+    }, [refreshActiveProfile, savingKey]),
+  );
 
   const vod: PlayerEngine = activeProfile?.player_vod === "expo" ? "expo" : "vlc";
   const live: PlayerEngine = activeProfile?.player_live === "expo" ? "expo" : "vlc";

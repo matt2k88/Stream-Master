@@ -278,6 +278,11 @@ export default function CatchUpScreen() {
       title: b64(prog.title) || selectedChannel.name,
       type: "vod",
       streamId: String(selectedChannel.stream_id),
+      // Catch Up streams are HTTP MPEG-TS timeshift segments. VLC plays
+      // them but cannot seek/scrub reliably (silent no-op on the
+      // progress bar). Expo's player handles them correctly, so force
+      // Expo here regardless of the user's VOD engine preference.
+      forceEngine: "expo",
     });
   }, [selectedChannel, navigation]);
 

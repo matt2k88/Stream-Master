@@ -459,6 +459,7 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
+  const { refreshActiveProfile } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme } = useAppTheme();
 
@@ -559,9 +560,14 @@ export default function HomeScreen() {
       setNavigatingTo(null); // clear loading state when returning to home
       // Refresh watch history every time user returns to home
       refetchHistory();
+      // Re-pull the active profile from the server so player engine
+      // changes made externally (e.g. admin panel flipping
+      // player_vod / player_live) take effect on the next navigation
+      // without forcing the user to log out.
+      refreshActiveProfile();
       setRecentRefreshKey((k) => k + 1);
       return () => setOnDashboard(false);
-    }, [setOnDashboard, refetchHistory])
+    }, [setOnDashboard, refetchHistory, refreshActiveProfile])
   );
 
   // Hardware back button on dashboard → confirm exit

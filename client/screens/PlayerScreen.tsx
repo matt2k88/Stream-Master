@@ -359,7 +359,12 @@ export default function PlayerScreen() {
     Platform.OS === "android" && typeof Platform.Version === "number" && Platform.Version < 26;
   const profileEngine = (isLive ? activeProfile?.player_live : activeProfile?.player_vod) === "expo"
     ? "expo" : "vlc";
-  const engine = vlcUnsupported ? "expo" : profileEngine;
+  // Per-route override (e.g. Catch Up forces "expo" because VLC cannot
+  // seek into MPEG-TS /timeshift/ streams reliably — play/pause works
+  // but skip & scrub silently no-op).
+  const routeForce = route.params.forceEngine === "expo" || route.params.forceEngine === "vlc"
+    ? route.params.forceEngine : null;
+  const engine = vlcUnsupported ? "expo" : (routeForce ?? profileEngine);
   // Android + VLC + non-live → use the dedicated raw-VLC screen.
   // Live TV, web, iOS, and the expo engine all keep the legacy screen.
   if (Platform.OS === "android" && engine === "vlc" && !isLive && VlcPlayerScreen) {

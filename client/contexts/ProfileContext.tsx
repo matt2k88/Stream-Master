@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
+import React, { createContext, useContext, useState, ReactNode, useCallback, useRef } from "react";
+import { getApiUrl } from "@/lib/query-client";
 
 export type PlayerEngine = "vlc" | "expo";
 
@@ -23,12 +24,23 @@ interface ProfileContextType {
   clearProfile: () => void;
   /** Patch fields on the active profile (in-memory only). */
   updateActiveProfile: (patch: Partial<Profile>) => void;
+  /**
+   * Refetch the active profile from the server and merge any changes
+   * (e.g. player_vod / player_live flipped from an external admin
+   * panel). Cheap, deduped, and safe to call from screen-focus
+   * effects. Returns the refreshed profile or null if the request
+   * failed / no active profile.
+   */
+  refreshActiveProfile: () => Promise<Profile | null>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const [activeProfile, setActiveProfileState] = useState<Profile | null>(null);
+  const activeRef = useRef<Profile | null>(null);
+  activeRef.current = activeProfile;
+  const inflightRef = useRef<Promise<Profile | null> | null>(null);
 
   const setActiveProfile = (profile: Profile) => setActiveProfileState(profile);
   const clearProfile = () => setActiveProfileState(null);
@@ -36,9 +48,45 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     setActiveProfileState((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
+  const refreshActiveProfile = useCallback(async (): Promise<Profile | null> => {
+    const current = activeRef.current;
+    if (!current) return null;
+    // Dedupe concurrent calls (e.g. focus + button press both firing).
+    if (inflightRef.current) return inflightRef.current;
+    const p = (async () => {
+      try {
+        const url = new URL("/api/profiles", getApiUrl());
+        url.searchParams.set("username", current.account_username);
+        const res = await fetch(url.toString());
+        if (!res.ok) return null;
+        const list: Profile[] = await res.json();
+        const fresh = Array.isArray(list) ? list.find((x) => x.id === current.id) : null;
+        if (!fresh) return null;
+        // Only patch fields we care about on this path so we don't
+        // clobber any in-memory tweaks the user just made.
+        const patch: Partial<Profile> = {
+          name: fresh.name,
+          avatar_icon: fresh.avatar_icon,
+          avatar_color: fresh.avatar_color,
+          pin: fresh.pin,
+          player_vod: fresh.player_vod,
+          player_live: fresh.player_live,
+        };
+        setActiveProfileState((prev) => (prev && prev.id === current.id ? { ...prev, ...patch } : prev));
+        return { ...current, ...patch };
+      } catch {
+        return null;
+      } finally {
+        inflightRef.current = null;
+      }
+    })();
+    inflightRef.current = p;
+    return p;
+  }, []);
+
   return (
     <ProfileContext.Provider
-      value={{ activeProfile, setActiveProfile, clearProfile, updateActiveProfile }}
+      value={{ activeProfile, setActiveProfile, clearProfile, updateActiveProfile, refreshActiveProfile }}
     >
       {children}
     </ProfileContext.Provider>
