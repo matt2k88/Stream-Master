@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
 
 const TOKEN_KEY = "spotify_tokens_v1";
+const PENDING_KEY = "spotify_pending_auth_v1";
 
 async function secureGet(key: string): Promise<string | null> {
   if (Platform.OS === "web") return AsyncStorage.getItem(key);
@@ -63,6 +64,36 @@ export async function loadTokens(): Promise<SpotifyTokens | null> {
 
 export async function clearTokens(): Promise<void> {
   await secureDel(TOKEN_KEY);
+}
+
+// ── Pending auth (survives app being killed mid-OAuth) ───────────────────────
+// Android (especially Android TV) often kills the app while the user is on the
+// Spotify login page. When the app re-opens via the deep link redirect, the
+// in-memory `request.codeVerifier` from useAuthRequest is gone. We persist it
+// here so we can finish the exchange whenever the app comes back.
+export type PendingAuth = { codeVerifier: string; redirectUri: string; createdAt: number };
+
+export async function savePendingAuth(p: PendingAuth): Promise<void> {
+  await secureSet(PENDING_KEY, JSON.stringify(p));
+}
+export async function loadPendingAuth(): Promise<PendingAuth | null> {
+  const raw = await secureGet(PENDING_KEY);
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as PendingAuth;
+    // Stale guard — Spotify auth codes are short-lived; treat anything older
+    // than 15 minutes as abandoned.
+    if (Date.now() - p.createdAt > 15 * 60_000) {
+      await secureDel(PENDING_KEY);
+      return null;
+    }
+    return p;
+  } catch {
+    return null;
+  }
+}
+export async function clearPendingAuth(): Promise<void> {
+  await secureDel(PENDING_KEY);
 }
 
 export async function exchangeCodeForTokens(args: {

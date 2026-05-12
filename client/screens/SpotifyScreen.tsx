@@ -20,10 +20,13 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import {
   SPOTIFY_SCOPES,
+  clearPendingAuth,
   clearTokens,
   exchangeCodeForTokens,
   getSpotifyClientId,
   getValidAccessToken,
+  loadPendingAuth,
+  savePendingAuth,
   spotifyFetch,
   type SpotifyPlaylist,
   type SpotifyProfile,
@@ -74,7 +77,38 @@ export default function SpotifyScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
 
-  // Bootstrap: client id + check existing auth
+  // Resume an interrupted auth flow when a callback URL arrives. Used both for
+  // an in-flight redirect and for a cold start where Android killed the app
+  // while the Spotify login page was open.
+  const completeFromUrl = useCallback(async (url: string | null) => {
+    if (!url) return;
+    if (!url.includes("spotify-callback")) return;
+    try {
+      const parsed = new URL(url);
+      const code = parsed.searchParams.get("code");
+      if (!code) return;
+      const pending = await loadPendingAuth();
+      if (!pending) return;
+      setBusy(true);
+      try {
+        await exchangeCodeForTokens({
+          code,
+          redirectUri: pending.redirectUri,
+          codeVerifier: pending.codeVerifier,
+        });
+        await clearPendingAuth();
+        setAuthed(true);
+      } catch (err: any) {
+        Alert.alert("Spotify sign-in failed", err?.message ?? "Unknown error");
+      } finally {
+        setBusy(false);
+      }
+    } catch {
+      // ignore malformed urls
+    }
+  }, []);
+
+  // Bootstrap: client id + check existing auth + resume any pending auth
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -85,6 +119,12 @@ export default function SpotifyScreen() {
         const tok = await getValidAccessToken();
         if (!mounted) return;
         setAuthed(!!tok);
+        // Cold-start case: app was killed during Spotify login and just
+        // re-launched via the iptvplayer://spotify-callback deep link.
+        if (!tok) {
+          const initial = await Linking.getInitialURL();
+          if (mounted) await completeFromUrl(initial);
+        }
       } catch {
         if (mounted) setAuthed(false);
       }
@@ -92,7 +132,16 @@ export default function SpotifyScreen() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [completeFromUrl]);
+
+  // Warm-resume: app stayed alive but the redirect deep link arrived while we
+  // were sitting on this screen.
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      completeFromUrl(url);
+    });
+    return () => sub.remove();
+  }, [completeFromUrl]);
 
   const loadProfileAndPlaylists = useCallback(async () => {
     setLoading(true);
@@ -114,7 +163,10 @@ export default function SpotifyScreen() {
     if (authed) loadProfileAndPlaylists();
   }, [authed, loadProfileAndPlaylists]);
 
-  // Handle auth response
+  // Happy path: app stayed alive through the auth flow and useAuthRequest
+  // delivered the response in-memory. We still go through the persisted
+  // pending-auth (saved at handleLogin time) so the exchange path is identical
+  // whether the app survived or was killed.
   useEffect(() => {
     if (!response) return;
     if (response.type !== "success") {
@@ -124,12 +176,17 @@ export default function SpotifyScreen() {
       return;
     }
     const code = response.params.code;
-    const verifier = request?.codeVerifier;
-    if (!code || !verifier) return;
+    if (!code) return;
     (async () => {
       setBusy(true);
       try {
-        await exchangeCodeForTokens({ code, redirectUri, codeVerifier: verifier });
+        // Prefer the persisted verifier (handles app-killed case).
+        const pending = await loadPendingAuth();
+        const verifier = pending?.codeVerifier ?? request?.codeVerifier;
+        const usedRedirect = pending?.redirectUri ?? redirectUri;
+        if (!verifier) throw new Error("Missing PKCE verifier");
+        await exchangeCodeForTokens({ code, redirectUri: usedRedirect, codeVerifier: verifier });
+        await clearPendingAuth();
         setAuthed(true);
       } catch (err: any) {
         Alert.alert("Spotify sign-in failed", err?.message ?? "Unknown error");
@@ -145,8 +202,19 @@ export default function SpotifyScreen() {
       return;
     }
     if (!request) return;
+    // Persist the PKCE verifier BEFORE launching the browser. On Android TV
+    // the OS often kills our process while the user is on the Spotify login
+    // page; without this, the in-memory verifier is lost on relaunch and the
+    // token exchange fails.
+    if (request.codeVerifier) {
+      await savePendingAuth({
+        codeVerifier: request.codeVerifier,
+        redirectUri,
+        createdAt: Date.now(),
+      });
+    }
     await promptAsync();
-  }, [clientId, request, promptAsync]);
+  }, [clientId, request, promptAsync, redirectUri]);
 
   const handleLogout = useCallback(async () => {
     await clearTokens();
