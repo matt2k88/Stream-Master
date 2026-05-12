@@ -671,13 +671,28 @@ export default function VlcPlayerScreen() {
     showAndReset();
   }, [showAndReset]);
 
-  // ─── TV remote D-pad seek (left/right) ───────────────────────────────────
+  // ─── TV remote D-pad seek (left/right) + media keys ──────────────────────
   const [seekBarFocused, setSeekBarFocused] = useState(false);
   const seekBarFocusedRef = useRef(false);
   const seekHoldRef = useRef<{ dir: string | null; start: number; lastFire: number }>({
     dir: null, start: 0, lastFire: 0,
   });
   useEffect(() => { seekBarFocusedRef.current = seekBarFocused; }, [seekBarFocused]);
+
+  // Stable refs for the action handlers used by both the native
+  // TVEventHandler subscription and the web keyboard listener — they
+  // re-render less than every key event.
+  const togglePlayPauseRef = useRef(togglePlayPause);
+  const handleLargeBackRef = useRef(handleLargeBack);
+  const handleLargeFwdRef = useRef(handleLargeFwd);
+  const seekToRef = useRef(seekTo);
+  const showAndResetRef = useRef(showAndReset);
+  useEffect(() => { togglePlayPauseRef.current = togglePlayPause; }, [togglePlayPause]);
+  useEffect(() => { handleLargeBackRef.current = handleLargeBack; }, [handleLargeBack]);
+  useEffect(() => { handleLargeFwdRef.current = handleLargeFwd; }, [handleLargeFwd]);
+  useEffect(() => { seekToRef.current = seekTo; }, [seekTo]);
+  useEffect(() => { showAndResetRef.current = showAndReset; }, [showAndReset]);
+
   useEffect(() => {
     if (Platform.OS !== "android" && Platform.OS !== "ios") return;
     let tvHandler: any = null;
@@ -686,13 +701,28 @@ export default function VlcPlayerScreen() {
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
+        const et = evt.eventType;
+        // Media keys: work GLOBALLY (no focus check).
+        if (et === "playPause" || et === "play" || et === "pause") {
+          togglePlayPauseRef.current();
+          return;
+        }
+        if (et === "rewind") {
+          handleLargeBackRef.current();
+          return;
+        }
+        if (et === "fastForward") {
+          handleLargeFwdRef.current();
+          return;
+        }
+        // D-pad left/right: requires seek bar focus + accelerate on hold.
         if (!seekBarFocusedRef.current) return;
-        if (evt.eventType !== "left" && evt.eventType !== "right") return;
+        if (et !== "left" && et !== "right") return;
         const now = Date.now();
-        const same = evt.eventType === seekHoldRef.current.dir;
+        const same = et === seekHoldRef.current.dir;
         if (!same || now - seekHoldRef.current.lastFire > 400) {
           seekHoldRef.current.start = now;
-          seekHoldRef.current.dir = evt.eventType;
+          seekHoldRef.current.dir = et;
         }
         seekHoldRef.current.lastFire = now;
         const held = now - seekHoldRef.current.start;
@@ -702,13 +732,48 @@ export default function VlcPlayerScreen() {
         else if (held > 1000) step = 20;
         else if (held > 500) step = 10;
         else step = 5;
-        const delta = evt.eventType === "left" ? -step : step;
-        seekTo(currentTimeRef.current + delta);
-        showAndReset();
+        const delta = et === "left" ? -step : step;
+        seekToRef.current(currentTimeRef.current + delta);
+        showAndResetRef.current();
       });
     } catch {}
     return () => { try { tvHandler?.disable(); } catch {} };
-  }, [seekTo, showAndReset]);
+  }, []);
+
+  // Web keyboard: media keys + Space/K (play/pause), J/L + Arrow (seek),
+  // MediaRewind / MediaFastForward (fast skip).
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === " " || e.key === "Spacebar" || e.key === "k" || e.key === "K" ||
+        e.key === "MediaPlayPause" || e.key === "MediaPlay" || e.key === "MediaPause"
+      ) {
+        e.preventDefault();
+        togglePlayPauseRef.current();
+        return;
+      }
+      if (e.key === "MediaRewind" || e.key === "MediaTrackPrevious") {
+        e.preventDefault();
+        handleLargeBackRef.current();
+        return;
+      }
+      if (e.key === "MediaFastForward" || e.key === "MediaTrackNext") {
+        e.preventDefault();
+        handleLargeFwdRef.current();
+        return;
+      }
+      const isLeft  = e.key === "ArrowLeft"  || e.key === "j" || e.key === "J";
+      const isRight = e.key === "ArrowRight" || e.key === "l" || e.key === "L";
+      if (!isLeft && !isRight) return;
+      e.preventDefault();
+      const delta = isLeft ? -10 : 10;
+      seekToRef.current(currentTimeRef.current + delta);
+      showAndResetRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // ─── Source ──────────────────────────────────────────────────────────────
   // libvlc init options.

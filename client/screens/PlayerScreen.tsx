@@ -574,6 +574,12 @@ function LegacyPlayerScreen() {
   // Forward-ref to armSeekGuard (defined later). Stays a no-op until the
   // effect below patches it once armSeekGuard exists.
   const armSeekGuardRef = useRef<() => void>(() => {});
+  // Forward-refs to the player action handlers (defined later). The
+  // TVEventHandler effect below uses empty deps so we route media-key
+  // events through these refs instead of re-subscribing on every render.
+  const handlePlayPauseRef = useRef<() => void>(() => {});
+  const handleSkipBackLargeRef = useRef<() => void>(() => {});
+  const handleSkipForwardLargeRef = useRef<() => void>(() => {});
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { showAndResetRef.current = showAndReset; }, [showAndReset]);
   useEffect(() => { isLiveRef.current = isLive; }, [isLive]);
@@ -586,13 +592,33 @@ function LegacyPlayerScreen() {
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
+        // Media keys (play/pause, rewind, fast-forward) work GLOBALLY
+        // — no need for the seek bar to be focused. This matches what
+        // users expect from a remote: the dedicated media buttons act
+        // on the player regardless of where focus currently sits.
+        const et = evt.eventType;
+        if (et === "playPause" || et === "play" || et === "pause") {
+          handlePlayPauseRef.current();
+          showAndResetRef.current();
+          return;
+        }
+        if (!isLiveRef.current && et === "rewind") {
+          // Hardware rewind key → fast-skip back (60s, accelerating to
+          // 2m / 5m on rapid presses, same as the on-screen rewind btn).
+          handleSkipBackLargeRef.current();
+          return;
+        }
+        if (!isLiveRef.current && et === "fastForward") {
+          handleSkipForwardLargeRef.current();
+          return;
+        }
         if (!seekBarFocusedRef.current || isLiveRef.current) return;
-        if (evt.eventType !== "left" && evt.eventType !== "right") return;
+        if (et !== "left" && et !== "right") return;
         const now = Date.now();
-        const isSameDir = evt.eventType === seekHoldRef.current.dir;
+        const isSameDir = et === seekHoldRef.current.dir;
         if (!isSameDir || now - seekHoldRef.current.lastFire > 400) {
           seekHoldRef.current.start = now;
-          seekHoldRef.current.dir = evt.eventType;
+          seekHoldRef.current.dir = et;
         }
         seekHoldRef.current.lastFire = now;
         const held = now - seekHoldRef.current.start;
@@ -602,7 +628,7 @@ function LegacyPlayerScreen() {
         else if (held > 1000) step = 20;
         else if (held > 500) step = 10;
         else step = 5;
-        const delta = evt.eventType === "left" ? -step : step;
+        const delta = et === "left" ? -step : step;
         const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
         armSeekGuardRef.current();
         playerRef.current.currentTime = newTime;
@@ -624,13 +650,41 @@ function LegacyPlayerScreen() {
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      if (isLiveRef.current) return;
-      if (tvDurationRef.current <= 0) return;
+      // Block when a panel/modal is open (CC/Audio/Report) so the
+      // user can still type / use arrows in those overlays.
       if (activePanelRef.current !== null) return;
       if (showReportRef.current) return;
+
+      // Media keys + Space + K → play/pause (works on every focus).
+      if (
+        e.key === " " || e.key === "Spacebar" || e.key === "k" || e.key === "K" ||
+        e.key === "MediaPlayPause" || e.key === "MediaPlay" || e.key === "MediaPause"
+      ) {
+        e.preventDefault();
+        handlePlayPauseRef.current();
+        return;
+      }
+
+      // Hardware media rewind / fast-forward → fast-skip buttons.
+      if (!isLiveRef.current && (e.key === "MediaRewind" || e.key === "MediaTrackPrevious")) {
+        e.preventDefault();
+        handleSkipBackLargeRef.current();
+        return;
+      }
+      if (!isLiveRef.current && (e.key === "MediaFastForward" || e.key === "MediaTrackNext")) {
+        e.preventDefault();
+        handleSkipForwardLargeRef.current();
+        return;
+      }
+
+      // Arrow keys (and J / L) → small ±10s seek.
+      const isLeft  = e.key === "ArrowLeft"  || e.key === "j" || e.key === "J";
+      const isRight = e.key === "ArrowRight" || e.key === "l" || e.key === "L";
+      if (!isLeft && !isRight) return;
+      if (isLiveRef.current) return;
+      if (tvDurationRef.current <= 0) return;
       e.preventDefault();
-      const delta = e.key === "ArrowLeft" ? -10 : 10;
+      const delta = isLeft ? -10 : 10;
       const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
       armSeekGuardRef.current();
       try { playerRef.current.currentTime = newTime; } catch {}
@@ -1188,6 +1242,13 @@ function LegacyPlayerScreen() {
     showAndReset();
   }, [showAndReset, resetLargeSkipAccel, armSeekGuard]);
 
+  // Wire the player action handlers up to the TVEventHandler / web key
+  // refs declared above. These have to live AFTER the handler
+  // declarations to satisfy the lexical "used before declaration" check.
+  useEffect(() => { handlePlayPauseRef.current = handlePlayPause; }, [handlePlayPause]);
+  useEffect(() => { handleSkipBackLargeRef.current = handleSkipBackLarge; }, [handleSkipBackLarge]);
+  useEffect(() => { handleSkipForwardLargeRef.current = handleSkipForwardLarge; }, [handleSkipForwardLarge]);
+
   const handleSeek = useCallback((time: number) => {
     armSeekGuard();
     player.currentTime = time;
@@ -1373,8 +1434,12 @@ function LegacyPlayerScreen() {
         onPress={handleScreenTap}
         onKeyDown={Platform.OS === "android" && !isLive ? ({ nativeEvent }: any) => {
           const { keyCode } = nativeEvent;
-          const isLeft  = keyCode === 21 || keyCode === 89; // DPAD_LEFT / MEDIA_REWIND
-          const isRight = keyCode === 22 || keyCode === 90; // DPAD_RIGHT / MEDIA_FAST_FORWARD
+          // Media rewind / fast-forward (89 / 90) are intentionally NOT
+          // handled here — they're routed through TVEventHandler to the
+          // FAST skip handlers (60s → 2m → 5m). Only D-pad left/right
+          // (21 / 22) get the small accelerating seek as a global fallback.
+          const isLeft  = keyCode === 21; // DPAD_LEFT
+          const isRight = keyCode === 22; // DPAD_RIGHT
           if (!isLeft && !isRight) return;
           if (tvDurationRef.current <= 0) return;
           showAndReset();
