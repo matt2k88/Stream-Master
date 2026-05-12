@@ -216,6 +216,28 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function SpotifyButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: "#1DB954", backgroundColor: "rgba(29,185,84,0.15)" },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <Feather name="music" size={18} color="#1DB954" />
+    </Pressable>
+  );
+}
+
 function ProfileButton({ onPress }: { onPress: () => void }) {
   const { activeProfile } = useProfile();
   const [pressed, setPressed] = useState(false);
@@ -742,7 +764,10 @@ export default function HomeScreen() {
           <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
           <VpnButton />
-          <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
+          <SpotifyButton onPress={() => navigation.navigate("Spotify")} />
+          {isLandscape ? (
+            <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
+          ) : null}
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
         </View>

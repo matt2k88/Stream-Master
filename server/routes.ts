@@ -321,6 +321,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Spotify config (Client ID only; PKCE flow needs no server secret) ────
+  app.get("/api/spotify-config", (_req, res) => {
+    res.json({ clientId: process.env.SPOTIFY_CLIENT_ID || "" });
+  });
+
   // ── App Theme (admin-controlled, applies to all clients on next launch) ──
   app.get("/api/app-theme", async (_req, res) => {
     try {

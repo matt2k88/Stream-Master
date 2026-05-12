@@ -28,6 +28,7 @@ import OrganiseTypePickerScreen from "@/screens/OrganiseTypePickerScreen";
 import OrganiseCategoriesScreen from "@/screens/OrganiseCategoriesScreen";
 import ContentRequestsScreen from "@/screens/ContentRequestsScreen";
 import PlayerSettingsScreen from "@/screens/PlayerSettingsScreen";
+import SpotifyScreen from "@/screens/SpotifyScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -56,6 +57,7 @@ export type RootStackParamList = {
   OrganiseCategories: { type: "live" | "movies" | "series" };
   ContentRequests: undefined;
   PlayerSettings: undefined;
+  Spotify: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -105,6 +107,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
             <Stack.Screen name="ContentRequests" component={ContentRequestsScreen} />
             <Stack.Screen name="PlayerSettings" component={PlayerSettingsScreen} />
+            <Stack.Screen name="Spotify" component={SpotifyScreen} />
           </>
         )}
       </Stack.Navigator>
