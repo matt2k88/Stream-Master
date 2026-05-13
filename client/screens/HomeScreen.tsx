@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState } from "react-native";
 import Constants from "expo-constants";
 import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -438,12 +438,20 @@ function UpdateAvailableButton() {
   const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
   const [downloaderCode, setDownloaderCode] = useState<string | null>(null);
 
+  // Re-check the version frequently so users on long-running TV
+  // sessions notice a release without restarting the app:
+  //   - on mount
+  //   - every 15 minutes while mounted
+  //   - whenever the app returns to the foreground
+  // The button stays mounted on the dashboard for the whole session,
+  // so this single hook owns the polling lifecycle.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const checkOnce = async () => {
       try {
         const url = new URL("/api/app-version", getApiUrl());
-        const res = await fetch(url.toString());
+        const res = await fetch(url.toString(), { cache: "no-store" as RequestCache });
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
@@ -452,12 +460,29 @@ function UpdateAvailableButton() {
         if (v && v !== APP_VERSION) {
           setRemoteVersion(v);
           setDownloaderCode(c);
+        } else {
+          // Clear if the server has been rolled back to match the
+          // installed version (or if a previously-stale cache cleared).
+          setRemoteVersion(null);
+          setDownloaderCode(null);
         }
       } catch {
         // silent — header button just won't appear if the check fails
       }
-    })();
-    return () => { cancelled = true; };
+    };
+
+    checkOnce();
+    const intervalId = setInterval(checkOnce, 15 * 60 * 1000);
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") checkOnce();
+    });
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      sub.remove();
+    };
   }, []);
 
   if (!remoteVersion) return null;
