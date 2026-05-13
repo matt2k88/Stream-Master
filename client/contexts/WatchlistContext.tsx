@@ -50,9 +50,6 @@ interface WatchlistContextType {
   setStatus: (id: string, status: WatchlistStatus) => Promise<void>;
   /** Toggle add/remove keyed by xtream stream id (used by MovieInfo/SeriesDetail). */
   toggleByStream: (params: AddParams) => Promise<void>;
-  /** Exposed so other screens can match watchlist rows by stream id / name. */
-  resolveStreamId: (data: WatchlistContentData | null | undefined, type: WatchlistType) => string | null;
-  resolveName: (data: WatchlistContentData | null | undefined) => string | null;
 }
 
 const WatchlistContext = createContext<WatchlistContextType | undefined>(undefined);
@@ -68,27 +65,12 @@ function getXtreamUsername(userInfo: any): string | null {
 
 function streamIdOfContentData(d: WatchlistContentData | null | undefined, type: WatchlistType): string | null {
   if (!d) return null;
-  // Rows can be stored in two shapes:
-  //   1. Flat (added by this app early on): { stream_id, series_id, name, ... }
-  //   2. Rich xtream payload (the canonical format used by the external
-  //      admin UI): { info: {...}, movie_data: { stream_id, ... } } for movies
-  //      and { info: {...}, episodes: {...} } for series.
-  // We accept both so existing rows still match.
-  const md: any = (d as any).movie_data ?? null;
   if (type === "series") {
-    const v = d.series_id ?? d.stream_id ?? md?.stream_id;
+    const v = d.series_id ?? d.stream_id;
     return v != null ? String(v) : null;
   }
-  const v = d.stream_id ?? md?.stream_id;
+  const v = d.stream_id;
   return v != null ? String(v) : null;
-}
-
-function nameOfContentData(d: WatchlistContentData | null | undefined): string | null {
-  if (!d) return null;
-  const md: any = (d as any).movie_data ?? null;
-  const info: any = (d as any).info ?? null;
-  const n = d.name ?? md?.name ?? info?.name ?? info?.o_name ?? null;
-  return n ? String(n) : null;
 }
 
 export function WatchlistProvider({ children }: { children: ReactNode }) {
@@ -267,12 +249,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   }, [username, items, watchEntries, getSeriesProgress, setStatus]);
 
   const value = useMemo<WatchlistContextType>(
-    () => ({
-      items, isLoading, refresh, getByType, isInWatchlist, findByStreamId,
-      add, remove, setStatus, toggleByStream,
-      resolveStreamId: streamIdOfContentData,
-      resolveName: nameOfContentData,
-    }),
+    () => ({ items, isLoading, refresh, getByType, isInWatchlist, findByStreamId, add, remove, setStatus, toggleByStream }),
     [items, isLoading, refresh, getByType, isInWatchlist, findByStreamId, add, remove, setStatus, toggleByStream],
   );
 

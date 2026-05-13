@@ -210,16 +210,10 @@ export default function SeriesDetailScreen() {
   const watchlistContentId = tmdbSeriesId ? String(tmdbSeriesId) : `xt_${seriesId}`;
   const inWatchlist = isInWatchlist(seriesId, "series") || isInWatchlist(watchlistContentId, "series");
   const handleToggleWatchlist = () => {
-    // Mirror the canonical xtream SeriesInfo shape used by external rows
-    // ({info, episodes, seasons}) and add convenience top-level mirrors so
-    // matching by series_id / name works regardless of writer.
     toggleWatchlistByStream({
       contentId: watchlistContentId,
       contentType: "series",
       contentData: {
-        info: (seriesInfo?.info ?? {}) as any,
-        episodes: (seriesInfo?.episodes ?? {}) as any,
-        seasons: (seriesInfo?.seasons ?? {}) as any,
         series_id: seriesId,
         stream_id: seriesId,
         name: seriesName,
