@@ -20,6 +20,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, VodInfo } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useData } from "@/contexts/DataContext";
 import { getApiUrl } from "@/lib/query-client";
@@ -57,7 +58,8 @@ function HeaderBtn({
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isInteracting = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isInteracting = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.headerBtn, (isInteracting || active) && styles.headerBtnActive]}
@@ -66,6 +68,8 @@ function HeaderBtn({
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isInteracting ? <View style={styles.headerBtnOverlay} /> : null}
       <Feather
@@ -185,6 +189,7 @@ export default function MovieInfoScreen() {
   );
 
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
   const isFav = isFavourite(streamId, "movies");
   const watch = getByStreamId(streamId);
@@ -293,6 +298,29 @@ export default function MovieInfoScreen() {
     });
   };
 
+  const watchlistContentId = String(tmdbId ?? `xt_${streamId}`);
+  // inWatchlist checks BOTH content_id (TMDB) and embedded stream_id, so a
+  // row added externally via the TMDB page (no stream_id) still lights up
+  // the bookmark and a tap will remove it (rather than "toggle-add").
+  const inWatchlist = isInWatchlist(streamId, "movie") || isInWatchlist(watchlistContentId, "movie");
+  const handleToggleWatchlist = () => {
+    toggleWatchlistByStream({
+      contentId: watchlistContentId,
+      contentType: "movie",
+      contentData: {
+        stream_id: streamId,
+        name: title ?? name,
+        poster: posterUrl ?? null,
+        poster_path: tmdb?.poster_path ?? null,
+        backdrop_path: tmdb?.backdrop_path ?? null,
+        overview: overview ?? null,
+        release_date: releaseDateStr ?? null,
+        vote_average: typeof ratingNum === "number" ? ratingNum : undefined,
+        source: "app",
+      },
+    });
+  };
+
   const handlePlay = (fromStart: boolean) => {
     const ext = containerExtension ?? cachedVod?.container_extension ?? vodInfo?.movie_data?.container_extension ?? "mp4";
     const url = xtreamApi.getVodStreamUrl(streamId, ext);
@@ -319,6 +347,12 @@ export default function MovieInfoScreen() {
       <ThemedText style={styles.headerTitle} numberOfLines={1}>
         {title}
       </ThemedText>
+      <HeaderBtn
+        icon="bookmark"
+        active={inWatchlist}
+        onPress={handleToggleWatchlist}
+        iconColor={inWatchlist ? Colors.dark.accent : undefined}
+      />
       <HeaderBtn
         icon="star"
         active={isFav}

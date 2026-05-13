@@ -19,6 +19,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useFocusEffect } from "@react-navigation/native";
@@ -139,7 +140,8 @@ function EpisodeCard({
 function FavBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isInteracting = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isInteracting = focused || pressed || hovered;
   return (
     <Pressable
       style={[styles.backBtn, (isInteracting || active) && styles.backBtnActive]}
@@ -148,12 +150,40 @@ function FavBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {isInteracting ? <View style={styles.backBtnOverlay} /> : null}
       <Feather
         name="star"
         size={20}
         color={active ? "#FFD700" : isInteracting ? Colors.dark.accent : Colors.dark.text}
+      />
+    </Pressable>
+  );
+}
+
+function WatchlistBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isInteracting = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[styles.backBtn, (isInteracting || active) && styles.backBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      {isInteracting ? <View style={styles.backBtnOverlay} /> : null}
+      <Feather
+        name="bookmark"
+        size={20}
+        color={active ? Colors.dark.accent : isInteracting ? Colors.dark.accent : Colors.dark.text}
       />
     </Pressable>
   );
@@ -173,8 +203,25 @@ export default function SeriesDetailScreen() {
   const [error, setError] = useState("");
 
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
   const isFav = isFavourite(seriesId, "series");
+  const tmdbSeriesId = (seriesInfo?.info as any)?.tmdb ?? (seriesInfo?.info as any)?.tmdb_id ?? null;
+  const watchlistContentId = tmdbSeriesId ? String(tmdbSeriesId) : `xt_${seriesId}`;
+  const inWatchlist = isInWatchlist(seriesId, "series") || isInWatchlist(watchlistContentId, "series");
+  const handleToggleWatchlist = () => {
+    toggleWatchlistByStream({
+      contentId: watchlistContentId,
+      contentType: "series",
+      contentData: {
+        series_id: seriesId,
+        stream_id: seriesId,
+        name: seriesName,
+        poster: cover ?? null,
+        source: "app",
+      },
+    });
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -271,6 +318,7 @@ export default function SeriesDetailScreen() {
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle} numberOfLines={1}>{seriesName}</ThemedText>
+        <WatchlistBtn active={inWatchlist} onPress={handleToggleWatchlist} />
         <FavBtn active={isFav} onPress={handleToggleFav} />
       </View>
 

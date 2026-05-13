@@ -18,6 +18,7 @@ import { DataProvider } from "@/contexts/DataContext";
 import { ProfileProvider } from "@/contexts/ProfileContext";
 import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
+import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
@@ -91,6 +92,7 @@ export default function App() {
                     <CategoryOrderProvider>
                     <FavouritesProvider>
                       <WatchHistoryProvider>
+                        <WatchlistProvider>
                         <MessageProvider>
                           <VpnProvider>
                           <KeyboardProvider>
@@ -102,6 +104,7 @@ export default function App() {
                           </KeyboardProvider>
                           </VpnProvider>
                         </MessageProvider>
+                        </WatchlistProvider>
                       </WatchHistoryProvider>
                     </FavouritesProvider>
                     </CategoryOrderProvider>

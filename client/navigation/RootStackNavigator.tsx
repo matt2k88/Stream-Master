@@ -27,6 +27,7 @@ import CatchUpScreen from "@/screens/CatchUpScreen";
 import OrganiseTypePickerScreen from "@/screens/OrganiseTypePickerScreen";
 import OrganiseCategoriesScreen from "@/screens/OrganiseCategoriesScreen";
 import ContentRequestsScreen from "@/screens/ContentRequestsScreen";
+import MyWatchlistScreen from "@/screens/MyWatchlistScreen";
 import PlayerSettingsScreen from "@/screens/PlayerSettingsScreen";
 
 export type RootStackParamList = {
@@ -55,6 +56,7 @@ export type RootStackParamList = {
   OrganiseTypePicker: undefined;
   OrganiseCategories: { type: "live" | "movies" | "series" };
   ContentRequests: undefined;
+  MyWatchlist: { type: "movies" | "series" };
   PlayerSettings: undefined;
 };
 
@@ -104,6 +106,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="OrganiseTypePicker" component={OrganiseTypePickerScreen} />
             <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
             <Stack.Screen name="ContentRequests" component={ContentRequestsScreen} />
+            <Stack.Screen name="MyWatchlist" component={MyWatchlistScreen} />
             <Stack.Screen name="PlayerSettings" component={PlayerSettingsScreen} />
           </>
         )}

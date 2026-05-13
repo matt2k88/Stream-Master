@@ -697,6 +697,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Watchlist (lifetime DB) ───────────────────────────────────────────────
+  // Keyed by xtream username (NOT profile id) — the watchlist follows the
+  // account across profile switches, mirroring the existing content_requests
+  // pattern. Two writers exist: the external "Add to Watchlist" page (TMDB
+  // form) and the in-app MovieInfo / SeriesDetail screens. See
+  // migrations/009_watchlist.sql for the table contract.
+
+  app.get("/api/watchlist", async (req, res) => {
+    const { username, content_type } = req.query;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      let q = lifetimeDb
+        .from("watchlist")
+        .select("id, user_username, content_id, content_type, content_data, status, created_at")
+        .eq("user_username", username as string)
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (content_type === "movie" || content_type === "series") {
+        q = q.eq("content_type", content_type);
+      }
+      const { data, error } = await q;
+      if (error) {
+        console.error("[watchlist] GET error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ items: data ?? [] });
+    } catch (e: any) {
+      console.error("[watchlist] GET exception:", e?.message);
+      res.status(500).json({ error: "Failed to fetch watchlist" });
+    }
+  });
+
+  app.post("/api/watchlist", async (req, res) => {
+    const { user_username, content_id, content_type, content_data, status } = req.body;
+    if (!user_username || !content_id || !content_type) {
+      return res.status(400).json({ error: "user_username, content_id, content_type required" });
+    }
+    if (content_type !== "movie" && content_type !== "series") {
+      return res.status(400).json({ error: "content_type must be 'movie' or 'series'" });
+    }
+    try {
+      const row = {
+        user_username: String(user_username),
+        content_id: String(content_id),
+        content_type,
+        content_data: content_data ?? null,
+        status: status === "watched" ? "watched" : "unwatched",
+      };
+      const { data, error } = await lifetimeDb
+        .from("watchlist")
+        .upsert(row, { onConflict: "user_username,content_id,content_type" })
+        .select()
+        .single();
+      if (error) {
+        console.error("[watchlist] POST error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json(data);
+    } catch (e: any) {
+      console.error("[watchlist] POST exception:", e?.message);
+      res.status(500).json({ error: "Failed to add to watchlist" });
+    }
+  });
+
+  app.patch("/api/watchlist/:id", async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (status !== "watched" && status !== "unwatched") {
+      return res.status(400).json({ error: "status must be 'watched' or 'unwatched'" });
+    }
+    try {
+      const { data, error } = await lifetimeDb
+        .from("watchlist")
+        .update({ status })
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) {
+        console.error("[watchlist] PATCH error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json(data);
+    } catch (e: any) {
+      console.error("[watchlist] PATCH exception:", e?.message);
+      res.status(500).json({ error: "Failed to update watchlist" });
+    }
+  });
+
+  app.delete("/api/watchlist/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { error } = await lifetimeDb.from("watchlist").delete().eq("id", id);
+      if (error) {
+        console.error("[watchlist] DELETE error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error("[watchlist] DELETE exception:", e?.message);
+      res.status(500).json({ error: "Failed to remove from watchlist" });
+    }
+  });
+
   // ── TMDB proxy ────────────────────────────────────────────────────────────
   // Fetches fresh details for a TMDB title without exposing the bearer token
   // to the client. type must be "movie" or "tv".
