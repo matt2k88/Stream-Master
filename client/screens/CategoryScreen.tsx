@@ -671,7 +671,15 @@ export default function CategoryScreen() {
         <ThemedText style={styles.headerTitle}>{title}</ThemedText>
         {(type === "movies" || type === "series") ? (
           <>
-            <MyWatchlistBtn onPress={() => navigation.navigate("MyWatchlist", { type })} />
+            <MyWatchlistBtn
+              onPress={() =>
+                navigation.navigate("ContentList", {
+                  type,
+                  categoryId: "watchlist",
+                  categoryName: "My Watchlist",
+                })
+              }
+            />
             <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
           </>
         ) : null}

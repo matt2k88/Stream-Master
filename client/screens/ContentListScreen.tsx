@@ -27,6 +27,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState, type SeriesProgress } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
@@ -165,14 +166,20 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
-function MyWatchlistBtn({ onPress }: { onPress: () => void }) {
+function MyWatchlistBtn({ onPress, selected }: { onPress: () => void; selected?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
-  const isActive = focused || pressed || hovered;
+  const isActive = focused || pressed || hovered || !!selected;
+  const showOverlay = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+        selected && { backgroundColor: "rgba(255,102,0,0.16)" },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -181,7 +188,7 @@ function MyWatchlistBtn({ onPress }: { onPress: () => void }) {
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
     >
-      {isActive ? (
+      {showOverlay ? (
         <LinearGradient
           colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
           style={StyleSheet.absoluteFill}
@@ -601,6 +608,7 @@ export default function ContentListScreen() {
     refresh();
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
+  const { items: watchlistItems } = useWatchlist();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -634,7 +642,8 @@ export default function ContentListScreen() {
   const isRecentlyView = selectedCategoryId === "recently";
   const isRecentlyAddedView = selectedCategoryId === "recent" && (type === "movies" || type === "series");
   const isSuggestedView = selectedCategoryId === "suggested" && (type === "movies" || type === "series");
-  const isSpecialView = isFavouritesView || isRecentlyView || isRecentlyAddedView || isSuggestedView;
+  const isWatchlistView = selectedCategoryId === "watchlist" && (type === "movies" || type === "series");
+  const isSpecialView = isFavouritesView || isRecentlyView || isRecentlyAddedView || isSuggestedView || isWatchlistView;
   const trimmedQuery = normaliseSearch(submittedQuery);
   const isSearching = trimmedQuery.length > 0;
 
@@ -663,6 +672,7 @@ export default function ContentListScreen() {
     });
     pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
+      pinned.push({ category_id: "watchlist", category_name: "My Watchlist" });
       pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
@@ -720,6 +730,38 @@ export default function ContentListScreen() {
         favourites: getFavouritesByType(type as "movies" | "series"),
       });
       return r.items as any;
+    }
+    if (isWatchlistView) {
+      // Resolve watchlist rows to actual cached stream/series objects so the
+      // existing card grid (with onPress→MovieInfo/SeriesDetail navigation,
+      // favourite toggle, watch badges, etc.) works unchanged. Items not
+      // matched in the cache (TMDB-only rows added from the external page)
+      // are skipped — they have no in-app stream id to play.
+      const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      for (const w of watchlistItems) {
+        if (w.content_type !== wantType) continue;
+        const d: any = w.content_data ?? {};
+        const sid = wantType === "series" ? (d.series_id ?? d.stream_id) : d.stream_id;
+        if (sid == null) continue;
+        const k = String(sid);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        ids.push(k);
+      }
+      if (type === "movies") {
+        const idx = new Map<string, VodStream>();
+        for (const v of vodStreams) idx.set(String(v.stream_id), v);
+        const out: VodStream[] = [];
+        for (const k of ids) { const v = idx.get(k); if (v) out.push(v); }
+        return out;
+      }
+      const idx = new Map<string, Series>();
+      for (const s of seriesList) idx.set(String(s.series_id), s);
+      const out: Series[] = [];
+      for (const k of ids) { const s = idx.get(k); if (s) out.push(s); }
+      return out;
     }
     if (isFavouritesView) {
       const favIds = new Set(
@@ -784,7 +826,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, isWatchlistView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries, watchlistItems]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
@@ -1105,7 +1147,19 @@ export default function ContentListScreen() {
     type === "movies" ? "Search all movies..." :
     "Search all series...";
 
-  const countDisplay = isSearching ? searchResults.length : fullDisplayContent.length;
+  // For the watchlist view, count = total watchlist rows for this type (even
+  // if some don't map to a cached stream and aren't rendered). Keeps the
+  // header badge truthful when TMDB-only entries are filtered out.
+  const watchlistTotal = useMemo(() => {
+    if (!isWatchlistView) return 0;
+    const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
+    return watchlistItems.filter((w) => w.content_type === wantType).length;
+  }, [isWatchlistView, watchlistItems, type]);
+  const countDisplay = isSearching
+    ? searchResults.length
+    : isWatchlistView
+      ? watchlistTotal
+      : fullDisplayContent.length;
 
   const searchBarHeader = (
     <View style={styles.searchBarWrap}>
@@ -1243,12 +1297,19 @@ export default function ContentListScreen() {
         </View>
         {(type === "movies" || type === "series") ? (
           <>
-            <MyWatchlistBtn onPress={() => navigation.navigate("MyWatchlist", { type })} />
+            <MyWatchlistBtn
+              selected={isWatchlistView}
+              onPress={() => {
+                setCategorySwitching(true);
+                setSelectedCategoryId("watchlist");
+                setSelectedCategoryName("My Watchlist");
+              }}
+            />
             <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
           </>
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
-        {!isSearching && !isRecentlyAddedView && categoryContent.length > 0 ? (
+        {!isSearching && !isRecentlyAddedView && !isWatchlistView && categoryContent.length > 0 ? (
           <ManageBtn
             active={editMode}
             onPress={() => setEditMode((v) => !v)}
@@ -1314,6 +1375,18 @@ export default function ContentListScreen() {
                 {type === "movies"
                   ? "Movies you watch will show up here"
                   : "Series you watch will show up here"}
+              </ThemedText>
+            </View>
+          ) : isWatchlistView && !isSearching && categoryContent.length === 0 ? (
+            <View style={styles.centered}>
+              <Feather name="bookmark" size={44} color={Colors.dark.border} />
+              <ThemedText style={styles.emptyTitle}>
+                {watchlistTotal > 0 ? "Nothing to Show Here" : "Your Watchlist is Empty"}
+              </ThemedText>
+              <ThemedText style={styles.emptyText}>
+                {watchlistTotal > 0
+                  ? `You have ${watchlistTotal} ${type === "series" ? "series" : "movie"}${watchlistTotal === 1 ? "" : "s"} saved that aren't available on this server.`
+                  : `Tap the bookmark on any ${type === "series" ? "series" : "movie"} to save it for later.`}
               </ThemedText>
             </View>
           ) : isSuggestedView && !isSearching && categoryContent.length === 0 ? (

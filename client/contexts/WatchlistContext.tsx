@@ -76,7 +76,7 @@ function streamIdOfContentData(d: WatchlistContentData | null | undefined, type:
 export function WatchlistProvider({ children }: { children: ReactNode }) {
   const { userInfo } = useAuth();
   const username = getXtreamUsername(userInfo);
-  const { entries: watchEntries } = useWatchHistory();
+  const { entries: watchEntries, getSeriesProgress } = useWatchHistory();
 
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -217,14 +217,12 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!username || items.length === 0 || watchEntries.length === 0) return;
 
+    // Movies — "watched" once a single completed entry exists for the stream.
     const completedMovies = new Set<string>();
-    const completedSeries = new Set<string>();
     for (const e of watchEntries) {
       if (!e.is_completed) continue;
       if (e.content_type === "movie" && e.stream_id != null) {
         completedMovies.add(String(e.stream_id));
-      } else if (e.content_type === "series" && e.series_id != null) {
-        completedSeries.add(String(e.series_id));
       }
     }
 
@@ -232,15 +230,23 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       if (item.status === "watched") continue;
       const sid = streamIdOfContentData(item.content_data, item.content_type);
       if (!sid) continue;
-      const matched =
-        item.content_type === "movie" ? completedMovies.has(sid) : completedSeries.has(sid);
+      let matched = false;
+      if (item.content_type === "movie") {
+        matched = completedMovies.has(sid);
+      } else {
+        // Series — use the same final-episode rule as the rest of the app
+        // (see WatchHistoryContext.getSeriesProgress). Marks watched only
+        // when the highest-season → highest-episode entry is completed
+        // and no new episodes have been uploaded since.
+        matched = getSeriesProgress(sid).isFullyWatched;
+      }
       if (!matched) continue;
       const dedupKey = `${item.id}:watched`;
       if (lastSyncedRef.current.has(dedupKey)) continue;
       lastSyncedRef.current.add(dedupKey);
       setStatus(item.id, "watched");
     }
-  }, [username, items, watchEntries, setStatus]);
+  }, [username, items, watchEntries, getSeriesProgress, setStatus]);
 
   const value = useMemo<WatchlistContextType>(
     () => ({ items, isLoading, refresh, getByType, isInWatchlist, findByStreamId, add, remove, setStatus, toggleByStream }),
