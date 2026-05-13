@@ -162,11 +162,39 @@ export default function LivePreviewScreen() {
   const cameInFullscreenRef = useRef(!!initialFullscreen);
 
   const { liveStreams } = useData();
+  const { getFavouritesByType } = useFavourites();
+  const { entries: watchEntries } = useWatchHistory();
 
-  // Sidebar channel list — streams in same category (excluding "favourites" pseudo-category)
-  const categoryChannels = categoryId && categoryId !== "favourites"
-    ? liveStreams.filter((s) => String(s.category_id) === String(categoryId))
-    : [];
+  // Sidebar channel list. Three modes:
+  //  • "favourites" → all live channels the active profile has favourited.
+  //  • "recently"   → unique live channels the user recently played, newest-first.
+  //  • real id      → all channels in that Xtream category.
+  const sidebarTitle =
+    categoryId === "favourites" ? "Favourites"
+    : categoryId === "recently" ? "Recently Watched"
+    : null;
+  const categoryChannels = React.useMemo<LiveStream[]>(() => {
+    if (!categoryId) return [];
+    if (categoryId === "favourites") {
+      const favIds = new Set(getFavouritesByType("live").map((f) => f.stream_id));
+      return liveStreams.filter((s) => favIds.has(s.stream_id));
+    }
+    if (categoryId === "recently") {
+      const out: LiveStream[] = [];
+      const seen = new Set<string>();
+      const idx = new Map<string, LiveStream>();
+      for (const s of liveStreams) idx.set(String(s.stream_id), s);
+      for (const e of watchEntries) {
+        if (e.content_type !== "live" || !e.stream_id) continue;
+        const k = String(e.stream_id);
+        if (seen.has(k)) continue;
+        const s = idx.get(k);
+        if (s) { out.push(s); seen.add(k); }
+      }
+      return out;
+    }
+    return liveStreams.filter((s) => String(s.category_id) === String(categoryId));
+  }, [categoryId, liveStreams, getFavouritesByType, watchEntries]);
 
   // Active channel state
   const [selectedId, setSelectedId] = useState(streamId);
@@ -759,8 +787,14 @@ export default function LivePreviewScreen() {
         {!isFullscreen && categoryChannels.length > 0 ? (
           <View style={styles.sidebar}>
             <View style={styles.sidebarHeader}>
-              <Feather name="tv" size={11} color={Colors.dark.accent} />
-              <ThemedText style={styles.sidebarHeaderText}>Channels</ThemedText>
+              <Feather
+                name={categoryId === "favourites" ? "star" : categoryId === "recently" ? "clock" : "tv"}
+                size={11}
+                color={Colors.dark.accent}
+              />
+              <ThemedText style={styles.sidebarHeaderText}>
+                {sidebarTitle ?? "Channels"}
+              </ThemedText>
             </View>
             <FlatList
               ref={listRef}

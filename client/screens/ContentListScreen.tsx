@@ -922,26 +922,14 @@ export default function ContentListScreen() {
   const handleItemPress = useCallback((item: ContentItem) => {
     if (type === "live") {
       const s = item as LiveStream;
-      if (selectedCategoryId === "favourites") {
-        // Favourites has no real category — go straight to fullscreen via LivePreview
-        navigation.navigate("LivePreview", {
-          streamId: s.stream_id,
-          name: s.name,
-          streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
-          thumbnail: s.stream_icon ?? undefined,
-          streamIcon: s.stream_icon ?? undefined,
-          initialFullscreen: true,
-        });
-      } else {
-        navigation.navigate("LivePreview", {
-          streamId: s.stream_id,
-          name: s.name,
-          streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
-          thumbnail: s.stream_icon ?? undefined,
-          streamIcon: s.stream_icon ?? undefined,
-          categoryId: selectedCategoryId ?? undefined,
-        });
-      }
+      navigation.navigate("LivePreview", {
+        streamId: s.stream_id,
+        name: s.name,
+        streamUrl: xtreamApi.getLiveStreamUrl(s.stream_id),
+        thumbnail: s.stream_icon ?? undefined,
+        streamIcon: s.stream_icon ?? undefined,
+        categoryId: selectedCategoryId ?? undefined,
+      });
     } else if (type === "movies") {
       const s = item as VodStream;
       navigation.navigate("MovieInfo", {

@@ -738,7 +738,7 @@ export default function HomeScreen() {
         streamUrl: item.stream_url,
         thumbnail: item.thumbnail_url ?? undefined,
         streamIcon: item.thumbnail_url ?? undefined,
-        initialFullscreen: true,
+        categoryId: "recently",
       });
       return;
     }
