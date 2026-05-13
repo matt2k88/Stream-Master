@@ -745,13 +745,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         content_data: content_data ?? null,
         status: status === "watched" ? "watched" : "unwatched",
       };
+      // Manual "upsert": the production `watchlist` table doesn't carry the
+      // unique constraint on (user_username, content_id, content_type) so
+      // postgres-level upsert fails with "no constraint matches ON CONFLICT".
+      // Look up an existing row first and update in place if found.
+      const { data: existing, error: selErr } = await lifetimeDb
+        .from("watchlist")
+        .select("id")
+        .eq("user_username", row.user_username)
+        .eq("content_id", row.content_id)
+        .eq("content_type", row.content_type)
+        .maybeSingle();
+      if (selErr) {
+        console.error("[watchlist] POST select error:", selErr.message);
+        return res.status(500).json({ error: selErr.message });
+      }
+      if (existing?.id) {
+        const { data: updated, error: updErr } = await lifetimeDb
+          .from("watchlist")
+          .update({ content_data: row.content_data, status: row.status })
+          .eq("id", existing.id)
+          .select()
+          .single();
+        if (updErr) {
+          console.error("[watchlist] POST update error:", updErr.message);
+          return res.status(500).json({ error: updErr.message });
+        }
+        return res.json(updated);
+      }
       const { data, error } = await lifetimeDb
         .from("watchlist")
-        .upsert(row, { onConflict: "user_username,content_id,content_type" })
+        .insert(row)
         .select()
         .single();
       if (error) {
-        console.error("[watchlist] POST error:", error.message);
+        console.error("[watchlist] POST insert error:", error.message);
         return res.status(500).json({ error: error.message });
       }
       res.json(data);
