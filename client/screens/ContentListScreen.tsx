@@ -672,7 +672,6 @@ export default function ContentListScreen() {
     });
     pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
-      pinned.push({ category_id: "watchlist", category_name: "My Watchlist" });
       pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
@@ -734,34 +733,49 @@ export default function ContentListScreen() {
     if (isWatchlistView) {
       // Resolve watchlist rows to actual cached stream/series objects so the
       // existing card grid (with onPress→MovieInfo/SeriesDetail navigation,
-      // favourite toggle, watch badges, etc.) works unchanged. Items not
-      // matched in the cache (TMDB-only rows added from the external page)
-      // are skipped — they have no in-app stream id to play.
+      // favourite toggle, watch badges, etc.) works unchanged.
+      //
+      // Matching strategy (in order):
+      //   1. By embedded stream_id / series_id in content_data (fast, exact).
+      //   2. By normalised name (case/punctuation-insensitive). This
+      //      catches rows added from the external TMDB page that don't
+      //      carry an xtream id but whose title matches a real stream.
       const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
-      const ids: string[] = [];
-      const seen = new Set<string>();
+      const matches: ContentItem[] = [];
+      const seen = new Set<number>();
+      const pushUnique = (item: ContentItem | undefined) => {
+        if (!item) return;
+        const id = type === "series"
+          ? (item as Series).series_id
+          : (item as VodStream).stream_id;
+        if (seen.has(id)) return;
+        seen.add(id);
+        matches.push(item);
+      };
+
+      // Build lookup indices once.
+      const idIdx = new Map<string, ContentItem>();
+      const nameIdx = new Map<string, ContentItem>();
+      const source: ContentItem[] = type === "series" ? seriesList : vodStreams;
+      for (const it of source) {
+        const idKey = type === "series"
+          ? String((it as Series).series_id)
+          : String((it as VodStream).stream_id);
+        idIdx.set(idKey, it);
+        const nKey = normaliseSearch((it as any).name);
+        if (nKey && !nameIdx.has(nKey)) nameIdx.set(nKey, it);
+      }
+
       for (const w of watchlistItems) {
         if (w.content_type !== wantType) continue;
         const d: any = w.content_data ?? {};
         const sid = wantType === "series" ? (d.series_id ?? d.stream_id) : d.stream_id;
-        if (sid == null) continue;
-        const k = String(sid);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        ids.push(k);
+        let hit: ContentItem | undefined;
+        if (sid != null) hit = idIdx.get(String(sid));
+        if (!hit && d.name) hit = nameIdx.get(normaliseSearch(d.name));
+        pushUnique(hit);
       }
-      if (type === "movies") {
-        const idx = new Map<string, VodStream>();
-        for (const v of vodStreams) idx.set(String(v.stream_id), v);
-        const out: VodStream[] = [];
-        for (const k of ids) { const v = idx.get(k); if (v) out.push(v); }
-        return out;
-      }
-      const idx = new Map<string, Series>();
-      for (const s of seriesList) idx.set(String(s.series_id), s);
-      const out: Series[] = [];
-      for (const k of ids) { const s = idx.get(k); if (s) out.push(s); }
-      return out;
+      return matches;
     }
     if (isFavouritesView) {
       const favIds = new Set(
@@ -1385,7 +1399,7 @@ export default function ContentListScreen() {
               </ThemedText>
               <ThemedText style={styles.emptyText}>
                 {watchlistTotal > 0
-                  ? `You have ${watchlistTotal} ${type === "series" ? "series" : "movie"}${watchlistTotal === 1 ? "" : "s"} saved that aren't available on this server.`
+                  ? `You have ${watchlistTotal} ${type === "series" ? "series" : "movie"}${watchlistTotal === 1 ? "" : "s"} saved but we couldn't match any to this server.`
                   : `Tap the bookmark on any ${type === "series" ? "series" : "movie"} to save it for later.`}
               </ThemedText>
             </View>
