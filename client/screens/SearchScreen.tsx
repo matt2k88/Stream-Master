@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import SearchClearButton from "@/components/SearchClearButton";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -309,17 +310,14 @@ export default function SearchScreen() {
             }}
           />
           {query.length > 0 ? (
-            <Pressable
+            <SearchClearButton
               onPress={() => {
                 setQuery("");
                 setSubmittedQuery("");
                 inputRef.current?.blur();
                 Keyboard.dismiss();
               }}
-              hitSlop={8}
-            >
-              <Feather name="x-circle" size={16} color={Colors.dark.textSecondary} />
-            </Pressable>
+            />
           ) : null}
         </View>
       </View>

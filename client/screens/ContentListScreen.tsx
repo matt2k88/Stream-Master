@@ -10,7 +10,9 @@ import {
   Modal,
   useWindowDimensions,
   Platform,
+  Keyboard,
 } from "react-native";
+import SearchClearButton from "@/components/SearchClearButton";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
@@ -574,6 +576,7 @@ export default function ContentListScreen() {
   const [editMode, setEditMode] = useState(false);
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [categorySwitching, setCategorySwitching] = useState(false);
@@ -1081,6 +1084,7 @@ export default function ContentListScreen() {
           color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
         />
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           placeholder={sectionPlaceholder}
           placeholderTextColor={Colors.dark.textSecondary}
@@ -1090,14 +1094,24 @@ export default function ContentListScreen() {
           autoCorrect={false}
           returnKeyType="search"
           clearButtonMode="while-editing"
-          blurOnSubmit={false}
-          onSubmitEditing={() => setSubmittedQuery(query)}
+          submitBehavior="blurAndSubmit"
+          onSubmitEditing={() => {
+            setSubmittedQuery(query);
+            searchInputRef.current?.blur();
+            Keyboard.dismiss();
+          }}
           focusable={!Platform.isTV}
         />
         {query.length > 0 ? (
-          <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
-            <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
-          </Pressable>
+          <SearchClearButton
+            size="sm"
+            onPress={() => {
+              setQuery("");
+              setSubmittedQuery("");
+              searchInputRef.current?.blur();
+              Keyboard.dismiss();
+            }}
+          />
         ) : null}
       </View>
       {isSearching ? (

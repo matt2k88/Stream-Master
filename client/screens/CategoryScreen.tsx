@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -8,7 +8,9 @@ import {
   TextInput,
   useWindowDimensions,
   Platform,
+  Keyboard,
 } from "react-native";
+import SearchClearButton from "@/components/SearchClearButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -345,6 +347,7 @@ export default function CategoryScreen() {
   const { entries: watchEntries } = useWatchHistory();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
 
   const padH = Math.max(insets.left + Spacing.xs, Spacing.md);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -535,6 +538,7 @@ export default function CategoryScreen() {
           color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
         />
         <TextInput
+          ref={searchInputRef}
           style={styles.searchInput}
           placeholder={placeholder}
           placeholderTextColor={Colors.dark.textSecondary}
@@ -544,13 +548,23 @@ export default function CategoryScreen() {
           autoCorrect={false}
           returnKeyType="search"
           clearButtonMode="while-editing"
-          blurOnSubmit={false}
-          onSubmitEditing={() => setSubmittedQuery(query)}
+          submitBehavior="blurAndSubmit"
+          onSubmitEditing={() => {
+            setSubmittedQuery(query);
+            searchInputRef.current?.blur();
+            Keyboard.dismiss();
+          }}
         />
         {query.length > 0 ? (
-          <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
-            <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
-          </Pressable>
+          <SearchClearButton
+            size="sm"
+            onPress={() => {
+              setQuery("");
+              setSubmittedQuery("");
+              searchInputRef.current?.blur();
+              Keyboard.dismiss();
+            }}
+          />
         ) : null}
       </View>
 
@@ -640,6 +654,7 @@ export default function CategoryScreen() {
             color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
           />
           <TextInput
+            ref={searchInputRef}
             style={styles.searchInput}
             placeholder={placeholder}
             placeholderTextColor={Colors.dark.textSecondary}
@@ -649,13 +664,23 @@ export default function CategoryScreen() {
             autoCorrect={false}
             returnKeyType="search"
             clearButtonMode="while-editing"
-            blurOnSubmit={false}
-            onSubmitEditing={() => setSubmittedQuery(query)}
+            submitBehavior="blurAndSubmit"
+            onSubmitEditing={() => {
+              setSubmittedQuery(query);
+              searchInputRef.current?.blur();
+              Keyboard.dismiss();
+            }}
           />
           {query.length > 0 ? (
-            <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
-              <Feather name="x-circle" size={15} color={Colors.dark.textSecondary} />
-            </Pressable>
+            <SearchClearButton
+              size="sm"
+              onPress={() => {
+                setQuery("");
+                setSubmittedQuery("");
+                searchInputRef.current?.blur();
+                Keyboard.dismiss();
+              }}
+            />
           ) : null}
         </View>
         {!isSearching ? (
