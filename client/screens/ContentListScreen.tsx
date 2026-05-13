@@ -608,7 +608,7 @@ export default function ContentListScreen() {
     refresh();
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
-  const { items: watchlistItems } = useWatchlist();
+  const { items: watchlistItems, resolveStreamId: resolveWatchlistStreamId, resolveName: resolveWatchlistName } = useWatchlist();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -768,11 +768,11 @@ export default function ContentListScreen() {
 
       for (const w of watchlistItems) {
         if (w.content_type !== wantType) continue;
-        const d: any = w.content_data ?? {};
-        const sid = wantType === "series" ? (d.series_id ?? d.stream_id) : d.stream_id;
+        const sid = resolveWatchlistStreamId(w.content_data, wantType);
+        const nm = resolveWatchlistName(w.content_data);
         let hit: ContentItem | undefined;
-        if (sid != null) hit = idIdx.get(String(sid));
-        if (!hit && d.name) hit = nameIdx.get(normaliseSearch(d.name));
+        if (sid) hit = idIdx.get(sid);
+        if (!hit && nm) hit = nameIdx.get(normaliseSearch(nm));
         pushUnique(hit);
       }
       return matches;
@@ -840,7 +840,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, isWatchlistView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries, watchlistItems]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, isWatchlistView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries, watchlistItems, resolveWatchlistStreamId, resolveWatchlistName]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 

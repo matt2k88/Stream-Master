@@ -304,10 +304,29 @@ export default function MovieInfoScreen() {
   // the bookmark and a tap will remove it (rather than "toggle-add").
   const inWatchlist = isInWatchlist(streamId, "movie") || isInWatchlist(watchlistContentId, "movie");
   const handleToggleWatchlist = () => {
+    // Match the canonical row format used by the external admin UI:
+    // content_data is the full xtream VodInfo payload (`info` + `movie_data`).
+    // We splice in display fields (poster/poster_path/backdrop_path/etc) at
+    // the top level too so older clients/queries that read flat keys keep
+    // working — extra keys are harmless additions.
+    const baseInfo = vodInfo?.info ?? {};
+    const baseMovieData = vodInfo?.movie_data ?? {
+      stream_id: streamId,
+      name: title ?? name,
+      added: "",
+      category_id: categoryId ?? "",
+      container_extension: containerExtension ?? "mp4",
+      custom_sid: "",
+      direct_source: "",
+    };
     toggleWatchlistByStream({
       contentId: watchlistContentId,
       contentType: "movie",
       contentData: {
+        info: baseInfo,
+        movie_data: baseMovieData,
+        // Convenience top-level mirrors — make matching trivial regardless
+        // of which client wrote the row.
         stream_id: streamId,
         name: title ?? name,
         poster: posterUrl ?? null,
