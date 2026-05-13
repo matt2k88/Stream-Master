@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert } from "react-native";
+import Constants from "expo-constants";
+import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { markReplayIntroOnResume } from "@/lib/intro-flag";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -418,6 +420,75 @@ function VpnButton() {
   );
 }
 
+// Local copy of the AccountInfoScreen APP_VERSION lookup so the
+// dashboard can do its own update check without importing that whole
+// screen.
+const APP_VERSION: string =
+  ((Constants.expoConfig as any)?.version as string | undefined) ?? "0.0.0";
+
+// Header button shown ONLY when /api/app-version reports a newer
+// version than the one bundled in this build. Mirrors the alert from
+// AccountInfoScreen's "Check for Updates" so users get the downloader
+// code without having to dig into the Account screen.
+function UpdateAvailableButton() {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+  const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
+  const [downloaderCode, setDownloaderCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = new URL("/api/app-version", getApiUrl());
+        const res = await fetch(url.toString());
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const v = typeof data?.version === "string" ? data.version : null;
+        const c = typeof data?.downloader_code === "string" ? data.downloader_code : null;
+        if (v && v !== APP_VERSION) {
+          setRemoteVersion(v);
+          setDownloaderCode(c);
+        }
+      } catch {
+        // silent — header button just won't appear if the check fails
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!remoteVersion) return null;
+
+  const onPress = () => {
+    Alert.alert(
+      "Update Available",
+      `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${downloaderCode ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`,
+    );
+  };
+
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        styles.headerBtnAlert,
+        { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
+        isActive && { borderColor: accent.accent },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <Feather name="download" size={18} color={accent.accent} />
+      <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
+    </Pressable>
+  );
+}
+
 function MessagesButton({ onPress }: { onPress: () => void }) {
   const { unreadCount } = useMessages();
   const [pressed, setPressed] = useState(false);
@@ -748,7 +819,13 @@ export default function HomeScreen() {
           <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
           <VpnButton />
-          <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
+          {/* Profile pill is large; hide on portrait where the header
+              is cramped — users can still switch profile via the
+              Profile option in Account Info. */}
+          {isLandscape ? (
+            <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
+          ) : null}
+          <UpdateAvailableButton />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
         </View>

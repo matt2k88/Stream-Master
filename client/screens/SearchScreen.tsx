@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
+import { Keyboard } from "react-native";
 import {
   View,
   StyleSheet,
@@ -186,6 +187,7 @@ export default function SearchScreen() {
   const { width, height } = useWindowDimensions();
   const [query, setQuery] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
+  const inputRef = useRef<TextInput>(null);
   const [backFocused, setBackFocused] = useState(false);
   const [backPressed, setBackPressed] = useState(false);
   const backActive = backFocused || backPressed;
@@ -284,6 +286,7 @@ export default function SearchScreen() {
         <View style={[styles.searchInputWrap, (trimmed.length > 0) && styles.searchInputWrapActive]}>
           <Feather name="search" size={16} color={trimmed ? Colors.dark.accent : Colors.dark.textSecondary} />
           <TextInput
+            ref={inputRef}
             style={styles.searchInput}
             placeholder="Type then press Enter to search..."
             placeholderTextColor={Colors.dark.textSecondary}
@@ -294,10 +297,27 @@ export default function SearchScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             submitBehavior="blurAndSubmit"
-            onSubmitEditing={() => setSubmittedQuery(query)}
+            onSubmitEditing={() => {
+              setSubmittedQuery(query);
+              // submitBehavior="blurAndSubmit" alone is unreliable on
+              // Android TV (Fire TV remotes) and on web after the
+              // first submit — the keyboard / IME stays up and the
+              // input keeps the caret. Explicitly blurring + dismissing
+              // the keyboard guarantees the bar drops every time.
+              inputRef.current?.blur();
+              Keyboard.dismiss();
+            }}
           />
           {query.length > 0 ? (
-            <Pressable onPress={() => { setQuery(""); setSubmittedQuery(""); }} hitSlop={8}>
+            <Pressable
+              onPress={() => {
+                setQuery("");
+                setSubmittedQuery("");
+                inputRef.current?.blur();
+                Keyboard.dismiss();
+              }}
+              hitSlop={8}
+            >
               <Feather name="x-circle" size={16} color={Colors.dark.textSecondary} />
             </Pressable>
           ) : null}
