@@ -11,6 +11,23 @@ import { Platform } from "react-native";
  *  4. Native: various Expo manifest hostUri paths — set by build.js for Expo Go
  */
 export function getApiUrl(): string {
+  // Web + dev (e.g. Replit's in-workspace preview iframe): prefer same-origin
+  // so the request goes through Metro on the dev domain, which proxies /api/*
+  // to the local Express server (see metro.config.js). Without this short-
+  // circuit the hardcoded production apiUrl below would win, and the browser
+  // would CORS-block the cross-origin call to the production server.
+  // Release web builds (__DEV__ === false) skip this and continue to use the
+  // hardcoded production apiUrl, so APKs and any future web deploys are
+  // unaffected.
+  if (
+    __DEV__ &&
+    Platform.OS === "web" &&
+    typeof window !== "undefined" &&
+    window.location?.origin
+  ) {
+    return window.location.origin;
+  }
+
   // 1. Hardcoded production URL from app.json extra (always available in APK builds)
   const extraApiUrl = (Constants.expoConfig as any)?.extra?.apiUrl as string | undefined;
   if (extraApiUrl) {
