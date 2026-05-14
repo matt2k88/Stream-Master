@@ -62,8 +62,15 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(false);
   const inflightRef = useRef<Promise<void> | null>(null);
 
+  // Depend only on the profile *id* — not the whole profile object — so a
+  // refresh that re-creates the profile reference (e.g. ProfileContext's
+  // refreshActiveProfile() running on every dashboard focus) doesn't churn
+  // this callback's identity. Without this guard, consumers using `refetch`
+  // in their own useFocusEffect deps loop forever (refetch flips → focus
+  // effect re-runs → triggers another profile refresh → flips again).
+  const profileId = activeProfile?.id ?? null;
   const refetch = useCallback(async () => {
-    if (!activeProfile) {
+    if (!profileId) {
       setEntries([]);
       return;
     }
@@ -72,7 +79,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     const p = (async () => {
       try {
         const url = new URL("/api/recently-watched", getApiUrl());
-        url.searchParams.set("profile_id", activeProfile.id);
+        url.searchParams.set("profile_id", profileId);
         const res = await fetch(url.toString());
         const data = await res.json();
         setEntries(Array.isArray(data) ? data : []);
@@ -85,7 +92,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
     })();
     inflightRef.current = p;
     return p;
-  }, [activeProfile]);
+  }, [profileId]);
 
   useEffect(() => {
     refetch();

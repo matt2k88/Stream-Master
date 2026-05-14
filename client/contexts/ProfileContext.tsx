@@ -72,7 +72,21 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           player_vod: fresh.player_vod,
           player_live: fresh.player_live,
         };
-        setActiveProfileState((prev) => (prev && prev.id === current.id ? { ...prev, ...patch } : prev));
+        setActiveProfileState((prev) => {
+          if (!prev || prev.id !== current.id) return prev;
+          // Skip the update entirely when nothing changed — otherwise a new
+          // object reference is created on every dashboard focus, churning
+          // every downstream useCallback/useMemo that depends on
+          // activeProfile and triggering render loops.
+          const unchanged =
+            prev.name === patch.name &&
+            prev.avatar_icon === patch.avatar_icon &&
+            prev.avatar_color === patch.avatar_color &&
+            prev.pin === patch.pin &&
+            prev.player_vod === patch.player_vod &&
+            prev.player_live === patch.player_live;
+          return unchanged ? prev : { ...prev, ...patch };
+        });
         return { ...current, ...patch };
       } catch {
         return null;
