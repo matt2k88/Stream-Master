@@ -185,24 +185,22 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
       style={[gridStyles.slot, hot && gridStyles.slotActive, focused && gridStyles.slotFocused]}
     >
       {stream ? (
-        <>
-          <SlotPlayer
-            stream={stream}
-            muted={!focused}
-            onPress={onFocus}
-            onFocusSlot={onFocus}
-            slotIndex={index}
-            isInitialPreferred={isInitialPreferred}
-            onHoverIn={() => setHover(true)}
-            onHoverOut={() => setHover(false)}
-            onPressIn={() => setPressed(true)}
-            onPressOut={() => setPressed(false)}
-          />
-          {/* Clear button is a sibling Pressable (NOT nested inside the
-              player Pressable) so the TV focus engine treats it as its
-              own focusable target — D-pad up from the player reaches it. */}
-          <ClearBtn onPress={onClear} />
-        </>
+        <SlotPlayer
+          stream={stream}
+          muted={!focused}
+          // First press on an unfocused slot just hands it audio focus.
+          // Pressing the already-focused slot re-opens the channel picker
+          // so the user can swap the stream — no separate X button needed.
+          onPress={focused ? onAdd : onFocus}
+          onFocusSlot={onFocus}
+          slotIndex={index}
+          isInitialPreferred={isInitialPreferred}
+          showChangeHint={focused}
+          onHoverIn={() => setHover(true)}
+          onHoverOut={() => setHover(false)}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+        />
       ) : (
         <Pressable
           style={gridStyles.empty}
@@ -227,7 +225,7 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
 
 // ─── Single slot's expo-video player ────────────────────────────────────────
 function SlotPlayer({
-  stream, muted, onPress, onFocusSlot, slotIndex, isInitialPreferred,
+  stream, muted, onPress, onFocusSlot, slotIndex, isInitialPreferred, showChangeHint,
   onHoverIn, onHoverOut, onPressIn, onPressOut,
 }: {
   stream: LiveStream;
@@ -236,6 +234,7 @@ function SlotPlayer({
   onFocusSlot: () => void;
   slotIndex: number;
   isInitialPreferred: boolean;
+  showChangeHint: boolean;
   onHoverIn?: () => void;
   onHoverOut?: () => void;
   onPressIn?: () => void;
@@ -322,32 +321,14 @@ function SlotPlayer({
         <ThemedText style={gridStyles.slotName} numberOfLines={1}>{stream.name}</ThemedText>
         {muted ? <Feather name="volume-x" size={12} color="rgba(255,255,255,0.7)" /> : <Feather name="volume-2" size={12} color={Colors.dark.accent} />}
       </View>
-    </Pressable>
-  );
-}
 
-function ClearBtn({ onPress }: { onPress: () => void }) {
-  const [focused, setFocused] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const hot = focused || hovered || pressed;
-  return (
-    <Pressable
-      style={[gridStyles.clearBtn, hot && gridStyles.clearBtnHot]}
-      onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-    >
-      {hot ? (
-        <View style={gridStyles.clearBtnGlow} pointerEvents="none" />
-      ) : null}
-      <Feather name="x" size={hot ? 18 : 14} color="#fff" />
-      {hot ? (
-        <ThemedText style={gridStyles.clearBtnLabel} numberOfLines={1}>Remove</ThemedText>
+      {/* Hint shown on the focused slot — tells the user that pressing
+          OK / clicking again will let them pick a different channel. */}
+      {showChangeHint ? (
+        <View style={gridStyles.changeHint} pointerEvents="none">
+          <Feather name="repeat" size={11} color="#fff" />
+          <ThemedText style={gridStyles.changeHintText}>Press OK to change</ThemedText>
+        </View>
       ) : null}
     </Pressable>
   );
@@ -453,24 +434,15 @@ const gridStyles = StyleSheet.create({
   },
   slotName: { flex: 1, color: "#fff", fontSize: 11, fontWeight: "600" },
 
-  clearBtn: {
+  changeHint: {
     position: "absolute", top: 8, right: 8,
-    minWidth: 32, height: 32, borderRadius: 16,
-    paddingHorizontal: 8,
-    flexDirection: "row", gap: 4,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
-    justifyContent: "center", alignItems: "center",
-    overflow: "hidden",
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 9, height: 24, borderRadius: 12,
+    backgroundColor: "rgba(255,102,0,0.92)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
+    shadowColor: Colors.dark.accent,
+    shadowOpacity: 0.7, shadowRadius: 8, shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
-  clearBtnHot: {
-    minWidth: 96, height: 36, borderRadius: 18,
-    borderWidth: 2, borderColor: "#FF3B3B",
-    backgroundColor: "#FF3B3B",
-    shadowColor: "#FF3B3B",
-    shadowOpacity: 1, shadowRadius: 12, shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
-  },
-  clearBtnGlow: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.08)" },
-  clearBtnLabel: { color: "#fff", fontWeight: "800", fontSize: 12, letterSpacing: 0.4 },
+  changeHintText: { color: "#fff", fontWeight: "800", fontSize: 10, letterSpacing: 0.4 },
 });
