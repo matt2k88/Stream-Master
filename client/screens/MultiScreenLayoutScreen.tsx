@@ -65,7 +65,7 @@ export default function MultiScreenLayoutScreen() {
         />
         <Feather name="info" size={16} color={Colors.dark.accent} />
         <ThemedText style={styles.noticeText}>
-          Multi Screen requires more than one connection — each individual screen uses one connection on your IPTV provider.
+          Multi Screen requires more than one connection — each individual screen uses one connection on your Ultra Cast account.
         </ThemedText>
       </View>
 

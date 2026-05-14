@@ -111,13 +111,21 @@ export default function RootStackNavigator() {
             <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
             <Stack.Screen name="ContentRequests" component={ContentRequestsScreen} />
             <Stack.Screen name="PlayerSettings" component={PlayerSettingsScreen} />
-            <Stack.Screen name="MultiScreenLayout" component={MultiScreenLayoutScreen} />
+            <Stack.Screen
+              name="MultiScreenLayout"
+              component={MultiScreenLayoutScreen}
+              options={{ orientation: "landscape" }}
+            />
             <Stack.Screen
               name="MultiScreen"
               component={MultiScreenScreen}
               options={{ animation: "fade", orientation: "landscape" }}
             />
-            <Stack.Screen name="MultiScreenPicker" component={MultiScreenPickerScreen} />
+            <Stack.Screen
+              name="MultiScreenPicker"
+              component={MultiScreenPickerScreen}
+              options={{ orientation: "landscape" }}
+            />
           </>
         )}
       </Stack.Navigator>

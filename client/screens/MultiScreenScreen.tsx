@@ -185,19 +185,24 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
       style={[gridStyles.slot, hot && gridStyles.slotActive, focused && gridStyles.slotFocused]}
     >
       {stream ? (
-        <SlotPlayer
-          stream={stream}
-          muted={!focused}
-          onPress={onFocus}
-          onFocusSlot={onFocus}
-          onClear={onClear}
-          slotIndex={index}
-          isInitialPreferred={isInitialPreferred}
-          onHoverIn={() => setHover(true)}
-          onHoverOut={() => setHover(false)}
-          onPressIn={() => setPressed(true)}
-          onPressOut={() => setPressed(false)}
-        />
+        <>
+          <SlotPlayer
+            stream={stream}
+            muted={!focused}
+            onPress={onFocus}
+            onFocusSlot={onFocus}
+            slotIndex={index}
+            isInitialPreferred={isInitialPreferred}
+            onHoverIn={() => setHover(true)}
+            onHoverOut={() => setHover(false)}
+            onPressIn={() => setPressed(true)}
+            onPressOut={() => setPressed(false)}
+          />
+          {/* Clear button is a sibling Pressable (NOT nested inside the
+              player Pressable) so the TV focus engine treats it as its
+              own focusable target — D-pad up from the player reaches it. */}
+          <ClearBtn onPress={onClear} />
+        </>
       ) : (
         <Pressable
           style={gridStyles.empty}
@@ -222,14 +227,13 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
 
 // ─── Single slot's expo-video player ────────────────────────────────────────
 function SlotPlayer({
-  stream, muted, onPress, onFocusSlot, onClear, slotIndex, isInitialPreferred,
+  stream, muted, onPress, onFocusSlot, slotIndex, isInitialPreferred,
   onHoverIn, onHoverOut, onPressIn, onPressOut,
 }: {
   stream: LiveStream;
   muted: boolean;
   onPress: () => void;
   onFocusSlot: () => void;
-  onClear: () => void;
   slotIndex: number;
   isInitialPreferred: boolean;
   onHoverIn?: () => void;
@@ -318,25 +322,33 @@ function SlotPlayer({
         <ThemedText style={gridStyles.slotName} numberOfLines={1}>{stream.name}</ThemedText>
         {muted ? <Feather name="volume-x" size={12} color="rgba(255,255,255,0.7)" /> : <Feather name="volume-2" size={12} color={Colors.dark.accent} />}
       </View>
-
-      {/* Clear button */}
-      <ClearBtn onPress={onClear} />
     </Pressable>
   );
 }
 
 function ClearBtn({ onPress }: { onPress: () => void }) {
-  const [hot, setHot] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const hot = focused || hovered || pressed;
   return (
     <Pressable
       style={[gridStyles.clearBtn, hot && gridStyles.clearBtnHot]}
       onPress={onPress}
-      onFocus={() => setHot(true)}
-      onBlur={() => setHot(false)}
-      onHoverIn={() => setHot(true)}
-      onHoverOut={() => setHot(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
     >
-      <Feather name="x" size={14} color="#fff" />
+      {hot ? (
+        <View style={gridStyles.clearBtnGlow} pointerEvents="none" />
+      ) : null}
+      <Feather name="x" size={hot ? 18 : 14} color="#fff" />
+      {hot ? (
+        <ThemedText style={gridStyles.clearBtnLabel} numberOfLines={1}>Remove</ThemedText>
+      ) : null}
     </Pressable>
   );
 }
@@ -443,10 +455,22 @@ const gridStyles = StyleSheet.create({
 
   clearBtn: {
     position: "absolute", top: 8, right: 8,
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    minWidth: 32, height: 32, borderRadius: 16,
+    paddingHorizontal: 8,
+    flexDirection: "row", gap: 4,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
     justifyContent: "center", alignItems: "center",
+    overflow: "hidden",
   },
-  clearBtnHot: { borderColor: "#FF3B3B", backgroundColor: "rgba(255,59,59,0.4)" },
+  clearBtnHot: {
+    minWidth: 96, height: 36, borderRadius: 18,
+    borderWidth: 2, borderColor: "#FF3B3B",
+    backgroundColor: "#FF3B3B",
+    shadowColor: "#FF3B3B",
+    shadowOpacity: 1, shadowRadius: 12, shadowOffset: { width: 0, height: 0 },
+    elevation: 10,
+  },
+  clearBtnGlow: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.08)" },
+  clearBtnLabel: { color: "#fff", fontWeight: "800", fontSize: 12, letterSpacing: 0.4 },
 });
