@@ -231,6 +231,38 @@ function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: 
   );
 }
 
+function MultiScreenBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="grid" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+        Multi Screen
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function BackBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -1309,6 +1341,9 @@ export default function ContentListScreen() {
             />
             <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
           </>
+        ) : null}
+        {type === "live" ? (
+          <MultiScreenBtn onPress={() => navigation.navigate("MultiScreenLayout")} />
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
         {!isSearching && !isRecentlyAddedView && !isWatchlistView && categoryContent.length > 0 ? (

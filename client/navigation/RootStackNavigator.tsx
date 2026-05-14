@@ -28,6 +28,9 @@ import OrganiseTypePickerScreen from "@/screens/OrganiseTypePickerScreen";
 import OrganiseCategoriesScreen from "@/screens/OrganiseCategoriesScreen";
 import ContentRequestsScreen from "@/screens/ContentRequestsScreen";
 import PlayerSettingsScreen from "@/screens/PlayerSettingsScreen";
+import MultiScreenLayoutScreen, { type MultiLayout } from "@/screens/MultiScreenLayoutScreen";
+import MultiScreenScreen from "@/screens/MultiScreenScreen";
+import MultiScreenPickerScreen from "@/screens/MultiScreenPickerScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -56,6 +59,9 @@ export type RootStackParamList = {
   OrganiseCategories: { type: "live" | "movies" | "series" };
   ContentRequests: undefined;
   PlayerSettings: undefined;
+  MultiScreenLayout: undefined;
+  MultiScreen: { layout: MultiLayout };
+  MultiScreenPicker: { slotIndex: number };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -105,6 +111,13 @@ export default function RootStackNavigator() {
             <Stack.Screen name="OrganiseCategories" component={OrganiseCategoriesScreen} />
             <Stack.Screen name="ContentRequests" component={ContentRequestsScreen} />
             <Stack.Screen name="PlayerSettings" component={PlayerSettingsScreen} />
+            <Stack.Screen name="MultiScreenLayout" component={MultiScreenLayoutScreen} />
+            <Stack.Screen
+              name="MultiScreen"
+              component={MultiScreenScreen}
+              options={{ animation: "fade", orientation: "landscape" }}
+            />
+            <Stack.Screen name="MultiScreenPicker" component={MultiScreenPickerScreen} />
           </>
         )}
       </Stack.Navigator>
