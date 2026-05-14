@@ -18,6 +18,14 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView } from "@/lib/video-player";
+import {
+  useAspectMode,
+  ASPECT_MODES,
+  ASPECT_LABELS,
+  aspectModeToContentFit,
+  aspectModeRatio,
+  type AspectMode,
+} from "@/lib/aspect-ratio";
 import type { SubtitleTrack, AudioTrack } from "@/lib/video-player";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -346,6 +354,55 @@ function TrackPanel({
   );
 }
 
+// ─── Aspect ratio panel ──────────────────────────────────────────────────────
+function AspectPanel({
+  mode, onSelect, onClose, onFocus,
+}: {
+  mode: AspectMode;
+  onSelect: (m: AspectMode) => void;
+  onClose: () => void;
+  onFocus?: () => void;
+}) {
+  return (
+    <View style={styles.panel}>
+      <LinearGradient
+        colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      <View style={styles.panelHeader}>
+        <Feather name="maximize" size={14} color={Colors.dark.accent} />
+        <ThemedText style={styles.panelTitle}>Aspect Ratio</ThemedText>
+        <Pressable
+          style={({ pressed, focused }) => [styles.panelClose, (pressed || focused) && styles.panelCloseActive]}
+          onPress={onClose}
+          onFocus={onFocus}
+        >
+          <Feather name="x" size={14} color="#fff" />
+        </Pressable>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.panelTracks}
+        keyboardShouldPersistTaps="always"
+      >
+        {ASPECT_MODES.map((m, idx) => (
+          <TrackChip
+            key={m}
+            label={ASPECT_LABELS[m]}
+            isSelected={mode === m}
+            onPress={() => onSelect(m)}
+            onFocus={onFocus}
+            hasTVPreferredFocus={mode === m || (mode == null && idx === 0)}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Router: pick dedicated VLC screen for Android VOD/series ────────────────
 export default function PlayerScreen() {
   const route = useRoute<PlayerRouteProp>();
@@ -470,7 +527,8 @@ function LegacyPlayerScreen() {
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [activeSubtitle, setActiveSubtitle] = useState<SubtitleTrack | null>(null);
   const [activeAudio, setActiveAudio] = useState<AudioTrack | null>(null);
-  const [activePanel, setActivePanel] = useState<"cc" | "audio" | null>(null);
+  const [activePanel, setActivePanel] = useState<"cc" | "audio" | "aspect" | null>(null);
+  const [aspectMode, setAspectMode] = useAspectMode();
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
@@ -570,7 +628,7 @@ function LegacyPlayerScreen() {
   });
 
   // ── Controls visibility ───────────────────────────────────────────────────
-  const activePanelRef = useRef<"cc" | "audio" | null>(null);
+  const activePanelRef = useRef<"cc" | "audio" | "aspect" | null>(null);
 
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -1358,7 +1416,7 @@ function LegacyPlayerScreen() {
     showAndReset();
   }, [player, showAndReset]);
 
-  const togglePanel = useCallback((panel: "cc" | "audio") => {
+  const togglePanel = useCallback((panel: "cc" | "audio" | "aspect") => {
     setActivePanel((p) => {
       const next = p === panel ? null : panel;
       activePanelRef.current = next;
@@ -1478,14 +1536,28 @@ function LegacyPlayerScreen() {
     <View style={styles.container}>
       <StatusBar hidden />
 
-      {/* Video */}
-      <VideoView
-        style={StyleSheet.absoluteFill}
-        player={player}
-        contentFit="contain"
-        nativeControls={false}
-        engine={playerEngineRef.current}
-      />
+      {/* Video — wrapped in a centring box so 16:9 / 4:3 modes can force
+          the picture to that ratio (with letter/pillarboxing). For the
+          three "free" modes (fit/fill/zoom) the inner view fills the
+          whole screen and contentFit decides how the picture sits. */}
+      <View style={styles.videoStage}>
+        {(() => {
+          const ratio = aspectModeRatio(aspectMode);
+          const fit = aspectModeToContentFit(aspectMode);
+          const innerStyle = ratio
+            ? { height: "100%" as const, aspectRatio: ratio, maxWidth: "100%" as const }
+            : StyleSheet.absoluteFill;
+          return (
+            <VideoView
+              style={innerStyle}
+              player={player}
+              contentFit={fit}
+              nativeControls={false}
+              engine={playerEngineRef.current}
+            />
+          );
+        })()}
+      </View>
 
       {/* Loading / reconnecting */}
       {isLoading || reconnecting ? (
@@ -1575,6 +1647,13 @@ function LegacyPlayerScreen() {
               active={isFavourited}
             />
           ) : null}
+          {/* Aspect ratio picker — works for live + VOD */}
+          <CtrlBtn
+            icon="maximize"
+            onPress={() => togglePanel("aspect")}
+            onFocus={showAndReset}
+            active={activePanel === "aspect" || aspectMode !== "fit"}
+          />
           {isLive ? (
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
@@ -1619,9 +1698,26 @@ function LegacyPlayerScreen() {
           ) : null}
         </View>
 
-        {/* Bottom section: panels + progress row (VOD only) */}
-        {!isLive ? (
+        {/* Bottom section: panels + progress row. Always rendered when
+            the aspect panel is open (live too) so the picker appears
+            somewhere visible even on Live TV which has no progress row. */}
+        {(!isLive || activePanel === "aspect") ? (
           <View style={styles.bottomSection}>
+            {/* Aspect ratio panel — visible for both live and VOD */}
+            {activePanel === "aspect" ? (
+              <AspectPanel
+                mode={aspectMode}
+                onSelect={(m) => { setAspectMode(m); showAndReset(); }}
+                onClose={() => { activePanelRef.current = null; setActivePanel(null); showAndReset(); }}
+                onFocus={showAndReset}
+              />
+            ) : null}
+
+            {/* The CC/Audio panels + progress row + CC/Audio buttons are
+                VOD-only. For live TV the bottomSection only ever contains
+                the aspect panel above. */}
+            {!isLive ? (
+              <>
             {/* CC panel */}
             {activePanel === "cc" ? (
               <TrackPanel
@@ -1677,6 +1773,8 @@ function LegacyPlayerScreen() {
                 active={activePanel === "audio"}
               />
             </View>
+              </>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1922,6 +2020,12 @@ const styles = StyleSheet.create({
   bottomGradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 160 },
 
   // Top bar
+  videoStage: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   topBar: {
     flexDirection: "row",
     alignItems: "center",

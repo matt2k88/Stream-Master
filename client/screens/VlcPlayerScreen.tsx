@@ -35,6 +35,14 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { VLCPlayer } from "react-native-vlc-media-player";
+import {
+  useAspectMode,
+  ASPECT_MODES,
+  ASPECT_LABELS,
+  aspectModeToContentFit,
+  aspectModeRatio,
+  type AspectMode,
+} from "@/lib/aspect-ratio";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -148,8 +156,9 @@ export default function VlcPlayerScreen() {
 
   // ─── Controls visibility ─────────────────────────────────────────────────
   const [showControls, setShowControls] = useState(true);
-  const [activePanel, setActivePanel] = useState<"cc" | "audio" | null>(null);
-  const activePanelRef = useRef<"cc" | "audio" | null>(null);
+  const [activePanel, setActivePanel] = useState<"cc" | "audio" | "aspect" | null>(null);
+  const activePanelRef = useRef<"cc" | "audio" | "aspect" | null>(null);
+  const [aspectMode, setAspectMode] = useAspectMode();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // When controls hide and re-show, the previously-focused button has been
   // pulled out of the focus tree (pointerEvents=none) and TV remote D-pad
@@ -872,26 +881,35 @@ export default function VlcPlayerScreen() {
     <View style={styles.container}>
       <StatusBar hidden />
 
-      <Pressable style={StyleSheet.absoluteFill} onPress={showAndReset}>
-        <VLCPlayer
-          ref={vlcRef}
-          style={StyleSheet.absoluteFill}
-          source={source}
-          paused={paused}
-          autoplay
-          autoAspectRatio
-          resizeMode="contain"
-          audioTrack={activeAudio >= 0 ? activeAudio : undefined}
-          textTrack={activeText >= 0 ? activeText : -1}
-          onPlaying={onPlaying}
-          onProgress={onProgress}
-          onPaused={onPaused}
-          onStopped={onStopped}
-          onEnd={onEnded}
-          onError={onError}
-          onBuffering={onBuffering}
-          onLoad={onLoad}
-        />
+      <Pressable style={[StyleSheet.absoluteFill, styles.videoStage]} onPress={showAndReset}>
+        {(() => {
+          const ratio = aspectModeRatio(aspectMode);
+          const fit = aspectModeToContentFit(aspectMode);
+          const innerStyle = ratio
+            ? { height: "100%" as const, aspectRatio: ratio, maxWidth: "100%" as const }
+            : StyleSheet.absoluteFill;
+          return (
+            <VLCPlayer
+              ref={vlcRef}
+              style={innerStyle}
+              source={source}
+              paused={paused}
+              autoplay
+              autoAspectRatio={ratio == null && aspectMode === "fit"}
+              resizeMode={fit}
+              audioTrack={activeAudio >= 0 ? activeAudio : undefined}
+              textTrack={activeText >= 0 ? activeText : -1}
+              onPlaying={onPlaying}
+              onProgress={onProgress}
+              onPaused={onPaused}
+              onStopped={onStopped}
+              onEnd={onEnded}
+              onError={onError}
+              onBuffering={onBuffering}
+              onLoad={onLoad}
+            />
+          );
+        })()}
       </Pressable>
 
       {/* Loading spinner */}
@@ -914,6 +932,12 @@ export default function VlcPlayerScreen() {
           {favStreamId > 0 && (
             <CtrlBtn icon="star" onPress={toggleFav} onFocus={showAndReset} active={isFavourited} />
           )}
+          <CtrlBtn
+            icon="maximize"
+            onPress={() => { const v = activePanel === "aspect" ? null : "aspect"; setActivePanel(v); activePanelRef.current = v; showAndReset(); }}
+            onFocus={showAndReset}
+            active={activePanel === "aspect" || aspectMode !== "fit"}
+          />
         </View>
 
         {/* Centre — play/pause + skip */}
@@ -960,6 +984,14 @@ export default function VlcPlayerScreen() {
             />
           </View>
 
+          {activePanel === "aspect" && (
+            <AspectPanel
+              mode={aspectMode}
+              onSelect={(m) => { setAspectMode(m); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; showAndReset(); }}
+              onFocus={showAndReset}
+            />
+          )}
           {activePanel === "cc" && (
             <TrackPanel
               title="Subtitles"
@@ -1271,9 +1303,42 @@ function Chip({ label, selected, onPress, onFocus, preferFocus }: {
   );
 }
 
+// ─── Aspect ratio panel ───────────────────────────────────────────────────
+function AspectPanel({ mode, onSelect, onClose, onFocus }: {
+  mode: AspectMode;
+  onSelect: (m: AspectMode) => void;
+  onClose: () => void;
+  onFocus?: () => void;
+}) {
+  return (
+    <View style={btnStyles.panel}>
+      <LinearGradient colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]} style={StyleSheet.absoluteFill} />
+      <View style={btnStyles.panelHeader}>
+        <ThemedText style={btnStyles.panelTitle}>Aspect Ratio</ThemedText>
+        <Pressable style={({ focused, pressed }) => [btnStyles.panelClose, (focused || pressed) && btnStyles.panelCloseActive]} onPress={onClose} onFocus={onFocus}>
+          <Feather name="x" size={14} color="#fff" />
+        </Pressable>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={btnStyles.panelTracks} keyboardShouldPersistTaps="always">
+        {ASPECT_MODES.map((m, idx) => (
+          <Chip
+            key={m}
+            label={ASPECT_LABELS[m]}
+            selected={mode === m}
+            onPress={() => onSelect(m)}
+            onFocus={onFocus}
+            preferFocus={mode === m || idx === 0}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+  videoStage: { backgroundColor: "#000", justifyContent: "center", alignItems: "center" },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.4)" },
   overlay: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between" },
   overlayHidden: { opacity: 0 },
