@@ -25,6 +25,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { useAuth } from "@/contexts/AuthContext";
 
 export type MultiLayout = "2h" | "2v" | "3-2t1b" | "3-1t2b" | "4";
 
@@ -43,6 +44,11 @@ const OPTIONS: Option[] = [
 export default function MultiScreenLayoutScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
+  const { userInfo } = useAuth();
+  // Xtream returns max_connections as a string ("5"). Coerce safely; show
+  // nothing if the API didn't return it for this account.
+  const maxConn = Number(userInfo?.user_info?.max_connections);
+  const showMaxConn = Number.isFinite(maxConn) && maxConn > 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + Spacing.lg }]}>
@@ -67,6 +73,16 @@ export default function MultiScreenLayoutScreen() {
         <ThemedText style={styles.noticeText}>
           Multi Screen requires more than one connection — each individual screen uses one connection on your Ultra Cast account.
         </ThemedText>
+
+        {showMaxConn ? (
+          <View style={styles.connBadge}>
+            <Feather name="users" size={13} color={Colors.dark.accent} />
+            <View>
+              <ThemedText style={styles.connBadgeLabel}>Account Connections</ThemedText>
+              <ThemedText style={styles.connBadgeValue}>{maxConn}</ThemedText>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       {/* Options */}
@@ -207,6 +223,17 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   noticeText: { flex: 1, color: Colors.dark.text, fontSize: 12, lineHeight: 16 },
+
+  connBadge: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.md, paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,102,0,0.18)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.55)",
+    marginLeft: Spacing.sm,
+  },
+  connBadgeLabel: { color: Colors.dark.textSecondary, fontSize: 9, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" },
+  connBadgeValue: { color: Colors.dark.accent, fontSize: 16, fontWeight: "800", lineHeight: 18 },
 
   options: { gap: Spacing.lg, paddingVertical: Spacing.sm, alignItems: "stretch" },
   card: {
