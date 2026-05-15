@@ -86,17 +86,37 @@ export default function MultiScreenScreen() {
 
   // When the picker pops and we become the active screen again, route
   // hardware/web focus to the slot that was just filled.
+  //
+  // Android TV gotcha: `hasTVPreferredFocus` is sticky — once it's true on
+  // a view the focus engine keeps re-applying it on every layout pass, so
+  // the D-pad can't move away. We work around it in two steps:
+  //   1) Clear `hasTVPreferredFocus` on every OTHER slot first (kills
+  //      slot 0's initial-mount preference too).
+  //   2) Set `hasTVPreferredFocus: true` on the target slot, then on the
+  //      next tick set it back to false so it stops stealing focus
+  //      whenever the user presses D-pad to navigate elsewhere.
   useFocusEffect(
     useCallback(() => {
       const target = pendingFocusSlot.current;
       if (target == null) return;
       pendingFocusSlot.current = null;
-      const t = setTimeout(() => {
-        const ref = slotRefs.current[target];
-        try { ref?.focus?.(); } catch {}
-        try { ref?.setNativeProps?.({ hasTVPreferredFocus: true }); } catch {}
+      const t1 = setTimeout(() => {
+        slotRefs.current.forEach((ref, i) => {
+          if (i === target) return;
+          try { ref?.setNativeProps?.({ hasTVPreferredFocus: false }); } catch {}
+        });
+        const target_ref = slotRefs.current[target];
+        try { target_ref?.focus?.(); } catch {}
+        try { target_ref?.setNativeProps?.({ hasTVPreferredFocus: true }); } catch {}
       }, 80);
-      return () => clearTimeout(t);
+      // Release the preferred-focus flag once focus has actually landed,
+      // otherwise Android TV will keep snapping back here on every D-pad
+      // press.
+      const t2 = setTimeout(() => {
+        const target_ref = slotRefs.current[target];
+        try { target_ref?.setNativeProps?.({ hasTVPreferredFocus: false }); } catch {}
+      }, 350);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }, []),
   );
 
