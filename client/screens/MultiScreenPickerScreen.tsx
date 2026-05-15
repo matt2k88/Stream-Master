@@ -26,6 +26,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useData } from "@/contexts/DataContext";
+import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { multiScreenBus } from "@/lib/multiscreen-bus";
 import { LiveStream } from "@/lib/xtream-api";
 
@@ -39,22 +40,38 @@ export default function MultiScreenPickerScreen() {
   const slotIndex = route.params.slotIndex;
 
   const { liveCategories, liveStreams } = useData();
+  const { applyOrder } = useCategoryOrder();
+
+  // Apply the active profile's organised category list (custom order +
+  // hidden categories filtered out) so this picker matches what the user
+  // sees everywhere else in the app for Live TV.
+  const orderedCategories = useMemo(
+    () => applyOrder("live", liveCategories),
+    [applyOrder, liveCategories],
+  );
+
   const [selectedCat, setSelectedCat] = useState<string>(
-    liveCategories[0]?.category_id ?? ""
+    orderedCategories[0]?.category_id ?? "all"
   );
   const [query, setQuery] = useState("");
 
-  // Channels in the active category (or full list if 'all')
+  // Channels in the active category (or full list if 'all'). For "all"
+  // we filter by the organised category list so hidden categories never
+  // leak channels through.
   const channels = useMemo(() => {
-    let list: LiveStream[] = selectedCat === "all"
-      ? liveStreams
-      : liveStreams.filter((s) => String(s.category_id) === String(selectedCat));
+    let list: LiveStream[];
+    if (selectedCat === "all") {
+      const visible = new Set(orderedCategories.map((c) => String(c.category_id)));
+      list = liveStreams.filter((s) => visible.has(String(s.category_id)));
+    } else {
+      list = liveStreams.filter((s) => String(s.category_id) === String(selectedCat));
+    }
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter((s) => s.name.toLowerCase().includes(q));
     }
     return list;
-  }, [selectedCat, liveStreams, query]);
+  }, [selectedCat, liveStreams, orderedCategories, query]);
 
   const onPick = (s: LiveStream) => {
     multiScreenBus.emit({ slotIndex, stream: s });
@@ -76,7 +93,7 @@ export default function MultiScreenPickerScreen() {
         {/* Sidebar — categories */}
         <View style={[styles.sidebar, { paddingLeft: Math.max(insets.left, Spacing.xs), paddingBottom: insets.bottom + Spacing.lg }]}>
           <FlatList
-            data={[{ category_id: "all", category_name: "All Channels", parent_id: 0 }, ...liveCategories]}
+            data={[{ category_id: "all", category_name: "All Channels", parent_id: 0 }, ...orderedCategories]}
             keyExtractor={(c) => String(c.category_id)}
             renderItem={({ item }) => (
               <SidebarRow

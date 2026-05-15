@@ -20,7 +20,7 @@ import {
   StatusBar,
   ActivityIndicator,
 } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -60,6 +60,15 @@ export default function MultiScreenScreen() {
   // never on re-renders, otherwise it keeps stealing focus on TV remotes.
   const initialFocusSlot = useRef(0);
 
+  // Refs to each slot's outer Pressable so we can imperatively focus the
+  // slot the user just picked a channel for (web .focus() + Android TV
+  // setNativeProps fallback).
+  const slotRefs = useRef<Array<any>>([]);
+  // The bus listener fires while the picker is still on top of the stack.
+  // We stash the slot index here and consume it inside useFocusEffect once
+  // this screen is on top again so the focus lands reliably.
+  const pendingFocusSlot = useRef<number | null>(null);
+
   // Listen for picks from MultiScreenPicker
   useEffect(() => {
     multiScreenBus.setListener(({ slotIndex, stream }) => {
@@ -70,9 +79,26 @@ export default function MultiScreenScreen() {
         return next;
       });
       setFocusedSlot(slotIndex);
+      pendingFocusSlot.current = slotIndex;
     });
     return () => multiScreenBus.setListener(null);
   }, [slotCount]);
+
+  // When the picker pops and we become the active screen again, route
+  // hardware/web focus to the slot that was just filled.
+  useFocusEffect(
+    useCallback(() => {
+      const target = pendingFocusSlot.current;
+      if (target == null) return;
+      pendingFocusSlot.current = null;
+      const t = setTimeout(() => {
+        const ref = slotRefs.current[target];
+        try { ref?.focus?.(); } catch {}
+        try { ref?.setNativeProps?.({ hasTVPreferredFocus: true }); } catch {}
+      }, 80);
+      return () => clearTimeout(t);
+    }, []),
+  );
 
   const openPicker = useCallback(
     (slotIndex: number) => {
@@ -108,6 +134,7 @@ export default function MultiScreenScreen() {
           onFocusSlot={setFocusedSlot}
           onAddSlot={openPicker}
           onClearSlot={(i) => setSlots((prev) => { const n = [...prev]; n[i] = null; return n; })}
+          registerSlotRef={(i, r) => { slotRefs.current[i] = r; }}
         />
       </View>
     </View>
@@ -115,7 +142,7 @@ export default function MultiScreenScreen() {
 }
 
 // ─── Grid: arrange slots according to layout ────────────────────────────────
-function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot, initialFocusSlot }: {
+function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot, initialFocusSlot, registerSlotRef }: {
   layout: MultiLayout;
   slots: (LiveStream | null)[];
   focusedSlot: number;
@@ -123,6 +150,7 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
   onAddSlot: (i: number) => void;
   onClearSlot: (i: number) => void;
   initialFocusSlot: number;
+  registerSlotRef: (i: number, ref: any) => void;
 }) {
   const slot = (i: number) => (
     <Slot
@@ -134,6 +162,7 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
       onAdd={() => onAddSlot(i)}
       onClear={() => onClearSlot(i)}
       isInitialPreferred={i === initialFocusSlot}
+      registerRef={(r) => registerSlotRef(i, r)}
     />
   );
 
@@ -167,7 +196,7 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
 }
 
 // ─── Slot: empty (Add) or video player ─────────────────────────────────────
-function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPreferred }: {
+function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPreferred, registerRef }: {
   index: number;
   stream: LiveStream | null;
   focused: boolean;
@@ -175,6 +204,7 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
   onAdd: () => void;
   onClear: () => void;
   isInitialPreferred: boolean;
+  registerRef: (ref: any) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -196,6 +226,7 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
           slotIndex={index}
           isInitialPreferred={isInitialPreferred}
           showChangeHint={focused}
+          registerRef={registerRef}
           onHoverIn={() => setHover(true)}
           onHoverOut={() => setHover(false)}
           onPressIn={() => setPressed(true)}
@@ -203,6 +234,7 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
         />
       ) : (
         <Pressable
+          ref={registerRef}
           style={gridStyles.empty}
           onPress={onAdd}
           onFocus={onFocus}
@@ -225,7 +257,7 @@ function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPrefer
 
 // ─── Single slot's expo-video player ────────────────────────────────────────
 function SlotPlayer({
-  stream, muted, onPress, onFocusSlot, slotIndex, isInitialPreferred, showChangeHint,
+  stream, muted, onPress, onFocusSlot, slotIndex, isInitialPreferred, showChangeHint, registerRef,
   onHoverIn, onHoverOut, onPressIn, onPressOut,
 }: {
   stream: LiveStream;
@@ -235,6 +267,7 @@ function SlotPlayer({
   slotIndex: number;
   isInitialPreferred: boolean;
   showChangeHint: boolean;
+  registerRef: (ref: any) => void;
   onHoverIn?: () => void;
   onHoverOut?: () => void;
   onPressIn?: () => void;
@@ -286,6 +319,7 @@ function SlotPlayer({
 
   return (
     <Pressable
+      ref={registerRef}
       style={StyleSheet.absoluteFill}
       onPress={onPress}
       onFocus={onFocusSlot}

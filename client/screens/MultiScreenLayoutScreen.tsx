@@ -15,7 +15,7 @@ import {
   View,
   StyleSheet,
   Pressable,
-  ScrollView,
+  useWindowDimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -45,10 +45,31 @@ export default function MultiScreenLayoutScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
   const { userInfo } = useAuth();
+  const { width: winW, height: winH } = useWindowDimensions();
   // Xtream returns max_connections as a string ("5"). Coerce safely; show
   // nothing if the API didn't return it for this account.
   const maxConn = Number(userInfo?.user_info?.max_connections);
   const showMaxConn = Number.isFinite(maxConn) && maxConn > 0;
+
+  // ── Responsive 2-row grid sizing ─────────────────────────────────────────
+  // We want 5 layouts laid out as 3 on top + 2 on bottom and fitted entirely
+  // inside the viewport (no horizontal scrolling). Card width is derived
+  // from the window width minus side padding and inter-card gap; height is
+  // derived from the leftover vertical space after header + notice.
+  const sidePad = Math.max(insets.left, Spacing.xl);
+  const cols = 3;
+  const colGap = Spacing.lg;
+  const cardW = Math.max(
+    140,
+    Math.floor((winW - sidePad * 2 - colGap * (cols - 1)) / cols),
+  );
+  // Reserve ~ header (60) + notice (60) + paddings + bottom inset for two rows
+  const reserved = 60 + 60 + Spacing.xl * 2 + insets.top + insets.bottom;
+  const rowGap = Spacing.md;
+  const cardH = Math.max(
+    130,
+    Math.floor((winH - reserved - rowGap) / 2),
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + Spacing.lg }]}>
@@ -85,34 +106,36 @@ export default function MultiScreenLayoutScreen() {
         ) : null}
       </View>
 
-      {/* Options */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[styles.options, { paddingHorizontal: Math.max(insets.left, Spacing.xl) }]}
-      >
+      {/* Options — 2-row grid that fits the viewport (no scrolling). */}
+      <View style={[styles.optionsGrid, { paddingHorizontal: sidePad, gap: rowGap }]}>
         {OPTIONS.map((opt, idx) => (
           <LayoutCard
             key={opt.key}
             opt={opt}
+            width={cardW}
+            height={cardH}
             preferFocus={idx === 0}
             onPress={() => navigation.navigate("MultiScreen", { layout: opt.key })}
           />
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 // ─── Layout preview card ────────────────────────────────────────────────────
-function LayoutCard({ opt, onPress, preferFocus }: { opt: Option; onPress: () => void; preferFocus?: boolean }) {
+function LayoutCard({ opt, onPress, preferFocus, width, height }: { opt: Option; onPress: () => void; preferFocus?: boolean; width: number; height: number }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const hot = focused || pressed || hovered;
+  // Inside the card: title + subtitle ≈ 50px, vertical padding ≈ 24, so
+  // give the preview the remaining height (clamped to a sensible range).
+  const previewH = Math.max(60, Math.min(height - 80, 180));
+  const previewW = Math.min(width - Spacing.md * 2, previewH * 1.6);
   return (
     <Pressable
-      style={[styles.card, hot && styles.cardActive]}
+      style={[styles.card, { width, height }, hot && styles.cardActive]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -122,7 +145,7 @@ function LayoutCard({ opt, onPress, preferFocus }: { opt: Option; onPress: () =>
       onHoverOut={() => setHovered(false)}
       hasTVPreferredFocus={preferFocus}
     >
-      <View style={styles.preview}>
+      <View style={[styles.preview, { width: previewW, height: previewH }]}>
         <LayoutPreview layout={opt.key} />
       </View>
       <ThemedText style={[styles.cardTitle, hot && styles.cardTitleActive]}>{opt.label}</ThemedText>
@@ -235,9 +258,15 @@ const styles = StyleSheet.create({
   connBadgeLabel: { color: Colors.dark.textSecondary, fontSize: 9, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" },
   connBadgeValue: { color: Colors.dark.accent, fontSize: 16, fontWeight: "800", lineHeight: 18 },
 
-  options: { gap: Spacing.lg, paddingVertical: Spacing.sm, alignItems: "stretch" },
+  optionsGrid: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignContent: "flex-start",
+    columnGap: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
   card: {
-    width: 220,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
@@ -245,6 +274,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.dark.border,
     gap: Spacing.sm,
     alignItems: "center",
+    justifyContent: "center",
   },
   cardActive: {
     borderColor: Colors.dark.accent,
@@ -254,7 +284,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   preview: {
-    width: 180, height: 110,
     borderRadius: BorderRadius.sm,
     backgroundColor: "rgba(0,0,0,0.5)",
     padding: 4,
