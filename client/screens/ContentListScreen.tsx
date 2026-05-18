@@ -114,11 +114,34 @@ function ManageBtn({ active, onPress, iconOnly }: { active: boolean; onPress: ()
   );
 }
 
-function ClearAllButton({ onPress }: { onPress: () => void }) {
+function ClearAllButton({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || hovered || pressed;
+  if (iconOnly) {
+    // Portrait phone — render as circular icon-only button matching the
+    // other header buttons (Back / Refresh / Manage).
+    return (
+      <Pressable
+        style={[
+          styles.backBtn,
+          { borderColor: "rgba(255,59,59,0.45)" },
+          isActive && { borderColor: Colors.dark.error, backgroundColor: "rgba(255,59,59,0.18)" },
+        ]}
+        onPress={onPress}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        accessibilityLabel="Clear All"
+      >
+        <Feather name="trash-2" size={18} color={Colors.dark.error} />
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       style={[styles.clearAllBtn, isActive && styles.clearAllBtnActive]}
@@ -1467,7 +1490,7 @@ export default function ContentListScreen() {
           />
         ) : null}
         {(isFavouritesView || isRecentlyView) && !isSearching ? (
-          <ClearAllButton onPress={() => setShowClearConfirm(true)} />
+          <ClearAllButton iconOnly={!isLandscapeHeader} onPress={() => setShowClearConfirm(true)} />
         ) : null}
       </View>
 
