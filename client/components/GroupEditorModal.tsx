@@ -63,7 +63,12 @@ export default function GroupEditorModal({
             <CloseBtn onPress={onCancel} />
           </View>
 
-          <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: Spacing.lg }}>
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={{ paddingBottom: Spacing.lg }}
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Name */}
             <ThemedText style={styles.sectionLabel}>Group Name</ThemedText>
             <TextInput
@@ -337,7 +342,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     backgroundColor: Colors.dark.backgroundRoot,
   },
-  body: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
+  body: { flex: 1, paddingHorizontal: Spacing.md, paddingTop: Spacing.md },
   sectionLabel: { fontSize: 12, fontWeight: "700", color: Colors.dark.textSecondary, marginBottom: 8, letterSpacing: 0.5 },
   input: {
     backgroundColor: Colors.dark.backgroundRoot,
