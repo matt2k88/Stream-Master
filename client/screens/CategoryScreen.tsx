@@ -97,14 +97,20 @@ function MultiScreenBtn({ onPress }: { onPress: () => void }) {
   );
 }
 
-function RequestsBtn({ onPress }: { onPress: () => void }) {
+function RequestsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly
+          ? null
+          : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -112,6 +118,7 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="My Requests"
     >
       {isActive ? (
         <LinearGradient
@@ -121,22 +128,30 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="inbox" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        My Requests
-      </ThemedText>
+      <Feather name="inbox" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          My Requests
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
 
-function MyWatchlistBtn({ onPress }: { onPress: () => void }) {
+function MyWatchlistBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly
+          ? null
+          : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -144,6 +159,7 @@ function MyWatchlistBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="My Watchlist"
     >
       {isActive ? (
         <LinearGradient
@@ -153,10 +169,12 @@ function MyWatchlistBtn({ onPress }: { onPress: () => void }) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="bookmark" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        My Watchlist
-      </ThemedText>
+      <Feather name="bookmark" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          My Watchlist
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
@@ -704,6 +722,7 @@ export default function CategoryScreen() {
         {(type === "movies" || type === "series") ? (
           <>
             <MyWatchlistBtn
+              iconOnly={!isLandscape}
               onPress={() =>
                 navigation.navigate("ContentList", {
                   type,
@@ -712,7 +731,7 @@ export default function CategoryScreen() {
                 })
               }
             />
-            <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
+            <RequestsBtn iconOnly={!isLandscape} onPress={() => navigation.navigate("ContentRequests")} />
           </>
         ) : null}
         {type === "live" ? (

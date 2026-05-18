@@ -554,6 +554,10 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
+  // On small landscape phones (e.g. iPhone SE = 667×375) the count chips
+  // crowd the LIVE TV / MOVIES / SERIES tiles and squash the labels. Hide
+  // them when the viewport is short — tablets/TVs are unaffected.
+  const isSmallLandscape = isLandscape && height < 400;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile } = useProfile();
   const themeAccent = useAccent();
@@ -882,6 +886,7 @@ export default function HomeScreen() {
                 title="LIVE TV"
                 count={liveStreams.length}
                 countLabel="CHANNELS"
+                hideCount={isSmallLandscape}
                 icon="tv"
                 mciIcon="television-classic"
                 iconKey="liveTv"
@@ -920,6 +925,7 @@ export default function HomeScreen() {
                 title="MOVIES"
                 count={vodStreams.length}
                 countLabel="MOVIES"
+                hideCount={isSmallLandscape}
                 icon="film"
                 mciIcon="movie-open-outline"
                 iconKey="movies"
@@ -933,6 +939,7 @@ export default function HomeScreen() {
                 title="SERIES"
                 count={seriesList.length}
                 countLabel="SERIES"
+                hideCount={isSmallLandscape}
                 icon="grid"
                 mciIcon="play-box-multiple-outline"
                 iconKey="series"
