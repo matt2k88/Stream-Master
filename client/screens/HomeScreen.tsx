@@ -554,10 +554,12 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  // On small landscape phones (e.g. iPhone SE = 667×375) the count chips
-  // crowd the LIVE TV / MOVIES / SERIES tiles and squash the labels. Hide
-  // them when the viewport is short — tablets/TVs are unaffected.
-  const isSmallLandscape = isLandscape && height < 400;
+  // On phones (portrait or landscape) the count chips crowd the LIVE TV /
+  // MOVIES / SERIES tiles and squash the labels — only tablets, TVs and
+  // desktops have enough width to show them comfortably. Threshold is the
+  // shorter side of the viewport so we don't get confused by orientation.
+  const minSide = Math.min(width, height);
+  const isSmallLandscape = minSide < 500;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile } = useProfile();
   const themeAccent = useAccent();

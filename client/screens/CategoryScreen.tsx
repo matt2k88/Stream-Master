@@ -65,14 +65,18 @@ function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: 
   );
 }
 
-function MultiScreenBtn({ onPress }: { onPress: () => void }) {
+function MultiScreenBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -80,6 +84,7 @@ function MultiScreenBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="Multi Screen"
     >
       {isActive ? (
         <LinearGradient
@@ -89,10 +94,12 @@ function MultiScreenBtn({ onPress }: { onPress: () => void }) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="grid" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        Multi Screen
-      </ThemedText>
+      <Feather name="grid" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          Multi Screen
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
@@ -735,7 +742,7 @@ export default function CategoryScreen() {
           </>
         ) : null}
         {type === "live" ? (
-          <MultiScreenBtn onPress={() => navigation.navigate("MultiScreenLayout")} />
+          <MultiScreenBtn iconOnly={!isLandscape} onPress={() => navigation.navigate("MultiScreenLayout")} />
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
       </View>

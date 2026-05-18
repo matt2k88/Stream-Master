@@ -47,11 +47,46 @@ const CONTENT_PAD = Spacing.md;
 // Pressable's style render-prop only exposes `pressed` on RN native; using
 // `({ focused, hovered })` would always be undefined and the active style
 // would never apply on TV remotes or desktop hover.
-function ManageBtn({ active, onPress }: { active: boolean; onPress: () => void }) {
+function ManageBtn({ active, onPress, iconOnly }: { active: boolean; onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || hovered || pressed;
+  if (iconOnly) {
+    // Portrait phone — render as a circular icon-only button so the header
+    // doesn't blow out horizontally with text labels.
+    return (
+      <Pressable
+        style={[
+          styles.backBtn,
+          isActive && styles.backBtnActive,
+          active && { backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent },
+        ]}
+        onPress={onPress}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        accessibilityLabel={active ? "Done" : "Manage"}
+      >
+        {isActive && !active ? (
+          <LinearGradient
+            colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+        ) : null}
+        <Feather
+          name={active ? "check" : "edit-2"}
+          size={18}
+          color={active ? "#fff" : (isActive ? Colors.dark.accent : Colors.dark.text)}
+        />
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       style={[
@@ -134,14 +169,18 @@ function ModalBtn({
   );
 }
 
-function RequestsBtn({ onPress }: { onPress: () => void }) {
+function RequestsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -149,6 +188,7 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="My Requests"
     >
       {isActive ? (
         <LinearGradient
@@ -158,15 +198,17 @@ function RequestsBtn({ onPress }: { onPress: () => void }) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="inbox" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        My Requests
-      </ThemedText>
+      <Feather name="inbox" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          My Requests
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
 
-function MyWatchlistBtn({ onPress, selected }: { onPress: () => void; selected?: boolean }) {
+function MyWatchlistBtn({ onPress, selected, iconOnly }: { onPress: () => void; selected?: boolean; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -177,7 +219,7 @@ function MyWatchlistBtn({ onPress, selected }: { onPress: () => void; selected?:
       style={[
         styles.backBtn,
         isActive && styles.backBtnActive,
-        { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
         selected && { backgroundColor: "rgba(255,102,0,0.16)" },
       ]}
       onPress={onPress}
@@ -187,6 +229,7 @@ function MyWatchlistBtn({ onPress, selected }: { onPress: () => void; selected?:
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="My Watchlist"
     >
       {showOverlay ? (
         <LinearGradient
@@ -196,10 +239,12 @@ function MyWatchlistBtn({ onPress, selected }: { onPress: () => void; selected?:
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="bookmark" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        My Watchlist
-      </ThemedText>
+      <Feather name="bookmark" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          My Watchlist
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
@@ -231,14 +276,18 @@ function RefreshBtn({ onPress, refreshing }: { onPress: () => void; refreshing: 
   );
 }
 
-function MultiScreenBtn({ onPress }: { onPress: () => void }) {
+function MultiScreenBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || pressed || hovered;
   return (
     <Pressable
-      style={[styles.backBtn, isActive && styles.backBtnActive, { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined }]}
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -246,6 +295,7 @@ function MultiScreenBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      accessibilityLabel="Multi Screen"
     >
       {isActive ? (
         <LinearGradient
@@ -255,10 +305,12 @@ function MultiScreenBtn({ onPress }: { onPress: () => void }) {
           end={{ x: 1, y: 1 }}
         />
       ) : null}
-      <Feather name="grid" size={16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
-      <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
-        Multi Screen
-      </ThemedText>
+      <Feather name="grid" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          Multi Screen
+        </ThemedText>
+      )}
     </Pressable>
   );
 }
@@ -647,7 +699,11 @@ export default function ContentListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ContentListRouteProp>();
   const { type, categoryId, categoryName } = route.params;
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  // Portrait phones: collapse text-label header buttons (Watchlist /
+  // Requests / Multi Screen / Manage) into circular icon-only buttons so
+  // the header doesn't blow out horizontally.
+  const isLandscapeHeader = width > height;
   const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh } = useData();
   const handleRefresh = useCallback(() => {
     if (isSyncing) return;
@@ -735,7 +791,7 @@ export default function ContentListScreen() {
     const first = categories[0];
     setSelectedCategoryId(first.category_id);
     setSelectedCategoryName(first.category_name);
-    initialFocusIdRef.current = first.category_id;
+    setInitialFocusId(first.category_id);
   }, [categories, selectedCategoryId]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
@@ -1202,8 +1258,15 @@ export default function ContentListScreen() {
 
   // Capture the category we entered with so the matching sidebar row gets
   // initial TV focus on first mount (instead of focus defaulting to the
-  // header back button). Stays stable across category switches afterwards.
-  const initialFocusIdRef = useRef<string>(categoryId);
+  // header back button). We clear it ~400ms after mount so subsequent
+  // D-pad navigation isn't pulled back to the original row on every
+  // re-render (which is what was making the entry row look "stuck" with a
+  // hover overlay while the user scrolled past it).
+  const [initialFocusId, setInitialFocusId] = useState<string>(categoryId);
+  useEffect(() => {
+    const t = setTimeout(() => setInitialFocusId(""), 400);
+    return () => clearTimeout(t);
+  }, []);
   const renderSidebarItem = useCallback(
     ({ item }: { item: SidebarCat }) => {
       const id = item.category_id;
@@ -1218,11 +1281,11 @@ export default function ContentListScreen() {
           isSuggested={id === "suggested"}
           isPinned={isPinned}
           onPress={handleSidebarPress}
-          hasTVPreferredFocus={id === initialFocusIdRef.current}
+          hasTVPreferredFocus={initialFocusId !== "" && id === initialFocusId}
         />
       );
     },
-    [selectedCategoryId, handleSidebarPress],
+    [selectedCategoryId, handleSidebarPress, initialFocusId],
   );
 
   const sectionPlaceholder =
@@ -1381,6 +1444,7 @@ export default function ContentListScreen() {
         {(type === "movies" || type === "series") ? (
           <>
             <MyWatchlistBtn
+              iconOnly={!isLandscapeHeader}
               selected={isWatchlistView}
               onPress={() => {
                 setCategorySwitching(true);
@@ -1388,15 +1452,16 @@ export default function ContentListScreen() {
                 setSelectedCategoryName("My Watchlist");
               }}
             />
-            <RequestsBtn onPress={() => navigation.navigate("ContentRequests")} />
+            <RequestsBtn iconOnly={!isLandscapeHeader} onPress={() => navigation.navigate("ContentRequests")} />
           </>
         ) : null}
         {type === "live" ? (
-          <MultiScreenBtn onPress={() => navigation.navigate("MultiScreenLayout")} />
+          <MultiScreenBtn iconOnly={!isLandscapeHeader} onPress={() => navigation.navigate("MultiScreenLayout")} />
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
         {!isSearching && !isRecentlyAddedView && !isWatchlistView && categoryContent.length > 0 ? (
           <ManageBtn
+            iconOnly={!isLandscapeHeader}
             active={editMode}
             onPress={() => setEditMode((v) => !v)}
           />
