@@ -386,6 +386,54 @@ function getIconUrl(item: ContentItem): string | null {
   return null;
 }
 
+// In-card action picker button used by Manage mode. Each button is its own
+// Pressable so it has independent TV focus + hover state, and pressing it
+// runs the action and closes the picker.
+function PickerActionButton({
+  action,
+  autoFocus,
+  onClose,
+}: {
+  action: PickerAction;
+  autoFocus?: boolean;
+  onClose?: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.pickerBtn,
+        action.active && styles.pickerBtnRemove,
+        isActive && (action.active ? styles.pickerBtnRemoveActive : styles.pickerBtnActive),
+      ]}
+      onPress={() => {
+        action.onPress();
+        onClose?.();
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
+      accessibilityLabel={`${action.active ? "Remove from" : "Add to"} ${action.label}`}
+    >
+      <Feather
+        name={action.active ? "check" : action.icon}
+        size={12}
+        color="#fff"
+      />
+      <ThemedText style={styles.pickerBtnText} numberOfLines={1}>
+        {action.active ? `Remove from ${action.label}` : `Add to ${action.label}`}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 function StarBadge({ visible }: { visible: boolean }) {
   const scaleAnim = useRef(new Animated.Value(visible ? 1 : 0)).current;
 
@@ -408,6 +456,14 @@ function StarBadge({ visible }: { visible: boolean }) {
   );
 }
 
+export interface PickerAction {
+  key: string;
+  label: string;
+  icon: React.ComponentProps<typeof Feather>["name"];
+  active: boolean; // already in list — show "Remove" semantics
+  onPress: () => void;
+}
+
 const ContentCard = React.memo(function ContentCard({
   item,
   type,
@@ -420,6 +476,9 @@ const ContentCard = React.memo(function ContentCard({
   seriesProgress,
   editMode,
   editAction,
+  pickerOpen,
+  pickerActions,
+  onPickerClose,
 }: {
   item: ContentItem;
   type: string;
@@ -433,6 +492,11 @@ const ContentCard = React.memo(function ContentCard({
   seriesProgress?: SeriesProgress;
   editMode?: boolean;
   editAction?: "delete" | "favourite";
+  // When true, this card shows a small popover with picker actions (e.g.
+  // "Add to Favourites" / "Add to Watchlist") layered over its thumbnail.
+  pickerOpen?: boolean;
+  pickerActions?: PickerAction[];
+  onPickerClose?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -518,13 +582,28 @@ const ContentCard = React.memo(function ContentCard({
             <Feather name="x" size={13} color="#fff" />
           </View>
         ) : null}
-        {editMode && editAction === "favourite" ? (
+        {editMode && editAction === "favourite" && !pickerOpen ? (
           <View style={styles.editFavBadge} pointerEvents="none">
             <Feather
               name={isFavourited ? "star" : "plus"}
               size={11}
               color="#fff"
             />
+          </View>
+        ) : null}
+        {pickerOpen && pickerActions && pickerActions.length > 0 ? (
+          <View style={styles.pickerOverlay}>
+            <View style={styles.pickerScrim} pointerEvents="none" />
+            <View style={styles.pickerRow}>
+              {pickerActions.map((act, idx) => (
+                <PickerActionButton
+                  key={act.key}
+                  action={act}
+                  autoFocus={idx === 0}
+                  onClose={onPickerClose}
+                />
+              ))}
+            </View>
           </View>
         ) : null}
         <StarBadge visible={isFavourited && !editMode} />
@@ -733,7 +812,7 @@ export default function ContentListScreen() {
     refresh();
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
-  const { items: watchlistItems } = useWatchlist();
+  const { items: watchlistItems, toggleByStream: toggleWatchlist } = useWatchlist();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -1140,8 +1219,13 @@ export default function ContentListScreen() {
     });
   }, [isSearching, type, toggleFavourite]);
 
-  // Edit-mode action: delete from fav/recent lists, or toggle favourite on
-  // normal categories. Single tap on a focused card — fully D-pad-friendly.
+  // Which card currently has the in-card action picker open (Manage mode on
+  // a normal category). Only one card can show its picker at a time.
+  const [pickerOpenId, setPickerOpenId] = useState<string | null>(null);
+
+  // Edit-mode action: delete from fav/recent lists, or open per-card picker
+  // (Add to Favourites / Add to Watchlist) on normal categories. Single tap
+  // on a focused card — fully D-pad-friendly.
   const handleEditPress = useCallback(
     (item: ContentItem) => {
       const streamId = getStreamId(item, type);
@@ -1163,14 +1247,14 @@ export default function ContentListScreen() {
         if (entry) removeWatchEntry(entry.id);
         return;
       }
-      // Normal category: Manage = toggle favourite (TV-remote friendly)
-      toggleFavourite({
-        streamId,
-        streamType: type as "live" | "movies" | "series",
-        streamName: item.name,
-        streamIcon: getIconUrl(item),
-        categoryId: "category_id" in item ? (item as any).category_id : null,
-      });
+      // Normal category: tap opens (or closes) a small action picker
+      // overlay on the card with Favourite + Watchlist toggles.
+      const id = "stream_id" in item
+        ? String((item as LiveStream | VodStream).stream_id)
+        : "series_id" in item
+          ? String((item as Series).series_id)
+          : String(item.num);
+      setPickerOpenId((cur) => (cur === id ? null : id));
     },
     [type, isFavouritesView, isRecentlyView, toggleFavourite, getByStreamId, getBySeriesId, removeWatchEntry],
   );
@@ -1180,6 +1264,7 @@ export default function ContentListScreen() {
   // (favourite toggle), so the user explicitly opts in per category.
   useEffect(() => {
     setEditMode(false);
+    setPickerOpenId(null);
   }, [selectedCategoryId, type]);
 
   // Also exit if the current view becomes invalid for edit mode
@@ -1189,6 +1274,11 @@ export default function ContentListScreen() {
       setEditMode(false);
     }
   }, [editMode, isSearching, isRecentlyAddedView, categoryContent.length]);
+
+  // Close any open picker whenever Manage mode itself is toggled off.
+  useEffect(() => {
+    if (!editMode) setPickerOpenId(null);
+  }, [editMode]);
 
   const editAction: "delete" | "favourite" =
     isFavouritesView || isRecentlyView ? "delete" : "favourite";
@@ -1204,6 +1294,72 @@ export default function ContentListScreen() {
     }
     return set;
   }, [getFavouritesByType, type]);
+
+  // O(1) watchlist lookup per card. Watchlist only supports movies/series
+  // (the table type is `"movie" | "series"`), so this is empty for live TV.
+  const watchlistIdSet = useMemo(() => {
+    const set = new Set<string>();
+    if (type === "live") return set;
+    const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
+    for (const w of watchlistItems) {
+      if (w.content_type !== wantType) continue;
+      const cd = w.content_data;
+      const sid = cd?.series_id ?? cd?.stream_id ?? w.content_id;
+      if (sid != null) set.add(String(sid));
+    }
+    return set;
+  }, [watchlistItems, type]);
+
+  // Build the per-card picker actions list. Live TV only shows Favourites
+  // (Watchlist doesn't support live). Movies + Series show both.
+  const buildPickerActions = useCallback(
+    (item: ContentItem): PickerAction[] => {
+      const streamId = getStreamId(item, type);
+      const actions: PickerAction[] = [];
+      actions.push({
+        key: "fav",
+        label: "Favourites",
+        icon: "star",
+        active: favIdSet.has(streamId),
+        onPress: () => {
+          toggleFavourite({
+            streamId,
+            streamType: type as "live" | "movies" | "series",
+            streamName: item.name,
+            streamIcon: getIconUrl(item),
+            categoryId: "category_id" in item ? (item as any).category_id : null,
+          });
+        },
+      });
+      if (type !== "live") {
+        const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
+        actions.push({
+          key: "watchlist",
+          label: "Watchlist",
+          icon: "bookmark",
+          active: watchlistIdSet.has(String(streamId)),
+          onPress: () => {
+            toggleWatchlist({
+              contentId: streamId,
+              contentType: wantType,
+              contentData: {
+                ...(wantType === "series"
+                  ? { series_id: streamId }
+                  : { stream_id: streamId }),
+                name: item.name,
+                poster: getIconUrl(item),
+                source: "app",
+              },
+            });
+          },
+        });
+      }
+      return actions;
+    },
+    [type, favIdSet, watchlistIdSet, toggleFavourite, toggleWatchlist],
+  );
+
+  const closePicker = useCallback(() => setPickerOpenId(null), []);
 
   const getItemId = useCallback((item: ContentItem) => {
     if ("stream_id" in item) return String((item as LiveStream | VodStream).stream_id);
@@ -1240,6 +1396,13 @@ export default function ContentListScreen() {
       const seriesProgress = type === "series"
         ? getSeriesProgress((item as Series).series_id, (item as Series).last_modified)
         : undefined;
+      const itemId = "stream_id" in item
+        ? String((item as LiveStream | VodStream).stream_id)
+        : "series_id" in item
+          ? String((item as Series).series_id)
+          : String(item.num);
+      const showPicker =
+        editMode && !isSearching && editAction === "favourite" && pickerOpenId === itemId;
       return (
         <ContentCard
           item={item}
@@ -1253,12 +1416,16 @@ export default function ContentListScreen() {
           seriesProgress={seriesProgress}
           editMode={editMode && !isSearching}
           editAction={editAction}
+          pickerOpen={showPicker}
+          pickerActions={showPicker ? buildPickerActions(item) : undefined}
+          onPickerClose={closePicker}
         />
       );
     },
     [
       type, onCardPress, handleLongPress, isSearching, favIdSet,
       cardWidth, cardTotalH, editMode, editAction, getByStreamId, getBySeriesId, getSeriesProgress,
+      pickerOpenId, buildPickerActions, closePicker,
     ],
   );
 
@@ -1853,6 +2020,57 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1, shadowRadius: 6, elevation: 6,
     zIndex: 5,
+  },
+  pickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 6,
+    zIndex: 9,
+  },
+  pickerScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.62)",
+  },
+  pickerRow: {
+    flexDirection: "column",
+    gap: 6,
+    width: "100%",
+  },
+  pickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,102,0,0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  pickerBtnActive: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: "#fff",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1, shadowRadius: 8, elevation: 8,
+  },
+  pickerBtnRemove: {
+    backgroundColor: "rgba(60,60,60,0.85)",
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  pickerBtnRemoveActive: {
+    backgroundColor: "#3a3a3a",
+    borderColor: "#fff",
+    shadowColor: "#fff", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 6, elevation: 6,
+  },
+  pickerBtnText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    flexShrink: 1,
   },
   cardThumb: { overflow: "hidden", backgroundColor: Colors.dark.backgroundSecondary },
   cardImage: { width: "100%", height: "100%" },
