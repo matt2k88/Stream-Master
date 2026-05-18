@@ -145,6 +145,47 @@ function RequestsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: bo
   );
 }
 
+function MyGroupsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly
+          ? null
+          : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      accessibilityLabel="My Groups"
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="folder" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          My Groups
+        </ThemedText>
+      )}
+    </Pressable>
+  );
+}
+
 function MyWatchlistBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -726,6 +767,10 @@ export default function CategoryScreen() {
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle}>{title}</ThemedText>
+        <MyGroupsBtn
+          iconOnly={!isLandscape}
+          onPress={() => navigation.navigate("MyGroups", { type })}
+        />
         {(type === "movies" || type === "series") ? (
           <>
             <MyWatchlistBtn

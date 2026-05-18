@@ -858,6 +858,174 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── User Groups (per-profile custom collections) ──────────────────────────
+  // Groups are scoped per (profile_id, type). Items inside a group are
+  // xtream streams (live channels, movies, or series).
+  app.get("/api/groups", async (req, res) => {
+    const { profile_id, type } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      let q = supabase
+        .from("user_groups")
+        .select("*")
+        .eq("profile_id", profile_id as string)
+        .order("created_at");
+      if (type) q = q.eq("type", type as string);
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch groups" });
+    }
+  });
+
+  app.post("/api/groups", async (req, res) => {
+    const { profile_id, type, name, icon_key, color } = req.body;
+    if (!profile_id || !type || !name) {
+      return res.status(400).json({ error: "profile_id, type, name required" });
+    }
+    if (!["live", "movies", "series"].includes(type)) {
+      return res.status(400).json({ error: "invalid type" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("user_groups")
+        .insert({
+          profile_id,
+          type,
+          name: String(name).trim().slice(0, 60),
+          icon_key: icon_key || "folder",
+          color: color || "#FF6600",
+        })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to create group" });
+    }
+  });
+
+  app.patch("/api/groups/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, icon_key, color } = req.body;
+    const patch: Record<string, unknown> = {};
+    if (typeof name === "string") patch.name = name.trim().slice(0, 60);
+    if (typeof icon_key === "string") patch.icon_key = icon_key;
+    if (typeof color === "string") patch.color = color;
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: "no fields to update" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("user_groups")
+        .update(patch)
+        .eq("id", id)
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to update group" });
+    }
+  });
+
+  app.delete("/api/groups/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { error } = await supabase.from("user_groups").delete().eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to delete group" });
+    }
+  });
+
+  // Items inside a group
+  app.get("/api/groups/:id/items", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { data, error } = await supabase
+        .from("user_group_items")
+        .select("*")
+        .eq("group_id", id)
+        .order("created_at");
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch group items" });
+    }
+  });
+
+  // Fetch ALL items for ALL groups of a profile (for fast client caching).
+  app.get("/api/group-items", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      // Join via two queries — first fetch this profile's group ids, then
+      // pull items in one shot. Avoids needing a PostgREST join.
+      const groupsRes = await supabase
+        .from("user_groups")
+        .select("id")
+        .eq("profile_id", profile_id as string);
+      if (groupsRes.error) return res.status(500).json({ error: groupsRes.error.message });
+      const ids = (groupsRes.data ?? []).map((g: any) => g.id);
+      if (ids.length === 0) return res.json([]);
+      const { data, error } = await supabase
+        .from("user_group_items")
+        .select("*")
+        .in("group_id", ids);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch group items" });
+    }
+  });
+
+  app.post("/api/groups/:id/items", async (req, res) => {
+    const { id } = req.params;
+    const { stream_id, stream_name, stream_icon, category_id } = req.body;
+    if (stream_id === undefined || !stream_name) {
+      return res.status(400).json({ error: "stream_id and stream_name required" });
+    }
+    try {
+      // Upsert by (group_id, stream_id) so re-adds don't error.
+      const { data, error } = await supabase
+        .from("user_group_items")
+        .upsert(
+          {
+            group_id: id,
+            stream_id,
+            stream_name,
+            stream_icon: stream_icon ?? null,
+            category_id: category_id ?? null,
+          },
+          { onConflict: "group_id,stream_id" },
+        )
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to add item to group" });
+    }
+  });
+
+  app.delete("/api/groups/:id/items/:stream_id", async (req, res) => {
+    const { id, stream_id } = req.params;
+    try {
+      const { error } = await supabase
+        .from("user_group_items")
+        .delete()
+        .eq("group_id", id)
+        .eq("stream_id", stream_id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to remove item from group" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {

@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   Animated,
+  ScrollView,
   TextInput,
   Modal,
   useWindowDimensions,
@@ -28,6 +29,8 @@ import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
+import { useGroups } from "@/contexts/GroupsContext";
+import { getGroupIconProps } from "@/lib/group-icons";
 import { useWatchHistory, getWatchState, type SeriesProgress } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
@@ -408,6 +411,8 @@ function PickerActionButton({
         styles.pickerBtn,
         action.active && styles.pickerBtnRemove,
         isActive && (action.active ? styles.pickerBtnRemoveActive : styles.pickerBtnActive),
+        action.tint && !action.active ? { backgroundColor: action.tint } : null,
+        action.tint && !action.active && isActive ? { borderColor: "#fff", shadowColor: action.tint, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 8, elevation: 8 } : null,
       ]}
       onPress={() => {
         action.onPress();
@@ -422,11 +427,13 @@ function PickerActionButton({
       hasTVPreferredFocus={autoFocus}
       accessibilityLabel={`${action.active ? "Remove from" : "Add to"} ${action.label}`}
     >
-      <Feather
-        name={action.active ? "check" : action.icon}
-        size={12}
-        color="#fff"
-      />
+      {action.active ? (
+        <Feather name="check" size={12} color="#fff" />
+      ) : action.iconComponent ? (
+        <action.iconComponent name={action.iconName as any} size={12} color="#fff" />
+      ) : (
+        <Feather name={action.icon} size={12} color="#fff" />
+      )}
       <ThemedText style={styles.pickerBtnText} numberOfLines={1}>
         {action.active ? `Remove from ${action.label}` : `Add to ${action.label}`}
       </ThemedText>
@@ -462,6 +469,14 @@ export interface PickerAction {
   icon: React.ComponentProps<typeof Feather>["name"];
   active: boolean; // already in list — show "Remove" semantics
   onPress: () => void;
+  // Optional custom tint colour (used for user-group buttons so each group
+  // shows its own colour). When omitted the default orange/grey applies.
+  tint?: string;
+  // Optional custom icon component (e.g. MaterialCommunityIcons for group
+  // icons that aren't in Feather). When provided, the picker renders
+  // `iconComponent` with `iconName` instead of Feather + `icon`.
+  iconComponent?: React.ComponentType<{ name: any; size: number; color: string }>;
+  iconName?: string;
 }
 
 const ContentCard = React.memo(function ContentCard({
@@ -594,7 +609,13 @@ const ContentCard = React.memo(function ContentCard({
         {pickerOpen && pickerActions && pickerActions.length > 0 ? (
           <View style={styles.pickerOverlay}>
             <View style={styles.pickerScrim} pointerEvents="none" />
-            <View style={styles.pickerRow}>
+            {/* Scroll so a long groups list never expands beyond the thumb */}
+            <ScrollView
+              style={[styles.pickerScroll, { maxHeight: imgH - 12 }]}
+              contentContainerStyle={styles.pickerRow}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
               {pickerActions.map((act, idx) => (
                 <PickerActionButton
                   key={act.key}
@@ -603,7 +624,7 @@ const ContentCard = React.memo(function ContentCard({
                   onClose={onPickerClose}
                 />
               ))}
-            </View>
+            </ScrollView>
           </View>
         ) : null}
         <StarBadge visible={isFavourited && !editMode} />
@@ -813,6 +834,7 @@ export default function ContentListScreen() {
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
   const { items: watchlistItems, toggleByStream: toggleWatchlist, findByStreamId: findWatchlistByStreamId, remove: removeWatchlistRow } = useWatchlist();
+  const { getGroupsByType, isInGroup, toggleItem: toggleGroupItem } = useGroups();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -1360,9 +1382,32 @@ export default function ContentListScreen() {
           },
         });
       }
+      // User-defined groups (per profile, per type). One button per group.
+      const groupsForType = getGroupsByType(type as "live" | "movies" | "series");
+      for (const g of groupsForType) {
+        const iconProps = getGroupIconProps(g.icon_key);
+        actions.push({
+          key: `group-${g.id}`,
+          label: g.name,
+          icon: "folder",
+          iconComponent: iconProps.Component as any,
+          iconName: iconProps.name as string,
+          tint: g.color,
+          active: isInGroup(g.id, streamId),
+          onPress: () => {
+            toggleGroupItem({
+              groupId: g.id,
+              streamId,
+              streamName: item.name,
+              streamIcon: getIconUrl(item),
+              categoryId: "category_id" in item ? (item as any).category_id : null,
+            });
+          },
+        });
+      }
       return actions;
     },
-    [type, favIdSet, watchlistIdSet, toggleFavourite, toggleWatchlist],
+    [type, favIdSet, watchlistIdSet, toggleFavourite, toggleWatchlist, getGroupsByType, isInGroup, toggleGroupItem],
   );
 
   const closePicker = useCallback(() => setPickerOpenId(null), []);
@@ -2038,10 +2083,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.62)",
   },
+  pickerScroll: {
+    width: "100%",
+  },
   pickerRow: {
     flexDirection: "column",
     gap: 6,
     width: "100%",
+    paddingVertical: 2,
   },
   pickerBtn: {
     flexDirection: "row",
