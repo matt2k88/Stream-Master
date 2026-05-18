@@ -331,22 +331,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── App Download Link (direct APK URL — used by in-app updater) ──────────
-  app.get("/api/app-download-link", async (_req, res) => {
-    try {
-      const { data, error } = await supabase
-        .from("app_download_link")
-        .select("id, url, updated_at")
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error && error.code !== "PGRST116") return res.status(500).json({ error: error.message });
-      res.json(data ?? null);
-    } catch {
-      res.status(500).json({ error: "Failed to fetch app download link" });
-    }
-  });
-
   // ── App Versions (full list — used by "What's New" modal) ─────────────────
   app.get("/api/app-versions", async (_req, res) => {
     try {
