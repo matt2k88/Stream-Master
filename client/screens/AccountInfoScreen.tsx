@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -17,6 +17,8 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system/legacy";
+import * as IntentLauncher from "expo-intent-launcher";
 import { markReplayIntroOnResume } from "@/lib/intro-flag";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -33,6 +35,25 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const APP_VERSION: string =
   (Constants?.expoConfig?.version as string | undefined) ?? "1.0.0";
+
+// Compares two dotted version strings (e.g. "1.2.3" vs "1.2.10").
+// Returns positive if a > b, negative if a < b, 0 if equal.
+// Non-numeric segments and missing segments are treated as 0.
+function compareVersions(a: string, b: string): number {
+  const parse = (s: string) =>
+    String(s).split(/[.\-+]/).map((p) => {
+      const n = parseInt(p, 10);
+      return Number.isFinite(n) ? n : 0;
+    });
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
 
 function HoverBtn({
   style,
@@ -177,6 +198,10 @@ export default function AccountInfoScreen() {
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [downloadVisible, setDownloadVisible] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const downloadRef = useRef<any>(null);
+  const downloadCancelledRef = useRef(false);
   const expiryStatus = useExpiryStatus();
   const isLifetime = expiryStatus.isLifetime;
   const [notesVisible, setNotesVisible] = useState(false);
@@ -227,26 +252,121 @@ export default function AccountInfoScreen() {
     if (updateChecking) return;
     setUpdateChecking(true);
     try {
-      const url = new URL("/api/app-version", getApiUrl());
-      const res = await fetch(url.toString());
-      const data = res.ok ? await res.json() : null;
+      const base = getApiUrl();
+      const [verRes, linkRes] = await Promise.all([
+        fetch(new URL("/api/app-version", base).toString()),
+        fetch(new URL("/api/app-download-link", base).toString()).catch(() => null),
+      ]);
+      const data = verRes.ok ? await verRes.json() : null;
+      const linkData = linkRes && linkRes.ok ? await linkRes.json() : null;
       const remoteVersion = data?.version as string | undefined;
       const code = data?.downloader_code as string | undefined;
+      const directUrl = linkData?.url as string | undefined;
+
       if (!remoteVersion) {
         Alert.alert("Update Check", "Could not reach the update server. Try again later.");
-      } else if (remoteVersion === APP_VERSION) {
+        return;
+      }
+      if (compareVersions(remoteVersion, APP_VERSION) <= 0) {
         Alert.alert("You're Up to Date", `You're running the latest version (v${APP_VERSION}).`);
-      } else {
+        return;
+      }
+      // On Android with a direct APK link, offer the one-tap installer first.
+      // Everywhere else (or as a fallback) we still surface the downloader code.
+      const fallbackMsg = `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`;
+
+      // Only trust https:// links to avoid update-channel tampering.
+      const safeDirectUrl = directUrl && /^https:\/\//i.test(directUrl) ? directUrl : undefined;
+
+      if (Platform.OS === "android" && safeDirectUrl) {
         Alert.alert(
           "Update Available",
-          `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`,
+          `A new version (v${remoteVersion}) is available.\n\nYou can download and install it directly. Android will ask once for permission to install apps from this source — that's a one-time prompt from the system.`,
+          [
+            { text: "Later", style: "cancel" },
+            { text: "Downloader Code", onPress: () => Alert.alert("Update Available", fallbackMsg) },
+            { text: "Download & Install", onPress: () => downloadAndInstallApk(safeDirectUrl, remoteVersion) },
+          ],
         );
+      } else {
+        Alert.alert("Update Available", fallbackMsg);
       }
     } catch {
       Alert.alert("Update Check", "Could not reach the update server. Try again later.");
     } finally {
       setUpdateChecking(false);
     }
+  };
+
+  // Downloads the APK from `url` (with a cache-busting query string so the
+  // CDN never serves a stale build) and hands it to Android's package
+  // installer. The system prompts the user once to allow installs from
+  // this source; subsequent updates skip that prompt.
+  const downloadAndInstallApk = async (url: string, version: string) => {
+    if (Platform.OS !== "android") return;
+    downloadCancelledRef.current = false;
+    let dl: any = null;
+    try {
+      setDownloadProgress(0);
+      setDownloadVisible(true);
+      // Cache-bust so every "Check for Updates" pulls the freshest APK
+      // even if the CDN/proxy still has the old binary cached.
+      const bustedUrl = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+      // Always overwrite the previous download so we never install a stale
+      // file from a prior attempt.
+      const target = (FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "") + `ultracast-${version}.apk`;
+      try { await FileSystem.deleteAsync(target, { idempotent: true }); } catch {}
+
+      dl = FileSystem.createDownloadResumable(
+        bustedUrl,
+        target,
+        {},
+        (p) => {
+          if (p.totalBytesExpectedToWrite > 0) {
+            setDownloadProgress(p.totalBytesWritten / p.totalBytesExpectedToWrite);
+          }
+        },
+      );
+      downloadRef.current = dl;
+      const result = await dl.downloadAsync();
+      if (downloadCancelledRef.current) {
+        try { await FileSystem.deleteAsync(target, { idempotent: true }); } catch {}
+        return;
+      }
+      if (!result?.uri) {
+        Alert.alert("Download Failed", "The update could not be downloaded. Please try again.");
+        return;
+      }
+      // Convert file:// → content:// so the package installer can read it
+      // under Android's Scoped Storage rules.
+      const contentUri = await FileSystem.getContentUriAsync(result.uri);
+      await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+        data: contentUri,
+        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        type: "application/vnd.android.package-archive",
+      });
+    } catch (e: any) {
+      if (!downloadCancelledRef.current) {
+        Alert.alert(
+          "Install Failed",
+          "Couldn't install the update. If Android asked for permission to install from this source, please allow it and try again.",
+        );
+      }
+    } finally {
+      downloadRef.current = null;
+      setDownloadVisible(false);
+      setDownloadProgress(0);
+    }
+  };
+
+  const cancelDownload = async () => {
+    downloadCancelledRef.current = true;
+    const dl = downloadRef.current;
+    if (dl) {
+      try { await dl.pauseAsync(); } catch {}
+    }
+    setDownloadVisible(false);
+    setDownloadProgress(0);
   };
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -639,6 +759,38 @@ export default function AccountInfoScreen() {
           </HoverBtn>
         </View>
       )}
+
+      {/* Download progress modal — shown while pulling the new APK */}
+      <Modal visible={downloadVisible} transparent animationType="fade" onRequestClose={cancelDownload}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.downloadCard}>
+            <ThemedText style={styles.downloadTitle}>Downloading Update</ThemedText>
+            <ThemedText style={styles.downloadSub}>
+              {Math.round(downloadProgress * 100)}% — please don't close the app.
+            </ThemedText>
+            <View style={styles.downloadBarTrack}>
+              <View
+                style={[
+                  styles.downloadBarFill,
+                  { width: `${Math.max(2, Math.round(downloadProgress * 100))}%` },
+                ]}
+              />
+            </View>
+            <ThemedText style={styles.downloadHint}>
+              When the download finishes, Android will open the installer. The first time you may be asked to allow installs from this source — accept it and the app will update.
+            </ThemedText>
+            <Pressable
+              onPress={cancelDownload}
+              style={({ focused, hovered, pressed }) => [
+                styles.downloadCancelBtn,
+                (focused || hovered || pressed) && styles.downloadCancelBtnActive,
+              ]}
+            >
+              <ThemedText style={styles.downloadCancelText}>Cancel</ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* App Notes modal — changelog + known issues */}
       <Modal
@@ -1068,6 +1220,54 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
     justifyContent: "center", alignItems: "center",
     padding: Spacing.lg,
+  },
+  downloadCard: {
+    width: "100%", maxWidth: 460,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.5)",
+    padding: Spacing.lg,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 16, elevation: 12,
+  },
+  downloadTitle: {
+    color: Colors.dark.text, fontSize: 16, fontWeight: "800", marginBottom: 4,
+  },
+  downloadSub: {
+    color: Colors.dark.textSecondary, fontSize: 13, marginBottom: Spacing.md,
+  },
+  downloadBarTrack: {
+    height: 8, borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  downloadBarFill: {
+    height: "100%",
+    backgroundColor: Colors.dark.accent,
+    borderRadius: 4,
+  },
+  downloadHint: {
+    marginTop: Spacing.md,
+    color: Colors.dark.textSecondary, fontSize: 11, lineHeight: 15,
+  },
+  downloadCancelBtn: {
+    marginTop: Spacing.md,
+    alignSelf: "flex-end",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  downloadCancelBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.15)",
+  },
+  downloadCancelText: {
+    color: Colors.dark.text,
+    fontSize: 12,
+    fontWeight: "700",
   },
   notesModal: {
     width: "100%", maxWidth: 640, maxHeight: "90%",

@@ -178,9 +178,10 @@ export default function GroupEditorModal({
   );
 }
 
-const PinToggle = forwardRef<View, { pinned: boolean; color: string; onPress: () => void; nextFocusDown?: number }>(function PinToggle(
-  { pinned, color, onPress, nextFocusDown },
-  ref,
+type PinToggleProps = { pinned: boolean; color: string; onPress: () => void; nextFocusDown?: number };
+const PinToggle = forwardRef(function PinToggle(
+  { pinned, color, onPress, nextFocusDown }: PinToggleProps,
+  ref: React.Ref<View>,
 ) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -222,7 +223,7 @@ const PinToggle = forwardRef<View, { pinned: boolean; color: string; onPress: ()
       </View>
     </Pressable>
   );
-}
+});
 
 function CloseBtn({ onPress }: { onPress: () => void }) {
   const [focused, setFocused] = useState(false);
@@ -311,14 +312,18 @@ function IconSwatch({
   );
 }
 
-const FooterBtn = forwardRef<View, {
+type FooterBtnProps = {
   label: string;
   icon: React.ComponentProps<typeof Feather>["name"];
   onPress: () => void;
   tone: "primary" | "ghost" | "danger";
   disabled?: boolean;
   nextFocusUp?: number;
-}>(function FooterBtn({ label, icon, onPress, tone, disabled, nextFocusUp }, ref) {
+};
+const FooterBtn = forwardRef(function FooterBtn(
+  { label, icon, onPress, tone, disabled, nextFocusUp }: FooterBtnProps,
+  ref: React.Ref<View>,
+) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -351,7 +356,7 @@ const FooterBtn = forwardRef<View, {
       </ThemedText>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   backdrop: {
