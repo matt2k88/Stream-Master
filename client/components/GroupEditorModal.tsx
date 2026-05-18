@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, forwardRef } from "react";
 import {
   View,
   StyleSheet,
@@ -7,6 +7,7 @@ import {
   TextInput,
   ScrollView,
   Platform,
+  findNodeHandle,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -40,6 +41,29 @@ export default function GroupEditorModal({
   const [iconKey, setIconKey] = useState(DEFAULT_GROUP_ICON);
   const [color, setColor] = useState(DEFAULT_GROUP_COLOR);
   const [pinned, setPinned] = useState(false);
+
+  // Android TV focus hand-off: when the user presses D-pad Down on the Pin
+  // toggle (the last row inside the ScrollView), focus needs to escape into
+  // the footer's Cancel/Create buttons. Some Android TV builds don't do this
+  // automatically, so we wire `nextFocusDown` explicitly via node handles.
+  const pinRef = useRef<View>(null);
+  const cancelRef = useRef<View>(null);
+  const primaryRef = useRef<View>(null);
+  const deleteRef = useRef<View>(null);
+  const [primaryTag, setPrimaryTag] = useState<number | null>(null);
+  const [cancelTag, setCancelTag] = useState<number | null>(null);
+  const [pinTag, setPinTag] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    // Resolve node handles after mount so nextFocus* can target them.
+    const id = setTimeout(() => {
+      setPrimaryTag(primaryRef.current ? findNodeHandle(primaryRef.current) : null);
+      setCancelTag(cancelRef.current ? findNodeHandle(cancelRef.current) : null);
+      setPinTag(pinRef.current ? findNodeHandle(pinRef.current) : null);
+    }, 0);
+    return () => clearTimeout(id);
+  }, [visible, editing]);
 
   useEffect(() => {
     if (visible) {
@@ -108,27 +132,44 @@ export default function GroupEditorModal({
 
             {/* Pin to sidebar */}
             <ThemedText style={[styles.sectionLabel, { marginTop: Spacing.md }]}>Show on Categories</ThemedText>
-            <PinToggle pinned={pinned} color={color} onPress={() => setPinned((v) => !v)} />
+            <PinToggle
+              ref={pinRef}
+              pinned={pinned}
+              color={color}
+              onPress={() => setPinned((v) => !v)}
+              nextFocusDown={primaryTag ?? cancelTag ?? undefined}
+            />
           </ScrollView>
 
           {/* Footer */}
           <View style={styles.footer}>
             {editing && onDelete ? (
               <FooterBtn
+                ref={deleteRef}
                 label="Delete"
                 icon="trash-2"
                 tone="danger"
                 onPress={onDelete}
+                nextFocusUp={pinTag ?? undefined}
               />
             ) : null}
             <View style={{ flex: 1 }} />
-            <FooterBtn label="Cancel" icon="x" tone="ghost" onPress={onCancel} />
             <FooterBtn
+              ref={cancelRef}
+              label="Cancel"
+              icon="x"
+              tone="ghost"
+              onPress={onCancel}
+              nextFocusUp={pinTag ?? undefined}
+            />
+            <FooterBtn
+              ref={primaryRef}
               label={editing ? "Save" : "Create"}
               icon={editing ? "check" : "plus"}
               tone="primary"
               disabled={name.trim().length === 0}
               onPress={() => onSave({ name: name.trim(), iconKey, color, pinned })}
+              nextFocusUp={pinTag ?? undefined}
             />
           </View>
         </View>
@@ -137,13 +178,17 @@ export default function GroupEditorModal({
   );
 }
 
-function PinToggle({ pinned, color, onPress }: { pinned: boolean; color: string; onPress: () => void }) {
+const PinToggle = forwardRef<View, { pinned: boolean; color: string; onPress: () => void; nextFocusDown?: number }>(function PinToggle(
+  { pinned, color, onPress, nextFocusDown },
+  ref,
+) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || hovered || pressed;
   return (
     <Pressable
+      ref={ref as React.Ref<View>}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -151,6 +196,7 @@ function PinToggle({ pinned, color, onPress }: { pinned: boolean; color: string;
       onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      nextFocusDown={nextFocusDown}
       style={[
         styles.pinRow,
         isActive && { borderColor: color, backgroundColor: "rgba(255,255,255,0.04)" },
@@ -265,19 +311,14 @@ function IconSwatch({
   );
 }
 
-function FooterBtn({
-  label,
-  icon,
-  onPress,
-  tone,
-  disabled,
-}: {
+const FooterBtn = forwardRef<View, {
   label: string;
   icon: React.ComponentProps<typeof Feather>["name"];
   onPress: () => void;
   tone: "primary" | "ghost" | "danger";
   disabled?: boolean;
-}) {
+  nextFocusUp?: number;
+}>(function FooterBtn({ label, icon, onPress, tone, disabled, nextFocusUp }, ref) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -286,6 +327,7 @@ function FooterBtn({
   const isDanger = tone === "danger";
   return (
     <Pressable
+      ref={ref as React.Ref<View>}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       onFocus={() => setFocused(true)}
@@ -294,6 +336,7 @@ function FooterBtn({
       onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      nextFocusUp={nextFocusUp}
       style={[
         styles.footerBtn,
         isPrimary && styles.footerBtnPrimary,
