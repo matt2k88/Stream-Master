@@ -17,7 +17,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
@@ -555,6 +555,8 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
   onPress,
   isFav,
   isRecent,
+  isSuggested,
+  isPinned,
   hasTVPreferredFocus,
 }: {
   item: SidebarCat;
@@ -563,6 +565,11 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
   onPress: (item: SidebarCat) => void;
   isFav?: boolean;
   isRecent?: boolean;
+  isSuggested?: boolean;
+  // Pinned rows (Recently/Continue Watching, Favourites, Suggested for You,
+  // Recently Added) get a subtle background so users understand they are
+  // fixed system sections that can't be reordered or hidden.
+  isPinned?: boolean;
   hasTVPreferredFocus?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
@@ -575,6 +582,7 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
     <Pressable
       style={[
         styles.sidebarItem,
+        isPinned && styles.sidebarItemPinned,
         isSelected && styles.sidebarItemSelected,
         isActive && !isSelected && styles.sidebarItemHover,
       ]}
@@ -610,6 +618,12 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
         <Feather
           name="clock"
           size={10}
+          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+        />
+      ) : isSuggested ? (
+        <MaterialCommunityIcons
+          name="auto-fix"
+          size={12}
           color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
         />
       ) : null}
@@ -662,6 +676,11 @@ export default function ContentListScreen() {
     const t = setTimeout(() => setCategorySwitching(false), 120);
     return () => clearTimeout(t);
   }, [selectedCategoryId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Track whether we've already redirected away from a hidden category on
+  // initial mount, so the user can still tap "Favourites" / etc. without
+  // us bouncing them somewhere else.
+  const redirectedFromHiddenRef = useRef(false);
   const [contentWidth, setContentWidth] = useState(Math.max(200, width - SIDEBAR_W - 2));
   const flatListRef = useRef<FlashList<ContentItem>>(null);
 
@@ -695,6 +714,29 @@ export default function ContentListScreen() {
       default: return [];
     }
   }, [type, liveCategories, vodCategories, seriesCategories, applyOrder]);
+
+  // If the user landed here on a category that THEY have hidden in their
+  // organised list, jump them to the first visible real category instead.
+  // Otherwise the page would silently show content from a category the
+  // sidebar refuses to display, which is confusing. Special pinned ids
+  // (favourites / recently / suggested / recent / watchlist) are never
+  // redirected. Runs only once per mount.
+  useEffect(() => {
+    if (redirectedFromHiddenRef.current) return;
+    if (categories.length === 0) return; // wait until prefs/data load
+    const pinnedIds = new Set([
+      "favourites", "recently", "suggested", "recent", "watchlist",
+    ]);
+    if (pinnedIds.has(selectedCategoryId)) return;
+    const visible = categories.find((c) => String(c.category_id) === String(selectedCategoryId));
+    if (visible) return;
+    // Current category is hidden — switch to the first visible one.
+    redirectedFromHiddenRef.current = true;
+    const first = categories[0];
+    setSelectedCategoryId(first.category_id);
+    setSelectedCategoryName(first.category_name);
+    initialFocusIdRef.current = first.category_id;
+  }, [categories, selectedCategoryId]);
 
   const sidebarData: SidebarCat[] = useMemo(() => {
     const pinned: SidebarCat[] = [];
@@ -1163,16 +1205,23 @@ export default function ContentListScreen() {
   // header back button). Stays stable across category switches afterwards.
   const initialFocusIdRef = useRef<string>(categoryId);
   const renderSidebarItem = useCallback(
-    ({ item }: { item: SidebarCat }) => (
-      <CategorySidebarItem
-        item={item}
-        isSelected={item.category_id === selectedCategoryId}
-        isFav={item.category_id === "favourites"}
-        isRecent={item.category_id === "recently"}
-        onPress={handleSidebarPress}
-        hasTVPreferredFocus={item.category_id === initialFocusIdRef.current}
-      />
-    ),
+    ({ item }: { item: SidebarCat }) => {
+      const id = item.category_id;
+      const isPinned =
+        id === "recently" || id === "favourites" || id === "suggested" || id === "recent";
+      return (
+        <CategorySidebarItem
+          item={item}
+          isSelected={id === selectedCategoryId}
+          isFav={id === "favourites"}
+          isRecent={id === "recently"}
+          isSuggested={id === "suggested"}
+          isPinned={isPinned}
+          onPress={handleSidebarPress}
+          hasTVPreferredFocus={id === initialFocusIdRef.current}
+        />
+      );
+    },
     [selectedCategoryId, handleSidebarPress],
   );
 
@@ -1609,6 +1658,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "transparent",
+  },
+  // Fixed system sections (Recently/Continue Watching, Favourites,
+  // Suggested for You, Recently Added). Subtle background tint
+  // distinguishes them from reorderable categories without looking like
+  // a hover state.
+  sidebarItemPinned: {
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
   sidebarItemSelected: {
     borderColor: "rgba(255,102,0,0.35)",
