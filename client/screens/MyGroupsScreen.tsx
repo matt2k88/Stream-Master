@@ -163,8 +163,9 @@ function ContentTile({
   manageMode: boolean;
 }) {
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const isActive = focused || hovered || pressed;
   const imgH = height - 48;
   const fallbackIcon: React.ComponentProps<typeof Feather>["name"] =
     type === "live" ? "tv" : type === "movies" ? "film" : "grid";
@@ -173,6 +174,8 @@ function ContentTile({
       onPress={manageMode ? onRemove : onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       style={[
@@ -348,9 +351,7 @@ export default function MyGroupsScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, paddingHorizontal: padH }]}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.headerBtn} accessibilityLabel="Back">
-          <Feather name="arrow-left" size={18} color={Colors.dark.text} />
-        </Pressable>
+        <HeaderBtn icon="arrow-left" label="Back" iconOnly onPress={() => navigation.goBack()} />
         <View style={styles.headerTitleWrap}>
           <Feather name="folder" size={16} color={Colors.dark.accent} />
           <ThemedText style={styles.headerTitle}>My {typeLabel} Groups</ThemedText>

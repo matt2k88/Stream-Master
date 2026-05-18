@@ -58,9 +58,7 @@ export default function GroupEditorModal({
             <ThemedText style={styles.title}>
               {editing ? "Edit Group" : `New ${typeLabel} Group`}
             </ThemedText>
-            <Pressable onPress={onCancel} style={styles.closeBtn} accessibilityLabel="Close">
-              <Feather name="x" size={18} color={Colors.dark.text} />
-            </Pressable>
+            <CloseBtn onPress={onCancel} />
           </View>
 
           <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: Spacing.lg }}>
@@ -125,6 +123,28 @@ export default function GroupEditorModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function CloseBtn({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[styles.closeBtn, isActive && { borderColor: Colors.dark.accent, borderWidth: 1, backgroundColor: "rgba(255,102,0,0.1)" }]}
+      accessibilityLabel="Close"
+    >
+      <Feather name="x" size={18} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+    </Pressable>
   );
 }
 
