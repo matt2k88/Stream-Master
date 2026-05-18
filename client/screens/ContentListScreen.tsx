@@ -812,7 +812,7 @@ export default function ContentListScreen() {
     refresh();
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
-  const { items: watchlistItems, toggleByStream: toggleWatchlist } = useWatchlist();
+  const { items: watchlistItems, toggleByStream: toggleWatchlist, findByStreamId: findWatchlistByStreamId, remove: removeWatchlistRow } = useWatchlist();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -1247,6 +1247,12 @@ export default function ContentListScreen() {
         if (entry) removeWatchEntry(entry.id);
         return;
       }
+      if (isWatchlistView) {
+        const wantType: "movie" | "series" = type === "series" ? "series" : "movie";
+        const row = findWatchlistByStreamId(streamId, wantType);
+        if (row) removeWatchlistRow(row.id);
+        return;
+      }
       // Normal category: tap opens (or closes) a small action picker
       // overlay on the card with Favourite + Watchlist toggles.
       const id = "stream_id" in item
@@ -1256,7 +1262,7 @@ export default function ContentListScreen() {
           : String(item.num);
       setPickerOpenId((cur) => (cur === id ? null : id));
     },
-    [type, isFavouritesView, isRecentlyView, toggleFavourite, getByStreamId, getBySeriesId, removeWatchEntry],
+    [type, isFavouritesView, isRecentlyView, isWatchlistView, toggleFavourite, getByStreamId, getBySeriesId, removeWatchEntry, findWatchlistByStreamId, removeWatchlistRow],
   );
 
   // Auto-exit edit mode whenever the category changes — semantics differ
@@ -1281,7 +1287,7 @@ export default function ContentListScreen() {
   }, [editMode]);
 
   const editAction: "delete" | "favourite" =
-    isFavouritesView || isRecentlyView ? "delete" : "favourite";
+    isFavouritesView || isRecentlyView || isWatchlistView ? "delete" : "favourite";
 
   // O(1) favourite lookup per card. Built once per favourites change instead
   // of running an O(n) `favourites.some()` inside every visible card on every
@@ -1649,7 +1655,7 @@ export default function ContentListScreen() {
           <MultiScreenBtn iconOnly={!isLandscapeHeader} onPress={() => navigation.navigate("MultiScreenLayout")} />
         ) : null}
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
-        {!isSearching && !isRecentlyAddedView && !isWatchlistView && categoryContent.length > 0 ? (
+        {!isSearching && !isRecentlyAddedView && categoryContent.length > 0 ? (
           <ManageBtn
             iconOnly={!isLandscapeHeader}
             active={editMode}
