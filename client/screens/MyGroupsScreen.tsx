@@ -284,11 +284,11 @@ export default function MyGroupsScreen() {
     setEditorOpen(true);
   };
 
-  const handleSave = async ({ name, iconKey, color }: { name: string; iconKey: string; color: string }) => {
+  const handleSave = async ({ name, iconKey, color, pinned }: { name: string; iconKey: string; color: string; pinned: boolean }) => {
     if (editingGroup) {
-      await updateGroup(editingGroup.id, { name, icon_key: iconKey, color });
+      await updateGroup(editingGroup.id, { name, icon_key: iconKey, color, pinned });
     } else {
-      const created = await createGroup({ type, name, iconKey, color });
+      const created = await createGroup({ type, name, iconKey, color, pinned });
       if (created) setSelectedGroupId(created.id);
     }
     setEditorOpen(false);

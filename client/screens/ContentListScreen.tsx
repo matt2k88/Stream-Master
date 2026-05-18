@@ -29,8 +29,8 @@ import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
-import { useGroups } from "@/contexts/GroupsContext";
-import { getGroupIconProps } from "@/lib/group-icons";
+import { useGroups, GroupType } from "@/contexts/GroupsContext";
+import { getGroupIconProps, getGroupIconDef } from "@/lib/group-icons";
 import { useWatchHistory, getWatchState, type SeriesProgress } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
@@ -450,8 +450,8 @@ function PickerActionButton({
         styles.pickerBtn,
         action.active && styles.pickerBtnRemove,
         isActive && (action.active ? styles.pickerBtnRemoveActive : styles.pickerBtnActive),
-        action.tint && !action.active ? { backgroundColor: action.tint } : null,
-        action.tint && !action.active && isActive ? { borderColor: "#fff", shadowColor: action.tint, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 8, elevation: 8 } : null,
+        action.tint && !action.active ? { backgroundColor: action.tint, borderColor: action.tint } : null,
+        action.tint && !action.active && isActive ? { borderColor: readableOn(action.tint), shadowColor: action.tint, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 8, elevation: 8 } : null,
       ]}
       onPress={() => {
         action.onPress();
@@ -466,14 +466,23 @@ function PickerActionButton({
       hasTVPreferredFocus={autoFocus}
       accessibilityLabel={`${action.active ? "Remove from" : "Add to"} ${action.label}`}
     >
-      {action.active ? (
-        <Feather name="check" size={12} color="#fff" />
-      ) : action.iconComponent ? (
-        <action.iconComponent name={action.iconName as any} size={12} color="#fff" />
-      ) : (
-        <Feather name={action.icon} size={12} color="#fff" />
-      )}
-      <ThemedText style={styles.pickerBtnText} numberOfLines={1}>
+      {(() => {
+        const fg = action.active ? "#fff" : (action.tint ? readableOn(action.tint) : "#fff");
+        return action.active ? (
+          <Feather name="check" size={12} color={fg} />
+        ) : action.iconComponent ? (
+          <action.iconComponent name={action.iconName as any} size={12} color={fg} />
+        ) : (
+          <Feather name={action.icon} size={12} color={fg} />
+        );
+      })()}
+      <ThemedText
+        style={[
+          styles.pickerBtnText,
+          !action.active && action.tint ? { color: readableOn(action.tint) } : null,
+        ]}
+        numberOfLines={1}
+      >
         {action.active ? `Remove from ${action.label}` : `Add to ${action.label}`}
       </ThemedText>
     </Pressable>
@@ -761,6 +770,13 @@ const ContentCard = React.memo(function ContentCard({
 interface SidebarCat {
   category_id: string;
   category_name: string;
+  // Optional accent colour for user-pinned group rows. When set, the
+  // selected/hover overlay + active bar + text colour use this instead of
+  // the default orange so the user's chosen group colour shines through.
+  accent?: string;
+  // Optional inline icon for pinned-group rows.
+  iconLib?: "feather" | "mci";
+  iconName?: string;
 }
 
 const CategorySidebarItem = React.memo(function CategorySidebarItem({
@@ -791,14 +807,20 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
   const isActive = focused || pressed;
   const highlight = isSelected || isActive;
   const { scaleFont } = useUISettings();
+  const accent = item.accent ?? Colors.dark.accent;
+  const accentRgba = (alpha: number) => hexToRgba(accent, alpha);
 
   return (
     <Pressable
       style={[
         styles.sidebarItem,
         isPinned && styles.sidebarItemPinned,
-        isSelected && styles.sidebarItemSelected,
-        isActive && !isSelected && styles.sidebarItemHover,
+        isSelected && (item.accent
+          ? { borderColor: accentRgba(0.55) }
+          : styles.sidebarItemSelected),
+        isActive && !isSelected && (item.accent
+          ? { borderColor: accentRgba(0.25) }
+          : styles.sidebarItemHover),
       ]}
       onPress={() => onPress(item)}
       onFocus={() => setFocused(true)}
@@ -809,52 +831,92 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
     >
       {isSelected ? (
         <LinearGradient
-          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.04)"]}
+          colors={[accentRgba(0.20), accentRgba(0.04)]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
         />
       ) : isActive ? (
         <LinearGradient
-          colors={["rgba(255,102,0,0.08)", "rgba(255,102,0,0.02)"]}
+          colors={[accentRgba(0.08), accentRgba(0.02)]}
           style={StyleSheet.absoluteFill}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
         />
       ) : null}
-      {isFav ? (
+      {item.iconLib === "mci" && item.iconName ? (
+        <MaterialCommunityIcons
+          name={item.iconName as any}
+          size={12}
+          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+        />
+      ) : item.iconLib === "feather" && item.iconName ? (
+        <Feather
+          name={item.iconName as any}
+          size={11}
+          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+        />
+      ) : isFav ? (
         <Feather
           name="star"
           size={10}
-          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.textSecondary}
         />
       ) : isRecent ? (
         <Feather
           name="clock"
           size={10}
-          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.textSecondary}
         />
       ) : isSuggested ? (
         <MaterialCommunityIcons
           name="auto-fix"
           size={12}
-          color={highlight ? Colors.dark.accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.textSecondary}
         />
       ) : null}
       <ThemedText
         style={[
           styles.sidebarItemText,
           { fontSize: scaleFont(11), lineHeight: scaleFont(15) },
-          highlight && styles.sidebarItemTextActive,
+          highlight && (item.accent ? { color: accent, fontWeight: "700" } : styles.sidebarItemTextActive),
         ]}
         numberOfLines={3}
       >
         {item.category_name}
       </ThemedText>
-      {isSelected ? <View style={styles.sidebarActiveBar} /> : null}
+      {isSelected ? (
+        <View style={[styles.sidebarActiveBar, item.accent ? { backgroundColor: accent } : null]} />
+      ) : null}
     </Pressable>
   );
 });
+
+// Convert "#RRGGBB" to "rgba(r,g,b,a)". Tolerates short "#RGB" too.
+// Falls back to the orange accent if parsing fails.
+function hexToRgba(hex: string, alpha: number): string {
+  let h = hex.replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return `rgba(255,102,0,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return `rgba(255,102,0,${alpha})`;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Pick a readable foreground (white or black) for a given hex background
+// using a simple luminance threshold.
+function readableOn(hex: string): string {
+  let h = hex.replace("#", "").trim();
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return "#fff";
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.6 ? "#000" : "#fff";
+}
 
 export default function ContentListScreen() {
   const insets = useSafeAreaInsets();
@@ -873,7 +935,7 @@ export default function ContentListScreen() {
   }, [refresh, isSyncing]);
   const { isFavourite, toggleFavourite, getFavouritesByType, clearAllFavourites } = useFavourites();
   const { items: watchlistItems, toggleByStream: toggleWatchlist, findByStreamId: findWatchlistByStreamId, remove: removeWatchlistRow } = useWatchlist();
-  const { getGroupsByType, isInGroup, toggleItem: toggleGroupItem } = useGroups();
+  const { getGroupsByType, getItemsByGroup, isInGroup, toggleItem: toggleGroupItem } = useGroups();
   const { applyOrder } = useCategoryOrder();
   const { entries: watchEntries, getByStreamId, getBySeriesId, getSeriesProgress, refetch: refetchHistory, clearHistory, removeOne: removeWatchEntry } = useWatchHistory();
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -947,6 +1009,8 @@ export default function ContentListScreen() {
       "favourites", "recently", "suggested", "recent", "watchlist",
     ]);
     if (pinnedIds.has(selectedCategoryId)) return;
+    // User-pinned groups use a "group:<id>" id — never redirect off them.
+    if (String(selectedCategoryId).startsWith("group:")) return;
     const visible = categories.find((c) => String(c.category_id) === String(selectedCategoryId));
     if (visible) return;
     // Current category is hidden — switch to the first visible one.
@@ -956,6 +1020,14 @@ export default function ContentListScreen() {
     setSelectedCategoryName(first.category_name);
     setInitialFocusId(first.category_id);
   }, [categories, selectedCategoryId]);
+
+  // User-pinned custom groups for this type. Pinned groups appear in the
+  // sidebar (between the system pinned rows and the real categories) using
+  // each group's own colour + icon.
+  const pinnedGroups = useMemo(
+    () => getGroupsByType(type as GroupType).filter((g) => g.pinned),
+    [getGroupsByType, type],
+  );
 
   const sidebarData: SidebarCat[] = useMemo(() => {
     const pinned: SidebarCat[] = [];
@@ -968,8 +1040,18 @@ export default function ContentListScreen() {
       pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
-    return [...pinned, ...categories];
-  }, [type, categories]);
+    const userPinned: SidebarCat[] = pinnedGroups.map((g) => {
+      const def = getGroupIconDef(g.icon_key);
+      return {
+        category_id: `group:${g.id}`,
+        category_name: g.name,
+        accent: g.color,
+        iconLib: def.lib === "feather" ? "feather" : "mci",
+        iconName: def.name,
+      };
+    });
+    return [...pinned, ...userPinned, ...categories];
+  }, [type, categories, pinnedGroups]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -999,8 +1081,32 @@ export default function ContentListScreen() {
   // This memo only re-runs when streams or selected category actually changes.
   const normalContent: ContentItem[] = useMemo(() => {
     if (isSpecialView) return [];
+    // Pinned user group — resolve group items against the section streams
+    // so the existing card grid (favourites, watch badges, etc.) works
+    // unchanged. Preserves the order the user added items in.
+    if (String(selectedCategoryId).startsWith("group:")) {
+      const groupId = selectedCategoryId.slice("group:".length);
+      const groupItems = getItemsByGroup(groupId);
+      if (groupItems.length === 0) return [];
+      const lookup = new Map<string, ContentItem>();
+      for (const s of allSectionStreams) {
+        const sid = type === "series"
+          ? (s as Series).series_id
+          : (s as LiveStream | VodStream).stream_id;
+        lookup.set(String(sid), s);
+      }
+      const out: ContentItem[] = [];
+      const seen = new Set<string>();
+      for (const it of groupItems) {
+        const k = String(it.stream_id);
+        if (seen.has(k)) continue;
+        const hit = lookup.get(k);
+        if (hit) { out.push(hit); seen.add(k); }
+      }
+      return out;
+    }
     return categoryIndex.get(selectedCategoryId) ?? [];
-  }, [isSpecialView, selectedCategoryId, categoryIndex]);
+  }, [isSpecialView, selectedCategoryId, categoryIndex, getItemsByGroup, allSectionStreams, type]);
 
   // Special views (Favourites / Recently Watched / Recently Added / Suggested).
   const specialContent: ContentItem[] = useMemo(() => {

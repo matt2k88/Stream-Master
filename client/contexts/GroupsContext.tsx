@@ -11,6 +11,7 @@ export interface UserGroup {
   name: string;
   icon_key: string;
   color: string;
+  pinned: boolean;
   created_at: string;
 }
 
@@ -29,6 +30,7 @@ interface CreateGroupParams {
   name: string;
   iconKey: string;
   color: string;
+  pinned?: boolean;
 }
 
 interface AddItemParams {
@@ -48,7 +50,7 @@ interface GroupsContextType {
   /** Is this stream in this specific group? */
   isInGroup: (groupId: string, streamId: number) => boolean;
   createGroup: (params: CreateGroupParams) => Promise<UserGroup | null>;
-  updateGroup: (id: string, patch: Partial<Pick<UserGroup, "name" | "icon_key" | "color">>) => Promise<void>;
+  updateGroup: (id: string, patch: Partial<Pick<UserGroup, "name" | "icon_key" | "color" | "pinned">>) => Promise<void>;
   deleteGroup: (id: string) => Promise<void>;
   /** Add a stream to a group (idempotent — upserts). */
   addItem: (params: AddItemParams) => Promise<void>;
@@ -124,7 +126,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   );
 
   const createGroup = useCallback(
-    async ({ type, name, iconKey, color }: CreateGroupParams): Promise<UserGroup | null> => {
+    async ({ type, name, iconKey, color, pinned }: CreateGroupParams): Promise<UserGroup | null> => {
       if (!activeProfile?.id) return null;
       try {
         const url = new URL("/api/groups", getApiUrl());
@@ -137,6 +139,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
             name,
             icon_key: iconKey,
             color,
+            pinned: !!pinned,
           }),
         });
         if (!res.ok) return null;
@@ -151,7 +154,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   );
 
   const updateGroup = useCallback(
-    async (id: string, patch: Partial<Pick<UserGroup, "name" | "icon_key" | "color">>) => {
+    async (id: string, patch: Partial<Pick<UserGroup, "name" | "icon_key" | "color" | "pinned">>) => {
       // Optimistic
       const prev = groups;
       setGroups((cur) => cur.map((g) => (g.id === id ? { ...g, ...patch } : g)));

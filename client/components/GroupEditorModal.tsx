@@ -24,7 +24,7 @@ interface Props {
   type: GroupType;
   editing?: UserGroup | null; // when editing instead of creating
   onCancel: () => void;
-  onSave: (data: { name: string; iconKey: string; color: string }) => void;
+  onSave: (data: { name: string; iconKey: string; color: string; pinned: boolean }) => void;
   onDelete?: () => void;
 }
 
@@ -39,12 +39,14 @@ export default function GroupEditorModal({
   const [name, setName] = useState("");
   const [iconKey, setIconKey] = useState(DEFAULT_GROUP_ICON);
   const [color, setColor] = useState(DEFAULT_GROUP_COLOR);
+  const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     if (visible) {
       setName(editing?.name ?? "");
       setIconKey(editing?.icon_key ?? DEFAULT_GROUP_ICON);
       setColor(editing?.color ?? DEFAULT_GROUP_COLOR);
+      setPinned(!!editing?.pinned);
     }
   }, [visible, editing]);
 
@@ -98,6 +100,10 @@ export default function GroupEditorModal({
                 />
               ))}
             </View>
+
+            {/* Pin to sidebar */}
+            <ThemedText style={[styles.sectionLabel, { marginTop: Spacing.md }]}>Show on Categories</ThemedText>
+            <PinToggle pinned={pinned} color={color} onPress={() => setPinned((v) => !v)} />
           </ScrollView>
 
           {/* Footer */}
@@ -117,12 +123,53 @@ export default function GroupEditorModal({
               icon={editing ? "check" : "plus"}
               tone="primary"
               disabled={name.trim().length === 0}
-              onPress={() => onSave({ name: name.trim(), iconKey, color })}
+              onPress={() => onSave({ name: name.trim(), iconKey, color, pinned })}
             />
           </View>
         </View>
       </View>
     </Modal>
+  );
+}
+
+function PinToggle({ pinned, color, onPress }: { pinned: boolean; color: string; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[
+        styles.pinRow,
+        isActive && { borderColor: color, backgroundColor: "rgba(255,255,255,0.04)" },
+        pinned && { borderColor: color },
+      ]}
+      accessibilityLabel={pinned ? "Unpin from Categories" : "Pin to Categories"}
+    >
+      <View style={[styles.pinIconChip, { backgroundColor: pinned ? color : "transparent", borderColor: color }]}>
+        <Feather name="bookmark" size={14} color={pinned ? (color === "#FFFFFF" || color === "#FFD700" ? "#000" : "#fff") : color} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <ThemedText style={styles.pinTitle}>
+          {pinned ? "Pinned to Categories" : "Pin to Categories sidebar"}
+        </ThemedText>
+        <ThemedText style={styles.pinSub}>
+          {pinned
+            ? "This group appears alongside your real categories using its chosen colour."
+            : "Show this group as a category on the Live / Movies / Series sidebar."}
+        </ThemedText>
+      </View>
+      <View style={[styles.pinSwitch, pinned && { backgroundColor: color, borderColor: color }]}>
+        <View style={[styles.pinSwitchDot, pinned ? { alignSelf: "flex-end" } : null]} />
+      </View>
+    </Pressable>
   );
 }
 
@@ -338,6 +385,34 @@ const styles = StyleSheet.create({
   footerBtnDanger: {
     backgroundColor: Colors.dark.error,
     borderColor: Colors.dark.error,
+  },
+  pinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundRoot,
+  },
+  pinIconChip: {
+    width: 32, height: 32, borderRadius: 16,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1,
+  },
+  pinTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "700" },
+  pinSub: { color: Colors.dark.textSecondary, fontSize: 11, marginTop: 2, lineHeight: 14 },
+  pinSwitch: {
+    width: 38, height: 22, borderRadius: 11,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    justifyContent: "center", paddingHorizontal: 2,
+  },
+  pinSwitchDot: {
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: "#fff",
   },
   footerBtnActive: {
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },

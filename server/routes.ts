@@ -880,7 +880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/groups", async (req, res) => {
-    const { profile_id, type, name, icon_key, color } = req.body;
+    const { profile_id, type, name, icon_key, color, pinned } = req.body;
     if (!profile_id || !type || !name) {
       return res.status(400).json({ error: "profile_id, type, name required" });
     }
@@ -896,6 +896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: String(name).trim().slice(0, 60),
           icon_key: icon_key || "folder",
           color: color || "#FF6600",
+          pinned: typeof pinned === "boolean" ? pinned : false,
         })
         .select()
         .single();
@@ -908,11 +909,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/groups/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, icon_key, color } = req.body;
+    const { name, icon_key, color, pinned } = req.body;
     const patch: Record<string, unknown> = {};
     if (typeof name === "string") patch.name = name.trim().slice(0, 60);
     if (typeof icon_key === "string") patch.icon_key = icon_key;
     if (typeof color === "string") patch.color = color;
+    if (typeof pinned === "boolean") patch.pinned = pinned;
     if (Object.keys(patch).length === 0) {
       return res.status(400).json({ error: "no fields to update" });
     }
