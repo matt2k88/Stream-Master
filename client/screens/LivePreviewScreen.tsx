@@ -27,6 +27,7 @@ import { xtreamApi, EpgListing } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useData } from "@/contexts/DataContext";
+import { useGroups } from "@/contexts/GroupsContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import type { LiveStream } from "@/lib/xtream-api";
@@ -164,14 +165,26 @@ export default function LivePreviewScreen() {
   const { liveStreams } = useData();
   const { getFavouritesByType } = useFavourites();
   const { entries: watchEntries } = useWatchHistory();
+  const { groups: userGroups, getItemsByGroup } = useGroups();
 
-  // Sidebar channel list. Three modes:
-  //  • "favourites" → all live channels the active profile has favourited.
-  //  • "recently"   → unique live channels the user recently played, newest-first.
-  //  • real id      → all channels in that Xtream category.
+  // Resolve a "group:<id>" categoryId to the matching custom group so the
+  // sidebar can show the group's name + its channel list.
+  const groupForCategory = React.useMemo(() => {
+    if (!categoryId || !String(categoryId).startsWith("group:")) return null;
+    const gid = String(categoryId).slice("group:".length);
+    return userGroups.find((g) => g.id === gid && g.type === "live") ?? null;
+  }, [categoryId, userGroups]);
+
+  // Sidebar channel list. Modes:
+  //  • "favourites"   → all live channels the active profile has favourited.
+  //  • "recently"     → unique live channels the user recently played, newest-first.
+  //  • "group:<id>"   → channels in the user's custom Live group, in the
+  //                     order they were added.
+  //  • real id        → all channels in that Xtream category.
   const sidebarTitle =
     categoryId === "favourites" ? "Favourites"
     : categoryId === "recently" ? "Recently Watched"
+    : groupForCategory ? groupForCategory.name
     : null;
   const categoryChannels = React.useMemo<LiveStream[]>(() => {
     if (!categoryId) return [];
@@ -193,8 +206,23 @@ export default function LivePreviewScreen() {
       }
       return out;
     }
+    if (groupForCategory) {
+      const items = getItemsByGroup(groupForCategory.id);
+      if (items.length === 0) return [];
+      const idx = new Map<string, LiveStream>();
+      for (const s of liveStreams) idx.set(String(s.stream_id), s);
+      const out: LiveStream[] = [];
+      const seen = new Set<string>();
+      for (const it of items) {
+        const k = String(it.stream_id);
+        if (seen.has(k)) continue;
+        const hit = idx.get(k);
+        if (hit) { out.push(hit); seen.add(k); }
+      }
+      return out;
+    }
     return liveStreams.filter((s) => String(s.category_id) === String(categoryId));
-  }, [categoryId, liveStreams, getFavouritesByType, watchEntries]);
+  }, [categoryId, liveStreams, getFavouritesByType, watchEntries, groupForCategory, getItemsByGroup]);
 
   // Active channel state
   const [selectedId, setSelectedId] = useState(streamId);
@@ -788,11 +816,11 @@ export default function LivePreviewScreen() {
           <View style={styles.sidebar}>
             <View style={styles.sidebarHeader}>
               <Feather
-                name={categoryId === "favourites" ? "star" : categoryId === "recently" ? "clock" : "tv"}
+                name={categoryId === "favourites" ? "star" : categoryId === "recently" ? "clock" : groupForCategory ? "folder" : "tv"}
                 size={11}
-                color={Colors.dark.accent}
+                color={groupForCategory ? groupForCategory.color : Colors.dark.accent}
               />
-              <ThemedText style={styles.sidebarHeaderText}>
+              <ThemedText style={[styles.sidebarHeaderText, groupForCategory ? { color: groupForCategory.color } : null]}>
                 {sidebarTitle ?? "Channels"}
               </ThemedText>
             </View>
