@@ -1443,10 +1443,10 @@ export default function ContentListScreen() {
   // Also exit if the current view becomes invalid for edit mode
   useEffect(() => {
     if (!editMode) return;
-    if (isSearching || isRecentlyAddedView || categoryContent.length === 0) {
+    if (isSearching || categoryContent.length === 0) {
       setEditMode(false);
     }
-  }, [editMode, isSearching, isRecentlyAddedView, categoryContent.length]);
+  }, [editMode, isSearching, categoryContent.length]);
 
   // Close any open picker whenever Manage mode itself is toggled off.
   useEffect(() => {
@@ -1849,7 +1849,7 @@ export default function ContentListScreen() {
           onPress={() => navigation.navigate("MyGroups", { type })}
         />
         <RefreshBtn onPress={handleRefresh} refreshing={isSyncing} />
-        {!isSearching && !isRecentlyAddedView && categoryContent.length > 0 ? (
+        {!isSearching && categoryContent.length > 0 ? (
           <ManageBtn
             iconOnly={!isLandscapeHeader}
             active={editMode}
