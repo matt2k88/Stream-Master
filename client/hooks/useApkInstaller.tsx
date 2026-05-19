@@ -1,87 +1,330 @@
-import { useCallback } from "react";
-import { Platform, Linking, Alert } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import {
+  View,
+  Modal,
+  StyleSheet,
+  Pressable,
+  Platform,
+  Linking,
+  Alert,
+} from "react-native";
+import * as LegacyFS from "expo-file-system/legacy";
+import * as IntentLauncher from "expo-intent-launcher";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Feather } from "@expo/vector-icons";
+import { ThemedText } from "@/components/ThemedText";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 
+// One-time "Allow installs from unknown sources" pre-warning key.
 const UNKNOWN_SOURCES_NOTICE_KEY = "@ultracast:apk_unknown_sources_notice_v1";
 
-async function fetchDownloadUrl(): Promise<string | null> {
+// Cache file prefix — used both for naming new downloads and for cleaning
+// up stale ones from earlier attempts.
+const APK_CACHE_PREFIX = "ultracast-update-";
+
+type Status =
+  | { phase: "idle" }
+  | { phase: "preparing" }
+  | { phase: "downloading"; progress: number; receivedMb: number; totalMb: number }
+  | { phase: "installing" }
+  | { phase: "error"; message: string };
+
+// Strip any older cached APKs we've downloaded before — these can pile up
+// in the cache directory if the user retries or the installer was
+// dismissed.  Best-effort; failures are ignored.
+async function cleanStaleApks() {
   try {
-    const res = await fetch(
-      new URL("/api/app-download-link", getApiUrl()).toString(),
-      { cache: "no-store" as RequestCache },
+    const dir = LegacyFS.cacheDirectory;
+    if (!dir) return;
+    const entries = await LegacyFS.readDirectoryAsync(dir);
+    await Promise.all(
+      entries
+        .filter((name) => name.startsWith(APK_CACHE_PREFIX) && name.endsWith(".apk"))
+        .map((name) => LegacyFS.deleteAsync(dir + name, { idempotent: true }).catch(() => {})),
     );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const url = typeof data?.url === "string" ? data.url : null;
-    if (!url || !/^https:\/\//i.test(url)) return null;
-    return url;
   } catch {
-    return null;
+    // ignore — cleanup is best-effort
   }
 }
 
 export function useApkInstaller() {
-  const start = useCallback(async () => {
-    const url = await fetchDownloadUrl();
-    if (!url) {
-      Alert.alert(
-        "Update",
-        "Could not reach the update server. Please check your connection and try again.",
-      );
-      return;
-    }
+  const [status, setStatus] = useState<Status>({ phase: "idle" });
+  const resumableRef = useRef<LegacyFS.DownloadResumable | null>(null);
+  const cancelledRef = useRef(false);
 
-    if (Platform.OS !== "android") {
-      try { await Linking.openURL(url); } catch {}
-      return;
-    }
-
-    const openInBrowser = async (): Promise<boolean> => {
-      try {
-        await Linking.openURL(url);
-        return true;
-      } catch {
-        Alert.alert(
-          "Update",
-          "Could not open the browser to download the update.",
-        );
-        return false;
-      }
-    };
-
-    let seen: string | null = null;
-    try { seen = await AsyncStorage.getItem(UNKNOWN_SOURCES_NOTICE_KEY); } catch {}
-
-    if (seen) {
-      await openInBrowser();
-      return;
-    }
-
-    Alert.alert(
-      "One-time setup",
-      "Your browser will download the update. When it finishes, tap the downloaded file to install.\n\nThe first time, Android will ask permission to install apps from this source — tap Settings, enable it, then press Back. You will only need to do this once.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Continue",
-          onPress: async () => {
-            const ok = await openInBrowser();
-            if (ok) {
-              try { await AsyncStorage.setItem(UNKNOWN_SOURCES_NOTICE_KEY, "1"); } catch {}
-            }
-          },
-        },
-      ],
-      { cancelable: true },
-    );
+  const close = useCallback(() => {
+    cancelledRef.current = true;
+    try { resumableRef.current?.cancelAsync().catch(() => {}); } catch {}
+    resumableRef.current = null;
+    setStatus({ phase: "idle" });
   }, []);
+
+  // Full flow: fetch URL → (Android) download APK inside the app and hand
+  // it to Android's system package installer.  Non-Android falls back to
+  // the system browser (those platforms can't sideload anyway).
+  const start = useCallback(async () => {
+    if (status.phase !== "idle" && status.phase !== "error") return;
+    cancelledRef.current = false;
+    setStatus({ phase: "preparing" });
+
+    // 1. Fetch the URL from the server.
+    let downloadUrl: string | null = null;
+    try {
+      const res = await fetch(
+        new URL("/api/app-download-link", getApiUrl()).toString(),
+        { cache: "no-store" as RequestCache },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        downloadUrl = typeof data?.url === "string" ? data.url : null;
+      }
+    } catch {
+      downloadUrl = null;
+    }
+
+    if (!downloadUrl) {
+      setStatus({
+        phase: "error",
+        message: "Could not reach the update server. Please check your connection and try again.",
+      });
+      return;
+    }
+
+    // Defence-in-depth: refuse non-HTTPS links even though the server
+    // already enforces this.
+    if (!/^https:\/\//i.test(downloadUrl)) {
+      setStatus({
+        phase: "error",
+        message: "The update server returned an insecure download link. Please contact support.",
+      });
+      return;
+    }
+
+    // Non-Android: just open the URL in the system browser.
+    if (Platform.OS !== "android") {
+      try { await Linking.openURL(downloadUrl); } catch {}
+      setStatus({ phase: "idle" });
+      return;
+    }
+
+    // 2. One-time pre-warning about "Install from unknown sources".
+    try {
+      const seen = await AsyncStorage.getItem(UNKNOWN_SOURCES_NOTICE_KEY);
+      if (!seen) {
+        await new Promise<void>((resolve, reject) => {
+          Alert.alert(
+            "One-time setup",
+            "After downloading, Android will ask permission to install apps from Ultra Cast.\n\nTap \"Settings\" → enable \"Allow from this source\" → press Back. You will only need to do this the first time.",
+            [
+              { text: "Cancel", style: "cancel", onPress: () => reject(new Error("cancelled")) },
+              {
+                text: "Continue",
+                onPress: async () => {
+                  try { await AsyncStorage.setItem(UNKNOWN_SOURCES_NOTICE_KEY, "1"); } catch {}
+                  resolve();
+                },
+              },
+            ],
+            { cancelable: false },
+          );
+        });
+      }
+    } catch {
+      setStatus({ phase: "idle" });
+      return;
+    }
+
+    if (cancelledRef.current) { setStatus({ phase: "idle" }); return; }
+
+    // 3. Clean stale APKs from prior attempts, then download.
+    await cleanStaleApks();
+
+    setStatus({ phase: "downloading", progress: 0, receivedMb: 0, totalMb: 0 });
+    const target = (LegacyFS.cacheDirectory ?? "") + `${APK_CACHE_PREFIX}${Date.now()}.apk`;
+    const resumable = LegacyFS.createDownloadResumable(
+      downloadUrl,
+      target,
+      {},
+      (p) => {
+        if (cancelledRef.current) return;
+        const total = p.totalBytesExpectedToWrite > 0 ? p.totalBytesExpectedToWrite : 0;
+        const ratio = total > 0 ? p.totalBytesWritten / total : 0;
+        setStatus({
+          phase: "downloading",
+          progress: Math.max(0, Math.min(1, ratio)),
+          receivedMb: p.totalBytesWritten / (1024 * 1024),
+          totalMb: total / (1024 * 1024),
+        });
+      },
+    );
+    resumableRef.current = resumable;
+
+    let result: LegacyFS.FileSystemDownloadResult | undefined;
+    try {
+      result = await resumable.downloadAsync();
+    } catch {
+      if (cancelledRef.current) { setStatus({ phase: "idle" }); return; }
+      setStatus({
+        phase: "error",
+        message: "Download failed. Check your internet connection and try again.",
+      });
+      return;
+    }
+
+    if (cancelledRef.current) { setStatus({ phase: "idle" }); return; }
+    if (!result?.uri) {
+      setStatus({ phase: "error", message: "Download finished but the file is missing." });
+      return;
+    }
+
+    // 4. Hand the APK to Android's package installer via content:// URI.
+    setStatus({ phase: "installing" });
+    try {
+      const contentUri = await LegacyFS.getContentUriAsync(result.uri);
+      await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+        data: contentUri,
+        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        type: "application/vnd.android.package-archive",
+      });
+      setStatus({ phase: "idle" });
+    } catch {
+      setStatus({
+        phase: "error",
+        message:
+          "Could not open the installer. You may need to allow Ultra Cast to install apps in Android settings, then try again.",
+      });
+    }
+  }, [status.phase]);
+
+  const ModalElement: React.ReactElement | null = (() => {
+    if (status.phase === "idle") return null;
+    return (
+      <Modal transparent animationType="fade" visible onRequestClose={close}>
+        <View style={styles.backdrop}>
+          <View style={styles.card}>
+            <View style={styles.iconRow}>
+              {status.phase === "error" ? (
+                <Feather name="alert-triangle" size={28} color={Colors.dark.error} />
+              ) : status.phase === "installing" ? (
+                <Feather name="check-circle" size={28} color={Colors.dark.success} />
+              ) : (
+                <Feather name="download" size={28} color={Colors.dark.accent} />
+              )}
+            </View>
+            <ThemedText style={styles.title}>
+              {status.phase === "preparing" && "Preparing download..."}
+              {status.phase === "downloading" && "Downloading update"}
+              {status.phase === "installing" && "Opening installer"}
+              {status.phase === "error" && "Update failed"}
+            </ThemedText>
+
+            {status.phase === "downloading" ? (
+              <>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.round(status.progress * 100)}%` }]} />
+                </View>
+                <ThemedText style={styles.subtitle}>
+                  {status.totalMb > 0
+                    ? `${status.receivedMb.toFixed(1)} / ${status.totalMb.toFixed(1)} MB  (${Math.round(status.progress * 100)}%)`
+                    : `${Math.round(status.progress * 100)}%`}
+                </ThemedText>
+              </>
+            ) : null}
+
+            {status.phase === "installing" ? (
+              <ThemedText style={styles.subtitle}>
+                Android will now ask you to confirm the install.
+              </ThemedText>
+            ) : null}
+
+            {status.phase === "preparing" ? (
+              <ThemedText style={styles.subtitle}>Just a moment...</ThemedText>
+            ) : null}
+
+            {status.phase === "error" ? (
+              <ThemedText style={styles.errorText}>{status.message}</ThemedText>
+            ) : null}
+
+            <View style={styles.actions}>
+              {status.phase === "error" ? (
+                <Pressable style={[styles.btn, styles.btnPrimary]} onPress={start}>
+                  <Feather name="refresh-cw" size={14} color="#fff" />
+                  <ThemedText style={styles.btnPrimaryText}>Try Again</ThemedText>
+                </Pressable>
+              ) : null}
+              <Pressable style={styles.btn} onPress={close}>
+                <Feather name="x" size={14} color={Colors.dark.text} />
+                <ThemedText style={styles.btnText}>
+                  {status.phase === "downloading" ? "Cancel" : "Close"}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  })();
 
   return {
     start,
+    cancel: close,
+    isBusy: status.phase !== "idle",
     isAndroid: Platform.OS === "android",
-    // Retained for callsite compatibility — no in-app modal is needed
-    // now that the system browser handles the download UI.
-    modal: null as null,
+    modal: ModalElement,
   };
 }
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "center", alignItems: "center",
+    padding: Spacing.lg,
+  },
+  card: {
+    width: "100%", maxWidth: 400,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.lg, alignItems: "center", gap: Spacing.sm,
+  },
+  iconRow: { marginBottom: Spacing.xs },
+  title: {
+    fontSize: 16, fontWeight: "700", color: Colors.dark.text,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 13, color: Colors.dark.textSecondary,
+    textAlign: "center", marginTop: Spacing.xs,
+  },
+  errorText: {
+    fontSize: 13, color: Colors.dark.textSecondary,
+    textAlign: "center", marginTop: Spacing.xs, lineHeight: 18,
+  },
+  progressTrack: {
+    width: "100%", height: 8, borderRadius: 4,
+    backgroundColor: Colors.dark.backgroundRoot,
+    overflow: "hidden", marginTop: Spacing.sm,
+  },
+  progressFill: {
+    height: "100%", backgroundColor: Colors.dark.accent, borderRadius: 4,
+  },
+  actions: {
+    flexDirection: "row", gap: Spacing.sm,
+    marginTop: Spacing.md, width: "100%",
+  },
+  btn: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 6,
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  btnPrimary: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
+  },
+  btnText: { color: Colors.dark.text, fontWeight: "700", fontSize: 13 },
+  btnPrimaryText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+});
