@@ -28,6 +28,43 @@ import { useUISettings } from "@/contexts/UISettingsContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
+import { useApkInstaller } from "@/hooks/useApkInstaller";
+
+// Shown when /api/app-version reports a newer version. Always offers a
+// "Manual Update" path (downloader code, unchanged from previous releases)
+// and — on Android only — a one-tap "Download & Install" path that pulls
+// the APK and hands it to the OS package installer.
+function showUpdateAvailableAlert(
+  remoteVersion: string,
+  code: string | null,
+  installer: { isAndroid: boolean; start: () => void },
+) {
+  const baseMsg = `A new version (v${remoteVersion}) is available.`;
+  const manualBtn = {
+    text: "Manual Update",
+    onPress: () =>
+      Alert.alert(
+        "Manual Update",
+        `Use downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Clear the cache in Downloader first so you receive the latest version and not an older cached copy.`,
+      ),
+  };
+  if (installer.isAndroid) {
+    Alert.alert(
+      "Update Available",
+      `${baseMsg}\n\nDownload and install it now, or use the manual downloader code.`,
+      [
+        { text: "Later", style: "cancel" },
+        manualBtn,
+        { text: "Download & Install", onPress: installer.start },
+      ],
+    );
+  } else {
+    Alert.alert(
+      "Update Available",
+      `${baseMsg}\n\nUse downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Clear the cache in Downloader first so you receive the latest version and not an older cached copy.`,
+    );
+  }
+}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -177,6 +214,7 @@ export default function AccountInfoScreen() {
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const apkInstaller = useApkInstaller();
   const expiryStatus = useExpiryStatus();
   const isLifetime = expiryStatus.isLifetime;
   const [notesVisible, setNotesVisible] = useState(false);
@@ -237,10 +275,7 @@ export default function AccountInfoScreen() {
       } else if (remoteVersion === APP_VERSION) {
         Alert.alert("You're Up to Date", `You're running the latest version (v${APP_VERSION}).`);
       } else {
-        Alert.alert(
-          "Update Available",
-          `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${code ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`,
-        );
+        showUpdateAvailableAlert(remoteVersion, code ?? null, apkInstaller);
       }
     } catch {
       Alert.alert("Update Check", "Could not reach the update server. Try again later.");
@@ -341,6 +376,7 @@ export default function AccountInfoScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {apkInstaller.modal}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
         <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
           {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}

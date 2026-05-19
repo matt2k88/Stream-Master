@@ -3,7 +3,7 @@
     "name": "Ultra Cast v3",
     "slug": "stream-master",
     "owner": "mgcultra",
-    "version": "1.4.2",
+    "version": "1.4.3",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "iptvplayer",
@@ -22,7 +22,11 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.iptv.player",
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "web": {
       "output": "single",

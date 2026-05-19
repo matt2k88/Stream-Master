@@ -345,6 +345,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── App Download Link (URL of the latest APK — used by in-app installer) ─
+  // Returns the most recently-updated row from `app_download_link` and
+  // exposes only the `url` field so the client can download the APK
+  // straight to the device without us ever logging or echoing the link
+  // outside of the install flow.
+  app.get("/api/app-download-link", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("app_download_link")
+        .select("url, updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") {
+        return res.status(500).json({ error: error.message });
+      }
+      const url = typeof data?.url === "string" ? data.url.trim() : null;
+      if (!url) return res.json({ url: null });
+      // Refuse to hand a non-HTTPS URL back to the client — an in-app
+      // APK installer over plain HTTP would be trivially MITM'd and
+      // could result in a tampered package being installed.
+      if (!/^https:\/\//i.test(url)) {
+        return res.status(500).json({ error: "Download URL must be HTTPS" });
+      }
+      res.json({ url });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch download link" });
+    }
+  });
+
   // ── App Theme (admin-controlled, applies to all clients on next launch) ──
   app.get("/api/app-theme", async (_req, res) => {
     try {

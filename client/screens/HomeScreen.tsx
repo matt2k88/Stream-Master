@@ -21,6 +21,7 @@ import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
 import type { ThemeIconKey } from "@/constants/themes";
+import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
@@ -435,6 +436,7 @@ function UpdateAvailableButton() {
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
   const accent = useAccent();
+  const apkInstaller = useApkInstaller();
   const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
   const [downloaderCode, setDownloaderCode] = useState<string | null>(null);
 
@@ -488,29 +490,55 @@ function UpdateAvailableButton() {
   if (!remoteVersion) return null;
 
   const onPress = () => {
-    Alert.alert(
-      "Update Available",
-      `A new version (v${remoteVersion}) is available.\n\nUse downloader code ${downloaderCode ?? "N/A"} to install.\n\nIMPORTANT: Before downloading, clear the cache in Downloader so you receive the latest version of the app and not an older cached copy.`,
-    );
+    const v = remoteVersion;
+    if (!v) return;
+    const baseMsg = `A new version (v${v}) is available.`;
+    const manualBtn = {
+      text: "Manual Update",
+      onPress: () =>
+        Alert.alert(
+          "Manual Update",
+          `Use downloader code ${downloaderCode ?? "N/A"} to install.\n\nIMPORTANT: Clear the cache in Downloader first so you receive the latest version and not an older cached copy.`,
+        ),
+    };
+    if (apkInstaller.isAndroid) {
+      Alert.alert(
+        "Update Available",
+        `${baseMsg}\n\nDownload and install it now, or use the manual downloader code.`,
+        [
+          { text: "Later", style: "cancel" },
+          manualBtn,
+          { text: "Download & Install", onPress: apkInstaller.start },
+        ],
+      );
+    } else {
+      Alert.alert(
+        "Update Available",
+        `${baseMsg}\n\nUse downloader code ${downloaderCode ?? "N/A"} to install.\n\nIMPORTANT: Clear the cache in Downloader first so you receive the latest version and not an older cached copy.`,
+      );
+    }
   };
 
   return (
-    <Pressable
-      style={[
-        styles.headerBtn,
-        styles.headerBtnAlert,
-        { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
-        isActive && { borderColor: accent.accent },
-      ]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    >
-      <Feather name="download" size={18} color={accent.accent} />
-      <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
-    </Pressable>
+    <>
+      {apkInstaller.modal}
+      <Pressable
+        style={[
+          styles.headerBtn,
+          styles.headerBtnAlert,
+          { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
+          isActive && { borderColor: accent.accent },
+        ]}
+        onPress={onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      >
+        <Feather name="download" size={18} color={accent.accent} />
+        <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
+      </Pressable>
+    </>
   );
 }
 
