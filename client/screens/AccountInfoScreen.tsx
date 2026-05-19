@@ -28,7 +28,7 @@ import { useUISettings } from "@/contexts/UISettingsContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
-import { useApkInstaller } from "@/hooks/useApkInstaller";
+import { useApkInstaller, clearDownloadedUpdates } from "@/hooks/useApkInstaller";
 
 // Shown when /api/app-version reports a newer version. Always offers a
 // "Manual Update" path (downloader code, unchanged from previous releases)
@@ -261,6 +261,41 @@ export default function AccountInfoScreen() {
     }
   };
 
+  const [clearingCache, setClearingCache] = useState(false);
+  const handleClearDownloads = async () => {
+    if (clearingCache) return;
+    Alert.alert(
+      "Clear Downloaded Updates",
+      "This will delete update files saved on your device to free up storage. Your login, profiles and favourites will not be affected.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setClearingCache(true);
+            try {
+              const { removed, bytesFreed } = await clearDownloadedUpdates();
+              const mb = (bytesFreed / (1024 * 1024)).toFixed(1);
+              if (removed === 0) {
+                Alert.alert("Already Clean", "No downloaded update files were found.");
+              } else {
+                Alert.alert(
+                  "Done",
+                  `Removed ${removed} update file${removed === 1 ? "" : "s"} (${mb} MB freed).`,
+                );
+              }
+            } catch {
+              Alert.alert("Clear Updates", "Something went wrong. Please try again.");
+            } finally {
+              setClearingCache(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleCheckForUpdates = async () => {
     if (updateChecking) return;
     setUpdateChecking(true);
@@ -369,6 +404,21 @@ export default function AccountInfoScreen() {
         <Feather name="type" size={13} color={Colors.dark.accent} />
         <ThemedText style={styles.updateBtnText}>
           Text Size: {textSize === "large" ? "Large" : "Normal"}
+        </ThemedText>
+      </HoverBtn>
+      <HoverBtn
+        style={styles.notesBtn}
+        activeStyle={styles.notesBtnActive}
+        onPress={handleClearDownloads}
+        disabled={clearingCache}
+      >
+        {clearingCache ? (
+          <ActivityIndicator size="small" color={Colors.dark.accent} />
+        ) : (
+          <Feather name="trash-2" size={13} color={Colors.dark.accent} />
+        )}
+        <ThemedText style={styles.updateBtnText}>
+          {clearingCache ? "Clearing..." : "Clear Downloaded Updates"}
         </ThemedText>
       </HoverBtn>
     </View>

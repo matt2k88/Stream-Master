@@ -35,17 +35,55 @@ type Status =
 // dismissed.  Best-effort; failures are ignored.
 async function cleanStaleApks() {
   try {
-    const dir = LegacyFS.cacheDirectory;
-    if (!dir) return;
-    const entries = await LegacyFS.readDirectoryAsync(dir);
-    await Promise.all(
-      entries
-        .filter((name) => name.startsWith(APK_CACHE_PREFIX) && name.endsWith(".apk"))
-        .map((name) => LegacyFS.deleteAsync(dir + name, { idempotent: true }).catch(() => {})),
-    );
+    await clearDownloadedUpdates();
   } catch {
     // ignore — cleanup is best-effort
   }
+}
+
+/**
+ * Deletes every Ultra Cast update APK we've ever downloaded into the
+ * app's cache directory. Returns the number of files removed and the
+ * total bytes freed (best-effort — the size is omitted if the platform
+ * can't stat the file before deletion).
+ *
+ * Safe to call from anywhere: it only touches files matching our own
+ * `ultracast-update-*.apk` prefix in `cacheDirectory`, so login
+ * credentials (SecureStore / AsyncStorage / documentDirectory) are
+ * never touched. No-op on non-Android since we never download APKs
+ * anywhere else.
+ */
+export async function clearDownloadedUpdates(): Promise<{ removed: number; bytesFreed: number }> {
+  let removed = 0;
+  let bytesFreed = 0;
+  try {
+    const dir = LegacyFS.cacheDirectory;
+    if (!dir) return { removed, bytesFreed };
+    const entries = await LegacyFS.readDirectoryAsync(dir);
+    const apkFiles = entries.filter(
+      (name) => name.startsWith(APK_CACHE_PREFIX) && name.endsWith(".apk"),
+    );
+    for (const name of apkFiles) {
+      const path = dir + name;
+      try {
+        const info = await LegacyFS.getInfoAsync(path, { size: true });
+        if (info.exists && typeof (info as any).size === "number") {
+          bytesFreed += (info as any).size as number;
+        }
+      } catch {
+        // ignore stat failure
+      }
+      try {
+        await LegacyFS.deleteAsync(path, { idempotent: true });
+        removed += 1;
+      } catch {
+        // ignore — file might have been removed by the OS already
+      }
+    }
+  } catch {
+    // ignore — best-effort cleanup
+  }
+  return { removed, bytesFreed };
 }
 
 export function useApkInstaller() {
