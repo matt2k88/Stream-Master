@@ -11,6 +11,8 @@ import {
   Platform,
   Modal,
   TextInput,
+  StatusBar,
+  useWindowDimensions,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -765,8 +767,19 @@ export default function LivePreviewScreen() {
   const padB = insets.bottom + Spacing.sm;
   const padL = Math.max(insets.left, Spacing.sm);
 
+  // Portrait detection (small phones held upright). When true, the body
+  // restacks: player full-width on top, channel list + EPG share the row
+  // below so nothing gets cropped on a narrow screen.
+  const winDims = useWindowDimensions();
+  const isPortrait = winDims.height > winDims.width;
+
   return (
     <ThemedView style={styles.container}>
+      {/* Hide the OS status bar while in fullscreen so the player truly fills
+          the device on Android phones (where the status bar otherwise eats
+          the top of the screen). Matches the regular PlayerScreen. */}
+      <StatusBar hidden={isFullscreen} />
+
       {/* Header */}
       {!isFullscreen && (
       <View style={[styles.header, { paddingTop: padT, paddingLeft: padL, paddingRight: Spacing.md }]}>
@@ -804,16 +817,28 @@ export default function LivePreviewScreen() {
           This is the only way Android's SurfaceView keeps a clean surface
           across small ↔ fullscreen transitions — unmounting the VideoView
           (or its host tree) leaves the surface in a black state on phones. */}
+      {/* Body uses a single, invariant JSX tree across portrait / landscape /
+          fullscreen so the <VideoView> stays mounted at the exact same path
+          in the tree — that's what prevents the player from re-establishing
+          its connection across mode changes (Android SurfaceView restart).
+          Portrait is achieved purely via styles:
+            • body becomes flexDirection: 'column-reverse', which puts the
+              second child (rightPanel = player + EPG) on top, full width,
+              and the first child (sidebar = channel list) at the bottom.
+            • playerWrap uses width:100% + aspectRatio 16:9 so the preview
+              fills the top edge of the device. */}
       <View
         style={[
           styles.body,
           { paddingBottom: padB, paddingLeft: padL },
+          isPortrait && !isFullscreen && styles.bodyPortrait,
           isFullscreen && styles.bodyFullscreen,
         ]}
       >
-        {/* Left: channel list sidebar */}
+        {/* Sidebar — full-width bottom row in portrait, fixed-width left
+            column in landscape. */}
         {!isFullscreen && categoryChannels.length > 0 ? (
-          <View style={styles.sidebar}>
+          <View style={[styles.sidebar, isPortrait && styles.sidebarPortrait]}>
             <View style={styles.sidebarHeader}>
               <Feather
                 name={categoryId === "favourites" ? "star" : categoryId === "recently" ? "clock" : groupForCategory ? "folder" : "tv"}
@@ -838,9 +863,6 @@ export default function LivePreviewScreen() {
                 />
               )}
               showsVerticalScrollIndicator={false}
-              // Fixed-height rows let scrollToIndex jump to any item,
-              // even hundreds down, without first measuring intermediate
-              // rows (which is why distant channels never appeared).
               getItemLayout={(_, index) => ({
                 length: CHANNEL_ROW_H,
                 offset: CHANNEL_ROW_H * index,
@@ -849,7 +871,6 @@ export default function LivePreviewScreen() {
               initialNumToRender={20}
               windowSize={10}
               onScrollToIndexFailed={(info) => {
-                // Fallback: scroll to estimated offset, then retry index.
                 const offset = info.averageItemLength * info.index;
                 listRef.current?.scrollToOffset({ offset, animated: false });
                 setTimeout(() => {
@@ -866,14 +887,24 @@ export default function LivePreviewScreen() {
           </View>
         ) : null}
 
-        {/* Right: player on top, EPG below */}
-        <View style={[styles.rightPanel, isFullscreen && styles.rightPanelFullscreen]}>
-          {/* Player — playerWrap fills its parent via flex:1 when fullscreen
-              (since sidebar/EPG are hidden, the body→rightPanel→playerWrap
-              chain naturally stretches edge-to-edge). VideoView NEVER unmounts.
-              Using a ternary (not array merge) so the small-mode aspectRatio
-              and maxHeight are completely replaced rather than merged. */}
-          <View style={isFullscreen ? styles.playerWrapFullscreen : styles.playerWrap}>
+        {/* Right panel — player on top, EPG below. Always rendered with the
+            same tree path so VideoView never remounts between modes. */}
+        <View
+          style={[
+            styles.rightPanel,
+            isPortrait && !isFullscreen && styles.rightPanelPortrait,
+            isFullscreen && styles.rightPanelFullscreen,
+          ]}
+        >
+          <View
+            style={
+              isFullscreen
+                ? styles.playerWrapFullscreen
+                : isPortrait
+                ? styles.playerWrapPortrait
+                : styles.playerWrap
+            }
+          >
             <VideoView
               style={styles.player}
               player={player}
@@ -901,8 +932,6 @@ export default function LivePreviewScreen() {
                 ) : null}
               </>
             )}
-            {/* Status overlay: opaque so the previous channel's last frame
-                never bleeds through when switching to a dead channel. */}
             {playStatus !== "playing" && (
               <View style={styles.statusOverlay} pointerEvents="box-none">
                 {playStatus === "loading" ? (
@@ -935,7 +964,6 @@ export default function LivePreviewScreen() {
             )}
           </View>
 
-          {/* Watch Full Screen + EPG — hidden in fullscreen */}
           {!isFullscreen && (
             <>
               <FullScreenButton onPress={handleFullScreen} />
@@ -1410,6 +1438,47 @@ const styles = StyleSheet.create({
     paddingLeft: 0,
     paddingRight: 0,
     gap: 0,
+  },
+  // Portrait body uses column-reverse so the second child (rightPanel =
+  // player + EPG) appears on top and the first child (sidebar) appears at
+  // the bottom. The JSX order stays identical to landscape, which keeps
+  // the VideoView at the exact same tree path across all modes — that's
+  // how we avoid Android SurfaceView reconnects on portrait ↔ fullscreen.
+  bodyPortrait: {
+    flexDirection: "column-reverse",
+    paddingRight: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  // Sidebar in portrait: full-width row sitting at the bottom of the body.
+  // Caps height so it leaves room for the player + EPG above it.
+  sidebarPortrait: {
+    width: "100%",
+    maxHeight: "32%",
+    borderRightWidth: 0,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+    paddingRight: 0,
+    paddingTop: Spacing.xs,
+  },
+  // Right panel in portrait: full width (overrides the landscape flex:1
+  // which is sized against the sidebar). flex:1 here lets it take the
+  // remaining vertical space above the sidebar.
+  rightPanelPortrait: {
+    flex: 1,
+    width: "100%",
+    paddingRight: 0,
+  },
+  // Player in portrait: full width, fixed 16:9 aspect so it sits cleanly
+  // across the top edge of the device. No maxHeight constraint.
+  playerWrapPortrait: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    backgroundColor: "#000",
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    flexShrink: 0,
   },
   rightPanelFullscreen: {
     flex: 1,
