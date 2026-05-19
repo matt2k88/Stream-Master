@@ -178,21 +178,84 @@ export function useApkInstaller() {
       return;
     }
 
-    // 4. Hand the APK to Android's package installer via content:// URI.
-    setStatus({ phase: "installing" });
+    // Sanity-check the downloaded file before handing it off. On Fire TV
+    // a half-downloaded or zero-byte APK is one of the failure modes
+    // where the installer would silently refuse to open.
     try {
-      const contentUri = await LegacyFS.getContentUriAsync(result.uri);
-      await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
-        data: contentUri,
-        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
-        type: "application/vnd.android.package-archive",
-      });
-      setStatus({ phase: "idle" });
+      const info = await LegacyFS.getInfoAsync(result.uri, { size: true });
+      if (!info.exists || (typeof (info as any).size === "number" && (info as any).size < 1024)) {
+        setStatus({
+          phase: "error",
+          message: "Downloaded file looks invalid. Please try again.",
+        });
+        return;
+      }
     } catch {
+      // Non-fatal — if we can't stat the file just try to install it anyway.
+    }
+
+    // 4. Hand the APK to Android's package installer.
+    //
+    // Fire TV / Fire OS is strict about install intents:
+    //   * The data URI MUST be content:// (file:// throws
+    //     FileUriExposedException on Android 7+). Expo's getContentUriAsync
+    //     uses the bundled FileProvider that maps cacheDirectory.
+    //   * FLAG_GRANT_READ_URI_PERMISSION (=1) is needed so the installer
+    //     process can read the file via the content URI.
+    //   * FLAG_ACTIVITY_NEW_TASK (=268435456) is needed because Fire OS
+    //     often launches the installer from a non-activity context. This
+    //     is the single most common reason the installer "does nothing"
+    //     after a successful download.
+    // We try ACTION_VIEW first (works on most Android phones + TV) and
+    // fall back to ACTION_INSTALL_PACKAGE (older Fire OS) so we exhaust
+    // every reliable path before reporting failure.
+    setStatus({ phase: "installing" });
+    const FLAG_GRANT_READ_URI_PERMISSION = 1;
+    const FLAG_ACTIVITY_NEW_TASK = 268435456;
+    const flags = FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK;
+    const APK_MIME = "application/vnd.android.package-archive";
+
+    let contentUri: string | null = null;
+    try {
+      contentUri = await LegacyFS.getContentUriAsync(result.uri);
+    } catch (e: any) {
       setStatus({
         phase: "error",
         message:
-          "Could not open the installer. You may need to allow Ultra Cast to install apps in Android settings, then try again.",
+          "Could not prepare the installer file. (" + String(e?.message || e) + ")",
+      });
+      return;
+    }
+
+    const tryLaunch = async (action: string) => {
+      await IntentLauncher.startActivityAsync(action, {
+        data: contentUri!,
+        flags,
+        type: APK_MIME,
+      });
+    };
+
+    let firstError: unknown = null;
+    try {
+      await tryLaunch("android.intent.action.VIEW");
+      setStatus({ phase: "idle" });
+      return;
+    } catch (e) {
+      firstError = e;
+    }
+
+    // Fallback for older Fire OS builds where ACTION_VIEW with the APK
+    // MIME isn't matched by the installer activity.
+    try {
+      await tryLaunch("android.intent.action.INSTALL_PACKAGE");
+      setStatus({ phase: "idle" });
+      return;
+    } catch (e2) {
+      const msg = String((firstError as any)?.message || firstError || e2 || "unknown");
+      setStatus({
+        phase: "error",
+        message:
+          "Could not open the installer (" + msg + "). On Fire TV: open Settings → My Fire TV → Developer Options → Install Unknown Apps → enable Ultra Cast, then try again.",
       });
     }
   }, [status.phase]);
