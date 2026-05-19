@@ -7,7 +7,6 @@ import {
   TextInput,
   ScrollView,
   Platform,
-  findNodeHandle,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -42,51 +41,16 @@ export default function GroupEditorModal({
   const [color, setColor] = useState(DEFAULT_GROUP_COLOR);
   const [pinned, setPinned] = useState(false);
 
-  // Handles used to wire explicit D-pad focus jumps between the scrollable
-  // body and the footer. On some Android TV / Fire OS devices the ScrollView
-  // traps DOWN-key focus and the Cancel/Create buttons become unreachable
-  // from the remote even though they are visible on screen. Linking the last
-  // focusable row in the body to the primary footer button (and the footer
-  // back up) forces the platform to skip past the ScrollView's auto-traversal.
-  //
-  // We capture handles via each target's onLayout (passed as a callback to the
-  // child) so the wiring is deterministic across slow devices: the handle is
-  // set as soon as the view is on screen, not on a one-shot timeout.
-  const [pinHandle, setPinHandle] = useState<number | null>(null);
-  const [cancelHandle, setCancelHandle] = useState<number | null>(null);
-  const [saveHandle, setSaveHandle] = useState<number | null>(null);
-  const [deleteHandle, setDeleteHandle] = useState<number | null>(null);
-
   useEffect(() => {
     if (visible) {
       setName(editing?.name ?? "");
       setIconKey(editing?.icon_key ?? DEFAULT_GROUP_ICON);
       setColor(editing?.color ?? DEFAULT_GROUP_COLOR);
       setPinned(!!editing?.pinned);
-    } else {
-      // Clear stale handles when the modal closes so a re-open never uses
-      // node IDs from a previous mount.
-      setPinHandle(null);
-      setCancelHandle(null);
-      setSaveHandle(null);
-      setDeleteHandle(null);
     }
   }, [visible, editing]);
 
-  const captureHandle = (
-    setter: (h: number | null) => void,
-  ) => (node: View | null) => {
-    if (!node) { setter(null); return; }
-    const h = findNodeHandle(node);
-    setter(typeof h === "number" ? h : null);
-  };
-
   const typeLabel = type === "live" ? "Live TV" : type === "movies" ? "Movie" : "Series";
-
-  // What the pin row jumps to when the user presses DOWN.
-  const pinNextDown = deleteHandle ?? cancelHandle ?? saveHandle ?? undefined;
-  // What the footer buttons jump to when the user presses UP.
-  const footerNextUp = pinHandle ?? undefined;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -99,6 +63,13 @@ export default function GroupEditorModal({
             <CloseBtn onPress={onCancel} />
           </View>
 
+          {/* The action buttons (Cancel / Save / Delete) live INSIDE the
+              ScrollView as the last block. This used to be a separate footer
+              with nextFocusUp/Down wiring, but on some Android TV / Fire OS
+              remotes the focus jumps were ignored and the buttons became
+              unreachable. Keeping the buttons in the same scrollable list
+              means the D-pad DOWN key just scrolls down to them like every
+              other row — works on every device with zero focus trickery. */}
           <ScrollView
             style={styles.body}
             contentContainerStyle={{ paddingBottom: Spacing.lg }}
@@ -143,45 +114,40 @@ export default function GroupEditorModal({
             {/* Pin to sidebar */}
             <ThemedText style={[styles.sectionLabel, { marginTop: Spacing.md }]}>Show on Categories</ThemedText>
             <PinToggle
-              onRefNode={captureHandle(setPinHandle)}
               pinned={pinned}
               color={color}
               onPress={() => setPinned((v) => !v)}
-              nextFocusDown={pinNextDown}
             />
-          </ScrollView>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            {editing && onDelete ? (
-              <FooterBtn
-                onRefNode={captureHandle(setDeleteHandle)}
-                label="Delete"
-                icon="trash-2"
-                tone="danger"
-                onPress={onDelete}
-                nextFocusUp={footerNextUp}
+            {/* Action buttons — inline at the end of the scroll content. */}
+            <View style={styles.actionsRow}>
+              <ActionBtn
+                label="Cancel"
+                icon="x"
+                tone="ghost"
+                onPress={onCancel}
               />
+              <ActionBtn
+                label={editing ? "Save" : "Create"}
+                icon={editing ? "check" : "plus"}
+                tone="primary"
+                disabled={name.trim().length === 0}
+                onPress={() => onSave({ name: name.trim(), iconKey, color, pinned })}
+              />
+            </View>
+
+            {editing && onDelete ? (
+              <View style={styles.deleteRow}>
+                <ActionBtn
+                  label="Delete Group"
+                  icon="trash-2"
+                  tone="danger"
+                  onPress={onDelete}
+                  fullWidth
+                />
+              </View>
             ) : null}
-            <View style={{ flex: 1 }} />
-            <FooterBtn
-              onRefNode={captureHandle(setCancelHandle)}
-              label="Cancel"
-              icon="x"
-              tone="ghost"
-              onPress={onCancel}
-              nextFocusUp={footerNextUp}
-            />
-            <FooterBtn
-              onRefNode={captureHandle(setSaveHandle)}
-              label={editing ? "Save" : "Create"}
-              icon={editing ? "check" : "plus"}
-              tone="primary"
-              disabled={name.trim().length === 0}
-              onPress={() => onSave({ name: name.trim(), iconKey, color, pinned })}
-              nextFocusUp={footerNextUp}
-            />
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -192,14 +158,10 @@ function PinToggle({
   pinned,
   color,
   onPress,
-  nextFocusDown,
-  onRefNode,
 }: {
   pinned: boolean;
   color: string;
   onPress: () => void;
-  nextFocusDown?: number;
-  onRefNode?: (node: View | null) => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -207,7 +169,6 @@ function PinToggle({
   const isActive = focused || hovered || pressed;
   return (
     <Pressable
-      ref={onRefNode as any}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -215,7 +176,6 @@ function PinToggle({
       onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      nextFocusDown={nextFocusDown}
       style={[
         styles.pinRow,
         isActive && { borderColor: color, backgroundColor: "rgba(255,255,255,0.04)" },
@@ -330,22 +290,20 @@ function IconSwatch({
   );
 }
 
-function FooterBtn({
+function ActionBtn({
   label,
   icon,
   onPress,
   tone,
   disabled,
-  nextFocusUp,
-  onRefNode,
+  fullWidth,
 }: {
   label: string;
   icon: React.ComponentProps<typeof Feather>["name"];
   onPress: () => void;
   tone: "primary" | "ghost" | "danger";
   disabled?: boolean;
-  nextFocusUp?: number;
-  onRefNode?: (node: View | null) => void;
+  fullWidth?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -355,7 +313,6 @@ function FooterBtn({
   const isDanger = tone === "danger";
   return (
     <Pressable
-      ref={onRefNode as any}
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
       onFocus={() => setFocused(true)}
@@ -364,17 +321,17 @@ function FooterBtn({
       onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
-      nextFocusUp={nextFocusUp}
       style={[
-        styles.footerBtn,
-        isPrimary && styles.footerBtnPrimary,
-        isDanger && styles.footerBtnDanger,
-        isActive && !disabled && styles.footerBtnActive,
+        styles.actionBtn,
+        fullWidth && { flex: 1 },
+        isPrimary && styles.actionBtnPrimary,
+        isDanger && styles.actionBtnDanger,
+        isActive && !disabled && styles.actionBtnActive,
         disabled && { opacity: 0.4 },
       ]}
     >
-      <Feather name={icon} size={14} color={isPrimary || isDanger ? "#fff" : Colors.dark.text} />
-      <ThemedText style={{ color: isPrimary || isDanger ? "#fff" : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+      <Feather name={icon} size={16} color={isPrimary || isDanger ? "#fff" : Colors.dark.text} />
+      <ThemedText style={{ color: isPrimary || isDanger ? "#fff" : Colors.dark.text, fontWeight: "700", fontSize: 13 }}>
         {label}
       </ThemedText>
     </Pressable>
@@ -398,9 +355,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.border,
     overflow: "hidden",
-    // Column layout ensures the footer is always laid out *after* the
-    // ScrollView (which is allowed to shrink), so the Cancel/Create row
-    // never gets pushed off the bottom of the card on smaller screens.
     flexDirection: "column",
   },
   header: {
@@ -417,8 +371,6 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     backgroundColor: Colors.dark.backgroundRoot,
   },
-  // flexShrink lets the ScrollView take available space without ever
-  // displacing the footer below it — header + footer always remain visible.
   body: { paddingHorizontal: Spacing.md, paddingTop: Spacing.md, flexShrink: 1 },
   sectionLabel: { fontSize: 12, fontWeight: "700", color: Colors.dark.textSecondary, marginBottom: 8, letterSpacing: 0.5 },
   input: {
@@ -447,28 +399,40 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   iconSwatchActive: { borderColor: Colors.dark.accent, backgroundColor: "rgba(255,102,0,0.08)" },
-  footer: {
-    flexDirection: "row", gap: 8, alignItems: "center",
-    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    borderTopWidth: 1, borderTopColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundRoot,
-    // Footer must never shrink — it pins to the bottom of the card.
-    flexShrink: 0,
+  actionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: Spacing.lg,
   },
-  footerBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingVertical: 9, paddingHorizontal: 14,
+  deleteRow: {
+    flexDirection: "row",
+    marginTop: Spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.backgroundSecondary,
-    borderWidth: 1, borderColor: Colors.dark.border,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
   },
-  footerBtnPrimary: {
+  actionBtnPrimary: {
     backgroundColor: Colors.dark.accent,
     borderColor: Colors.dark.accent,
   },
-  footerBtnDanger: {
+  actionBtnDanger: {
     backgroundColor: Colors.dark.error,
     borderColor: Colors.dark.error,
+  },
+  actionBtnActive: {
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9, shadowRadius: 10, elevation: 8,
+    transform: [{ scale: 1.03 }],
   },
   pinRow: {
     flexDirection: "row",
@@ -497,10 +461,5 @@ const styles = StyleSheet.create({
   pinSwitchDot: {
     width: 16, height: 16, borderRadius: 8,
     backgroundColor: "#fff",
-  },
-  footerBtnActive: {
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9, shadowRadius: 10, elevation: 8,
-    transform: [{ scale: 1.03 }],
   },
 });
