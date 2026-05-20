@@ -54,25 +54,16 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 //      rely on it for live readings on a single 1GB stream.
 //   2) `responseType = "text"` buffers the entire response in memory.
 //      A 1GB buffer reliably OOMs Expo Go and can stall release APKs.
-// 25MB per chunk + 6 concurrent workers. Real speed-test clients use
-// parallel streams (Cloudflare's own client uses 8) because:
-//   * a single TCP connection is throughput-limited by its congestion
-//     window and TLS/HTTP handshake overhead,
-//   * sequential chunks waste round-trip time between requests,
-// so 1-stream-sequential dramatically *under*-reports actual link speed.
-// 25MB amortises the per-request handshake overhead; 6 concurrent
-// workers saturate even gigabit-class links while staying inside RN's
-// network + memory comfort zone (peak ~150MB transient buffers).
-const CHUNK_BYTES = 25_000_000;
-const CONCURRENT_WORKERS = 6;
-const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
+// 1 GB cap — even a gigabit-class link needs ~8s to pull this down, so
+// the server-side response will *never* finish before our 6s deadline
+// fires. This guarantees the test always runs the full 6 seconds (the
+// hard timer in measureDownload() aborts the XHR at exactly 6s).
+const DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes=1000000000";
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
 // payload so RTT dominates.
 const PING_URL = "https://speed.cloudflare.com/__down?bytes=0";
 const PING_SAMPLES = 5;
 const TEST_DURATION_MS = 6000;
-// How often the live Mbps readout updates during the download phase.
-const LIVE_TICK_MS = 200;
 
 type Phase = "idle" | "ping" | "download" | "done" | "error";
 
@@ -142,15 +133,15 @@ export default function SpeedTestScreen() {
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const abortRef = useRef<AbortController | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const stoppedRef = useRef(false);
 
-  // Tidy up the in-flight request on unmount so it doesn't keep firing
+  // Tidy up the in-flight XHR on unmount so it doesn't keep firing
   // setState into an unmounted component.
   useEffect(() => {
     return () => {
       stoppedRef.current = true;
-      try { abortRef.current?.abort(); } catch {}
+      try { xhrRef.current?.abort(); } catch {}
     };
   }, []);
 
@@ -176,107 +167,77 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: parallel chunked, always exactly 6 seconds ──────
-  // Runs `CONCURRENT_WORKERS` (6) parallel fetch loops. Each worker
-  // pulls a 25MB chunk, adds the bytes to a shared counter, and
-  // immediately starts the next chunk — keeping all 6 TCP connections
-  // saturated for the full 6 seconds. This mirrors how every real
-  // speed-test client (Cloudflare, Ookla, Fast.com) works.
-  //
-  // Why we use a steady-state window instead of total bytes / total
-  // seconds: the first ~500ms is dominated by TCP slow-start + TLS
-  // handshakes (which under-reports the link), so we count bytes for
-  // the full 6s but compute Mbps from the *active throughput window*
-  // (seconds 0.5 - 6.0). That gives a reading that matches what
-  // browser-based speed tests show.
-  //
-  // Memory: peak ~150MB across all 6 in-flight buffers, which is
-  // comfortable on Expo Go, release APKs, and the web.
-  const measureDownload = useCallback(async (): Promise<number> => {
-    const controller = new AbortController();
-    abortRef.current = controller;
+  // ── Download phase: always exactly 6 seconds of throughput ──────────
+  // We enforce the fixed duration with a hard `setTimeout` that fires at
+  // 6000ms and aborts the XHR using whatever progress we have. The
+  // request URL asks for ~1 GB which is large enough that the server
+  // can't finish first on any realistic consumer link, so `onload` for
+  // "fully downloaded" effectively never fires within the window — but
+  // we still guard against it (and against `onprogress` stalling near
+  // the deadline) by always finalising from the timer.
+  const measureDownload = useCallback((): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhrRef.current = xhr;
+      const cacheBust = `&_=${Date.now()}`;
+      xhr.open("GET", DOWNLOAD_URL + cacheBust, true);
+      // We never read xhr.response — discarding bytes as they stream
+      // keeps memory flat. "text" still buffers, but it's the only
+      // responseType broadly supported across web + React Native here.
+      try { (xhr as any).responseType = "text"; } catch {}
+      const start = Date.now();
+      let finalised = false;
+      let lastLoaded = 0;
+      let deadline: ReturnType<typeof setTimeout> | null = null;
 
-    const start = Date.now();
-    // Throughput is measured from this point forward (skip TCP/TLS
-    // slow-start). Bytes received before this don't count toward the
-    // final Mbps figure.
-    const WARMUP_MS = 500;
-    let warmupBytes = 0;
-    let totalBytes = 0;
-    let stopped = false;
+      const finish = (loaded: number, elapsedMs: number) => {
+        if (finalised) return;
+        finalised = true;
+        if (deadline) { clearTimeout(deadline); deadline = null; }
+        const seconds = elapsedMs / 1000;
+        // Mbps = bits per second / 1e6. 8 bits per byte.
+        const mbps = seconds > 0 ? (loaded * 8) / (seconds * 1_000_000) : 0;
+        resolve(mbps);
+      };
 
-    // Hard 6s deadline — aborts all in-flight chunks and ends the loop.
-    const deadline = setTimeout(() => {
-      stopped = true;
-      try { controller.abort(); } catch {}
-    }, TEST_DURATION_MS);
+      // Hard 6s deadline — fires regardless of onprogress cadence or
+      // whether the server stalls / finishes early. This is what makes
+      // the test "always exactly 6 seconds" as required.
+      deadline = setTimeout(() => {
+        try { xhr.abort(); } catch {}
+        finish(lastLoaded, TEST_DURATION_MS);
+      }, TEST_DURATION_MS);
 
-    // Live UI ticker — updates progress bar + Mbps readout every 200ms.
-    // Live readout uses post-warmup throughput so the displayed number
-    // matches the final result rather than starting artificially low.
-    const ticker = setInterval(() => {
-      if (stoppedRef.current) return;
-      const elapsed = Date.now() - start;
-      const activeMs = Math.max(1, elapsed - WARMUP_MS);
-      const activeBytes = Math.max(0, totalBytes - warmupBytes);
-      const mbps = elapsed > WARMUP_MS
-        ? (activeBytes * 8) / ((activeMs / 1000) * 1_000_000)
-        // During warm-up, just show whatever the raw rate is so the
-        // number isn't stuck at 0 for the first half-second.
-        : (totalBytes * 8) / ((Math.max(1, elapsed) / 1000) * 1_000_000);
-      setCurrentMbps(mbps);
-      setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
-    }, LIVE_TICK_MS);
+      xhr.onprogress = (e: ProgressEvent) => {
+        if (stoppedRef.current || finalised) return;
+        lastLoaded = e.loaded;
+        const elapsed = Date.now() - start;
+        const seconds = elapsed / 1000;
+        const mbps = seconds > 0 ? (e.loaded * 8) / (seconds * 1_000_000) : 0;
+        setCurrentMbps(mbps);
+        setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
+      };
 
-    // Snapshot bytes-received at the moment the warm-up window ends so
-    // we can subtract them from the final total.
-    const warmupTimer = setTimeout(() => {
-      warmupBytes = totalBytes;
-    }, WARMUP_MS);
-
-    // Single worker: pull chunks back-to-back until aborted.
-    const worker = async (workerId: number) => {
-      let i = 0;
-      while (!stopped && !stoppedRef.current) {
-        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${workerId}-${i++}`;
-        try {
-          const res = await fetch(url, { signal: controller.signal });
-          const buf = await res.arrayBuffer();
-          if (stopped || stoppedRef.current) break;
-          totalBytes += buf.byteLength;
-        } catch (err: any) {
-          // AbortError at the deadline is expected — exit cleanly.
-          if (err?.name === "AbortError") return;
-          // Real network error: log + back off briefly, then retry.
-          // We don't bail the whole test on one bad chunk because the
-          // other 5 workers may still be making progress.
-          await new Promise((r) => setTimeout(r, 100));
+      xhr.onerror = () => {
+        if (finalised) return;
+        if (deadline) { clearTimeout(deadline); deadline = null; }
+        // If we have *some* progress, treat it as a partial-result rather
+        // than a hard failure — Cloudflare occasionally drops the
+        // connection mid-stream on very long downloads.
+        if (lastLoaded > 0) {
+          finish(lastLoaded, Math.max(1, Date.now() - start));
+        } else {
+          finalised = true;
+          reject(new Error("Download failed"));
         }
-      }
-    };
-
-    try {
-      // Kick off all workers in parallel and wait for them all to exit.
-      await Promise.all(
-        Array.from({ length: CONCURRENT_WORKERS }, (_, i) => worker(i))
-      );
-    } finally {
-      clearTimeout(deadline);
-      clearTimeout(warmupTimer);
-      clearInterval(ticker);
-    }
-
-    const elapsedMs = Date.now() - start;
-    const activeMs = Math.max(1, elapsedMs - WARMUP_MS);
-    const activeBytes = Math.max(0, totalBytes - warmupBytes);
-    // If we got cut off before warm-up finished, fall back to total
-    // bytes / total time so we still report *something* meaningful.
-    if (elapsedMs <= WARMUP_MS || activeBytes === 0) {
-      return (totalBytes * 8) / ((Math.max(1, elapsedMs) / 1000) * 1_000_000);
-    }
-    // Mbps = bits per second / 1e6. 8 bits per byte.
-    return (activeBytes * 8) / ((activeMs / 1000) * 1_000_000);
+      };
+      // onload (server fully delivered) is intentionally ignored — with a
+      // 1 GB payload this only happens on multi-Gbps links and we still
+      // want the *full* 6s reading rather than stopping early.
+      xhr.send();
+    });
   }, []);
+
 
   const runTest = useCallback(async () => {
     if (phase === "ping" || phase === "download") return;
