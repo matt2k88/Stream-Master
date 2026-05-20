@@ -45,21 +45,25 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Download endpoint ──────────────────────────────────────────────────
-// Parallel workers, small chunks. This is the textbook speed-test
-// pattern (used by Cloudflare, fast.com, speedtest-cli) and the only
-// reliable way to saturate a fast link from React Native without
-// streaming APIs or giant memory buffers:
+// Parallel XHR workers. Critically we use XMLHttpRequest (not fetch)
+// and *never read the response body*. Bytes are tallied purely via
+// `xhr.onprogress.loaded`, which is just an integer that crosses the
+// React Native JS bridge essentially for free. With fetch + arrayBuffer
+// the entire chunk has to be copied across the bridge, which caps APK
+// throughput at the bridge's ~25 MB/s ceiling (≈ 200 Mbps) regardless
+// of the user's actual link speed. XHR with onprogress is how
+// speedtest-cli / fast.com clients avoid that cap on RN.
 //
-//   * PARALLEL_WORKERS workers each run a sequential fetch loop.
-//   * While one worker is in TCP handshake / slow-start, the others
-//     are still pumping bytes, so the link stays full.
-//   * Per-chunk memory is bounded by CHUNK_BYTES * PARALLEL_WORKERS
-//     (≈ 20 MB peak) — safe on every Android device.
-//   * Bytes received in the first WARMUP_MS milliseconds are
-//     discarded so the result reflects steady-state throughput,
-//     not the cold-start ramp.
+//   * PARALLEL_WORKERS workers each keep one XHR in flight at a time;
+//     when one completes, the worker immediately starts the next.
+//   * Each request targets CHUNK_BYTES so even a gigabit link can't
+//     complete it in microseconds (avoids handshake-dominated noise).
+//   * Per-worker native buffer peaks at CHUNK_BYTES; total peak memory
+//     ≈ PARALLEL_WORKERS * CHUNK_BYTES = 100 MB. Comfortable on APK.
+//   * Bytes received in the first WARMUP_MS are discarded (TCP slow
+//     start).
 const PARALLEL_WORKERS = 4;
-const CHUNK_BYTES = 5_000_000;
+const CHUNK_BYTES = 25_000_000;
 const WARMUP_MS = 1500;
 const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
@@ -170,23 +174,25 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: parallel workers, 6-second window ───────────────
-  // PARALLEL_WORKERS workers run independent fetch loops, all hitting
-  // the same Cloudflare endpoint. Bytes received in the first
-  // WARMUP_MS are discarded (TCP slow-start). Final Mbps =
-  // (post-warmup bytes summed across workers) / (post-warmup seconds).
+  // ── Download phase: parallel XHR workers, 6-second window ───────────
+  // PARALLEL_WORKERS workers each keep one XHR in flight. Bytes are
+  // tallied via `onprogress.loaded` — we NEVER touch `xhr.response`,
+  // so the payload never crosses the JS bridge and we're not capped
+  // by bridge throughput. Bytes received in the first WARMUP_MS are
+  // discarded. Final Mbps = (post-warmup bytes) / (post-warmup seconds).
   const measureDownload = useCallback(async (): Promise<number> => {
-    const controller = new AbortController();
-    abortRef.current = controller;
     const start = Date.now();
     let measuredBytes = 0;
     let measuredStart = 0;
     let stopped = false;
+    const activeXhrs = new Set<XMLHttpRequest>();
 
-    // Hard 6s deadline — aborts all in-flight chunks across all workers.
+    // Hard 6s deadline — aborts every in-flight XHR.
     const deadline = setTimeout(() => {
       stopped = true;
-      try { controller.abort(); } catch {}
+      activeXhrs.forEach((x) => {
+        try { x.abort(); } catch {}
+      });
     }, TEST_DURATION_MS);
 
     // Smooth progress bar + live Mbps update every 100ms.
@@ -202,41 +208,78 @@ export default function SpeedTestScreen() {
       }
     }, 100);
 
-    const worker = async (id: number): Promise<void> => {
-      let i = 0;
-      while (!stopped && !stoppedRef.current) {
-        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${id}-${i++}`;
-        try {
-          const res = await fetch(url, { signal: controller.signal });
-          const buf = await res.arrayBuffer();
-          if (stopped || stoppedRef.current) break;
+    // One worker = a self-restarting chain of XHRs. When the current
+    // XHR ends (completes or aborted), spawn the next one. Resolves
+    // when the deadline fires or the user stops the test.
+    const worker = (id: number) =>
+      new Promise<void>((resolve) => {
+        let counter = 0;
 
-          const elapsed = Date.now() - start;
-          if (elapsed < WARMUP_MS) {
-            // Still in the warmup window — discard these bytes.
-            continue;
+        const spawn = () => {
+          if (stopped || stoppedRef.current) {
+            resolve();
+            return;
           }
-          // First post-warmup byte across all workers starts the clock.
-          if (measuredStart === 0) measuredStart = Date.now();
-          measuredBytes += buf.byteLength;
-        } catch (err: any) {
-          // AbortError at the deadline is expected — exit cleanly.
-          if (err?.name === "AbortError") return;
-          // Transient network blip — let other workers carry the test.
-          // Brief back-off so we don't spin on a hard error.
-          await new Promise((r) => setTimeout(r, 100));
-        }
-      }
-    };
+          const xhr = new XMLHttpRequest();
+          activeXhrs.add(xhr);
+          // Tally is per-XHR: onprogress fires with cumulative `loaded`
+          // bytes for THIS request, so we track deltas locally.
+          let prevLoaded = 0;
+
+          xhr.onprogress = (e: ProgressEvent) => {
+            const delta = e.loaded - prevLoaded;
+            prevLoaded = e.loaded;
+            if (delta <= 0) return;
+            const elapsed = Date.now() - start;
+            if (elapsed < WARMUP_MS) return; // discard warmup bytes
+            if (measuredStart === 0) measuredStart = Date.now();
+            measuredBytes += delta;
+          };
+
+          const finish = () => {
+            activeXhrs.delete(xhr);
+            // Immediately start the next request to keep the link full.
+            // Even on error we restart — Cloudflare may briefly 429 and
+            // we want the other workers + retries to carry the test.
+            if (!stopped && !stoppedRef.current) spawn();
+            else resolve();
+          };
+          xhr.onloadend = finish;
+          xhr.onerror = finish;
+          xhr.onabort = () => {
+            activeXhrs.delete(xhr);
+            resolve();
+          };
+
+          try {
+            xhr.open(
+              "GET",
+              `${DOWNLOAD_URL}&_=${Date.now()}-${id}-${counter++}`,
+            );
+            // `arraybuffer` keeps the native buffer binary (no UTF-8
+            // decode overhead) and crucially we never read `.response`
+            // so the buffer stays native-only.
+            xhr.responseType = "arraybuffer";
+            xhr.send();
+          } catch {
+            finish();
+          }
+        };
+
+        spawn();
+      });
 
     try {
-      const workers = Array.from({ length: PARALLEL_WORKERS }, (_, i) =>
-        worker(i),
+      await Promise.all(
+        Array.from({ length: PARALLEL_WORKERS }, (_, i) => worker(i)),
       );
-      await Promise.all(workers);
     } finally {
       clearTimeout(deadline);
       clearInterval(ticker);
+      // Belt-and-braces — abort anything still active.
+      activeXhrs.forEach((x) => {
+        try { x.abort(); } catch {}
+      });
     }
 
     if (measuredStart === 0 || measuredBytes === 0) return 0;
