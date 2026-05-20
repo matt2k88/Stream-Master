@@ -54,10 +54,17 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 //      rely on it for live readings on a single 1GB stream.
 //   2) `responseType = "text"` buffers the entire response in memory.
 //      A 1GB buffer reliably OOMs Expo Go and can stall release APKs.
-// 5MB per chunk is a good sweet spot — small enough that even a slow
-// link finishes one within the 6s window (so we get readings), big
-// enough that a fast link doesn't spend all its time on HTTP handshakes.
-const CHUNK_BYTES = 5_000_000;
+// 25MB per chunk + 6 concurrent workers. Real speed-test clients use
+// parallel streams (Cloudflare's own client uses 8) because:
+//   * a single TCP connection is throughput-limited by its congestion
+//     window and TLS/HTTP handshake overhead,
+//   * sequential chunks waste round-trip time between requests,
+// so 1-stream-sequential dramatically *under*-reports actual link speed.
+// 25MB amortises the per-request handshake overhead; 6 concurrent
+// workers saturate even gigabit-class links while staying inside RN's
+// network + memory comfort zone (peak ~150MB transient buffers).
+const CHUNK_BYTES = 25_000_000;
+const CONCURRENT_WORKERS = 6;
 const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
 // payload so RTT dominates.
@@ -169,79 +176,106 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: chunked, always exactly 6 seconds ───────────────
-  // Fires sequential 5MB requests in a tight loop until the 6-second
-  // deadline. Bytes are counted as each chunk completes; a separate
-  // ticker updates the live Mbps readout / progress bar every 200ms so
-  // the UI feels responsive even though we only get a real byte-count
-  // update when each chunk finishes downloading. The in-flight chunk at
-  // the deadline is aborted via AbortController and its partial bytes
-  // are ignored (we only count fully-received chunks for the final
-  // result — that's standard speed-test practice and avoids skew from
-  // half-completed transfers).
+  // ── Download phase: parallel chunked, always exactly 6 seconds ──────
+  // Runs `CONCURRENT_WORKERS` (6) parallel fetch loops. Each worker
+  // pulls a 25MB chunk, adds the bytes to a shared counter, and
+  // immediately starts the next chunk — keeping all 6 TCP connections
+  // saturated for the full 6 seconds. This mirrors how every real
+  // speed-test client (Cloudflare, Ookla, Fast.com) works.
   //
-  // This approach works reliably on Expo Go, release APKs, and the web,
-  // because fetch() + response.arrayBuffer() with a small per-call
-  // buffer (5MB) sits well within RN's memory + networking sweet spot.
+  // Why we use a steady-state window instead of total bytes / total
+  // seconds: the first ~500ms is dominated by TCP slow-start + TLS
+  // handshakes (which under-reports the link), so we count bytes for
+  // the full 6s but compute Mbps from the *active throughput window*
+  // (seconds 0.5 - 6.0). That gives a reading that matches what
+  // browser-based speed tests show.
+  //
+  // Memory: peak ~150MB across all 6 in-flight buffers, which is
+  // comfortable on Expo Go, release APKs, and the web.
   const measureDownload = useCallback(async (): Promise<number> => {
     const controller = new AbortController();
     abortRef.current = controller;
 
     const start = Date.now();
-    let bytesReceived = 0;
+    // Throughput is measured from this point forward (skip TCP/TLS
+    // slow-start). Bytes received before this don't count toward the
+    // final Mbps figure.
+    const WARMUP_MS = 500;
+    let warmupBytes = 0;
+    let totalBytes = 0;
     let stopped = false;
 
-    // Hard 6s deadline — aborts whatever chunk is in flight and ends
-    // the loop. Guarantees the test always runs exactly 6 seconds.
+    // Hard 6s deadline — aborts all in-flight chunks and ends the loop.
     const deadline = setTimeout(() => {
       stopped = true;
       try { controller.abort(); } catch {}
     }, TEST_DURATION_MS);
 
-    // Live UI ticker. The byte counter only updates per-chunk, but this
-    // keeps the progress bar + Mbps readout moving smoothly.
+    // Live UI ticker — updates progress bar + Mbps readout every 200ms.
+    // Live readout uses post-warmup throughput so the displayed number
+    // matches the final result rather than starting artificially low.
     const ticker = setInterval(() => {
       if (stoppedRef.current) return;
       const elapsed = Date.now() - start;
-      const seconds = elapsed / 1000;
-      const mbps = seconds > 0 ? (bytesReceived * 8) / (seconds * 1_000_000) : 0;
+      const activeMs = Math.max(1, elapsed - WARMUP_MS);
+      const activeBytes = Math.max(0, totalBytes - warmupBytes);
+      const mbps = elapsed > WARMUP_MS
+        ? (activeBytes * 8) / ((activeMs / 1000) * 1_000_000)
+        // During warm-up, just show whatever the raw rate is so the
+        // number isn't stuck at 0 for the first half-second.
+        : (totalBytes * 8) / ((Math.max(1, elapsed) / 1000) * 1_000_000);
       setCurrentMbps(mbps);
       setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
     }, LIVE_TICK_MS);
 
-    try {
-      // Sequential chunk loop. Could be parallelised with a few
-      // concurrent fetches for higher peak throughput on multi-gigabit
-      // links, but sequential is plenty for the SD/HD/FHD/UHD bands we
-      // care about and keeps memory pressure minimal.
+    // Snapshot bytes-received at the moment the warm-up window ends so
+    // we can subtract them from the final total.
+    const warmupTimer = setTimeout(() => {
+      warmupBytes = totalBytes;
+    }, WARMUP_MS);
+
+    // Single worker: pull chunks back-to-back until aborted.
+    const worker = async (workerId: number) => {
+      let i = 0;
       while (!stopped && !stoppedRef.current) {
-        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${bytesReceived}`;
+        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${workerId}-${i++}`;
         try {
           const res = await fetch(url, { signal: controller.signal });
-          // Drain the body to count bytes. arrayBuffer() is the most
-          // widely supported on RN; we discard it immediately so memory
-          // stays flat at ~5MB peak.
           const buf = await res.arrayBuffer();
           if (stopped || stoppedRef.current) break;
-          bytesReceived += buf.byteLength;
+          totalBytes += buf.byteLength;
         } catch (err: any) {
           // AbortError at the deadline is expected — exit cleanly.
-          if (err?.name === "AbortError") break;
-          // Real network error: bail out, but if we already captured
-          // some bytes, treat it as a partial result rather than a
-          // hard failure.
-          if (bytesReceived === 0) throw err;
-          break;
+          if (err?.name === "AbortError") return;
+          // Real network error: log + back off briefly, then retry.
+          // We don't bail the whole test on one bad chunk because the
+          // other 5 workers may still be making progress.
+          await new Promise((r) => setTimeout(r, 100));
         }
       }
+    };
+
+    try {
+      // Kick off all workers in parallel and wait for them all to exit.
+      await Promise.all(
+        Array.from({ length: CONCURRENT_WORKERS }, (_, i) => worker(i))
+      );
     } finally {
       clearTimeout(deadline);
+      clearTimeout(warmupTimer);
       clearInterval(ticker);
     }
 
-    const elapsedMs = Math.max(1, Date.now() - start);
+    const elapsedMs = Date.now() - start;
+    const activeMs = Math.max(1, elapsedMs - WARMUP_MS);
+    const activeBytes = Math.max(0, totalBytes - warmupBytes);
+    // If we got cut off before warm-up finished, fall back to total
+    // bytes / total time so we still report *something* meaningful.
+    if (elapsedMs <= WARMUP_MS || activeBytes === 0) {
+      return (totalBytes * 8) / ((Math.max(1, elapsedMs) / 1000) * 1_000_000);
+    }
     // Mbps = bits per second / 1e6. 8 bits per byte.
-    return (bytesReceived * 8) / ((elapsedMs / 1000) * 1_000_000);
+    return (activeBytes * 8) / ((activeMs / 1000) * 1_000_000);
   }, []);
 
   const runTest = useCallback(async () => {
