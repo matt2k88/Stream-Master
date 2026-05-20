@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import { fetch as expoFetch } from "expo/fetch";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -133,15 +134,15 @@ export default function SpeedTestScreen() {
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
 
-  // Tidy up the in-flight XHR on unmount so it doesn't keep firing
+  // Tidy up the in-flight request on unmount so it doesn't keep firing
   // setState into an unmounted component.
   useEffect(() => {
     return () => {
       stoppedRef.current = true;
-      try { xhrRef.current?.abort(); } catch {}
+      try { abortRef.current?.abort(); } catch {}
     };
   }, []);
 
@@ -167,75 +168,77 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: always exactly 6 seconds of throughput ──────────
-  // We enforce the fixed duration with a hard `setTimeout` that fires at
-  // 6000ms and aborts the XHR using whatever progress we have. The
-  // request URL asks for ~1 GB which is large enough that the server
-  // can't finish first on any realistic consumer link, so `onload` for
-  // "fully downloaded" effectively never fires within the window — but
-  // we still guard against it (and against `onprogress` stalling near
-  // the deadline) by always finalising from the timer.
-  const measureDownload = useCallback((): Promise<number> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhrRef.current = xhr;
-      const cacheBust = `&_=${Date.now()}`;
-      xhr.open("GET", DOWNLOAD_URL + cacheBust, true);
-      // We never read xhr.response — discarding bytes as they stream
-      // keeps memory flat. "text" still buffers, but it's the only
-      // responseType broadly supported across web + React Native here.
-      try { (xhr as any).responseType = "text"; } catch {}
-      const start = Date.now();
-      let finalised = false;
-      let lastLoaded = 0;
-      let deadline: ReturnType<typeof setTimeout> | null = null;
+  // ── Download phase: single 1 GB streamed request, 6-second window ───
+  // Best of both worlds:
+  //  * ONE long-running TCP connection (no per-chunk handshake overhead,
+  //    no slow-start re-ramp) — same as the original XHR approach, so
+  //    readings match real-world speed tests.
+  //  * Body is consumed via `response.body.getReader()` so bytes are
+  //    counted as they arrive and immediately discarded — memory stays
+  //    flat (~64 KB transient buffers) even for a 1 GB request, which
+  //    is what made the original XHR + `responseType:"text"` approach
+  //    fail on Expo Go / release APKs (it tried to buffer 1 GB).
+  //
+  // We use `expo/fetch` (rather than the global `fetch`) because the
+  // React Native `fetch` polyfill does NOT support body streaming —
+  // calling `.body.getReader()` on a normal RN response returns null
+  // and you only ever get bytes in one shot at the end via
+  // `.arrayBuffer()`. `expo/fetch` returns a real WHATWG ReadableStream.
+  const measureDownload = useCallback(async (): Promise<number> => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const cacheBust = `&_=${Date.now()}`;
+    const start = Date.now();
+    let bytes = 0;
+    let stopped = false;
 
-      const finish = (loaded: number, elapsedMs: number) => {
-        if (finalised) return;
-        finalised = true;
-        if (deadline) { clearTimeout(deadline); deadline = null; }
-        const seconds = elapsedMs / 1000;
-        // Mbps = bits per second / 1e6. 8 bits per byte.
-        const mbps = seconds > 0 ? (loaded * 8) / (seconds * 1_000_000) : 0;
-        resolve(mbps);
-      };
+    // Hard 6s deadline — aborts the in-flight stream and ends the loop.
+    // This is what guarantees the test always runs exactly 6 seconds.
+    const deadline = setTimeout(() => {
+      stopped = true;
+      try { controller.abort(); } catch {}
+    }, TEST_DURATION_MS);
 
-      // Hard 6s deadline — fires regardless of onprogress cadence or
-      // whether the server stalls / finishes early. This is what makes
-      // the test "always exactly 6 seconds" as required.
-      deadline = setTimeout(() => {
-        try { xhr.abort(); } catch {}
-        finish(lastLoaded, TEST_DURATION_MS);
-      }, TEST_DURATION_MS);
-
-      xhr.onprogress = (e: ProgressEvent) => {
-        if (stoppedRef.current || finalised) return;
-        lastLoaded = e.loaded;
-        const elapsed = Date.now() - start;
-        const seconds = elapsed / 1000;
-        const mbps = seconds > 0 ? (e.loaded * 8) / (seconds * 1_000_000) : 0;
-        setCurrentMbps(mbps);
-        setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
-      };
-
-      xhr.onerror = () => {
-        if (finalised) return;
-        if (deadline) { clearTimeout(deadline); deadline = null; }
-        // If we have *some* progress, treat it as a partial-result rather
-        // than a hard failure — Cloudflare occasionally drops the
-        // connection mid-stream on very long downloads.
-        if (lastLoaded > 0) {
-          finish(lastLoaded, Math.max(1, Date.now() - start));
-        } else {
-          finalised = true;
-          reject(new Error("Download failed"));
+    try {
+      const res = await expoFetch(DOWNLOAD_URL + cacheBust, {
+        signal: controller.signal,
+      });
+      const reader = res.body?.getReader();
+      if (!reader) {
+        // Streaming not available on this runtime — extremely unlikely
+        // with expo/fetch but guard anyway. Without streaming we have
+        // no way to get a 1 GB reading without OOMing, so bail.
+        throw new Error("Streaming download not supported on this device");
+      }
+      while (!stopped && !stoppedRef.current) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          bytes += value.byteLength;
+          const elapsed = Date.now() - start;
+          const seconds = elapsed / 1000;
+          // Mbps = bits per second / 1e6. 8 bits per byte.
+          const mbps = seconds > 0 ? (bytes * 8) / (seconds * 1_000_000) : 0;
+          setCurrentMbps(mbps);
+          setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
         }
-      };
-      // onload (server fully delivered) is intentionally ignored — with a
-      // 1 GB payload this only happens on multi-Gbps links and we still
-      // want the *full* 6s reading rather than stopping early.
-      xhr.send();
-    });
+      }
+    } catch (err: any) {
+      // AbortError at the deadline is expected — fall through to finish.
+      if (err?.name !== "AbortError") {
+        // If we got some bytes before the error, treat as a partial
+        // result rather than a hard failure. Otherwise propagate.
+        if (bytes === 0) {
+          clearTimeout(deadline);
+          throw err;
+        }
+      }
+    } finally {
+      clearTimeout(deadline);
+    }
+
+    const elapsedMs = Math.max(1, Date.now() - start);
+    return (bytes * 8) / ((elapsedMs / 1000) * 1_000_000);
   }, []);
 
 
