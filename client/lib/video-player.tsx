@@ -28,6 +28,29 @@
 
 import React, { useEffect, useReducer, useRef } from "react";
 import { Platform, View, StyleProp, ViewStyle } from "react-native";
+import Constants from "expo-constants";
+
+// ─── Custom User-Agent ───────────────────────────────────────────────────
+// Sent on every HTTP request made by the underlying player so the IPTV
+// provider's admin panel can identify Ultra Cast clients (and which engine
+// they're using) instead of just seeing the library default ("VLC/3.0.21
+// LibVLC/3.0.21" or "AndroidXMedia3/1.8.0"). Format mirrors the panel's
+// "appname/version engine" convention.
+const APP_NAME = "Ultra Cast v3";
+const APP_VER: string =
+  (Constants?.expoConfig?.version as string | undefined) ?? "1.0.0";
+const UA_VLC  = `${APP_NAME}/${APP_VER} VLC`;
+const UA_EXPO = `${APP_NAME}/${APP_VER} Expo`;
+
+/** Build a video source object with our custom User-Agent header.
+ *  Pass the return value to `useVideoPlayer(...)` or `player.replace(...)`
+ *  so the IPTV provider's panel sees "Ultra Cast v3/<version> Expo|VLC"
+ *  instead of the library default. Works for both engines: expo-video
+ *  honours the headers natively, the VLC bridge ignores headers but
+ *  still sends the same UA via libvlc init options. */
+export function makeVideoSource(url: string): { uri: string; headers: { "User-Agent": string } } {
+  return { uri: url, headers: { "User-Agent": UA_EXPO } };
+}
 
 // VLC's native code (react-native-vlc-media-player) requires Android
 // 8.0+ (API 26) — it calls AudioAttributes / MediaCodec methods that
@@ -107,7 +130,13 @@ type Subscription = { remove: () => void };
 
 // Default VLC init options. Lower the network buffer a bit so live
 // channel switches feel snappier than VLC's 1500ms default.
-const DEFAULT_INIT_OPTIONS = ["--network-caching=300"];
+// The `--http-user-agent` option overrides libvlc's built-in UA so the
+// provider's panel reports the Ultra Cast client name + version + "VLC"
+// suffix instead of generic "VLC/3.0.x LibVLC/3.0.x".
+const DEFAULT_INIT_OPTIONS = [
+  "--network-caching=300",
+  `--http-user-agent=${UA_VLC}`,
+];
 
 // ─── Player bridge ────────────────────────────────────────────────────────
 //
@@ -227,10 +256,15 @@ export class VideoPlayer {
     this.rerender();
   }
 
-  /** Swap the source URL and immediately start playing it. */
-  replace(uri: string) {
+  /** Swap the source URL and immediately start playing it. Accepts a
+   *  bare URL or a `{ uri, headers? }` object (headers are ignored by
+   *  VLC — UA is set via init options instead — but accepted for parity
+   *  with expo-video's source shape so callers can pass the same object
+   *  to either engine). */
+  replace(src: string | { uri: string; headers?: Record<string, string> }) {
     if (this._released) return;
-    this._source = { uri: uri ?? "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    const uri = typeof src === "string" ? src : src?.uri ?? "";
+    this._source = { uri, initOptions: [...DEFAULT_INIT_OPTIONS] };
     this._currentTime = 0;
     this.duration = 0;
     this.playing = false;
@@ -560,10 +594,14 @@ function useVlcPlayer(
 // muted, addListener, etc) because the VLC bridge was modelled after
 // expo-video's API.
 export function useVideoPlayer(
-  source: string,
+  source: string | { uri: string; headers?: Record<string, string> } | null,
   setup?: (player: any) => void,
   opts?: { engine?: PlayerEngine },
 ): any {
+  // Normalise to a bare URL for the VLC branch (which uses init options
+  // for the UA) and to a {uri, headers} object for the expo branch.
+  const url: string =
+    typeof source === "string" ? source : source?.uri ?? "";
   const engineRef = useRef<PlayerEngine>(
     opts?.engine === "expo" || ANDROID_VLC_UNSUPPORTED ? "expo" : "vlc",
   );
@@ -576,8 +614,17 @@ export function useVideoPlayer(
   // Pass `null` to the unused engine so it stays a true no-op. expo-video
   // treats null source as "no source" (no decoder, no errors); VLC's
   // bridge guards against falsy source the same way.
-  const expoPlayer = useExpoVideoPlayer(useExpo ? source : (null as any), expoSetup as any);
-  const vlcPlayer  = useVlcPlayer(!useExpo ? source : "", vlcSetup as any);
+  // expo-video accepts a VideoSource object with optional `headers` —
+  // we set User-Agent so the provider panel reports the same Ultra Cast
+  // brand+version that the VLC path does (suffixed " Expo" instead of
+  // " VLC" so the engine in use is identifiable).
+  const expoSource: any = useExpo && url
+    ? (typeof source === "object" && source?.headers
+        ? source
+        : { uri: url, headers: { "User-Agent": UA_EXPO } })
+    : (null as any);
+  const expoPlayer = useExpoVideoPlayer(expoSource, expoSetup as any);
+  const vlcPlayer  = useVlcPlayer(!useExpo ? url : "", vlcSetup as any);
   return useExpo ? expoPlayer : vlcPlayer;
 }
 

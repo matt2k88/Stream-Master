@@ -17,7 +17,7 @@ import {
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "@/lib/video-player";
+import { useVideoPlayer, VideoView, makeVideoSource } from "@/lib/video-player";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -363,7 +363,7 @@ export default function LivePreviewScreen() {
 
   const reloadStream = useCallback(() => {
     try {
-      player.replace(currentStreamUrlRef.current);
+      player.replace(makeVideoSource(currentStreamUrlRef.current));
       player.play();
     } catch {}
   }, [player]);
@@ -433,7 +433,7 @@ export default function LivePreviewScreen() {
         setPlayStatus("loading");
         armLoadingTimeout();
         try {
-          player.replace(currentStreamUrlRef.current);
+          player.replace(makeVideoSource(currentStreamUrlRef.current));
           player.play();
         } catch {}
       }

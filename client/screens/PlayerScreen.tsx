@@ -17,7 +17,7 @@ import {
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "@/lib/video-player";
+import { useVideoPlayer, VideoView, makeVideoSource } from "@/lib/video-player";
 import {
   useAspectMode,
   ASPECT_MODES,
@@ -840,7 +840,7 @@ function LegacyPlayerScreen() {
 
   const reloadLiveStream = useCallback(() => {
     try {
-      player.replace(streamUrl);
+      player.replace(makeVideoSource(streamUrl));
       player.play();
     } catch {}
   }, [player, streamUrl]);
