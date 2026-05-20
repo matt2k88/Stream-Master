@@ -31,6 +31,7 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -110,6 +111,11 @@ function HoverBtn({
 export default function SpeedTestScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const { width: winW, height: winH } = useWindowDimensions();
+  // TV / tablet landscape: render the readout + recommendation table
+  // side-by-side so everything fits on one screen with no scroll. Phones
+  // in portrait keep the single-column scrolling layout.
+  const isLandscape = winW > winH && winW >= 700;
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);        // 0..1
@@ -263,34 +269,12 @@ export default function SpeedTestScreen() {
         ? currentMbps
         : finalMbps ?? 0;
 
-  return (
-    <ThemedView style={styles.container}>
-      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <HoverBtn
-          style={styles.iconBtn}
-          activeStyle={styles.iconBtnActive}
-          onPress={() => navigation.goBack()}
-        >
-          {(active) => (
-            <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />
-          )}
-        </HoverBtn>
-        <ThemedText style={styles.headerTitle}>Speed Test</ThemedText>
-        <View style={styles.iconBtn} />
-      </View>
-      <View style={[styles.divider, { marginHorizontal: padH }]} />
-
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: padH,
-          paddingBottom: padB,
-          gap: Spacing.md,
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Big readout card */}
-        <View style={styles.readoutCard}>
+  // ─── Card subtrees ──────────────────────────────────────────────────
+  // Defined inline so the same JSX renders in both layouts (single-column
+  // scroll for portrait, two-column flex for landscape) without
+  // duplicating code.
+  const readoutCard = (
+    <View style={[styles.readoutCard, isLandscape && styles.readoutCardLs]}>
           <ThemedText style={styles.readoutLabel}>
             {phase === "ping" ? "Pinging server..." :
              phase === "download" ? "Measuring download speed..." :
@@ -372,49 +356,99 @@ export default function SpeedTestScreen() {
                   : "Start Speed Test"}
             </ThemedText>
           </HoverBtn>
-        </View>
+    </View>
+  );
 
-        {/* Recommendation table */}
-        <View style={styles.tableCard}>
-          <ThemedText style={styles.tableTitle}>Streaming Quality Guide</ThemedText>
-          <View style={styles.tableHeaderRow}>
-            <ThemedText style={[styles.tableHeaderCell, { flex: 2 }]}>Quality</ThemedText>
-            <ThemedText style={[styles.tableHeaderCell, { flex: 2, textAlign: "right" }]}>Recommended</ThemedText>
-            <ThemedText style={[styles.tableHeaderCell, { width: 56, textAlign: "center" }]}>Status</ThemedText>
+  const tableCard = (
+    <View style={styles.tableCard}>
+      <ThemedText style={styles.tableTitle}>Streaming Quality Guide</ThemedText>
+      <View style={styles.tableHeaderRow}>
+        <ThemedText style={[styles.tableHeaderCell, { flex: 2 }]}>Quality</ThemedText>
+        <ThemedText style={[styles.tableHeaderCell, { flex: 2, textAlign: "right" }]}>Recommended</ThemedText>
+        <ThemedText style={[styles.tableHeaderCell, { width: 56, textAlign: "center" }]}>Status</ThemedText>
+      </View>
+      {QUALITY_ROWS.map((row) => {
+        const rated = finalMbps != null ? rateSpeed(finalMbps, row) : null;
+        return (
+          <View key={row.label} style={styles.tableRow}>
+            <ThemedText style={[styles.tableCellLabel, { flex: 2 }]}>
+              {row.label}
+            </ThemedText>
+            <ThemedText style={[styles.tableCellValue, { flex: 2, textAlign: "right" }]}>
+              {row.recommended} Mbps+
+            </ThemedText>
+            <View style={[styles.statusCell, { width: 56 }]}>
+              <StatusBadge state={rated} />
+            </View>
           </View>
-          {QUALITY_ROWS.map((row) => {
-            const rated = finalMbps != null ? rateSpeed(finalMbps, row) : null;
-            return (
-              <View key={row.label} style={styles.tableRow}>
-                <ThemedText style={[styles.tableCellLabel, { flex: 2 }]}>
-                  {row.label}
-                </ThemedText>
-                <ThemedText style={[styles.tableCellValue, { flex: 2, textAlign: "right" }]}>
-                  {row.recommended} Mbps+
-                </ThemedText>
-                <View style={[styles.statusCell, { width: 56 }]}>
-                  <StatusBadge state={rated} />
-                </View>
-              </View>
-            );
-          })}
+        );
+      })}
 
-          {/* Legend */}
-          <View style={styles.legendBlock}>
-            <LegendRow state="good" text="Comfortably compatible — great for streaming" />
-            <LegendRow state="warn" text="Borderline — may stream but could buffer" />
-            <LegendRow state="bad"  text="Not recommended — speed may be too low" />
+      {/* Legend */}
+      <View style={styles.legendBlock}>
+        <LegendRow state="good" text="Comfortably compatible — great for streaming" />
+        <LegendRow state="warn" text="Borderline — may stream but could buffer" />
+        <LegendRow state="bad"  text="Not recommended — speed may be too low" />
+      </View>
+    </View>
+  );
+
+  const disclaimerCard = (
+    <View style={styles.disclaimerCard}>
+      <Feather name="info" size={14} color={Colors.dark.textSecondary} style={{ marginTop: 2 }} />
+      <ThemedText style={styles.disclaimerText}>
+        Results are a guide only. Streaming performance can also be affected by Wi-Fi strength, device performance, VPN use, and your network/server congestion.
+      </ThemedText>
+    </View>
+  );
+
+  return (
+    <ThemedView style={styles.container}>
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <HoverBtn
+          style={styles.iconBtn}
+          activeStyle={styles.iconBtnActive}
+          onPress={() => navigation.goBack()}
+        >
+          {(active) => (
+            <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />
+          )}
+        </HoverBtn>
+        <ThemedText style={styles.headerTitle}>Speed Test</ThemedText>
+        <View style={styles.iconBtn} />
+      </View>
+      <View style={[styles.divider, { marginHorizontal: padH }]} />
+
+      {isLandscape ? (
+        // ── Landscape / TV: two-column, no scroll ──────────────────────
+        <View
+          style={[
+            styles.landscapeBody,
+            { paddingHorizontal: padH, paddingBottom: padB },
+          ]}
+        >
+          <View style={styles.landscapeCol}>{readoutCard}</View>
+          <View style={styles.landscapeCol}>
+            {tableCard}
+            {disclaimerCard}
           </View>
         </View>
-
-        {/* Disclaimer */}
-        <View style={styles.disclaimerCard}>
-          <Feather name="info" size={14} color={Colors.dark.textSecondary} style={{ marginTop: 2 }} />
-          <ThemedText style={styles.disclaimerText}>
-            Results are a guide only. Streaming performance can also be affected by Wi-Fi strength, device performance, VPN use, and your network/server congestion.
-          </ThemedText>
-        </View>
-      </ScrollView>
+      ) : (
+        // ── Portrait: single-column scroll ─────────────────────────────
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: padH,
+            paddingBottom: padB,
+            gap: Spacing.md,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {readoutCard}
+          {tableCard}
+          {disclaimerCard}
+        </ScrollView>
+      )}
     </ThemedView>
   );
 }
@@ -464,6 +498,21 @@ const RED   = "#ef4444";
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+  landscapeBody: {
+    flex: 1,
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  landscapeCol: {
+    flex: 1,
+    gap: Spacing.md,
+  },
+  readoutCardLs: {
+    // Slightly tighter in landscape so the readout fits within the screen
+    // height without scrolling on smaller TVs / tablets.
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
   header: {
     flexDirection: "row", alignItems: "center",
     paddingBottom: Spacing.md, gap: Spacing.md,

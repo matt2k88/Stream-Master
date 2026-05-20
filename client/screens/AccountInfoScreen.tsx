@@ -1386,6 +1386,7 @@ const styles = StyleSheet.create({
   exitAppBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
