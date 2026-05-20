@@ -265,8 +265,8 @@ export default function AccountInfoScreen() {
   const handleClearDownloads = async () => {
     if (clearingCache) return;
     Alert.alert(
-      "Clear Downloaded Updates",
-      "This will delete update files saved on your device to free up storage. Your login, profiles and favourites will not be affected.",
+      "Clear Cached Files",
+      "This will delete cached update files saved on your device to free up storage. Your login, profiles and favourites will not be affected.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -278,15 +278,15 @@ export default function AccountInfoScreen() {
               const { removed, bytesFreed } = await clearDownloadedUpdates();
               const mb = (bytesFreed / (1024 * 1024)).toFixed(1);
               if (removed === 0) {
-                Alert.alert("Already Clean", "No downloaded update files were found.");
+                Alert.alert("Already Clean", "No cached files were found.");
               } else {
                 Alert.alert(
                   "Done",
-                  `Removed ${removed} update file${removed === 1 ? "" : "s"} (${mb} MB freed).`,
+                  `Removed ${removed} cached file${removed === 1 ? "" : "s"} (${mb} MB freed).`,
                 );
               }
             } catch {
-              Alert.alert("Clear Updates", "Something went wrong. Please try again.");
+              Alert.alert("Clear Cached Files", "Something went wrong. Please try again.");
             } finally {
               setClearingCache(false);
             }
@@ -418,7 +418,7 @@ export default function AccountInfoScreen() {
           <Feather name="trash-2" size={13} color={Colors.dark.accent} />
         )}
         <ThemedText style={styles.updateBtnText}>
-          {clearingCache ? "Clearing..." : "Clear Downloaded Updates"}
+          {clearingCache ? "Clearing..." : "Clear Cached Files"}
         </ThemedText>
       </HoverBtn>
     </View>
@@ -525,6 +525,16 @@ export default function AccountInfoScreen() {
                 Sign Out button is visible without scrolling. The Exit App
                 button below stays in the left column either way. */}
             {!isLandscape ? utilityBlock : null}
+            {/* Sign Out lives above Exit App so the destructive "quit the
+                app entirely" button is always the last/bottom action. */}
+            <HoverBtn
+              style={styles.logoutBtn}
+              activeStyle={styles.logoutBtnPressed}
+              onPress={async () => { clearProfile(); await logout(); }}
+            >
+              <Feather name="log-out" size={16} color={Colors.dark.error} />
+              <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
+            </HoverBtn>
             <View style={styles.exitAppWrap}>
               <HoverBtn
                 style={styles.exitAppBtn}
@@ -640,6 +650,28 @@ export default function AccountInfoScreen() {
                 <HoverBtn
                   style={[styles.organiseBtn, styles.settingsRowItem]}
                   activeStyle={styles.organiseBtnActive}
+                  onPress={() => navigation.navigate("SpeedTest")}
+                >
+                  {(active) => (
+                    <>
+                      <Feather name="activity" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
+                          Speed Test
+                        </ThemedText>
+                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
+                          Check ping & download speed
+                        </ThemedText>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
+                    </>
+                  )}
+                </HoverBtn>
+              </View>
+              <View style={styles.settingsRow}>
+                <HoverBtn
+                  style={[styles.organiseBtn, styles.settingsRowItem]}
+                  activeStyle={styles.organiseBtnActive}
                   onPress={() => navigation.navigate("PlayerSettings")}
                 >
                   {(active) => (
@@ -701,15 +733,6 @@ export default function AccountInfoScreen() {
                 )}
               </View>
             </View>
-
-            <HoverBtn
-              style={styles.logoutBtn}
-              activeStyle={styles.logoutBtnPressed}
-              onPress={async () => { clearProfile(); await logout(); }}
-            >
-              <Feather name="log-out" size={16} color={Colors.dark.error} />
-              <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
-            </HoverBtn>
           </View>
         </ScrollView>
       ) : (
