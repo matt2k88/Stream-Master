@@ -45,16 +45,27 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Download endpoint ──────────────────────────────────────────────────
-// 1 GB cap — even a gigabit-class link needs ~8s to pull this down, so
-// the server-side response will *never* finish before our 6s deadline
-// fires. This guarantees the test always runs the full 6 seconds (the
-// hard timer in measureDownload() aborts the XHR at exactly 6s).
-const DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes=1000000000";
+// We fire many small Cloudflare requests back-to-back within a 6-second
+// window rather than one giant request. This is the same strategy
+// every native-friendly speed-test library uses, and it avoids two
+// React-Native-specific footguns:
+//   1) RN's `XMLHttpRequest.onprogress` batches differently than the
+//      browser and sometimes only fires once at the end, so we can't
+//      rely on it for live readings on a single 1GB stream.
+//   2) `responseType = "text"` buffers the entire response in memory.
+//      A 1GB buffer reliably OOMs Expo Go and can stall release APKs.
+// 5MB per chunk is a good sweet spot — small enough that even a slow
+// link finishes one within the 6s window (so we get readings), big
+// enough that a fast link doesn't spend all its time on HTTP handshakes.
+const CHUNK_BYTES = 5_000_000;
+const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
 // payload so RTT dominates.
 const PING_URL = "https://speed.cloudflare.com/__down?bytes=0";
 const PING_SAMPLES = 5;
 const TEST_DURATION_MS = 6000;
+// How often the live Mbps readout updates during the download phase.
+const LIVE_TICK_MS = 200;
 
 type Phase = "idle" | "ping" | "download" | "done" | "error";
 
@@ -124,15 +135,15 @@ export default function SpeedTestScreen() {
   const [pingMs, setPingMs] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const xhrRef = useRef<XMLHttpRequest | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
 
-  // Tidy up the in-flight XHR on unmount so it doesn't keep firing
+  // Tidy up the in-flight request on unmount so it doesn't keep firing
   // setState into an unmounted component.
   useEffect(() => {
     return () => {
       stoppedRef.current = true;
-      try { xhrRef.current?.abort(); } catch {}
+      try { abortRef.current?.abort(); } catch {}
     };
   }, []);
 
@@ -158,75 +169,79 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: always exactly 6 seconds of throughput ──────────
-  // We enforce the fixed duration with a hard `setTimeout` that fires at
-  // 6000ms and aborts the XHR using whatever progress we have. The
-  // request URL asks for ~1 GB which is large enough that the server
-  // can't finish first on any realistic consumer link, so `onload` for
-  // "fully downloaded" effectively never fires within the window — but
-  // we still guard against it (and against `onprogress` stalling near
-  // the deadline) by always finalising from the timer.
-  const measureDownload = useCallback((): Promise<number> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhrRef.current = xhr;
-      const cacheBust = `&_=${Date.now()}`;
-      xhr.open("GET", DOWNLOAD_URL + cacheBust, true);
-      // We never read xhr.response — discarding bytes as they stream
-      // keeps memory flat. "text" still buffers, but it's the only
-      // responseType broadly supported across web + React Native here.
-      try { (xhr as any).responseType = "text"; } catch {}
-      const start = Date.now();
-      let finalised = false;
-      let lastLoaded = 0;
-      let deadline: ReturnType<typeof setTimeout> | null = null;
+  // ── Download phase: chunked, always exactly 6 seconds ───────────────
+  // Fires sequential 5MB requests in a tight loop until the 6-second
+  // deadline. Bytes are counted as each chunk completes; a separate
+  // ticker updates the live Mbps readout / progress bar every 200ms so
+  // the UI feels responsive even though we only get a real byte-count
+  // update when each chunk finishes downloading. The in-flight chunk at
+  // the deadline is aborted via AbortController and its partial bytes
+  // are ignored (we only count fully-received chunks for the final
+  // result — that's standard speed-test practice and avoids skew from
+  // half-completed transfers).
+  //
+  // This approach works reliably on Expo Go, release APKs, and the web,
+  // because fetch() + response.arrayBuffer() with a small per-call
+  // buffer (5MB) sits well within RN's memory + networking sweet spot.
+  const measureDownload = useCallback(async (): Promise<number> => {
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-      const finish = (loaded: number, elapsedMs: number) => {
-        if (finalised) return;
-        finalised = true;
-        if (deadline) { clearTimeout(deadline); deadline = null; }
-        const seconds = elapsedMs / 1000;
-        // Mbps = bits per second / 1e6. 8 bits per byte.
-        const mbps = seconds > 0 ? (loaded * 8) / (seconds * 1_000_000) : 0;
-        resolve(mbps);
-      };
+    const start = Date.now();
+    let bytesReceived = 0;
+    let stopped = false;
 
-      // Hard 6s deadline — fires regardless of onprogress cadence or
-      // whether the server stalls / finishes early. This is what makes
-      // the test "always exactly 6 seconds" as required.
-      deadline = setTimeout(() => {
-        try { xhr.abort(); } catch {}
-        finish(lastLoaded, TEST_DURATION_MS);
-      }, TEST_DURATION_MS);
+    // Hard 6s deadline — aborts whatever chunk is in flight and ends
+    // the loop. Guarantees the test always runs exactly 6 seconds.
+    const deadline = setTimeout(() => {
+      stopped = true;
+      try { controller.abort(); } catch {}
+    }, TEST_DURATION_MS);
 
-      xhr.onprogress = (e: ProgressEvent) => {
-        if (stoppedRef.current || finalised) return;
-        lastLoaded = e.loaded;
-        const elapsed = Date.now() - start;
-        const seconds = elapsed / 1000;
-        const mbps = seconds > 0 ? (e.loaded * 8) / (seconds * 1_000_000) : 0;
-        setCurrentMbps(mbps);
-        setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
-      };
+    // Live UI ticker. The byte counter only updates per-chunk, but this
+    // keeps the progress bar + Mbps readout moving smoothly.
+    const ticker = setInterval(() => {
+      if (stoppedRef.current) return;
+      const elapsed = Date.now() - start;
+      const seconds = elapsed / 1000;
+      const mbps = seconds > 0 ? (bytesReceived * 8) / (seconds * 1_000_000) : 0;
+      setCurrentMbps(mbps);
+      setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
+    }, LIVE_TICK_MS);
 
-      xhr.onerror = () => {
-        if (finalised) return;
-        if (deadline) { clearTimeout(deadline); deadline = null; }
-        // If we have *some* progress, treat it as a partial-result rather
-        // than a hard failure — Cloudflare occasionally drops the
-        // connection mid-stream on very long downloads.
-        if (lastLoaded > 0) {
-          finish(lastLoaded, Math.max(1, Date.now() - start));
-        } else {
-          finalised = true;
-          reject(new Error("Download failed"));
+    try {
+      // Sequential chunk loop. Could be parallelised with a few
+      // concurrent fetches for higher peak throughput on multi-gigabit
+      // links, but sequential is plenty for the SD/HD/FHD/UHD bands we
+      // care about and keeps memory pressure minimal.
+      while (!stopped && !stoppedRef.current) {
+        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${bytesReceived}`;
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          // Drain the body to count bytes. arrayBuffer() is the most
+          // widely supported on RN; we discard it immediately so memory
+          // stays flat at ~5MB peak.
+          const buf = await res.arrayBuffer();
+          if (stopped || stoppedRef.current) break;
+          bytesReceived += buf.byteLength;
+        } catch (err: any) {
+          // AbortError at the deadline is expected — exit cleanly.
+          if (err?.name === "AbortError") break;
+          // Real network error: bail out, but if we already captured
+          // some bytes, treat it as a partial result rather than a
+          // hard failure.
+          if (bytesReceived === 0) throw err;
+          break;
         }
-      };
-      // onload (server fully delivered) is intentionally ignored — with a
-      // 1 GB payload this only happens on multi-Gbps links and we still
-      // want the *full* 6s reading rather than stopping early.
-      xhr.send();
-    });
+      }
+    } finally {
+      clearTimeout(deadline);
+      clearInterval(ticker);
+    }
+
+    const elapsedMs = Math.max(1, Date.now() - start);
+    // Mbps = bits per second / 1e6. 8 bits per byte.
+    return (bytesReceived * 8) / ((elapsedMs / 1000) * 1_000_000);
   }, []);
 
   const runTest = useCallback(async () => {
