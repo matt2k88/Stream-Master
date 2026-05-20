@@ -32,11 +32,13 @@ import {
   ScrollView,
   ActivityIndicator,
   useWindowDimensions,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -44,23 +46,22 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-// ── Download endpoint ──────────────────────────────────────────────────
-// Parallel fetch workers. This is a compromise:
+// ── Download strategy ─────────────────────────────────────────────────
+// On native (Expo Go / APK) we delegate the entire download phase to a
+// hidden WebView running real browser JS. That gives us:
 //
-//   * 4 workers each run a sequential fetch+arrayBuffer loop.
-//   * 5 MB chunks keep peak memory ≈ 20 MB (safe on every device).
-//   * 1.5 s warm-up window discards TCP slow-start bytes.
+//   * `response.body.getReader()` streaming → bytes are counted and
+//     discarded chunk-by-chunk inside the browser engine, so memory
+//     stays flat (~64 KB transient) regardless of link speed.
+//   * No React Native JS bridge in the data path — only progress
+//     events (a small JSON string) cross via `postMessage`. The
+//     bridge's ~25 MB/s ceiling that capped our previous attempts at
+//     ~200 Mbps no longer matters.
 //
-// React Native's JS bridge caps bridge-bound copy throughput at
-// roughly 25 MB/s (≈ 200 Mbps), so APK readings on faster links will
-// be capped near that number. The web preview has no bridge so it
-// can saturate gigabit links. We've tried streaming alternatives
-// (expo/fetch, XHR + onprogress + arraybuffer) — both either fail
-// to fire progress events reliably on RN or OOM the app. Going
-// above the bridge cap on Expo Go is not possible without a custom
-// native module, which Expo Go doesn't allow.
+// On web we run the same logic directly (no WebView wrapper needed)
+// since the host *is* a browser.
 const PARALLEL_WORKERS = 4;
-const CHUNK_BYTES = 5_000_000;
+const CHUNK_BYTES = 25_000_000;
 const WARMUP_MS = 1500;
 const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
@@ -68,6 +69,84 @@ const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 const PING_URL = "https://speed.cloudflare.com/__down?bytes=0";
 const PING_SAMPLES = 5;
 const TEST_DURATION_MS = 6000;
+
+// HTML page injected into the WebView. Self-contained vanilla JS so it
+// doesn't need any bundler. Posts {type:'progress', progress, mbps}
+// throughout the run, then {type:'done', mbps} when finished, or
+// {type:'error', message} on failure.
+const SPEED_TEST_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>
+(async function(){
+  var CHUNK=${CHUNK_BYTES};
+  var URL='${DOWNLOAD_URL.replace(/'/g, "\\'")}';
+  var PARALLEL=${PARALLEL_WORKERS};
+  var WARMUP_MS=${WARMUP_MS};
+  var DURATION=${TEST_DURATION_MS};
+  function post(o){ try{ window.ReactNativeWebView.postMessage(JSON.stringify(o)); }catch(e){} }
+  var controller=new AbortController();
+  var start=Date.now(), measuredStart=0, measuredBytes=0, stopped=false;
+  var deadline=setTimeout(function(){ stopped=true; try{controller.abort();}catch(e){} }, DURATION);
+  var ticker=setInterval(function(){
+    var elapsed=Date.now()-start;
+    var mbps=0;
+    if(measuredStart>0){
+      var secs=(Date.now()-measuredStart)/1000;
+      if(secs>0) mbps=(measuredBytes*8)/(secs*1000000);
+    }
+    post({type:'progress',progress:Math.min(1,elapsed/DURATION),mbps:mbps});
+  },100);
+  function worker(id){
+    return (async function(){
+      var i=0;
+      while(!stopped){
+        try {
+          var res=await fetch(URL+'&_='+Date.now()+'-'+id+'-'+(i++),{signal:controller.signal});
+          if(!res.body||!res.body.getReader){
+            // Fallback for environments without streaming — still works,
+            // just buffers per-chunk (25 MB) which is fine inside the
+            // browser engine.
+            var buf=await res.arrayBuffer();
+            if(stopped) break;
+            var el=Date.now()-start;
+            if(el<WARMUP_MS) continue;
+            if(measuredStart===0) measuredStart=Date.now();
+            measuredBytes+=buf.byteLength;
+            continue;
+          }
+          var reader=res.body.getReader();
+          while(true){
+            var r=await reader.read();
+            if(r.done) break;
+            if(stopped){ try{reader.cancel();}catch(e){} break; }
+            var el=Date.now()-start;
+            if(el<WARMUP_MS) continue;
+            if(measuredStart===0) measuredStart=Date.now();
+            measuredBytes+=r.value.byteLength;
+          }
+        } catch(e){
+          if(e && e.name==='AbortError') return;
+          await new Promise(function(r){ setTimeout(r,100); });
+        }
+      }
+    })();
+  }
+  try {
+    var workers=[];
+    for(var k=0;k<PARALLEL;k++) workers.push(worker(k));
+    await Promise.all(workers);
+  } catch(e){
+    post({type:'error',message:String(e && e.message || e)});
+    clearTimeout(deadline); clearInterval(ticker);
+    return;
+  }
+  clearTimeout(deadline); clearInterval(ticker);
+  var finalMbps=0;
+  if(measuredStart>0 && measuredBytes>0){
+    var el=Math.max(1,Date.now()-measuredStart);
+    finalMbps=(measuredBytes*8)/((el/1000)*1000000);
+  }
+  post({type:'done',mbps:finalMbps});
+})();
+</script></body></html>`;
 
 type Phase = "idle" | "ping" | "download" | "done" | "error";
 
@@ -140,14 +219,64 @@ export default function SpeedTestScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const stoppedRef = useRef(false);
 
+  // WebView-driven download: a hidden WebView runs the speed-test HTML
+  // and reports back via `postMessage`. `webviewKey` is bumped each run
+  // to force a fresh mount (so the script re-executes); `webviewActive`
+  // controls whether it's rendered. `webviewResolverRef` holds the
+  // resolver of the Promise that `measureDownload` is awaiting, so the
+  // onMessage handler can complete it when the test finishes.
+  const [webviewKey, setWebviewKey] = useState(0);
+  const [webviewActive, setWebviewActive] = useState(false);
+  const webviewResolverRef = useRef<{
+    resolve: (mbps: number) => void;
+    reject: (err: Error) => void;
+  } | null>(null);
+  const webviewWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic generation counter. Bumped at the start of every
+  // measureDownload() so that any terminal event (message / error /
+  // watchdog) carrying a stale generation from a previous run is
+  // silently ignored — this prevents a late callback from the
+  // just-unmounted WebView accidentally settling the next run's
+  // Promise.
+  const activeRunIdRef = useRef(0);
+
+  // Single chokepoint that always tears the WebView run down exactly
+  // once: clears the watchdog, drops the active flag, and either
+  // resolves or rejects the pending Promise. Subsequent calls are
+  // no-ops, so it's safe to call from onMessage, onError, the
+  // watchdog, and the unmount cleanup without double-settling. The
+  // `runId` parameter scopes the event to a specific run; pass
+  // `null` for unconditional settlement (unmount cleanup).
+  const finalizeWebviewRun = useCallback(
+    (
+      result: { ok: true; mbps: number } | { ok: false; error: Error },
+      runId: number | null,
+    ) => {
+      if (runId != null && runId !== activeRunIdRef.current) return;
+      if (webviewWatchdogRef.current) {
+        clearTimeout(webviewWatchdogRef.current);
+        webviewWatchdogRef.current = null;
+      }
+      const resolver = webviewResolverRef.current;
+      webviewResolverRef.current = null;
+      setWebviewActive(false);
+      if (!resolver) return;
+      if (result.ok) resolver.resolve(result.mbps);
+      else resolver.reject(result.error);
+    },
+    [],
+  );
+
   // Tidy up the in-flight request on unmount so it doesn't keep firing
-  // setState into an unmounted component.
+  // setState into an unmounted component, and reject any pending
+  // WebView Promise so awaiters don't hang.
   useEffect(() => {
     return () => {
       stoppedRef.current = true;
       try { abortRef.current?.abort(); } catch {}
+      finalizeWebviewRun({ ok: false, error: new Error("Screen closed") }, null);
     };
-  }, []);
+  }, [finalizeWebviewRun]);
 
   // ── Ping phase: avg RTT of N small HEAD requests ─────────────────────
   const measurePing = useCallback(async (): Promise<number> => {
@@ -171,12 +300,53 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: parallel fetch workers, 6-second window ─────────
-  // PARALLEL_WORKERS workers run independent fetch loops. Bytes
-  // received in the first WARMUP_MS are discarded (TCP slow-start).
-  // Final Mbps = (post-warmup bytes summed across workers) /
-  // (post-warmup seconds).
-  const measureDownload = useCallback(async (): Promise<number> => {
+  // ── Download phase: delegated to a hidden WebView ────────────────────
+  // We mount a fresh WebView (bumping `webviewKey`) that loads
+  // SPEED_TEST_HTML. The script inside posts `progress` events (which
+  // we use to drive the live readout) and a final `done` event whose
+  // mbps we return. On the web platform we fall back to running the
+  // same logic inline since the host already IS a browser.
+  const measureDownload = useCallback((): Promise<number> => {
+    return new Promise<number>((resolve, reject) => {
+      // Defensive: if a previous run somehow left a resolver dangling
+      // (shouldn't happen, but cheap insurance), reject it before
+      // overwriting so it doesn't hang forever.
+      if (webviewResolverRef.current) {
+        try {
+          webviewResolverRef.current.reject(new Error("Superseded"));
+        } catch {}
+      }
+      // Bump generation BEFORE wiring up the new resolver so any
+      // late callbacks from the previous WebView instance fail the
+      // runId guard in finalizeWebviewRun and are ignored.
+      const runId = ++activeRunIdRef.current;
+      webviewResolverRef.current = { resolve, reject };
+      // RN-side watchdog: if the WebView never reports back (script
+      // crash, message-bridge failure, page never loaded), this fires
+      // after the test window + a generous buffer and unsticks us.
+      if (webviewWatchdogRef.current) {
+        clearTimeout(webviewWatchdogRef.current);
+      }
+      webviewWatchdogRef.current = setTimeout(() => {
+        finalizeWebviewRun(
+          {
+            ok: false,
+            error: new Error("Speed test timed out (no response from test engine)"),
+          },
+          runId,
+        );
+      }, TEST_DURATION_MS + 6000);
+      // Fresh key forces the WebView to remount and re-execute the
+      // injected script for every test run.
+      setWebviewKey(runId);
+      setWebviewActive(true);
+    });
+  }, [finalizeWebviewRun]);
+
+  // Web fallback (used in the web preview where react-native-webview
+  // renders an iframe and postMessage round-trips are awkward). Same
+  // algorithm as the HTML script, just inline TS.
+  const measureDownloadWeb = useCallback(async (): Promise<number> => {
     const controller = new AbortController();
     abortRef.current = controller;
     const start = Date.now();
@@ -184,13 +354,10 @@ export default function SpeedTestScreen() {
     let measuredStart = 0;
     let stopped = false;
 
-    // Hard 6s deadline — aborts all in-flight chunks across all workers.
     const deadline = setTimeout(() => {
       stopped = true;
       try { controller.abort(); } catch {}
     }, TEST_DURATION_MS);
-
-    // Smooth progress bar + live Mbps update every 100ms.
     const ticker = setInterval(() => {
       if (stoppedRef.current) return;
       const elapsed = Date.now() - start;
@@ -209,16 +376,30 @@ export default function SpeedTestScreen() {
         const url = `${DOWNLOAD_URL}&_=${Date.now()}-${id}-${i++}`;
         try {
           const res = await fetch(url, { signal: controller.signal });
-          const buf = await res.arrayBuffer();
-          if (stopped || stoppedRef.current) break;
-
-          const elapsed = Date.now() - start;
-          if (elapsed < WARMUP_MS) continue; // discard warmup bytes
-          if (measuredStart === 0) measuredStart = Date.now();
-          measuredBytes += buf.byteLength;
+          const reader = (res.body as any)?.getReader?.();
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (stopped || stoppedRef.current) {
+                try { reader.cancel(); } catch {}
+                break;
+              }
+              const elapsed = Date.now() - start;
+              if (elapsed < WARMUP_MS) continue;
+              if (measuredStart === 0) measuredStart = Date.now();
+              measuredBytes += value.byteLength;
+            }
+          } else {
+            const buf = await res.arrayBuffer();
+            if (stopped || stoppedRef.current) break;
+            const elapsed = Date.now() - start;
+            if (elapsed < WARMUP_MS) continue;
+            if (measuredStart === 0) measuredStart = Date.now();
+            measuredBytes += buf.byteLength;
+          }
         } catch (err: any) {
           if (err?.name === "AbortError") return;
-          // Brief back-off so we don't spin on a hard error.
           await new Promise((r) => setTimeout(r, 100));
         }
       }
@@ -238,6 +419,56 @@ export default function SpeedTestScreen() {
     return (measuredBytes * 8) / ((elapsedMs / 1000) * 1_000_000);
   }, []);
 
+  // Receives `{type:'progress'|'done'|'error', ...}` messages from the
+  // injected speed-test script inside the WebView. Terminal messages
+  // (`done`/`error`) always finalize the run even if the caller has
+  // already been cancelled — we just discard the value via
+  // `finalizeWebviewRun` rather than leaking the resolver.
+  // Build per-instance handlers bound to the runId that was current
+  // when the WebView was mounted. Any callbacks fired by a stale
+  // WebView (already-unmounted previous run) will carry the old runId
+  // and be ignored by finalizeWebviewRun's guard.
+  const makeWebViewHandlers = useCallback(
+    (runId: number) => ({
+      onMessage: (e: WebViewMessageEvent) => {
+        let msg: any;
+        try { msg = JSON.parse(e.nativeEvent.data); } catch { return; }
+        if (msg.type === "progress") {
+          // Drop progress events from stale instances too.
+          if (runId !== activeRunIdRef.current) return;
+          if (stoppedRef.current) return;
+          if (typeof msg.progress === "number") {
+            setProgress(Math.min(1, Math.max(0, msg.progress)));
+          }
+          if (typeof msg.mbps === "number" && isFinite(msg.mbps)) {
+            setCurrentMbps(msg.mbps);
+          }
+        } else if (msg.type === "done") {
+          finalizeWebviewRun(
+            {
+              ok: true,
+              mbps:
+                typeof msg.mbps === "number" && isFinite(msg.mbps) ? msg.mbps : 0,
+            },
+            runId,
+          );
+        } else if (msg.type === "error") {
+          finalizeWebviewRun(
+            { ok: false, error: new Error(msg.message || "Speed test failed") },
+            runId,
+          );
+        }
+      },
+      onError: () => {
+        finalizeWebviewRun(
+          { ok: false, error: new Error("Speed test engine failed to load") },
+          runId,
+        );
+      },
+    }),
+    [finalizeWebviewRun],
+  );
+
 
   const runTest = useCallback(async () => {
     if (phase === "ping" || phase === "download") return;
@@ -253,7 +484,10 @@ export default function SpeedTestScreen() {
       if (stoppedRef.current) return;
       setPingMs(ping);
       setPhase("download");
-      const mbps = await measureDownload();
+      const mbps =
+        Platform.OS === "web"
+          ? await measureDownloadWeb()
+          : await measureDownload();
       if (stoppedRef.current) return;
       setFinalMbps(mbps);
       setProgress(1);
@@ -263,7 +497,7 @@ export default function SpeedTestScreen() {
       setErrorMsg(e?.message || "Speed test failed. Please try again.");
       setPhase("error");
     }
-  }, [phase, measurePing, measureDownload]);
+  }, [phase, measurePing, measureDownload, measureDownloadWeb]);
 
   const isRunning = phase === "ping" || phase === "download";
 
@@ -459,6 +693,40 @@ export default function SpeedTestScreen() {
           {disclaimerCard}
         </ScrollView>
       )}
+      {/* Hidden WebView that runs the actual download test on native.
+          0×0, opacity 0, pointer-events disabled — invisible to the user
+          but still executes its script. Only mounted while a test is in
+          flight; remounted with a fresh key for each run. */}
+      {Platform.OS !== "web" && webviewActive ? (
+        <View
+          style={styles.hiddenWebview}
+          pointerEvents="none"
+        >
+          {(() => {
+            const handlers = makeWebViewHandlers(webviewKey);
+            return (
+              <WebView
+                key={webviewKey}
+                originWhitelist={["*"]}
+                source={{
+                  html: SPEED_TEST_HTML,
+                  baseUrl: "https://speed.cloudflare.com",
+                }}
+                onMessage={handlers.onMessage}
+                onError={handlers.onError}
+                onHttpError={handlers.onError}
+                onRenderProcessGone={handlers.onError}
+                javaScriptEnabled
+                domStorageEnabled
+                mixedContentMode="always"
+                cacheEnabled={false}
+                androidLayerType="software"
+                style={{ width: 1, height: 1, opacity: 0 }}
+              />
+            );
+          })()}
+        </View>
+      ) : null}
     </ThemedView>
   );
 }
@@ -508,6 +776,15 @@ const RED   = "#ef4444";
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+  hiddenWebview: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    left: -10,
+    top: -10,
+    opacity: 0,
+    overflow: "hidden",
+  },
   landscapeBody: {
     flex: 1,
     flexDirection: "row",
