@@ -37,7 +37,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { fetch as expoFetch } from "expo/fetch";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -46,20 +45,13 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Download endpoint ──────────────────────────────────────────────────
-// We fire many small Cloudflare requests back-to-back within a 6-second
-// window rather than one giant request. This is the same strategy
-// every native-friendly speed-test library uses, and it avoids two
-// React-Native-specific footguns:
-//   1) RN's `XMLHttpRequest.onprogress` batches differently than the
-//      browser and sometimes only fires once at the end, so we can't
-//      rely on it for live readings on a single 1GB stream.
-//   2) `responseType = "text"` buffers the entire response in memory.
-//      A 1GB buffer reliably OOMs Expo Go and can stall release APKs.
-// 1 GB cap — even a gigabit-class link needs ~8s to pull this down, so
-// the server-side response will *never* finish before our 6s deadline
-// fires. This guarantees the test always runs the full 6 seconds (the
-// hard timer in measureDownload() aborts the XHR at exactly 6s).
-const DOWNLOAD_URL = "https://speed.cloudflare.com/__down?bytes=1000000000";
+// Dead-simple chunked loop: fetch a 10MB chunk, count its bytes, repeat
+// until 6 seconds have elapsed. The first chunk is treated as a TCP
+// warm-up and its bytes are discarded so the final Mbps reflects
+// steady-state throughput rather than including the cold connection
+// handshake. Works identically on web, Expo Go, and release APKs.
+const CHUNK_BYTES = 10_000_000;
+const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
 // payload so RTT dominates.
 const PING_URL = "https://speed.cloudflare.com/__down?bytes=0";
@@ -168,77 +160,81 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: single 1 GB streamed request, 6-second window ───
-  // Best of both worlds:
-  //  * ONE long-running TCP connection (no per-chunk handshake overhead,
-  //    no slow-start re-ramp) — same as the original XHR approach, so
-  //    readings match real-world speed tests.
-  //  * Body is consumed via `response.body.getReader()` so bytes are
-  //    counted as they arrive and immediately discarded — memory stays
-  //    flat (~64 KB transient buffers) even for a 1 GB request, which
-  //    is what made the original XHR + `responseType:"text"` approach
-  //    fail on Expo Go / release APKs (it tried to buffer 1 GB).
+  // ── Download phase: chunked loop, 6-second window ───────────────────
+  // Simplest reliable approach: fetch 10MB chunks one after another for
+  // 6 seconds, total bytes / total seconds = Mbps. The FIRST chunk is
+  // dropped from the calculation (TCP slow-start warmup) so the result
+  // reflects steady-state throughput rather than the cold-start ramp.
   //
-  // We use `expo/fetch` (rather than the global `fetch`) because the
-  // React Native `fetch` polyfill does NOT support body streaming —
-  // calling `.body.getReader()` on a normal RN response returns null
-  // and you only ever get bytes in one shot at the end via
-  // `.arrayBuffer()`. `expo/fetch` returns a real WHATWG ReadableStream.
+  // We update the live readout + progress bar after each chunk
+  // completes. Between chunks a 100ms ticker keeps the progress bar
+  // animating so the UI feels responsive even on slow links.
   const measureDownload = useCallback(async (): Promise<number> => {
     const controller = new AbortController();
     abortRef.current = controller;
-    const cacheBust = `&_=${Date.now()}`;
     const start = Date.now();
-    let bytes = 0;
+    let warmupDone = false;
+    let measuredBytes = 0;
+    let measuredStart = 0;
     let stopped = false;
 
-    // Hard 6s deadline — aborts the in-flight stream and ends the loop.
-    // This is what guarantees the test always runs exactly 6 seconds.
+    // Hard 6s deadline — aborts the in-flight chunk and ends the loop.
     const deadline = setTimeout(() => {
       stopped = true;
       try { controller.abort(); } catch {}
     }, TEST_DURATION_MS);
 
+    // Smooth progress bar between chunk completions.
+    const ticker = setInterval(() => {
+      if (stoppedRef.current) return;
+      const elapsed = Date.now() - start;
+      setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
+    }, 100);
+
     try {
-      const res = await expoFetch(DOWNLOAD_URL + cacheBust, {
-        signal: controller.signal,
-      });
-      const reader = res.body?.getReader();
-      if (!reader) {
-        // Streaming not available on this runtime — extremely unlikely
-        // with expo/fetch but guard anyway. Without streaming we have
-        // no way to get a 1 GB reading without OOMing, so bail.
-        throw new Error("Streaming download not supported on this device");
-      }
+      let i = 0;
       while (!stopped && !stoppedRef.current) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          bytes += value.byteLength;
-          const elapsed = Date.now() - start;
-          const seconds = elapsed / 1000;
-          // Mbps = bits per second / 1e6. 8 bits per byte.
-          const mbps = seconds > 0 ? (bytes * 8) / (seconds * 1_000_000) : 0;
-          setCurrentMbps(mbps);
-          setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
-        }
-      }
-    } catch (err: any) {
-      // AbortError at the deadline is expected — fall through to finish.
-      if (err?.name !== "AbortError") {
-        // If we got some bytes before the error, treat as a partial
-        // result rather than a hard failure. Otherwise propagate.
-        if (bytes === 0) {
-          clearTimeout(deadline);
-          throw err;
+        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${i++}`;
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          const buf = await res.arrayBuffer();
+          if (stopped || stoppedRef.current) break;
+
+          if (!warmupDone) {
+            // Discard the first chunk's bytes and start the clock now
+            // so we measure pure steady-state throughput.
+            warmupDone = true;
+            measuredStart = Date.now();
+          } else {
+            measuredBytes += buf.byteLength;
+            const elapsed = Date.now() - measuredStart;
+            const seconds = elapsed / 1000;
+            const mbps = seconds > 0
+              ? (measuredBytes * 8) / (seconds * 1_000_000)
+              : 0;
+            setCurrentMbps(mbps);
+          }
+        } catch (err: any) {
+          // AbortError at the deadline is expected — exit cleanly.
+          if (err?.name === "AbortError") break;
+          // Other errors with no measured bytes yet → real failure.
+          if (measuredBytes === 0) throw err;
+          break;
         }
       }
     } finally {
       clearTimeout(deadline);
+      clearInterval(ticker);
     }
 
-    const elapsedMs = Math.max(1, Date.now() - start);
-    return (bytes * 8) / ((elapsedMs / 1000) * 1_000_000);
+    // If we never got past the warmup chunk, fall back to total elapsed.
+    if (!warmupDone || measuredBytes === 0) {
+      const elapsedMs = Math.max(1, Date.now() - start);
+      // No measured bytes → return 0 rather than NaN.
+      return 0;
+    }
+    const elapsedMs = Math.max(1, Date.now() - measuredStart);
+    return (measuredBytes * 8) / ((elapsedMs / 1000) * 1_000_000);
   }, []);
 
 
