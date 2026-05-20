@@ -45,12 +45,22 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 // ── Download endpoint ──────────────────────────────────────────────────
-// Dead-simple chunked loop: fetch a 10MB chunk, count its bytes, repeat
-// until 6 seconds have elapsed. The first chunk is treated as a TCP
-// warm-up and its bytes are discarded so the final Mbps reflects
-// steady-state throughput rather than including the cold connection
-// handshake. Works identically on web, Expo Go, and release APKs.
-const CHUNK_BYTES = 10_000_000;
+// Parallel workers, small chunks. This is the textbook speed-test
+// pattern (used by Cloudflare, fast.com, speedtest-cli) and the only
+// reliable way to saturate a fast link from React Native without
+// streaming APIs or giant memory buffers:
+//
+//   * PARALLEL_WORKERS workers each run a sequential fetch loop.
+//   * While one worker is in TCP handshake / slow-start, the others
+//     are still pumping bytes, so the link stays full.
+//   * Per-chunk memory is bounded by CHUNK_BYTES * PARALLEL_WORKERS
+//     (≈ 20 MB peak) — safe on every Android device.
+//   * Bytes received in the first WARMUP_MS milliseconds are
+//     discarded so the result reflects steady-state throughput,
+//     not the cold-start ramp.
+const PARALLEL_WORKERS = 4;
+const CHUNK_BYTES = 5_000_000;
+const WARMUP_MS = 1500;
 const DOWNLOAD_URL = `https://speed.cloudflare.com/__down?bytes=${CHUNK_BYTES}`;
 // Lightweight URL for the ping phase. HEAD on a 0-byte response — minimal
 // payload so RTT dominates.
@@ -160,79 +170,76 @@ export default function SpeedTestScreen() {
     return Math.round(avg);
   }, []);
 
-  // ── Download phase: chunked loop, 6-second window ───────────────────
-  // Simplest reliable approach: fetch 10MB chunks one after another for
-  // 6 seconds, total bytes / total seconds = Mbps. The FIRST chunk is
-  // dropped from the calculation (TCP slow-start warmup) so the result
-  // reflects steady-state throughput rather than the cold-start ramp.
-  //
-  // We update the live readout + progress bar after each chunk
-  // completes. Between chunks a 100ms ticker keeps the progress bar
-  // animating so the UI feels responsive even on slow links.
+  // ── Download phase: parallel workers, 6-second window ───────────────
+  // PARALLEL_WORKERS workers run independent fetch loops, all hitting
+  // the same Cloudflare endpoint. Bytes received in the first
+  // WARMUP_MS are discarded (TCP slow-start). Final Mbps =
+  // (post-warmup bytes summed across workers) / (post-warmup seconds).
   const measureDownload = useCallback(async (): Promise<number> => {
     const controller = new AbortController();
     abortRef.current = controller;
     const start = Date.now();
-    let warmupDone = false;
     let measuredBytes = 0;
     let measuredStart = 0;
     let stopped = false;
 
-    // Hard 6s deadline — aborts the in-flight chunk and ends the loop.
+    // Hard 6s deadline — aborts all in-flight chunks across all workers.
     const deadline = setTimeout(() => {
       stopped = true;
       try { controller.abort(); } catch {}
     }, TEST_DURATION_MS);
 
-    // Smooth progress bar between chunk completions.
+    // Smooth progress bar + live Mbps update every 100ms.
     const ticker = setInterval(() => {
       if (stoppedRef.current) return;
       const elapsed = Date.now() - start;
       setProgress(Math.min(1, elapsed / TEST_DURATION_MS));
+      if (measuredStart > 0) {
+        const seconds = (Date.now() - measuredStart) / 1000;
+        if (seconds > 0) {
+          setCurrentMbps((measuredBytes * 8) / (seconds * 1_000_000));
+        }
+      }
     }, 100);
 
-    try {
+    const worker = async (id: number): Promise<void> => {
       let i = 0;
       while (!stopped && !stoppedRef.current) {
-        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${i++}`;
+        const url = `${DOWNLOAD_URL}&_=${Date.now()}-${id}-${i++}`;
         try {
           const res = await fetch(url, { signal: controller.signal });
           const buf = await res.arrayBuffer();
           if (stopped || stoppedRef.current) break;
 
-          if (!warmupDone) {
-            // Discard the first chunk's bytes and start the clock now
-            // so we measure pure steady-state throughput.
-            warmupDone = true;
-            measuredStart = Date.now();
-          } else {
-            measuredBytes += buf.byteLength;
-            const elapsed = Date.now() - measuredStart;
-            const seconds = elapsed / 1000;
-            const mbps = seconds > 0
-              ? (measuredBytes * 8) / (seconds * 1_000_000)
-              : 0;
-            setCurrentMbps(mbps);
+          const elapsed = Date.now() - start;
+          if (elapsed < WARMUP_MS) {
+            // Still in the warmup window — discard these bytes.
+            continue;
           }
+          // First post-warmup byte across all workers starts the clock.
+          if (measuredStart === 0) measuredStart = Date.now();
+          measuredBytes += buf.byteLength;
         } catch (err: any) {
           // AbortError at the deadline is expected — exit cleanly.
-          if (err?.name === "AbortError") break;
-          // Other errors with no measured bytes yet → real failure.
-          if (measuredBytes === 0) throw err;
-          break;
+          if (err?.name === "AbortError") return;
+          // Transient network blip — let other workers carry the test.
+          // Brief back-off so we don't spin on a hard error.
+          await new Promise((r) => setTimeout(r, 100));
         }
       }
+    };
+
+    try {
+      const workers = Array.from({ length: PARALLEL_WORKERS }, (_, i) =>
+        worker(i),
+      );
+      await Promise.all(workers);
     } finally {
       clearTimeout(deadline);
       clearInterval(ticker);
     }
 
-    // If we never got past the warmup chunk, fall back to total elapsed.
-    if (!warmupDone || measuredBytes === 0) {
-      const elapsedMs = Math.max(1, Date.now() - start);
-      // No measured bytes → return 0 rather than NaN.
-      return 0;
-    }
+    if (measuredStart === 0 || measuredBytes === 0) return 0;
     const elapsedMs = Math.max(1, Date.now() - measuredStart);
     return (measuredBytes * 8) / ((elapsedMs / 1000) * 1_000_000);
   }, []);
