@@ -74,13 +74,13 @@ function CatItem({
 }
 
 // ── Channel card (shown in channel list) ─────────────────────────────────────
-function ChannelCard({ stream, onPress }: { stream: LiveStream; onPress: () => void }) {
+function ChannelCard({ stream, width, onPress }: { stream: LiveStream; width: number; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
   return (
     <Pressable
-      style={[styles.channelCard, isActive && styles.channelCardActive]}
+      style={[styles.channelCard, { width }, isActive && styles.channelCardActive]}
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -196,6 +196,14 @@ export default function CatchUpScreen() {
   const { width: winWidth } = useWindowDimensions();
   const channelGridWidth = Math.max(200, winWidth - SIDEBAR_W - 1);
   const channelCols = Math.max(2, Math.floor(channelGridWidth / 150));
+  // Fixed card width so cards don't stretch when the last/only row has
+  // fewer items than `numColumns` (which is what makes a 4-channel
+  // category render giant cards vs. a 12-channel one).
+  const channelGap = Spacing.sm;
+  const channelGridPad = Spacing.sm * 2;
+  const channelCardW = Math.floor(
+    (channelGridWidth - channelGridPad - channelGap * (channelCols - 1)) / channelCols,
+  );
 
   // ── Catchup categories — only those with tv_archive channels ─────────────
   const catchupCatIds = useMemo(() => {
@@ -380,7 +388,7 @@ export default function CatchUpScreen() {
                   columnWrapperStyle={{ gap: Spacing.sm }}
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item }) => (
-                    <ChannelCard stream={item} onPress={() => handleSelectChannel(item)} />
+                    <ChannelCard stream={item} width={channelCardW} onPress={() => handleSelectChannel(item)} />
                   )}
                 />
               )
@@ -482,7 +490,7 @@ const styles = StyleSheet.create({
   // ── Channel grid ─────────────────────────────────────────────────────────
   channelGrid: { padding: Spacing.sm, gap: Spacing.sm },
   channelCard: {
-    flex: 1, aspectRatio: 1.4,
+    aspectRatio: 1.4,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center", padding: Spacing.sm,
