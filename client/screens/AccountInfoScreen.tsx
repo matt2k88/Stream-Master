@@ -769,11 +769,47 @@ export default function AccountInfoScreen() {
                 <View style={styles.leftColLandscape}>
                   {userHero}
                   {subscriptionCard}
-                  {sessionSection}
                 </View>
                 <View style={styles.midColLandscape}>
                   {profileSection}
                   {settingsSection}
+                  <View style={styles.sessionRowLandscape}>
+                    <HoverBtn
+                      style={[styles.logoutBtn, styles.logoutBtnLandscape, { flex: 1 }]}
+                      activeStyle={styles.logoutBtnPressed}
+                      onPress={async () => { clearProfile(); await logout(); }}
+                    >
+                      <Feather name="log-out" size={14} color={Colors.dark.error} />
+                      <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Sign Out</ThemedText>
+                    </HoverBtn>
+                    <HoverBtn
+                      style={[styles.exitAppBtn, styles.exitAppBtnLandscape, { flex: 1 }]}
+                      activeStyle={styles.exitAppBtnActive}
+                      onPress={() => {
+                        Alert.alert(
+                          "Exit Ultra Cast?",
+                          "Are you sure you want to close the app?",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Exit",
+                              style: "destructive",
+                              onPress: () => {
+                                if (Platform.OS === "android") {
+                                  BackHandler.exitApp();
+                                } else if (Platform.OS === "web") {
+                                  try { window.close(); } catch { /* ignore */ }
+                                }
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    >
+                      <Feather name="power" size={14} color={Colors.dark.error} />
+                      <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Exit App</ThemedText>
+                    </HoverBtn>
+                  </View>
                 </View>
                 <View style={styles.rightColLandscape}>{appSection}</View>
               </View>
@@ -1235,6 +1271,9 @@ const styles = StyleSheet.create({
   leftColLandscape: { width: 220, flexShrink: 0, gap: Spacing.sm },
   midColLandscape: { flex: 1, gap: Spacing.sm, minWidth: 0 },
   rightColLandscape: { width: 310, flexShrink: 0, gap: Spacing.sm },
+  sessionRowLandscape: {
+    flexDirection: "row", gap: Spacing.sm, marginTop: "auto",
+  },
   portraitCol: { gap: Spacing.lg },
 
   // ── Update Hero (App section centrepiece) ──────────────────────────
