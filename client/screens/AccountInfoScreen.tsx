@@ -771,7 +771,19 @@ export default function AccountInfoScreen() {
                 ]}
                 showsVerticalScrollIndicator={false}
               >
-                {/* Full-width App bar */}
+                {/* Body: 2 columns */}
+                <View style={styles.landscapeBodyRow}>
+                  <View style={styles.leftColLandscape}>
+                    {userHero}
+                    {subscriptionCard}
+                  </View>
+                  <View style={styles.midColLandscape}>
+                    {profileSection}
+                    {settingsSection}
+                  </View>
+                </View>
+
+                {/* Full-width App bar (sits just above the session row) */}
                 <View style={styles.appBarLandscape}>
                   <LinearGradient
                     colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.04)"]}
@@ -850,18 +862,6 @@ export default function AccountInfoScreen() {
                       </>
                     )}
                   </HoverBtn>
-                </View>
-
-                {/* Body: 2 columns */}
-                <View style={styles.landscapeBodyRow}>
-                  <View style={styles.leftColLandscape}>
-                    {userHero}
-                    {subscriptionCard}
-                  </View>
-                  <View style={styles.midColLandscape}>
-                    {profileSection}
-                    {settingsSection}
-                  </View>
                 </View>
 
                 {/* Bottom session row — full width */}
