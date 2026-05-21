@@ -102,6 +102,87 @@ function HoverBtn({
   );
 }
 
+// Section heading used between groups of tiles on the Account screen.
+// Subtle uppercase label flanked by a thin divider line on each side —
+// gives the page clear visual rhythm without shouting.
+function SectionHeading({ label }: { label: string }) {
+  return (
+    <View style={styles.sectionHeading}>
+      <View style={styles.sectionHeadingLine} />
+      <ThemedText style={styles.sectionHeadingText}>{label}</ThemedText>
+      <View style={styles.sectionHeadingLine} />
+    </View>
+  );
+}
+
+// Compact uniform tile used across the settings / updates / support
+// grids. Icon-left, two-line label, chevron-right. Always renders the
+// same way so every grid row has the same visual weight, which is what
+// the old screen was missing in portrait. Supports a busy/disabled
+// state and an optional tint override (e.g. red for destructive).
+function ActionTile({
+  icon,
+  title,
+  subtitle,
+  onPress,
+  tint,
+  busy,
+  disabled,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  title: string;
+  subtitle?: string;
+  onPress: () => void;
+  tint?: string;
+  busy?: boolean;
+  disabled?: boolean;
+}) {
+  const accent = tint ?? Colors.dark.accent;
+  return (
+    <HoverBtn
+      style={styles.actionTile}
+      activeStyle={[styles.actionTileActive, { borderColor: accent, backgroundColor: accent + "1A" }]}
+      onPress={onPress}
+      disabled={disabled || busy}
+    >
+      {(active) => (
+        <>
+          <View
+            style={[
+              styles.actionTileIcon,
+              { borderColor: accent + (active ? "" : "55"), backgroundColor: accent + (active ? "26" : "14") },
+            ]}
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={accent} />
+            ) : (
+              <Feather name={icon} size={16} color={accent} />
+            )}
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <ThemedText
+              style={[styles.actionTileTitle, active && { color: accent }]}
+              numberOfLines={1}
+            >
+              {title}
+            </ThemedText>
+            {subtitle ? (
+              <ThemedText style={styles.actionTileSub} numberOfLines={1}>
+                {subtitle}
+              </ThemedText>
+            ) : null}
+          </View>
+          <Feather
+            name="chevron-right"
+            size={15}
+            color={active ? accent : Colors.dark.textSecondary}
+          />
+        </>
+      )}
+    </HoverBtn>
+  );
+}
+
 interface AppNote {
   id: string;
   type: "change" | "issue" | string;
@@ -171,6 +252,8 @@ function CopyRow({
 }) {
   const [copied, setCopied] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(value);
@@ -188,16 +271,20 @@ function CopyRow({
         </ThemedText>
       </View>
       <Pressable
-        style={[styles.copyBtn, pressed && styles.copyBtnActive, copied && styles.copyBtnCopied]}
+        style={[styles.copyBtn, isActive && styles.copyBtnActive, copied && styles.copyBtnCopied]}
         onPress={handleCopy}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         hitSlop={8}
       >
         <Feather
           name={copied ? "check" : "copy"}
           size={13}
-          color={copied ? Colors.dark.success : Colors.dark.textSecondary}
+          color={
+            copied ? Colors.dark.success : isActive ? Colors.dark.accent : Colors.dark.textSecondary
+          }
         />
       </Pressable>
     </View>
@@ -224,6 +311,7 @@ export default function AccountInfoScreen() {
   const [notesError, setNotesError] = useState<string | null>(null);
   const [notesTab, setNotesTab] = useState<NotesTab>("whatsnew");
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+  const [supportVisible, setSupportVisible] = useState(false);
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
@@ -366,62 +454,12 @@ export default function AccountInfoScreen() {
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
   const user = userInfo?.user_info;
 
-  // Reusable utility block (app version + check updates + what's new + text
-  // size). Rendered in the LEFT column in portrait, but moved to the RIGHT
-  // column (alongside the Subscription card) in landscape so the Sign Out
-  // button is visible without scrolling on TV / desktop.
-  const utilityBlock = (
-    <View style={[styles.versionBlock, isLandscape && styles.utilityBlockLandscape]}>
-      <ThemedText style={styles.versionText}>v{APP_VERSION}</ThemedText>
-      <HoverBtn
-        style={styles.updateBtn}
-        activeStyle={styles.updateBtnActive}
-        onPress={handleCheckForUpdates}
-        disabled={updateChecking}
-      >
-        {updateChecking ? (
-          <ActivityIndicator size="small" color={Colors.dark.accent} />
-        ) : (
-          <Feather name="download-cloud" size={13} color={Colors.dark.accent} />
-        )}
-        <ThemedText style={styles.updateBtnText}>
-          {updateChecking ? "Checking..." : "Check for Updates"}
-        </ThemedText>
-      </HoverBtn>
-      <HoverBtn
-        style={styles.notesBtn}
-        activeStyle={styles.notesBtnActive}
-        onPress={handleOpenNotes}
-      >
-        <Feather name="file-text" size={13} color={Colors.dark.accent} />
-        <ThemedText style={styles.updateBtnText}>What&apos;s New</ThemedText>
-      </HoverBtn>
-      <HoverBtn
-        style={styles.notesBtn}
-        activeStyle={styles.notesBtnActive}
-        onPress={() => { void toggleTextSize(); }}
-      >
-        <Feather name="type" size={13} color={Colors.dark.accent} />
-        <ThemedText style={styles.updateBtnText}>
-          Text Size: {textSize === "large" ? "Large" : "Normal"}
-        </ThemedText>
-      </HoverBtn>
-      <HoverBtn
-        style={styles.notesBtn}
-        activeStyle={styles.notesBtnActive}
-        onPress={handleClearDownloads}
-        disabled={clearingCache}
-      >
-        {clearingCache ? (
-          <ActivityIndicator size="small" color={Colors.dark.accent} />
-        ) : (
-          <Feather name="trash-2" size={13} color={Colors.dark.accent} />
-        )}
-        <ThemedText style={styles.updateBtnText}>
-          {clearingCache ? "Clearing..." : "Clear Cached Files"}
-        </ThemedText>
-      </HoverBtn>
-    </View>
+  const hasSupport = !!(
+    devDetails &&
+    (devDetails.developer_name ||
+      devDetails.developer_contact ||
+      devDetails.website_link ||
+      devDetails.renewal_link)
   );
 
   return (
@@ -446,24 +484,15 @@ export default function AccountInfoScreen() {
           <ActivityIndicator size="large" color={Colors.dark.accent} />
         </View>
       ) : user ? (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={[
-            styles.body,
-            {
-              paddingHorizontal: padH,
-              paddingBottom: padB,
-              flexDirection: isLandscape ? "row" : "column",
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Left column */}
-          <View style={[styles.leftCol, isLandscape && styles.leftColLandscape]}>
-            {/* Account card */}
+        (() => {
+          // ── Reusable section blocks ──────────────────────────────────
+          // Defined once and slotted into the portrait single column or
+          // the landscape two-column layout below.
+
+          const userHero = (
             <View style={styles.userCard}>
               <LinearGradient
-                colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
+                colors={["rgba(255,102,0,0.14)", "rgba(255,102,0,0.02)"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -480,62 +509,180 @@ export default function AccountInfoScreen() {
                   {user.status || "Unknown"}
                 </ThemedText>
               </View>
+              {activeProfile ? (
+                <View style={[styles.profilePill, { borderColor: activeProfile.avatar_color + "66" }]}>
+                  <View style={[styles.profilePillAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
+                    <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <ThemedText style={styles.profilePillLabel}>Active Profile</ThemedText>
+                    <ThemedText style={[styles.profilePillName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
+                      {activeProfile.name}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
             </View>
+          );
 
-            {/* Active profile card */}
-            {activeProfile ? (
-              <View style={styles.profileCard}>
-                <View style={[styles.profileAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
-                  <Feather name={activeProfile.avatar_icon as any} size={18} color={activeProfile.avatar_color} />
+          const subscriptionCard = (
+            <View style={styles.infoCard}>
+              <View style={styles.cardLabelRow}>
+                <Feather name="credit-card" size={12} color={Colors.dark.accent} />
+                <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
+              </View>
+              {isLifetime ? (
+                <View style={styles.lifetimeBadge}>
+                  <Feather name="star" size={14} color={Colors.dark.accent} />
+                  <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.profileCardLabel}>Active Profile</ThemedText>
-                  <ThemedText style={[styles.profileCardName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
-                    {activeProfile.name}
-                  </ThemedText>
+              ) : (
+                (() => {
+                  const warn =
+                    !expiryStatus.loading &&
+                    (expiryStatus.isExpired || expiryStatus.isExpiringSoon);
+                  const color = warn ? Colors.dark.error : undefined;
+                  return (
+                    <InfoRow
+                      label="Expires"
+                      value={formatDate(user.exp_date)}
+                      icon="calendar"
+                      valueColor={color}
+                      iconColor={color}
+                    />
+                  );
+                })()
+              )}
+              <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
+              <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
+            </View>
+          );
+
+          const profileSection = activeProfile ? (
+            <View style={{ gap: Spacing.sm }}>
+              <SectionHeading label="Profile" />
+              <View style={styles.tileGrid}>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="edit-2"
+                    title="Edit Profile"
+                    subtitle="Name, icon, colour"
+                    onPress={() => navigation.navigate("CreateProfile", { profile: activeProfile })}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="users"
+                    title="Switch Profile"
+                    subtitle="Change active profile"
+                    onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+                  />
                 </View>
               </View>
-            ) : null}
+            </View>
+          ) : null;
 
-            {/* Profile action buttons */}
-            {activeProfile ? (
-              <View style={styles.profileActions}>
-                <HoverBtn
-                  style={styles.profileActionBtn}
-                  activeStyle={styles.profileActionBtnActive}
-                  onPress={() => navigation.navigate("CreateProfile", { profile: activeProfile })}
-                >
-                  <Feather name="edit-2" size={14} color={Colors.dark.accent} />
-                  <ThemedText style={styles.profileActionText}>Edit Profile</ThemedText>
-                </HoverBtn>
-                <HoverBtn
-                  style={styles.profileActionBtn}
-                  activeStyle={styles.profileActionBtnActive}
-                  onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
-                >
-                  <Feather name="users" size={14} color={Colors.dark.textSecondary} />
-                  <ThemedText style={[styles.profileActionText, { color: Colors.dark.textSecondary }]}>Switch Profile</ThemedText>
-                </HoverBtn>
+          const settingsSection = (
+            <View style={{ gap: Spacing.sm }}>
+              <SectionHeading label="Settings" />
+              <View style={styles.tileGrid}>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="sliders"
+                    title="Organise Categories"
+                    subtitle="Reorder or hide"
+                    onPress={() => navigation.navigate("OrganiseTypePicker")}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="play-circle"
+                    title="Player Settings"
+                    subtitle="VLC or Expo"
+                    onPress={() => navigation.navigate("PlayerSettings")}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="activity"
+                    title="Speed Test"
+                    subtitle="Ping & download"
+                    onPress={() => navigation.navigate("SpeedTest")}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="type"
+                    title={`Text Size: ${textSize === "large" ? "Large" : "Normal"}`}
+                    subtitle="Tap to toggle"
+                    onPress={() => { void toggleTextSize(); }}
+                  />
+                </View>
               </View>
-            ) : null}
+            </View>
+          );
 
-            {/* App version + update check.
-                In landscape this whole block is moved out of the left column
-                and rendered to the right of the Subscription card so the
-                Sign Out button is visible without scrolling. The Exit App
-                button below stays in the left column either way. */}
-            {!isLandscape ? utilityBlock : null}
-            {/* Sign Out lives above Exit App so the destructive "quit the
-                app entirely" button is always the last/bottom action. */}
-            <HoverBtn
-              style={styles.logoutBtn}
-              activeStyle={styles.logoutBtnPressed}
-              onPress={async () => { clearProfile(); await logout(); }}
-            >
-              <Feather name="log-out" size={16} color={Colors.dark.error} />
-              <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
-            </HoverBtn>
-            <View style={styles.exitAppWrap}>
+          const appSection = (
+            <View style={{ gap: Spacing.sm }}>
+              <SectionHeading label="App" />
+              <View style={styles.tileGrid}>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="download-cloud"
+                    title={updateChecking ? "Checking..." : "Check for Updates"}
+                    subtitle={`Current v${APP_VERSION}`}
+                    onPress={handleCheckForUpdates}
+                    busy={updateChecking}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="file-text"
+                    title="What's New"
+                    subtitle="Changelog & issues"
+                    onPress={handleOpenNotes}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="trash-2"
+                    title={clearingCache ? "Clearing..." : "Clear Cached Files"}
+                    subtitle="Free up storage"
+                    onPress={handleClearDownloads}
+                    busy={clearingCache}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="life-buoy"
+                    title="Support"
+                    subtitle={
+                      devLoading
+                        ? "Loading..."
+                        : hasSupport
+                        ? "Contact & links"
+                        : "Not available"
+                    }
+                    onPress={() => setSupportVisible(true)}
+                    busy={devLoading}
+                    disabled={!devLoading && !hasSupport}
+                  />
+                </View>
+              </View>
+            </View>
+          );
+
+          const sessionSection = (
+            <View style={{ gap: Spacing.sm }}>
+              <SectionHeading label="Session" />
+              <HoverBtn
+                style={styles.logoutBtn}
+                activeStyle={styles.logoutBtnPressed}
+                onPress={async () => { clearProfile(); await logout(); }}
+              >
+                <Feather name="log-out" size={16} color={Colors.dark.error} />
+                <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
+              </HoverBtn>
               <HoverBtn
                 style={styles.exitAppBtn}
                 activeStyle={styles.exitAppBtnActive}
@@ -549,14 +696,7 @@ export default function AccountInfoScreen() {
                         text: "Yes, Exit",
                         style: "destructive",
                         onPress: async () => {
-                          // Persist a flag so the intro replays on next
-                          // launch / foreground, regardless of whether the
-                          // OS actually killed the process.
                           try { await markReplayIntroOnResume(); } catch {}
-                          // Android: actually quits the activity. iOS:
-                          // cannot exit programmatically per Apple HIG, so
-                          // just dismiss the alert. The AppState listener in
-                          // App.tsx will replay the intro on next foreground.
                           if (Platform.OS === "android") {
                             try { BackHandler.exitApp(); } catch {}
                           }
@@ -566,175 +706,53 @@ export default function AccountInfoScreen() {
                   );
                 }}
               >
-                <Feather name="log-out" size={13} color={Colors.dark.error} />
+                <Feather name="power" size={13} color={Colors.dark.error} />
                 <ThemedText style={styles.exitAppBtnText}>Exit App</ThemedText>
               </HoverBtn>
             </View>
-          </View>
+          );
 
-          {/* Info section */}
-          <View style={styles.infoSection}>
-            <View style={styles.infoGrid}>
-              {/* Subscription card — in landscape, paired side-by-side with
-                  the utility block (version + update buttons + text size) so
-                  the page fits on screen without scrolling. */}
-              {(() => {
-                const subscriptionCard = (
-                  <View style={[styles.infoCard, isLandscape && styles.infoCardHalf]}>
-                    <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
-                    {isLifetime ? (
-                      <View style={styles.lifetimeBadge}>
-                        <Feather name="star" size={14} color={Colors.dark.accent} />
-                        <ThemedText style={styles.lifetimeText}>Lifetime Access</ThemedText>
-                      </View>
-                    ) : (
-                      (() => {
-                        // Only colour the date red once the lifetime check
-                        // has definitively resolved — avoids flashing a
-                        // warning to true-lifetime users on the first load
-                        // while /api/lifetime-check is in flight.
-                        const warn =
-                          !expiryStatus.loading &&
-                          (expiryStatus.isExpired || expiryStatus.isExpiringSoon);
-                        const color = warn ? Colors.dark.error : undefined;
-                        return (
-                          <InfoRow
-                            label="Expires"
-                            value={formatDate(user.exp_date)}
-                            icon="calendar"
-                            valueColor={color}
-                            iconColor={color}
-                          />
-                        );
-                      })()
-                    )}
-                    <InfoRow label="Connections" value={`${user.active_cons || 0} / ${user.max_connections || "N/A"}`} icon="users" />
-                    <InfoRow label="Trial" value={user.is_trial === "1" ? "Yes" : "No"} icon="flag" />
-                  </View>
-                );
-                if (!isLandscape) return subscriptionCard;
-                return (
-                  <View style={styles.subRowLandscape}>
+          return (
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={[
+                styles.body,
+                {
+                  paddingHorizontal: padH,
+                  paddingBottom: padB,
+                  flexDirection: isLandscape ? "row" : "column",
+                },
+              ]}
+              showsVerticalScrollIndicator={false}
+            >
+              {isLandscape ? (
+                <>
+                  {/* Left rail: identity + session */}
+                  <View style={styles.leftColLandscape}>
+                    {userHero}
                     {subscriptionCard}
-                    <View style={[styles.infoCard, styles.infoCardHalf, styles.utilityCardLandscape]}>
-                      {utilityBlock}
-                    </View>
+                    {sessionSection}
                   </View>
-                );
-              })()}
-
-              {/* Organise Categories + Player Settings — split 50/50 row.
-                  Organise was full-width before; we shrunk it to make room
-                  for the new Player Settings entry beside it. */}
-              <View style={styles.settingsRow}>
-                <HoverBtn
-                  style={[styles.organiseBtn, styles.settingsRowItem]}
-                  activeStyle={styles.organiseBtnActive}
-                  onPress={() => navigation.navigate("OrganiseTypePicker")}
-                >
-                  {(active) => (
-                    <>
-                      <Feather name="sliders" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
-                          Organise Categories
-                        </ThemedText>
-                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
-                          Reorder or hide categories
-                        </ThemedText>
-                      </View>
-                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                    </>
-                  )}
-                </HoverBtn>
-                <HoverBtn
-                  style={[styles.organiseBtn, styles.settingsRowItem]}
-                  activeStyle={styles.organiseBtnActive}
-                  onPress={() => navigation.navigate("SpeedTest")}
-                >
-                  {(active) => (
-                    <>
-                      <Feather name="activity" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
-                          Speed Test
-                        </ThemedText>
-                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
-                          Check ping & download speed
-                        </ThemedText>
-                      </View>
-                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                    </>
-                  )}
-                </HoverBtn>
-              </View>
-              <View style={styles.settingsRow}>
-                <HoverBtn
-                  style={[styles.organiseBtn, styles.settingsRowItem]}
-                  activeStyle={styles.organiseBtnActive}
-                  onPress={() => navigation.navigate("PlayerSettings")}
-                >
-                  {(active) => (
-                    <>
-                      <Feather name="play-circle" size={15} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                      <View style={{ flex: 1 }}>
-                        <ThemedText style={[styles.organiseTitle, active && { color: Colors.dark.accent }]}>
-                          Player Settings
-                        </ThemedText>
-                        <ThemedText style={styles.organiseSub} numberOfLines={1}>
-                          VLC or Expo per stream type
-                        </ThemedText>
-                      </View>
-                      <Feather name="chevron-right" size={16} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />
-                    </>
-                  )}
-                </HoverBtn>
-              </View>
-
-              {/* Developer card — in landscape, the four entries lay out as
-                  a 2×2 grid (Name | Contact on top, Website | Renewal on
-                  bottom) so the card stays short and Sign Out remains in
-                  view without scrolling. Portrait keeps the original
-                  stacked layout. */}
-              <View style={styles.infoCard}>
-                <ThemedText style={styles.cardLabel}>Developer</ThemedText>
-                {devLoading ? (
-                  <View style={styles.devLoading}>
-                    <ActivityIndicator size="small" color={Colors.dark.accent} />
+                  {/* Right pane: tile sections */}
+                  <View style={styles.rightColLandscape}>
+                    {profileSection}
+                    {settingsSection}
+                    {appSection}
                   </View>
-                ) : devDetails && (devDetails.developer_name || devDetails.developer_contact) ? (
-                  <View style={isLandscape ? styles.devGrid : undefined}>
-                    {devDetails.developer_name ? (
-                      <View style={isLandscape ? styles.devGridItem : undefined}>
-                        <InfoRow label="Name" value={devDetails.developer_name} icon="code" />
-                      </View>
-                    ) : null}
-                    {devDetails.developer_contact ? (
-                      <View style={isLandscape ? styles.devGridItem : undefined}>
-                        <InfoRow label="Contact" value={devDetails.developer_contact} icon="message-circle" />
-                      </View>
-                    ) : null}
-                    {devDetails.website_link ? (
-                      <View style={isLandscape ? styles.devGridItem : undefined}>
-                        <CopyRow label="Website" value={devDetails.website_link} icon="globe" />
-                      </View>
-                    ) : null}
-                    {devDetails.renewal_link ? (
-                      <View style={isLandscape ? styles.devGridItem : undefined}>
-                        <CopyRow label="Renewal" value={devDetails.renewal_link} icon="refresh-cw" />
-                      </View>
-                    ) : null}
-                  </View>
-                ) : (
-                  <View style={styles.devEmpty}>
-                    <Feather name="code" size={20} color={Colors.dark.border} />
-                    <ThemedText style={styles.devEmptyText}>No details available</ThemedText>
-                  </View>
-                )}
-              </View>
-            </View>
-          </View>
-        </ScrollView>
+                </>
+              ) : (
+                <View style={styles.portraitCol}>
+                  {userHero}
+                  {subscriptionCard}
+                  {profileSection}
+                  {settingsSection}
+                  {appSection}
+                  {sessionSection}
+                </View>
+              )}
+            </ScrollView>
+          );
+        })()
       ) : (
         <View style={styles.centered}>
           <Feather name="alert-circle" size={40} color={Colors.dark.error} />
@@ -748,6 +766,78 @@ export default function AccountInfoScreen() {
           </HoverBtn>
         </View>
       )}
+
+      {/* Support modal — contact details + helpful links */}
+      <Modal
+        visible={supportVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSupportVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setSupportVisible(false)}>
+          <Pressable style={styles.supportModal} onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <View style={styles.notesHeader}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.notesEyebrow}>ULTRA CAST</ThemedText>
+                <ThemedText style={styles.notesTitle}>Support</ThemedText>
+                <ThemedText style={styles.notesSub}>Contact &amp; helpful links</ThemedText>
+              </View>
+              <HoverBtn
+                style={styles.notesCloseBtn}
+                activeStyle={styles.notesCloseBtnActive}
+                onPress={() => setSupportVisible(false)}
+              >
+                {(active) => (
+                  <Feather name="x" size={18} color={active ? Colors.dark.accent : Colors.dark.text} />
+                )}
+              </HoverBtn>
+            </View>
+            <View style={styles.notesDivider} />
+            <ScrollView
+              style={styles.notesScroll}
+              contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.sm }}
+              showsVerticalScrollIndicator
+              indicatorStyle="white"
+            >
+              {devLoading ? (
+                <View style={styles.notesCentered}>
+                  <ActivityIndicator size="large" color={Colors.dark.accent} />
+                </View>
+              ) : hasSupport && devDetails ? (
+                <>
+                  {devDetails.developer_name ? (
+                    <InfoRow label="Name" value={devDetails.developer_name} icon="user" />
+                  ) : null}
+                  {devDetails.developer_contact ? (
+                    <InfoRow label="Contact" value={devDetails.developer_contact} icon="message-circle" />
+                  ) : null}
+                  {devDetails.website_link ? (
+                    <CopyRow label="Website" value={devDetails.website_link} icon="globe" />
+                  ) : null}
+                  {devDetails.renewal_link ? (
+                    <CopyRow label="Renewal" value={devDetails.renewal_link} icon="refresh-cw" />
+                  ) : null}
+                  <ThemedText style={styles.supportFootnote}>
+                    Tap the copy icon to copy a link to your clipboard.
+                  </ThemedText>
+                </>
+              ) : (
+                <View style={styles.notesCentered}>
+                  <Feather name="inbox" size={28} color={Colors.dark.border} />
+                  <ThemedText style={styles.notesEmpty}>No support details available.</ThemedText>
+                </View>
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* App Notes modal — changelog + known issues */}
       <Modal
@@ -1089,9 +1179,93 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  body: { gap: Spacing.md, alignItems: isNaN(0) ? "stretch" : undefined },
+  body: { gap: Spacing.md },
   leftCol: { gap: Spacing.sm },
-  leftColLandscape: { width: 170, flexShrink: 0 },
+  leftColLandscape: { width: 280, flexShrink: 0, gap: Spacing.md },
+  rightColLandscape: { flex: 1, gap: Spacing.lg },
+  portraitCol: { gap: Spacing.lg },
+
+  // Section heading (between tile groups)
+  sectionHeading: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+  },
+  sectionHeadingLine: {
+    flex: 1, height: 1, backgroundColor: "rgba(255,102,0,0.18)",
+  },
+  sectionHeadingText: {
+    fontSize: 10, fontWeight: "800", color: Colors.dark.accent,
+    letterSpacing: 2, textTransform: "uppercase",
+  },
+
+  // Reusable ActionTile (used in Profile / Settings / App grids)
+  actionTile: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.sm + 2,
+    minHeight: 56,
+  },
+  actionTileActive: {
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45, shadowRadius: 8, elevation: 4,
+  },
+  actionTileIcon: {
+    width: 34, height: 34, borderRadius: BorderRadius.sm,
+    borderWidth: 1, justifyContent: "center", alignItems: "center",
+  },
+  actionTileTitle: { color: Colors.dark.text, fontSize: 12.5, fontWeight: "700" },
+  actionTileSub: { color: Colors.dark.textSecondary, fontSize: 10.5, marginTop: 1 },
+
+  // Responsive 2-col tile grid (wraps automatically)
+  tileGrid: {
+    flexDirection: "row", flexWrap: "wrap",
+    marginHorizontal: -Spacing.xs / 2,
+    rowGap: Spacing.sm, columnGap: 0,
+  },
+  tileGridItem: {
+    width: "50%", paddingHorizontal: Spacing.xs / 2,
+  },
+
+  // Active profile pill inside user hero card
+  profilePill: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingVertical: Spacing.xs + 2, paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.full, borderWidth: 1,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    alignSelf: "stretch", marginTop: Spacing.xs,
+  },
+  profilePillAvatar: {
+    width: 26, height: 26, borderRadius: 13, borderWidth: 1.5,
+    justifyContent: "center", alignItems: "center",
+  },
+  profilePillLabel: {
+    fontSize: 9, fontWeight: "700", color: Colors.dark.textSecondary,
+    textTransform: "uppercase", letterSpacing: 0.8,
+  },
+  profilePillName: { fontSize: 12.5, fontWeight: "800" },
+
+  // Inline label row above InfoRows in the subscription card
+  cardLabelRow: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginBottom: 2,
+  },
+
+  // Support modal (re-uses notes modal styling)
+  supportModal: {
+    width: "100%", maxWidth: 520, maxHeight: "85%",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.4)",
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 20, elevation: 14,
+  },
+  supportFootnote: {
+    color: Colors.dark.textSecondary, fontSize: 11, fontStyle: "italic",
+    marginTop: Spacing.xs, textAlign: "center",
+  },
   userCard: {
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.md,
     borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
