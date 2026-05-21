@@ -162,7 +162,9 @@ function ActionTile({
           <View style={{ flex: 1, minWidth: 0 }}>
             <ThemedText
               style={[styles.actionTileTitle, active && { color: accent }]}
-              numberOfLines={1}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
             >
               {title}
             </ThemedText>
@@ -490,19 +492,19 @@ export default function AccountInfoScreen() {
           // the landscape two-column layout below.
 
           const userHero = (
-            <View style={styles.userCard}>
+            <View style={[styles.userCard, isLandscape && styles.userCardLandscape]}>
               <LinearGradient
                 colors={["rgba(255,102,0,0.14)", "rgba(255,102,0,0.02)"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               />
-              <View style={styles.avatarRing}>
-                <View style={styles.avatar}>
-                  <Feather name="user" size={26} color={Colors.dark.accent} />
+              <View style={[styles.avatarRing, isLandscape && styles.avatarRingLandscape]}>
+                <View style={[styles.avatar, isLandscape && styles.avatarLandscape]}>
+                  <Feather name="user" size={isLandscape ? 20 : 26} color={Colors.dark.accent} />
                 </View>
               </View>
-              <ThemedText style={styles.username} numberOfLines={1}>{user.username}</ThemedText>
+              <ThemedText style={[styles.username, isLandscape && styles.usernameLandscape]} numberOfLines={1}>{user.username}</ThemedText>
               <View style={styles.statusBadge}>
                 <View style={[styles.statusDot, { backgroundColor: statusColor(user.status) }]} />
                 <ThemedText style={[styles.statusText, { color: statusColor(user.status) }]}>
@@ -526,7 +528,7 @@ export default function AccountInfoScreen() {
           );
 
           const subscriptionCard = (
-            <View style={styles.infoCard}>
+            <View style={[styles.infoCard, isLandscape && styles.infoCardLandscape]}>
               <View style={styles.cardLabelRow}>
                 <Feather name="credit-card" size={12} color={Colors.dark.accent} />
                 <ThemedText style={styles.cardLabel}>Subscription</ThemedText>
@@ -626,7 +628,7 @@ export default function AccountInfoScreen() {
           // Big version readout + full-width primary CTA so the version
           // and update button never get lost among the other tiles.
           const updateHero = (
-            <View style={styles.updateHero}>
+            <View style={[styles.updateHero, isLandscape && styles.updateHeroLandscape]}>
               <LinearGradient
                 colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.04)"]}
                 style={StyleSheet.absoluteFill}
@@ -638,19 +640,19 @@ export default function AccountInfoScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <ThemedText style={styles.updateHeroEyebrow}>ULTRA CAST</ThemedText>
                   <View style={styles.updateHeroVersionRow}>
-                    <ThemedText style={styles.updateHeroVersion}>v{APP_VERSION}</ThemedText>
+                    <ThemedText style={[styles.updateHeroVersion, isLandscape && styles.updateHeroVersionLandscape]}>v{APP_VERSION}</ThemedText>
                     <View style={styles.updateHeroInstalledBadge}>
                       <View style={styles.updateHeroInstalledDot} />
                       <ThemedText style={styles.updateHeroInstalledText}>Installed</ThemedText>
                     </View>
                   </View>
                 </View>
-                <View style={styles.updateHeroIconRing}>
-                  <Feather name="package" size={22} color={Colors.dark.accent} />
+                <View style={[styles.updateHeroIconRing, isLandscape && styles.updateHeroIconRingLandscape]}>
+                  <Feather name="package" size={isLandscape ? 18 : 22} color={Colors.dark.accent} />
                 </View>
               </View>
               <HoverBtn
-                style={styles.updateCta}
+                style={[styles.updateCta, isLandscape && styles.updateCtaLandscape]}
                 activeStyle={styles.updateCtaActive}
                 onPress={handleCheckForUpdates}
                 disabled={updateChecking}
@@ -662,7 +664,7 @@ export default function AccountInfoScreen() {
                     ) : (
                       <Feather name="download-cloud" size={16} color="#fff" />
                     )}
-                    <ThemedText style={styles.updateCtaText}>
+                    <ThemedText style={styles.updateCtaText} numberOfLines={1}>
                       {updateChecking ? "Checking..." : "Check for Updates"}
                     </ThemedText>
                     <Feather
@@ -713,18 +715,18 @@ export default function AccountInfoScreen() {
           );
 
           const sessionSection = (
-            <View style={{ gap: Spacing.sm }}>
+            <View style={{ gap: isLandscape ? Spacing.xs : Spacing.sm }}>
               <SectionHeading label="Session" />
               <HoverBtn
-                style={styles.logoutBtn}
+                style={[styles.logoutBtn, isLandscape && styles.logoutBtnLandscape]}
                 activeStyle={styles.logoutBtnPressed}
                 onPress={async () => { clearProfile(); await logout(); }}
               >
-                <Feather name="log-out" size={16} color={Colors.dark.error} />
-                <ThemedText style={styles.logoutText}>Sign Out</ThemedText>
+                <Feather name="log-out" size={isLandscape ? 14 : 16} color={Colors.dark.error} />
+                <ThemedText style={[styles.logoutText, isLandscape && styles.logoutTextLandscape]}>Sign Out</ThemedText>
               </HoverBtn>
               <HoverBtn
-                style={styles.exitAppBtn}
+                style={[styles.exitAppBtn, isLandscape && styles.exitAppBtnLandscape]}
                 activeStyle={styles.exitAppBtnActive}
                 onPress={() => {
                   Alert.alert(
@@ -1230,9 +1232,9 @@ const styles = StyleSheet.create({
   landscapeBody: {
     flex: 1, flexDirection: "row", gap: Spacing.md,
   },
-  leftColLandscape: { width: 250, flexShrink: 0, gap: Spacing.sm },
-  midColLandscape: { flex: 1, gap: Spacing.md, minWidth: 0 },
-  rightColLandscape: { width: 290, flexShrink: 0, gap: Spacing.md },
+  leftColLandscape: { width: 220, flexShrink: 0, gap: Spacing.sm },
+  midColLandscape: { flex: 1, gap: Spacing.sm, minWidth: 0 },
+  rightColLandscape: { width: 310, flexShrink: 0, gap: Spacing.sm },
   portraitCol: { gap: Spacing.lg },
 
   // ── Update Hero (App section centrepiece) ──────────────────────────
@@ -1244,6 +1246,10 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.45, shadowRadius: 14, elevation: 6,
   },
+  updateHeroLandscape: { padding: Spacing.sm + 2, gap: Spacing.xs + 2 },
+  updateHeroVersionLandscape: { fontSize: 20 },
+  updateHeroIconRingLandscape: { width: 34, height: 34, borderRadius: 17 },
+  updateCtaLandscape: { paddingVertical: Spacing.sm },
   updateHeroTopRow: {
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
   },
@@ -1319,8 +1325,8 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
-    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.sm + 2,
-    minHeight: 56,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm + 2,
+    minHeight: 50,
   },
   actionTileActive: {
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
@@ -1387,16 +1393,20 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
     padding: Spacing.lg, alignItems: "center", gap: Spacing.sm, overflow: "hidden",
   },
+  userCardLandscape: { padding: Spacing.sm + 2, gap: Spacing.xs },
   avatarRing: {
     width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: Colors.dark.accent,
     justifyContent: "center", alignItems: "center",
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12,
   },
+  avatarRingLandscape: { width: 46, height: 46, borderRadius: 23 },
   avatar: {
     width: 56, height: 56, borderRadius: 28,
     backgroundColor: Colors.dark.accentDim, justifyContent: "center", alignItems: "center",
   },
+  avatarLandscape: { width: 38, height: 38, borderRadius: 19 },
   username: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  usernameLandscape: { fontSize: 13 },
   statusBadge: { flexDirection: "row", alignItems: "center", gap: Spacing.xs },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
@@ -1611,6 +1621,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     padding: Spacing.md, gap: Spacing.xs,
   },
+  infoCardLandscape: { padding: Spacing.sm, gap: 2 },
   cardLabel: {
     fontSize: 11, fontWeight: "700", color: Colors.dark.accent,
     textTransform: "uppercase", letterSpacing: 0.8, marginBottom: Spacing.xs,
@@ -1672,6 +1683,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
     paddingVertical: Spacing.md, borderWidth: 1, borderColor: "rgba(255,59,59,0.4)", gap: Spacing.sm,
   },
+  logoutBtnLandscape: { paddingVertical: Spacing.sm },
+  logoutTextLandscape: { fontSize: 13 },
   logoutBtnPressed: { backgroundColor: "rgba(255,59,59,0.08)", borderColor: Colors.dark.error },
   exitAppBtn: {
     flexDirection: "row",
@@ -1685,6 +1698,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "rgba(255,59,59,0.45)",
   },
+  exitAppBtnLandscape: { paddingVertical: Spacing.xs + 1 },
   exitAppBtnActive: {
     backgroundColor: "rgba(255,59,59,0.12)",
     borderColor: Colors.dark.error,
