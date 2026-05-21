@@ -755,64 +755,155 @@ export default function AccountInfoScreen() {
           );
 
           if (isLandscape) {
-            // Landscape / TV — fixed 3-column layout that fits in the
-            // viewport without scrolling. Left = identity + session,
-            // middle = Profile + Settings, right = App panel with the
-            // prominent version hero + Check for Updates CTA.
+            // Landscape / TV — full-width App bar at the top integrates
+            // version, primary Check-for-Updates CTA, and secondary App
+            // actions in a single horizontal band. Below = 2-col body
+            // (identity/subscription | profile/settings). Bottom = wide
+            // Sign Out / Exit App row. Designed to fit a TV viewport
+            // without scrolling, while remaining ScrollView-wrapped so
+            // tiny windows can still pan.
             return (
-              <View
-                style={[
-                  styles.landscapeBody,
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={[
+                  styles.landscapeBodyV2,
                   { paddingHorizontal: padH, paddingBottom: padB },
                 ]}
+                showsVerticalScrollIndicator={false}
               >
-                <View style={styles.leftColLandscape}>
-                  {userHero}
-                  {subscriptionCard}
-                </View>
-                <View style={styles.midColLandscape}>
-                  {profileSection}
-                  {settingsSection}
-                  <View style={styles.sessionRowLandscape}>
+                {/* Full-width App bar */}
+                <View style={styles.appBarLandscape}>
+                  <LinearGradient
+                    colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.04)"]}
+                    style={StyleSheet.absoluteFill}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    pointerEvents="none"
+                  />
+                  <View style={styles.appBarIconRing}>
+                    <Feather name="package" size={20} color={Colors.dark.accent} />
+                  </View>
+                  <View style={{ minWidth: 0 }}>
+                    <ThemedText style={styles.updateHeroEyebrow}>ULTRA CAST</ThemedText>
+                    <View style={styles.appBarVersionRow}>
+                      <ThemedText style={styles.appBarVersion}>v{APP_VERSION}</ThemedText>
+                      <View style={styles.updateHeroInstalledBadge}>
+                        <View style={styles.updateHeroInstalledDot} />
+                        <ThemedText style={styles.updateHeroInstalledText}>Installed</ThemedText>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }} />
+                  {/* Secondary actions inline */}
+                  <View style={styles.appBarChipRow}>
                     <HoverBtn
-                      style={[styles.logoutBtn, styles.logoutBtnLandscape, { flex: 1 }]}
-                      activeStyle={styles.logoutBtnPressed}
-                      onPress={async () => { clearProfile(); await logout(); }}
+                      style={styles.appBarChip}
+                      activeStyle={styles.appBarChipActive}
+                      onPress={handleOpenNotes}
                     >
-                      <Feather name="log-out" size={14} color={Colors.dark.error} />
-                      <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Sign Out</ThemedText>
+                      <Feather name="file-text" size={14} color={Colors.dark.accent} />
+                      <ThemedText style={styles.appBarChipText} numberOfLines={1}>What&apos;s New</ThemedText>
                     </HoverBtn>
                     <HoverBtn
-                      style={[styles.exitAppBtn, styles.exitAppBtnLandscape, { flex: 1 }]}
-                      activeStyle={styles.exitAppBtnActive}
-                      onPress={() => {
-                        Alert.alert(
-                          "Exit Ultra Cast?",
-                          "Are you sure you want to close the app?",
-                          [
-                            { text: "Cancel", style: "cancel" },
-                            {
-                              text: "Exit",
-                              style: "destructive",
-                              onPress: () => {
-                                if (Platform.OS === "android") {
-                                  BackHandler.exitApp();
-                                } else if (Platform.OS === "web") {
-                                  try { window.close(); } catch { /* ignore */ }
-                                }
-                              },
-                            },
-                          ]
-                        );
-                      }}
+                      style={styles.appBarChip}
+                      activeStyle={styles.appBarChipActive}
+                      onPress={handleClearDownloads}
+                      disabled={clearingCache}
                     >
-                      <Feather name="power" size={14} color={Colors.dark.error} />
-                      <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Exit App</ThemedText>
+                      <Feather name="trash-2" size={14} color={Colors.dark.accent} />
+                      <ThemedText style={styles.appBarChipText} numberOfLines={1}>
+                        {clearingCache ? "Clearing..." : "Clear Cache"}
+                      </ThemedText>
+                    </HoverBtn>
+                    <HoverBtn
+                      style={[styles.appBarChip, !hasSupport && !devLoading && { opacity: 0.5 }]}
+                      activeStyle={styles.appBarChipActive}
+                      onPress={() => setSupportVisible(true)}
+                      disabled={!devLoading && !hasSupport}
+                    >
+                      <Feather name="life-buoy" size={14} color={Colors.dark.accent} />
+                      <ThemedText style={styles.appBarChipText} numberOfLines={1}>Support</ThemedText>
                     </HoverBtn>
                   </View>
+                  {/* Primary CTA */}
+                  <HoverBtn
+                    style={styles.appBarUpdateCta}
+                    activeStyle={styles.updateCtaActive}
+                    onPress={handleCheckForUpdates}
+                    disabled={updateChecking}
+                  >
+                    {(active) => (
+                      <>
+                        {updateChecking ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Feather name="download-cloud" size={16} color="#fff" />
+                        )}
+                        <ThemedText style={styles.appBarUpdateCtaText} numberOfLines={1}>
+                          {updateChecking ? "Checking..." : "Check for Updates"}
+                        </ThemedText>
+                        <Feather
+                          name="chevron-right"
+                          size={16}
+                          color={active ? "#fff" : "rgba(255,255,255,0.85)"}
+                        />
+                      </>
+                    )}
+                  </HoverBtn>
                 </View>
-                <View style={styles.rightColLandscape}>{appSection}</View>
-              </View>
+
+                {/* Body: 2 columns */}
+                <View style={styles.landscapeBodyRow}>
+                  <View style={styles.leftColLandscape}>
+                    {userHero}
+                    {subscriptionCard}
+                  </View>
+                  <View style={styles.midColLandscape}>
+                    {profileSection}
+                    {settingsSection}
+                  </View>
+                </View>
+
+                {/* Bottom session row — full width */}
+                <View style={styles.sessionRowBottom}>
+                  <HoverBtn
+                    style={[styles.logoutBtn, styles.logoutBtnLandscape, { flex: 1 }]}
+                    activeStyle={styles.logoutBtnPressed}
+                    onPress={async () => { clearProfile(); await logout(); }}
+                  >
+                    <Feather name="log-out" size={14} color={Colors.dark.error} />
+                    <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Sign Out</ThemedText>
+                  </HoverBtn>
+                  <HoverBtn
+                    style={[styles.exitAppBtn, styles.exitAppBtnLandscape, { flex: 1 }]}
+                    activeStyle={styles.exitAppBtnActive}
+                    onPress={() => {
+                      Alert.alert(
+                        "Exit Ultra Cast?",
+                        "Are you sure you want to close the app?",
+                        [
+                          { text: "No", style: "cancel" },
+                          {
+                            text: "Yes, Exit",
+                            style: "destructive",
+                            onPress: async () => {
+                              try { await markReplayIntroOnResume(); } catch {}
+                              if (Platform.OS === "android") {
+                                try { BackHandler.exitApp(); } catch {}
+                              } else if (Platform.OS === "web") {
+                                try { window.close(); } catch { /* ignore */ }
+                              }
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                  >
+                    <Feather name="power" size={14} color={Colors.dark.error} />
+                    <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Exit App</ThemedText>
+                  </HoverBtn>
+                </View>
+              </ScrollView>
             );
           }
 
@@ -1273,6 +1364,62 @@ const styles = StyleSheet.create({
   rightColLandscape: { width: 310, flexShrink: 0, gap: Spacing.sm },
   sessionRowLandscape: {
     flexDirection: "row", gap: Spacing.sm, marginTop: "auto",
+  },
+  // v2 landscape — full-width app bar on top, 2-col body, bottom session row.
+  landscapeBodyV2: { gap: Spacing.sm, flexGrow: 1 },
+  landscapeBodyRow: { flex: 1, flexDirection: "row", gap: Spacing.md, minHeight: 0 },
+  sessionRowBottom: { flexDirection: "row", gap: Spacing.sm, marginTop: "auto" },
+  appBarLandscape: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm + 2,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.55)",
+    overflow: "hidden",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 5,
+  },
+  appBarIconRing: {
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 1.5, borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.12)",
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55, shadowRadius: 8,
+  },
+  appBarVersionRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.xs + 2, marginTop: 2,
+  },
+  appBarVersion: {
+    color: Colors.dark.text, fontSize: 19, fontWeight: "900", letterSpacing: 0.4,
+  },
+  appBarChipRow: { flexDirection: "row", gap: Spacing.xs + 2, alignItems: "center" },
+  appBarChip: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: Spacing.sm + 2, paddingVertical: Spacing.xs + 2,
+    backgroundColor: "rgba(255,102,0,0.06)",
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.35)",
+  },
+  appBarChipActive: {
+    backgroundColor: Colors.dark.accentDim,
+    borderColor: Colors.dark.accent,
+  },
+  appBarChipText: {
+    color: Colors.dark.text, fontSize: 11.5, fontWeight: "700",
+  },
+  appBarUpdateCta: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: Spacing.xs + 2,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7, shadowRadius: 10, elevation: 5,
+  },
+  appBarUpdateCtaText: {
+    color: "#fff", fontSize: 12.5, fontWeight: "800", letterSpacing: 0.3,
   },
   portraitCol: { gap: Spacing.lg },
 
