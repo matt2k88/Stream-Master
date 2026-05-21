@@ -622,52 +622,92 @@ export default function AccountInfoScreen() {
             </View>
           );
 
+          // Hero update card — the centrepiece of the App section.
+          // Big version readout + full-width primary CTA so the version
+          // and update button never get lost among the other tiles.
+          const updateHero = (
+            <View style={styles.updateHero}>
+              <LinearGradient
+                colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.04)"]}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                pointerEvents="none"
+              />
+              <View style={styles.updateHeroTopRow}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <ThemedText style={styles.updateHeroEyebrow}>ULTRA CAST</ThemedText>
+                  <View style={styles.updateHeroVersionRow}>
+                    <ThemedText style={styles.updateHeroVersion}>v{APP_VERSION}</ThemedText>
+                    <View style={styles.updateHeroInstalledBadge}>
+                      <View style={styles.updateHeroInstalledDot} />
+                      <ThemedText style={styles.updateHeroInstalledText}>Installed</ThemedText>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.updateHeroIconRing}>
+                  <Feather name="package" size={22} color={Colors.dark.accent} />
+                </View>
+              </View>
+              <HoverBtn
+                style={styles.updateCta}
+                activeStyle={styles.updateCtaActive}
+                onPress={handleCheckForUpdates}
+                disabled={updateChecking}
+              >
+                {(active) => (
+                  <>
+                    {updateChecking ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Feather name="download-cloud" size={16} color="#fff" />
+                    )}
+                    <ThemedText style={styles.updateCtaText}>
+                      {updateChecking ? "Checking..." : "Check for Updates"}
+                    </ThemedText>
+                    <Feather
+                      name="chevron-right"
+                      size={16}
+                      color={active ? "#fff" : "rgba(255,255,255,0.7)"}
+                    />
+                  </>
+                )}
+              </HoverBtn>
+            </View>
+          );
+
           const appSection = (
-            <View style={{ gap: Spacing.sm }}>
+            <View style={{ gap: Spacing.sm, flexShrink: 1 }}>
               <SectionHeading label="App" />
-              <View style={styles.tileGrid}>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="download-cloud"
-                    title={updateChecking ? "Checking..." : "Check for Updates"}
-                    subtitle={`Current v${APP_VERSION}`}
-                    onPress={handleCheckForUpdates}
-                    busy={updateChecking}
-                  />
-                </View>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="file-text"
-                    title="What's New"
-                    subtitle="Changelog & issues"
-                    onPress={handleOpenNotes}
-                  />
-                </View>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="trash-2"
-                    title={clearingCache ? "Clearing..." : "Clear Cached Files"}
-                    subtitle="Free up storage"
-                    onPress={handleClearDownloads}
-                    busy={clearingCache}
-                  />
-                </View>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="life-buoy"
-                    title="Support"
-                    subtitle={
-                      devLoading
-                        ? "Loading..."
-                        : hasSupport
-                        ? "Contact & links"
-                        : "Not available"
-                    }
-                    onPress={() => setSupportVisible(true)}
-                    busy={devLoading}
-                    disabled={!devLoading && !hasSupport}
-                  />
-                </View>
+              {updateHero}
+              <View style={{ gap: Spacing.xs }}>
+                <ActionTile
+                  icon="file-text"
+                  title="What's New"
+                  subtitle="Changelog & issues"
+                  onPress={handleOpenNotes}
+                />
+                <ActionTile
+                  icon="trash-2"
+                  title={clearingCache ? "Clearing..." : "Clear Cached Files"}
+                  subtitle="Free up storage"
+                  onPress={handleClearDownloads}
+                  busy={clearingCache}
+                />
+                <ActionTile
+                  icon="life-buoy"
+                  title="Support"
+                  subtitle={
+                    devLoading
+                      ? "Loading..."
+                      : hasSupport
+                      ? "Contact & links"
+                      : "Not available"
+                  }
+                  onPress={() => setSupportVisible(true)}
+                  busy={devLoading}
+                  disabled={!devLoading && !hasSupport}
+                />
               </View>
             </View>
           );
@@ -712,44 +752,49 @@ export default function AccountInfoScreen() {
             </View>
           );
 
+          if (isLandscape) {
+            // Landscape / TV — fixed 3-column layout that fits in the
+            // viewport without scrolling. Left = identity + session,
+            // middle = Profile + Settings, right = App panel with the
+            // prominent version hero + Check for Updates CTA.
+            return (
+              <View
+                style={[
+                  styles.landscapeBody,
+                  { paddingHorizontal: padH, paddingBottom: padB },
+                ]}
+              >
+                <View style={styles.leftColLandscape}>
+                  {userHero}
+                  {subscriptionCard}
+                  {sessionSection}
+                </View>
+                <View style={styles.midColLandscape}>
+                  {profileSection}
+                  {settingsSection}
+                </View>
+                <View style={styles.rightColLandscape}>{appSection}</View>
+              </View>
+            );
+          }
+
           return (
             <ScrollView
               style={{ flex: 1 }}
               contentContainerStyle={[
                 styles.body,
-                {
-                  paddingHorizontal: padH,
-                  paddingBottom: padB,
-                  flexDirection: isLandscape ? "row" : "column",
-                },
+                { paddingHorizontal: padH, paddingBottom: padB },
               ]}
               showsVerticalScrollIndicator={false}
             >
-              {isLandscape ? (
-                <>
-                  {/* Left rail: identity + session */}
-                  <View style={styles.leftColLandscape}>
-                    {userHero}
-                    {subscriptionCard}
-                    {sessionSection}
-                  </View>
-                  {/* Right pane: tile sections */}
-                  <View style={styles.rightColLandscape}>
-                    {profileSection}
-                    {settingsSection}
-                    {appSection}
-                  </View>
-                </>
-              ) : (
-                <View style={styles.portraitCol}>
-                  {userHero}
-                  {subscriptionCard}
-                  {profileSection}
-                  {settingsSection}
-                  {appSection}
-                  {sessionSection}
-                </View>
-              )}
+              <View style={styles.portraitCol}>
+                {userHero}
+                {subscriptionCard}
+                {profileSection}
+                {settingsSection}
+                {appSection}
+                {sessionSection}
+              </View>
             </ScrollView>
           );
         })()
@@ -1181,9 +1226,80 @@ const styles = StyleSheet.create({
   iconBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   body: { gap: Spacing.md },
   leftCol: { gap: Spacing.sm },
-  leftColLandscape: { width: 280, flexShrink: 0, gap: Spacing.md },
-  rightColLandscape: { flex: 1, gap: Spacing.lg },
+  // Landscape body = fixed full-height row, no scrolling.
+  landscapeBody: {
+    flex: 1, flexDirection: "row", gap: Spacing.md,
+  },
+  leftColLandscape: { width: 250, flexShrink: 0, gap: Spacing.sm },
+  midColLandscape: { flex: 1, gap: Spacing.md, minWidth: 0 },
+  rightColLandscape: { width: 290, flexShrink: 0, gap: Spacing.md },
   portraitCol: { gap: Spacing.lg },
+
+  // ── Update Hero (App section centrepiece) ──────────────────────────
+  updateHero: {
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.55)",
+    padding: Spacing.md, gap: Spacing.sm, overflow: "hidden",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45, shadowRadius: 14, elevation: 6,
+  },
+  updateHeroTopRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+  },
+  updateHeroEyebrow: {
+    color: Colors.dark.accent, fontSize: 10, fontWeight: "800",
+    letterSpacing: 2.4,
+  },
+  updateHeroVersionRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    marginTop: 4, flexWrap: "wrap",
+  },
+  updateHeroVersion: {
+    color: Colors.dark.text, fontSize: 26, fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  updateHeroInstalledBadge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: BorderRadius.full, borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.45)",
+    backgroundColor: "rgba(34,197,94,0.10)",
+  },
+  updateHeroInstalledDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: Colors.dark.success,
+  },
+  updateHeroInstalledText: {
+    fontSize: 9, fontWeight: "800", color: Colors.dark.success,
+    letterSpacing: 0.6, textTransform: "uppercase",
+  },
+  updateHeroIconRing: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 1.5, borderColor: Colors.dark.accent,
+    backgroundColor: "rgba(255,102,0,0.12)",
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55, shadowRadius: 10,
+  },
+  updateCta: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 10, elevation: 5,
+  },
+  updateCtaActive: {
+    shadowOpacity: 0.95, shadowRadius: 14, elevation: 8,
+    transform: [{ scale: 1.02 }],
+  },
+  updateCtaText: {
+    color: "#fff", fontSize: 13.5, fontWeight: "800",
+    letterSpacing: 0.4, flex: 1, textAlign: "center",
+  },
 
   // Section heading (between tile groups)
   sectionHeading: {
