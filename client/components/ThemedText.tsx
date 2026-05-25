@@ -1,7 +1,7 @@
 import { Text, StyleSheet, type TextProps, type TextStyle } from "react-native";
 
 import { useTheme } from "@/hooks/useTheme";
-import { useUISettings } from "@/contexts/UISettingsContext";
+import { useUISettingsSafe } from "@/contexts/UISettingsContext";
 import { Typography } from "@/constants/theme";
 
 export type ThemedTextProps = TextProps & {
