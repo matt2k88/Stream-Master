@@ -1,12 +1,19 @@
-import { Text, type TextProps } from "react-native";
+import { Text, StyleSheet, type TextProps, type TextStyle } from "react-native";
 
 import { useTheme } from "@/hooks/useTheme";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { Typography } from "@/constants/theme";
 
 export type ThemedTextProps = TextProps & {
   lightColor?: string;
   darkColor?: string;
   type?: "h1" | "h2" | "h3" | "h4" | "body" | "small" | "link";
+  /**
+   * Opt out of the global text-size scaling (driven by UISettings).
+   * Use for pre-scaled text, fixed-size badges, or any layout that must
+   * NOT grow when the user picks "medium"/"large" in Profile.
+   */
+  disableAutoScale?: boolean;
 };
 
 export function ThemedText({
@@ -14,27 +21,20 @@ export function ThemedText({
   lightColor,
   darkColor,
   type = "body",
+  disableAutoScale,
   ...rest
 }: ThemedTextProps) {
   const { theme, isDark } = useTheme();
+  const { textScale } = useUISettings();
 
   const getColor = () => {
-    if (isDark && darkColor) {
-      return darkColor;
-    }
-
-    if (!isDark && lightColor) {
-      return lightColor;
-    }
-
-    if (type === "link") {
-      return theme.link;
-    }
-
+    if (isDark && darkColor) return darkColor;
+    if (!isDark && lightColor) return lightColor;
+    if (type === "link") return theme.link;
     return theme.text;
   };
 
-  const getTypeStyle = () => {
+  const getTypeStyle = (): TextStyle => {
     switch (type) {
       case "h1":
         return Typography.h1;
@@ -55,7 +55,24 @@ export function ThemedText({
     }
   };
 
+  // App-wide auto-scaling: flatten incoming style, then multiply fontSize and
+  // lineHeight by the user's selected textScale. Applied LAST so it overrides
+  // any explicit fontSize the caller passed.
+  let scaledOverride: TextStyle | null = null;
+  if (!disableAutoScale && textScale !== 1) {
+    const flat = StyleSheet.flatten([getTypeStyle(), style]) as TextStyle | undefined;
+    const baseFontSize = typeof flat?.fontSize === "number" ? flat.fontSize : undefined;
+    const baseLineHeight = typeof flat?.lineHeight === "number" ? flat.lineHeight : undefined;
+    const next: TextStyle = {};
+    if (baseFontSize) next.fontSize = Math.round(baseFontSize * textScale);
+    if (baseLineHeight) next.lineHeight = Math.round(baseLineHeight * textScale);
+    if (next.fontSize || next.lineHeight) scaledOverride = next;
+  }
+
   return (
-    <Text style={[{ color: getColor() }, getTypeStyle(), style]} {...rest} />
+    <Text
+      style={[{ color: getColor() }, getTypeStyle(), style, scaledOverride]}
+      {...rest}
+    />
   );
 }

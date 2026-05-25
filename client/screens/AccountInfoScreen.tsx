@@ -615,7 +615,7 @@ export default function AccountInfoScreen() {
                 <View style={styles.tileGridItem}>
                   <ActionTile
                     icon="type"
-                    title={`Text Size: ${textSize === "large" ? "Large" : "Normal"}`}
+                    title={`Text Size: ${textSize === "large" ? "Large" : textSize === "medium" ? "Medium" : "Normal"}`}
                     subtitle="Tap to toggle"
                     onPress={() => { void toggleTextSize(); }}
                   />
