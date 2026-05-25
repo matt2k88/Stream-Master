@@ -131,3 +131,21 @@ export function useUISettings(): UISettingsContextType {
   }
   return ctx;
 }
+
+// Non-throwing variant for low-level primitives (e.g. ThemedText) that may
+// render outside the provider — error fallback UI, native Modal portals
+// during fast-refresh, etc. Returns a safe default (no scaling) instead of
+// crashing the screen.
+const DEFAULT_UI_SETTINGS: UISettingsContextType = {
+  textSize: "normal",
+  textScale: 1,
+  setTextSize: async () => {},
+  toggleTextSize: async () => {},
+  scaleFont: (base: number) => Math.round(base),
+  scaleLineHeight: (base: number) => Math.round(base),
+};
+
+export function useUISettingsSafe(): UISettingsContextType {
+  const ctx = useContext(UISettingsContext);
+  return ctx ?? DEFAULT_UI_SETTINGS;
+}

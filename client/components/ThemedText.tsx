@@ -25,7 +25,7 @@ export function ThemedText({
   ...rest
 }: ThemedTextProps) {
   const { theme, isDark } = useTheme();
-  const { textScale } = useUISettings();
+  const { textScale } = useUISettingsSafe();
 
   const getColor = () => {
     if (isDark && darkColor) return darkColor;
