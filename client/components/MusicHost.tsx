@@ -77,7 +77,7 @@ export default function MusicHost() {
   const everPlayedRef = useRef(false);
 
   // 250ms update interval gives a smooth progress bar without spam.
-  const player = useAudioPlayer(null, 250);
+  const player = useAudioPlayer(null, { updateInterval: 250 });
 
   // Configure audio session once on mount. iOS needs playsInSilentMode so
   // the device's mute switch doesn't kill playback; both platforms benefit
