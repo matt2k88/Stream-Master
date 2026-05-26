@@ -73,12 +73,19 @@
       "./plugins/withVlcMinSdkOverride",
       [
         "./plugins/withTvBanner",
-        { "bannerPath": "./assets/images/tv-banner.png" }
+        {
+          "bannerPath": "./assets/images/tv-banner.png"
+        }
       ],
       [
         "react-native-vlc-media-player",
-        { "ios": { "includeVLCKit": false } }
-      ]
+        {
+          "ios": {
+            "includeVLCKit": false
+          }
+        }
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "reactCompiler": true
