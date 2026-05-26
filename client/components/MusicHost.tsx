@@ -59,11 +59,25 @@ export function useMusicLayout() {
   };
 }
 
+// Routes where the persistent music panel (sidebar/bottom bar) should be
+// visible. NowPlaying is intentionally excluded — that screen already shows
+// the full player, so the panel would duplicate the artwork/controls.
 const MUSIC_ROUTES = new Set([
   "MusicHome",
   "MusicSearch",
   "MusicPlaylists",
   "MusicPlaylistDetail",
+]);
+
+// Routes where the audio engine must keep running but the panel UI should
+// hide (e.g. NowPlaying renders its own full-screen player).
+const MUSIC_AUDIO_ROUTES = new Set([
+  ...Array.from([
+    "MusicHome",
+    "MusicSearch",
+    "MusicPlaylists",
+    "MusicPlaylistDetail",
+  ]),
   "NowPlaying",
 ]);
 
@@ -94,7 +108,10 @@ export default function MusicHost() {
   } = useMusic();
 
   const routeName = useActiveRouteName();
-  const inMusicSection = !!routeName && MUSIC_ROUTES.has(routeName);
+  // Show the persistent music panel only on browse screens.
+  const showPanel = !!routeName && MUSIC_ROUTES.has(routeName);
+  // Keep the audio engine running on browse screens AND NowPlaying.
+  const inMusicSection = !!routeName && MUSIC_AUDIO_ROUTES.has(routeName);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height && width >= 900 && height >= 500;
@@ -203,7 +220,7 @@ export default function MusicHost() {
     } catch {}
   };
 
-  const showBar = !!current && inMusicSection;
+  const showBar = !!current && showPanel;
   const loadingLabel = !everPlayedRef.current
     ? " · loading (first track can take a few seconds)…"
     : " · loading…";
