@@ -1,0 +1,1 @@
+- [YouTube audio extraction on server](youtube-audio-extraction.md) — yt-dlp needs Deno 2 + yt-dlp-ejs plugin to solve JS challenges; cookies bypass bot wall but Replit Secrets UI strips newlines.

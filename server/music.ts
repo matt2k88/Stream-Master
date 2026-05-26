@@ -13,6 +13,7 @@ import { supabase } from "./supabase";
 // secret; we write it to /tmp at startup and pass to yt-dlp / ytdl-core.
 
 let COOKIES_FILE: string | null = null;
+let COOKIES_NORMALIZED: string | null = null;
 function initCookies() {
   const raw = process.env.YT_COOKIES_TXT;
   if (!raw || raw.trim().length === 0) {
@@ -20,10 +21,21 @@ function initCookies() {
     return;
   }
   try {
+    // The Replit Secrets UI strips newlines from pasted multi-line values, so
+    // the raw secret can arrive as one giant line with tabs preserved but no
+    // line breaks. Re-insert a newline before each cookie row pattern
+    // (domain<TAB>TRUE|FALSE<TAB><path><TAB>TRUE|FALSE<TAB>digits<TAB>) so
+    // yt-dlp's strict Netscape parser and our own parser both work. Path can
+    // be any non-tab string (usually "/", but accept others).
+    const normalized = raw.replace(
+      /\s+(?=(?:#HttpOnly_)?[A-Za-z0-9_.-]+\t(?:TRUE|FALSE)\t[^\t]+\t(?:TRUE|FALSE)\t\d+\t)/g,
+      "\n",
+    );
     const path = join(tmpdir(), "yt-cookies.txt");
-    writeFileSync(path, raw, { mode: 0o600 });
+    writeFileSync(path, normalized, { mode: 0o600 });
     COOKIES_FILE = path;
-    const parsedCount = parseCookiesTxtToHeader(raw).split(";").filter(Boolean).length;
+    COOKIES_NORMALIZED = normalized;
+    const parsedCount = parseCookiesTxtToHeader(normalized).split(";").filter(Boolean).length;
     console.log(
       "[music/cookies] wrote cookies to",
       path,
@@ -73,28 +85,15 @@ function parseCookiesTxtToHeader(txt: string): string {
 const streamCache = new Map<string, { url: string; expiresAt: number }>();
 const STREAM_TTL_MS = 5 * 60 * 60 * 1000;
 
-// Try yt-dlp first (works on dev where the python binary is present). Returns
-// null + logs the reason if the binary is missing / fails. The audio-proxy
-// route falls back to a pure-JS extractor when this returns null.
-function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
+// Run a single (binary, args) combination and resolve with the first stdout
+// line that looks like a URL, or null on any failure / timeout / non-zero exit.
+function runYtDlp(binary: string, args: string[], videoId: string): Promise<string | null> {
   return new Promise((resolve) => {
-    const args = [
-      "-f", "bestaudio[ext=m4a]/bestaudio",
-      "-g",
-      "--no-warnings",
-      "--no-playlist",
-      "--socket-timeout", "15",
-    ];
-    if (COOKIES_FILE && existsSync(COOKIES_FILE)) {
-      args.push("--cookies", COOKIES_FILE);
-    }
-    args.push(`https://www.youtube.com/watch?v=${videoId}`);
-    const binary = process.env.YT_DLP_PATH || "yt-dlp";
     let proc: ReturnType<typeof spawn>;
     try {
       proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
     } catch (e: any) {
-      console.warn("[music/ytdlp] spawn threw", videoId, e?.code, e?.message);
+      console.warn("[music/ytdlp] spawn threw", binary, videoId, e?.code, e?.message);
       resolve(null);
       return;
     }
@@ -109,15 +108,58 @@ function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
         const first = out.trim().split("\n")[0];
         if (first.startsWith("http")) return resolve(first);
       }
-      console.warn("[music/ytdlp] failed", videoId, "exit=", code, "stderr=", err.slice(0, 300));
+      console.warn("[music/ytdlp] failed", binary, videoId, "exit=", code, "stderr=", err.slice(0, 300));
       resolve(null);
     });
     proc.on("error", (e: any) => {
       clearTimeout(timer);
-      console.warn("[music/ytdlp] error", videoId, e?.code, e?.message);
+      // ENOENT just means this binary isn't on PATH — caller will try the next.
+      if (e?.code !== "ENOENT") {
+        console.warn("[music/ytdlp] error", binary, videoId, e?.code, e?.message);
+      }
       resolve(null);
     });
   });
+}
+
+// Resolve audio URL using yt-dlp. Tries candidate commands in order so dev
+// (uv env with yt-dlp-ejs plugin + Deno 2) and prod (bare yt-dlp binary)
+// both work without configuration. ENOENT on one candidate transparently
+// falls through to the next.
+function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
+  const baseArgs = [
+    "-f", "bestaudio[ext=m4a]/bestaudio/best[acodec!=none]/best",
+    "-g",
+    "--no-warnings",
+    "--no-playlist",
+    "--socket-timeout", "15",
+  ];
+  if (COOKIES_FILE && existsSync(COOKIES_FILE)) {
+    baseArgs.push("--cookies", COOKIES_FILE);
+  }
+  baseArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
+
+  // Build candidate list: explicit env vars first, then uv (loads the
+  // yt-dlp-ejs plugin for JS challenge solving), then a bare yt-dlp binary.
+  const candidates: Array<{ binary: string; args: string[] }> = [];
+  const cmdEnv = process.env.YT_DLP_CMD;
+  if (cmdEnv) {
+    const parts = cmdEnv.split(" ").filter(Boolean);
+    if (parts.length) candidates.push({ binary: parts[0], args: [...parts.slice(1), ...baseArgs] });
+  }
+  if (process.env.YT_DLP_PATH) {
+    candidates.push({ binary: process.env.YT_DLP_PATH, args: [...baseArgs] });
+  }
+  candidates.push({ binary: "uv", args: ["run", "yt-dlp", ...baseArgs] });
+  candidates.push({ binary: "yt-dlp", args: [...baseArgs] });
+
+  return (async () => {
+    for (const c of candidates) {
+      const url = await runYtDlp(c.binary, c.args, videoId);
+      if (url) return url;
+    }
+    return null;
+  })();
 }
 
 // Pure-JS fallback (no subprocess, works in any Node runtime including Cloud
@@ -129,9 +171,11 @@ async function extractAudioUrlYtdlCore(videoId: string): Promise<string | null> 
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
     };
-    const cookiesRaw = process.env.YT_COOKIES_TXT;
-    if (cookiesRaw) {
-      const cookieHeader = parseCookiesTxtToHeader(cookiesRaw);
+    // Use the SAME normalized cookies-txt as yt-dlp (raw env may be on one
+    // line because Replit Secrets strips newlines — see initCookies()).
+    const cookiesTxt = COOKIES_NORMALIZED ?? process.env.YT_COOKIES_TXT;
+    if (cookiesTxt) {
+      const cookieHeader = parseCookiesTxtToHeader(cookiesTxt);
       if (cookieHeader) headers["Cookie"] = cookieHeader;
     }
     const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`, {
