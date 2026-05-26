@@ -64,6 +64,23 @@ export default function MusicPlaylistDetailScreen() {
     playQueue(queue, index);
   };
 
+  const moveTrack = async (index: number, delta: number) => {
+    if (!activeProfile) return;
+    const target = index + delta;
+    if (target < 0 || target >= tracks.length) return;
+    const next = [...tracks];
+    const [item] = next.splice(index, 1);
+    next.splice(target, 0, item);
+    setTracks(next);
+    try {
+      await fetch(new URL(`/api/music/playlists/${playlistId}/tracks/order`, getApiUrl()).toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: activeProfile.id, track_ids: next.map(t => t.id) }),
+      });
+    } catch {}
+  };
+
   const removeTrack = (t: PlaylistTrack) => {
     Alert.alert("Remove from playlist?", t.title, [
       { text: "Cancel", style: "cancel" },
@@ -117,6 +134,12 @@ export default function MusicPlaylistDetailScreen() {
                 <ThemedText style={styles.rowTitle} numberOfLines={1}>{item.title}</ThemedText>
                 <ThemedText style={styles.rowSub} numberOfLines={1}>{item.artist}</ThemedText>
               </View>
+              <Pressable onPress={() => moveTrack(index, -1)} disabled={index === 0} style={[styles.removeBtn, index === 0 && { opacity: 0.3 }]}>
+                <Feather name="chevron-up" size={18} color={Colors.dark.textSecondary} />
+              </Pressable>
+              <Pressable onPress={() => moveTrack(index, +1)} disabled={index === tracks.length - 1} style={[styles.removeBtn, index === tracks.length - 1 && { opacity: 0.3 }]}>
+                <Feather name="chevron-down" size={18} color={Colors.dark.textSecondary} />
+              </Pressable>
               <Pressable onPress={() => removeTrack(item)} style={styles.removeBtn}>
                 <Feather name="x" size={18} color={Colors.dark.textSecondary} />
               </Pressable>

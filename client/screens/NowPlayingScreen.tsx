@@ -1,5 +1,6 @@
-import React, { useEffect } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, StyleSheet, Pressable, ScrollView, Platform } from "react-native";
+import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -24,14 +25,44 @@ export default function NowPlayingScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {
-    current, playState, position, duration,
-    pause, resume, next, previous, stop, seek, setExpanded,
+    current, playState, position, duration, queue, queueIndex,
+    pause, resume, next, previous, stop, seek, setExpanded, playQueue,
   } = useMusic();
+  const [addOpen, setAddOpen] = useState(false);
 
   useEffect(() => {
     setExpanded(true);
     return () => setExpanded(false);
   }, [setExpanded]);
+
+  // Web — keyboard media keys for play/pause and arrow-skip
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === "Space" || e.code === "MediaPlayPause") {
+        e.preventDefault();
+        playState === "playing" ? pause() : resume();
+      } else if (e.code === "MediaTrackNext") { next(); }
+      else if (e.code === "MediaTrackPrevious") { previous(); }
+      else if (e.code === "ArrowRight") { seek(Math.min((duration || position + 15), position + 15)); }
+      else if (e.code === "ArrowLeft") { seek(Math.max(0, position - 15)); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [playState, position, duration, pause, resume, next, previous, seek]);
+
+  // Native Android / Fire TV — remote media keycodes via Pressable onKeyDown.
+  // KeyEvent constants: PLAY_PAUSE=85, NEXT=87, PREV=88, REWIND=89, FF=90, PLAY=126, PAUSE=127
+  const onTvKey = ({ nativeEvent }: any) => {
+    if (Platform.OS !== "android") return;
+    const code = nativeEvent?.keyCode;
+    if (code === 85 || code === 126 || code === 127) {
+      playState === "playing" ? pause() : resume();
+    } else if (code === 87) { next(); }
+    else if (code === 88) { previous(); }
+    else if (code === 90) { seek(Math.min((duration || position + 15), position + 15)); }
+    else if (code === 89) { seek(Math.max(0, position - 15)); }
+  };
 
   if (!current) {
     // Track ended / cleared while screen open — bounce back
@@ -87,6 +118,10 @@ export default function NowPlayingScreen() {
           <Pressable
             onPress={() => playState === "playing" ? pause() : resume()}
             style={styles.ctrlLg}
+            focusable
+            // @ts-ignore — onKeyDown is supported on Android TV / web
+            onKeyDown={onTvKey}
+            hasTVPreferredFocus
           >
             <Feather name={playState === "playing" ? "pause" : "play"} size={32} color="#fff" />
           </Pressable>
@@ -101,7 +136,31 @@ export default function NowPlayingScreen() {
         {playState === "error" ? (
           <ThemedText style={styles.errText}>Couldn't load this track. Skip to next?</ThemedText>
         ) : null}
+
+        <Pressable onPress={() => setAddOpen(true)} style={styles.addBtn}>
+          <Feather name="plus" size={16} color={Colors.dark.text} />
+          <ThemedText style={styles.addBtnText}>Add to Playlist</ThemedText>
+        </Pressable>
       </View>
+
+      {queue.length > 1 ? (
+        <View style={styles.queueWrap}>
+          <ThemedText style={styles.queueTitle}>Up Next</ThemedText>
+          <ScrollView style={{ maxHeight: 180 }}>
+            {queue.map((t, i) => i === queueIndex ? null : (
+              <Pressable key={`${t.itunes_track_id}-${i}`} style={styles.qRow} onPress={() => playQueue(queue, i)}>
+                <ThemedText style={styles.qIdx}>{i + 1}</ThemedText>
+                <View style={{ flex: 1 }}>
+                  <ThemedText style={styles.qTitle} numberOfLines={1}>{t.title}</ThemedText>
+                  <ThemedText style={styles.qArtist} numberOfLines={1}>{t.artist}</ThemedText>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      <AddToPlaylistModal track={addOpen ? current : null} onClose={() => setAddOpen(false)} />
     </ThemedView>
   );
 }
@@ -127,4 +186,12 @@ const styles = StyleSheet.create({
   ctrlMd: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full },
   ctrlLg: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.accent },
   errText: { color: Colors.dark.error, fontSize: 12, marginTop: Spacing.md, textAlign: "center" },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.dark.border, marginTop: Spacing.md },
+  addBtnText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
+  queueWrap: { paddingHorizontal: Spacing.xl, marginTop: Spacing.lg },
+  queueTitle: { color: Colors.dark.text, fontSize: 14, fontWeight: "700", marginBottom: Spacing.sm },
+  qRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md, paddingVertical: 6 },
+  qIdx: { color: Colors.dark.textSecondary, fontSize: 12, width: 20 },
+  qTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "600" },
+  qArtist: { color: Colors.dark.textSecondary, fontSize: 11 },
 });

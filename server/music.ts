@@ -428,6 +428,36 @@ export function registerMusicRoutes(app: Express) {
     }
   });
 
+  // Reorder all tracks in a playlist by supplying the new id sequence.
+  app.put("/api/music/playlists/:id/tracks/order", async (req, res) => {
+    const { id } = req.params;
+    const { profile_id, track_ids } = req.body ?? {};
+    if (!profile_id || !Array.isArray(track_ids)) {
+      return res.status(400).json({ error: "profile_id and track_ids[] required" });
+    }
+    if (!(await verifyPlaylistOwner(id, profile_id))) return res.status(403).json({ error: "Forbidden" });
+    try {
+      // Two-pass to avoid the unique-position issue: bump everything by a large
+      // offset, then write final positions.
+      const OFFSET = 100000;
+      for (let i = 0; i < track_ids.length; i++) {
+        await supabase.from("music_playlist_tracks")
+          .update({ position: OFFSET + i })
+          .eq("id", track_ids[i])
+          .eq("playlist_id", id);
+      }
+      for (let i = 0; i < track_ids.length; i++) {
+        await supabase.from("music_playlist_tracks")
+          .update({ position: i })
+          .eq("id", track_ids[i])
+          .eq("playlist_id", id);
+      }
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to reorder tracks" });
+    }
+  });
+
   app.delete("/api/music/playlist-tracks/:trackId", async (req, res) => {
     const { trackId } = req.params;
     const profile_id = (req.query.profile_id as string) || (req.body?.profile_id as string);

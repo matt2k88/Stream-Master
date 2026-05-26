@@ -36,6 +36,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
+import { useMusic } from "@/contexts/MusicContext";
 
 // Lazy-require VlcPlayerScreen ONLY on Android — react-native-vlc-media-player
 // has no web shim and crashes at module-load time on web/iOS Expo Go.
@@ -459,6 +460,31 @@ function LegacyPlayerScreen() {
     : streamId ? parseInt(streamId, 10) : 0;
   const favStreamName = type === "series" && seriesNameParam ? seriesNameParam : title;
   const isFavourited = favStreamId > 0 ? isFavourite(favStreamId, favStreamType) : false;
+
+  // Mutual exclusion with music player: pause music on mount, resume on unmount
+  // (only if we were the ones who paused it). Use a ref to read the latest
+  // music context state at cleanup time — the captured `music` object is
+  // stale because context replaces it on every state change.
+  const music = useMusic();
+  const musicRef = useRef(music);
+  musicRef.current = music;
+  const musicWasPausedByUsRef = useRef(false);
+  useEffect(() => {
+    const m = musicRef.current;
+    if (m.current && m.playState === "playing") {
+      musicWasPausedByUsRef.current = true;
+      m.pause();
+    }
+    return () => {
+      const latest = musicRef.current;
+      // Only resume if WE paused it AND it's still the same track AND it's
+      // still in paused state (user didn't manually stop / change track).
+      if (musicWasPausedByUsRef.current && latest.current && latest.playState === "paused") {
+        latest.resume();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Report content ────────────────────────────────────────────────────────
   const showReportRef = useRef(false);

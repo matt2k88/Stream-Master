@@ -32,6 +32,8 @@ export default function MusicPlaylistsScreen() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [renameTarget, setRenameTarget] = useState<Playlist | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   const reload = useCallback(async () => {
     if (!activeProfile) return;
@@ -81,6 +83,28 @@ export default function MusicPlaylistsScreen() {
     ]);
   };
 
+  const openRowMenu = (p: Playlist) => {
+    Alert.alert(p.name, undefined, [
+      { text: "Rename", onPress: () => { setRenameTarget(p); setRenameValue(p.name); } },
+      { text: "Delete", style: "destructive", onPress: () => deletePlaylist(p) },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const submitRename = async () => {
+    if (!renameTarget || !activeProfile || !renameValue.trim()) return;
+    try {
+      await fetch(new URL(`/api/music/playlists/${renameTarget.id}`, getApiUrl()).toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile_id: activeProfile.id, name: renameValue.trim() }),
+      });
+    } catch {}
+    setRenameTarget(null);
+    setRenameValue("");
+    reload();
+  };
+
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
@@ -110,7 +134,7 @@ export default function MusicPlaylistsScreen() {
             <Pressable
               style={styles.row}
               onPress={() => navigation.navigate("MusicPlaylistDetail", { playlistId: item.id, name: item.name })}
-              onLongPress={() => deletePlaylist(item)}
+              onLongPress={() => openRowMenu(item)}
             >
               {item.cover_url ? (
                 <Image source={{ uri: item.cover_url }} style={styles.cover} contentFit="cover" />
@@ -123,11 +147,37 @@ export default function MusicPlaylistsScreen() {
                 <ThemedText style={styles.rowTitle} numberOfLines={1}>{item.name}</ThemedText>
                 <ThemedText style={styles.rowSub}>{item.track_count} {item.track_count === 1 ? "song" : "songs"}</ThemedText>
               </View>
-              <Feather name="chevron-right" size={20} color={Colors.dark.textSecondary} />
+              <Pressable onPress={() => openRowMenu(item)} style={styles.iconBtn}>
+                <Feather name="more-vertical" size={18} color={Colors.dark.textSecondary} />
+              </Pressable>
             </Pressable>
           )}
         />
       )}
+
+      <Modal visible={!!renameTarget} transparent animationType="fade" onRequestClose={() => setRenameTarget(null)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setRenameTarget(null)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <ThemedText style={styles.modalTitle}>Rename Playlist</ThemedText>
+            <TextInput
+              value={renameValue}
+              onChangeText={setRenameValue}
+              placeholder="Playlist name"
+              placeholderTextColor={Colors.dark.textSecondary}
+              style={styles.modalInput}
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: Spacing.sm }}>
+              <Pressable style={[styles.modalBtn, styles.modalBtnGhost]} onPress={() => setRenameTarget(null)}>
+                <ThemedText style={styles.modalBtnText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable style={[styles.modalBtn, styles.modalBtnPrimary]} onPress={submitRename}>
+                <ThemedText style={[styles.modalBtnText, { color: "#fff" }]}>Save</ThemedText>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={createOpen} transparent animationType="fade" onRequestClose={() => setCreateOpen(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setCreateOpen(false)}>

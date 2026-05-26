@@ -1,5 +1,8 @@
-import React, { createContext, useContext, useState, useCallback, useRef, ReactNode, useMemo } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, ReactNode, useMemo, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
+
+const LAST_TRACK_KEY = "@uc:music:last";
 
 export interface MusicTrack {
   itunes_track_id: string;
@@ -95,6 +98,30 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     controllerRef.current = ctl;
   }, []);
 
+  // Restore last-known track (paused) on app start so the mini bar can resume.
+  // Guard: capture playToken at effect start. If user starts playback before
+  // restore resolves (token bumped), abandon the restore — otherwise we'd
+  // overwrite the active track they just queued.
+  useEffect(() => {
+    const tokenAtStart = playTokenRef.current;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(LAST_TRACK_KEY);
+        if (!raw) return;
+        if (playTokenRef.current !== tokenAtStart) return; // user already played something
+        const parsed = JSON.parse(raw) as { track: MusicTrack; queue: MusicTrack[]; index: number } | null;
+        if (!parsed || !parsed.track) return;
+        setCurrent(parsed.track);
+        setQueue(parsed.queue ?? [parsed.track]);
+        setQueueIndex(parsed.index ?? 0);
+        queueRef.current = parsed.queue ?? [parsed.track];
+        queueIndexRef.current = parsed.index ?? 0;
+        setPlayState("paused");
+        setDuration(parsed.track.duration_sec ?? 0);
+      } catch {}
+    })();
+  }, []);
+
   const startTrackAt = useCallback(async (tracks: MusicTrack[], index: number) => {
     const track = tracks[index];
     if (!track) return;
@@ -118,6 +145,10 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setVideoId(vid);
     // Controller may not be mounted yet — MusicHost will pick up videoId via effect.
     controllerRef.current?.load(vid);
+    // Persist last-played snapshot for next app launch
+    try {
+      AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index }));
+    } catch {}
   }, []);
 
   const playTrack = useCallback(async (track: MusicTrack, q?: MusicTrack[]) => {
