@@ -45,10 +45,10 @@ export const MUSIC_BOTTOM_BAR_HEIGHT = BAR_HEIGHT + BAR_MARGIN;
 export function useMusicLayout() {
   const { width, height } = useWindowDimensions();
   const { current } = useMusic();
-  // Treat as landscape only when we genuinely have a wide screen. Avoids
-  // triggering on tiny landscape phones where a 320px sidebar would eat
-  // most of the screen.
-  const isLandscape = width > height && width >= 600;
+  // Only show the right-side sidebar on genuinely large landscape surfaces
+  // (tablets / TVs). Phones in landscape (typically <900px wide and <500px
+  // tall) fall back to the bottom mini-bar so controls never clip off-screen.
+  const isLandscape = width > height && width >= 900 && height >= 500;
   const hasTrack = !!current;
   return {
     isLandscape,
@@ -97,7 +97,7 @@ export default function MusicHost() {
   const inMusicSection = !!routeName && MUSIC_ROUTES.has(routeName);
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height && width >= 600;
+  const isLandscape = width > height && width >= 900 && height >= 500;
 
   const activeVidRef = useRef<string | null>(null);
   const wantPlayRef = useRef(false);
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  sideArtBtn: { width: "100%", aspectRatio: 1, borderRadius: BorderRadius.sm, overflow: "hidden", backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "transparent" },
+  sideArtBtn: { width: 200, height: 200, alignSelf: "center", borderRadius: BorderRadius.sm, overflow: "hidden", backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "transparent" },
   sideArtHover: { borderColor: Colors.dark.accent },
   sideArt: { width: "100%", height: "100%" },
   sideArtFallback: { alignItems: "center", justifyContent: "center" },
