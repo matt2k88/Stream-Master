@@ -33,6 +33,11 @@ import MultiScreenLayoutScreen, { type MultiLayout } from "@/screens/MultiScreen
 import MultiScreenScreen from "@/screens/MultiScreenScreen";
 import MultiScreenPickerScreen from "@/screens/MultiScreenPickerScreen";
 import MyGroupsScreen from "@/screens/MyGroupsScreen";
+import MusicHomeScreen from "@/screens/MusicHomeScreen";
+import MusicSearchScreen from "@/screens/MusicSearchScreen";
+import MusicPlaylistsScreen from "@/screens/MusicPlaylistsScreen";
+import MusicPlaylistDetailScreen from "@/screens/MusicPlaylistDetailScreen";
+import NowPlayingScreen from "@/screens/NowPlayingScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -66,6 +71,11 @@ export type RootStackParamList = {
   MultiScreen: { layout: MultiLayout };
   MultiScreenPicker: { slotIndex: number };
   MyGroups: { type: "live" | "movies" | "series" };
+  MusicHome: undefined;
+  MusicSearch: undefined;
+  MusicPlaylists: undefined;
+  MusicPlaylistDetail: { playlistId: string; name: string };
+  NowPlaying: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -132,6 +142,11 @@ export default function RootStackNavigator() {
               options={{ orientation: "landscape" }}
             />
             <Stack.Screen name="MyGroups" component={MyGroupsScreen} />
+            <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
+            <Stack.Screen name="MusicSearch" component={MusicSearchScreen} />
+            <Stack.Screen name="MusicPlaylists" component={MusicPlaylistsScreen} />
+            <Stack.Screen name="MusicPlaylistDetail" component={MusicPlaylistDetailScreen} />
+            <Stack.Screen name="NowPlaying" component={NowPlayingScreen} options={{ presentation: "modal", animation: "slide_from_bottom" }} />
           </>
         )}
       </Stack.Navigator>

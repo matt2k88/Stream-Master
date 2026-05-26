@@ -542,6 +542,29 @@ function UpdateAvailableButton() {
   );
 }
 
+function MusicButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <Feather name="music" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
 function MessagesButton({ onPress }: { onPress: () => void }) {
   const { unreadCount } = useMessages();
   const [pressed, setPressed] = useState(false);
@@ -885,6 +908,7 @@ export default function HomeScreen() {
             <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
           ) : null}
           <UpdateAvailableButton />
+          <MusicButton onPress={() => navigation.navigate("MusicHome")} />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
         </View>
