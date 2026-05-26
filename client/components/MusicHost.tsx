@@ -105,7 +105,7 @@ export default function MusicHost() {
   inMusicRef.current = inMusicSection;
   const everPlayedRef = useRef(false);
 
-  const player = useAudioPlayer(null, { updateInterval: 250 });
+  const player = useAudioPlayer(null, 250);
 
   useEffect(() => {
     (async () => {
