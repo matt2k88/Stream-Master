@@ -63,8 +63,17 @@ export default function MusicPlaylistsScreen() {
         setCreateOpen(false);
         setNewName("");
         reload();
+        return;
       }
-    } catch {}
+      const body = await res.json().catch(() => ({} as any));
+      const msg = String(body?.error ?? "Unknown error");
+      const hint = /music_playlists|relation .* does not exist|schema cache/i.test(msg)
+        ? "\n\nThe music tables haven't been created yet. Run migrations/012_music_playlists.sql in your Supabase SQL editor."
+        : "";
+      Alert.alert("Couldn't create playlist", msg + hint);
+    } catch (e: any) {
+      Alert.alert("Couldn't create playlist", String(e?.message ?? e));
+    }
   };
 
   const deletePlaylist = (p: Playlist) => {

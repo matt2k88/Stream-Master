@@ -182,7 +182,7 @@ export default function MusicHost() {
       <View style={webStyle}>
         <WebView
           ref={webRef}
-          source={{ html: PLAYER_HTML }}
+          source={{ html: PLAYER_HTML, baseUrl: "https://www.youtube.com" }}
           style={styles.web}
           originWhitelist={["*"]}
           javaScriptEnabled

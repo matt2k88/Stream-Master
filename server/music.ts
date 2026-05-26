@@ -77,16 +77,15 @@ async function itunesSearch(term: string, limit = 30): Promise<ITunesTrack[]> {
 // matching video id. This works without an API key. Cached forever in
 // Supabase so each track resolves at most once across all users.
 
-function pickBestVideo(items: any[], targetSec: number | null): { videoId: string; title: string; channel: string } | null {
+function rankVideos(items: any[], targetSec: number | null): { videoId: string; title: string; channel: string }[] {
   // items is an array of { videoRenderer: { videoId, title.runs, lengthText.simpleText, ownerText.runs } }
-  let best: { videoId: string; title: string; channel: string; durDelta: number } | null = null;
+  const ranked: { videoId: string; title: string; channel: string; durDelta: number }[] = [];
   for (const it of items) {
     const v = it?.videoRenderer;
     if (!v?.videoId) continue;
     const videoId = String(v.videoId);
     const title = (v?.title?.runs?.[0]?.text as string | undefined) ?? "";
     const channel = (v?.ownerText?.runs?.[0]?.text as string | undefined) ?? "";
-    // Parse length like "3:42" or "1:02:15"
     const lenText = (v?.lengthText?.simpleText as string | undefined) ?? "";
     let durSec: number | null = null;
     if (lenText) {
@@ -98,14 +97,15 @@ function pickBestVideo(items: any[], targetSec: number | null): { videoId: strin
     // Skip clearly-too-long results (>15 min) — usually full albums / hour mixes
     if (durSec != null && durSec > 15 * 60) continue;
     const delta = targetSec != null && durSec != null ? Math.abs(durSec - targetSec) : 0;
-    if (!best || delta < best.durDelta) {
-      best = { videoId, title, channel, durDelta: delta };
-    }
+    ranked.push({ videoId, title, channel, durDelta: delta });
   }
-  return best ? { videoId: best.videoId, title: best.title, channel: best.channel } : null;
+  ranked.sort((a, b) => a.durDelta - b.durDelta);
+  // Dedupe by videoId
+  const seen = new Set<string>();
+  return ranked.filter((r) => (seen.has(r.videoId) ? false : (seen.add(r.videoId), true))).map(({ videoId, title, channel }) => ({ videoId, title, channel }));
 }
 
-async function youtubeSearchFirst(query: string, targetSec: number | null): Promise<{ videoId: string; title: string; channel: string } | null> {
+async function youtubeSearchAll(query: string, targetSec: number | null): Promise<{ videoId: string; title: string; channel: string }[]> {
   const url = new URL("https://www.youtube.com/results");
   url.searchParams.set("search_query", query);
   // sp=EgIQAQ%3D%3D filters to videos only
@@ -141,12 +141,12 @@ async function youtubeSearchFirst(query: string, targetSec: number | null): Prom
       if (depth === 0) { end = i + 1; break; }
     }
   }
-  if (end < 0) return null;
+  if (end < 0) return [];
   let parsed: any;
   try {
     parsed = JSON.parse(html.slice(jsonStart, end));
   } catch {
-    return null;
+    return [];
   }
   // Walk to the primary results contents
   const contents = parsed?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents ?? [];
@@ -155,7 +155,7 @@ async function youtubeSearchFirst(query: string, targetSec: number | null): Prom
     const list = section?.itemSectionRenderer?.contents;
     if (Array.isArray(list)) items.push(...list);
   }
-  return pickBestVideo(items, targetSec);
+  return rankVideos(items, targetSec);
 }
 
 async function verifyPlaylistOwner(playlistId: string, profileId: string): Promise<boolean> {
@@ -230,41 +230,51 @@ export function registerMusicRoutes(app: Express) {
   });
 
   // ── Resolve iTunes track → YouTube video ─────────────────────────────
+  // Returns up to 5 candidates. Client plays the first; if YouTube refuses
+  // it (error 150/153 — embedding disabled), client falls back to the next.
+  // The `skip` query param can be used to force a fresh search (ignoring
+  // the cached pick), e.g. when the cached video became unembeddable.
   app.post("/api/music/resolve", async (req, res) => {
     const { itunes_track_id, title, artist, duration_sec } = req.body ?? {};
+    const skip = String(req.query.skip ?? "") === "1";
     if (!itunes_track_id || !title || !artist) {
       return res.status(400).json({ error: "itunes_track_id, title, artist required" });
     }
     try {
-      // 1. Check cache
-      const { data: cached } = await supabase
-        .from("music_resolved_tracks")
-        .select("video_id, channel, title")
-        .eq("itunes_track_id", String(itunes_track_id))
-        .maybeSingle();
-      if (cached?.video_id) {
-        return res.json({
-          video_id: cached.video_id,
-          channel: cached.channel ?? null,
-          title: cached.title ?? null,
-          cached: true,
-        });
+      // 1. Check cache (unless caller asked to skip a known-bad cached pick)
+      if (!skip) {
+        const { data: cached } = await supabase
+          .from("music_resolved_tracks")
+          .select("video_id, channel, title")
+          .eq("itunes_track_id", String(itunes_track_id))
+          .maybeSingle();
+        if (cached?.video_id) {
+          return res.json({
+            video_id: cached.video_id,
+            video_ids: [cached.video_id],
+            channel: cached.channel ?? null,
+            title: cached.title ?? null,
+            cached: true,
+          });
+        }
       }
-      // 2. Live YouTube search
+      // 2. Live YouTube search — keep top 5 so the client can fall through.
       const query = `${artist} ${title} official audio`;
-      const result = await youtubeSearchFirst(query, typeof duration_sec === "number" ? duration_sec : null);
-      if (!result) {
+      const results = await youtubeSearchAll(query, typeof duration_sec === "number" ? duration_sec : null);
+      if (!results || results.length === 0) {
         return res.status(404).json({ error: "No YouTube match found" });
       }
-      // 3. Cache (best-effort, never blocks response)
+      const top = results.slice(0, 5);
+      const pick = top[0];
+      // 3. Cache the best pick (best-effort, never blocks response)
       supabase
         .from("music_resolved_tracks")
         .upsert(
           {
             itunes_track_id: String(itunes_track_id),
-            video_id: result.videoId,
-            channel: result.channel,
-            title: result.title,
+            video_id: pick.videoId,
+            channel: pick.channel,
+            title: pick.title,
             resolved_at: new Date().toISOString(),
           },
           { onConflict: "itunes_track_id" },
@@ -272,10 +282,53 @@ export function registerMusicRoutes(app: Express) {
         .then(({ error }) => {
           if (error) console.warn("[music/resolve] cache upsert failed:", error.message);
         });
-      res.json({ video_id: result.videoId, channel: result.channel, title: result.title, cached: false });
+      res.json({
+        video_id: pick.videoId,
+        video_ids: top.map((t) => t.videoId),
+        channel: pick.channel,
+        title: pick.title,
+        cached: false,
+      });
     } catch (e: any) {
       console.error("[music/resolve]", e?.message);
       res.status(500).json({ error: "Resolve failed" });
+    }
+  });
+
+  // Mark a cached video_id as bad and refresh the cache with a new pick.
+  app.post("/api/music/resolve/bad", async (req, res) => {
+    const { itunes_track_id, bad_video_id, title, artist, duration_sec } = req.body ?? {};
+    if (!itunes_track_id || !title || !artist) {
+      return res.status(400).json({ error: "itunes_track_id, title, artist required" });
+    }
+    try {
+      const query = `${artist} ${title} official audio`;
+      const results = await youtubeSearchAll(query, typeof duration_sec === "number" ? duration_sec : null);
+      const fresh = (results ?? []).filter((r) => r.videoId !== String(bad_video_id ?? ""));
+      if (fresh.length === 0) return res.status(404).json({ error: "No alternate found" });
+      const pick = fresh[0];
+      supabase
+        .from("music_resolved_tracks")
+        .upsert(
+          {
+            itunes_track_id: String(itunes_track_id),
+            video_id: pick.videoId,
+            channel: pick.channel,
+            title: pick.title,
+            resolved_at: new Date().toISOString(),
+          },
+          { onConflict: "itunes_track_id" },
+        )
+        .then(() => {});
+      res.json({
+        video_id: pick.videoId,
+        video_ids: fresh.slice(0, 5).map((t) => t.videoId),
+        channel: pick.channel,
+        title: pick.title,
+      });
+    } catch (e: any) {
+      console.error("[music/resolve/bad]", e?.message);
+      res.status(500).json({ error: "Failed" });
     }
   });
 

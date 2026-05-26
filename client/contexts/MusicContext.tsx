@@ -60,7 +60,7 @@ export type PlayerEvent =
 
 const MusicContext = createContext<MusicContextValue | undefined>(undefined);
 
-async function resolveVideoId(track: MusicTrack): Promise<string | null> {
+async function resolveVideoIds(track: MusicTrack): Promise<string[]> {
   try {
     const url = new URL("/api/music/resolve", getApiUrl());
     const res = await fetch(url.toString(), {
@@ -73,11 +73,37 @@ async function resolveVideoId(track: MusicTrack): Promise<string | null> {
         duration_sec: track.duration_sec,
       }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = await res.json();
-    return typeof data?.video_id === "string" ? data.video_id : null;
+    if (Array.isArray(data?.video_ids) && data.video_ids.length > 0) return data.video_ids;
+    if (typeof data?.video_id === "string") return [data.video_id];
+    return [];
   } catch {
-    return null;
+    return [];
+  }
+}
+
+async function resolveAlternateVideoIds(track: MusicTrack, badVideoId: string): Promise<string[]> {
+  try {
+    const url = new URL("/api/music/resolve/bad", getApiUrl());
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itunes_track_id: track.itunes_track_id,
+        bad_video_id: badVideoId,
+        title: track.title,
+        artist: track.artist,
+        duration_sec: track.duration_sec,
+      }),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (Array.isArray(data?.video_ids) && data.video_ids.length > 0) return data.video_ids;
+    if (typeof data?.video_id === "string") return [data.video_id];
+    return [];
+  } catch {
+    return [];
   }
 }
 
@@ -95,6 +121,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const controllerRef = useRef<ControllerCmds | null>(null);
   const queueRef = useRef<MusicTrack[]>([]);
   const queueIndexRef = useRef(-1);
+  const currentRef = useRef<MusicTrack | null>(null);
+  // Alternate YouTube video candidates for the current track so we can fall
+  // through when one is unembeddable (YT error 150/153). videoCandidatesRef[0]
+  // is the currently-loaded video; pop from the front on error.
+  const videoCandidatesRef = useRef<string[]>([]);
   // Monotonic token: any in-flight resolve whose token != current is ignored.
   const playTokenRef = useRef(0);
 
@@ -136,6 +167,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     if (!track) return;
     const myToken = ++playTokenRef.current;
     setCurrent(track);
+    currentRef.current = track;
     setQueue(tracks);
     setQueueIndex(index);
     queueRef.current = tracks;
@@ -144,21 +176,42 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setPosition(0);
     setDuration(track.duration_sec ?? 0);
     setVideoId(null);
-    const vid = await resolveVideoId(track);
+    videoCandidatesRef.current = [];
+    const vids = await resolveVideoIds(track);
     // Ignore stale resolves that completed after the user moved on.
     if (playTokenRef.current !== myToken) return;
-    if (!vid) {
+    if (vids.length === 0) {
       setPlayState("error");
       return;
     }
+    videoCandidatesRef.current = vids;
+    const vid = vids[0];
     setVideoId(vid);
-    // Controller may not be mounted yet — MusicHost will pick up videoId via effect.
     controllerRef.current?.load(vid);
-    // Persist last-played snapshot for next app launch (including videoId so
-    // resume() works without re-resolving on cold start).
     try {
       AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index, videoId: vid }));
     } catch {}
+  }, []);
+
+  const tryNextCandidate = useCallback(async () => {
+    const track = currentRef.current;
+    if (!track) return false;
+    // Drop the failing first candidate
+    const remaining = videoCandidatesRef.current.slice(1);
+    let next = remaining[0];
+    if (!next) {
+      // Out of cached candidates — ask server for a fresh list excluding the bad pick
+      const bad = videoCandidatesRef.current[0] ?? "";
+      const fresh = await resolveAlternateVideoIds(track, bad);
+      if (fresh.length === 0) return false;
+      videoCandidatesRef.current = fresh;
+      next = fresh[0];
+    } else {
+      videoCandidatesRef.current = remaining;
+    }
+    setVideoId(next);
+    controllerRef.current?.load(next);
+    return true;
   }, []);
 
   const reorderQueue = useCallback((from: number, to: number) => {
@@ -257,9 +310,14 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         setPlayState("ended");
       }
     } else if (e.type === "error") {
-      setPlayState("error");
+      // YT errors 150/153/101 mean the video can't be embedded. Try the next
+      // candidate before giving up.
+      (async () => {
+        const ok = await tryNextCandidate();
+        if (!ok) setPlayState("error");
+      })();
     }
-  }, [startTrackAt]);
+  }, [startTrackAt, tryNextCandidate]);
 
   const value = useMemo<MusicContextValue>(() => ({
     current, videoId, queue, queueIndex, playState, position, duration, expanded, fullscreen,
