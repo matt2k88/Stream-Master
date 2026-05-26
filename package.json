@@ -20,6 +20,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",

@@ -12,7 +12,10 @@ import { supabase } from "./supabase";
 const streamCache = new Map<string, { url: string; expiresAt: number }>();
 const STREAM_TTL_MS = 5 * 60 * 60 * 1000;
 
-function extractAudioUrl(videoId: string): Promise<string | null> {
+// Try yt-dlp first (works on dev where the python binary is present). Returns
+// null + logs the reason if the binary is missing / fails. The audio-proxy
+// route falls back to a pure-JS extractor when this returns null.
+function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
   return new Promise((resolve) => {
     const args = [
       "-f", "bestaudio[ext=m4a]/bestaudio",
@@ -22,16 +25,19 @@ function extractAudioUrl(videoId: string): Promise<string | null> {
       "--socket-timeout", "15",
       `https://www.youtube.com/watch?v=${videoId}`,
     ];
+    const binary = process.env.YT_DLP_PATH || "yt-dlp";
     let proc: ReturnType<typeof spawn>;
     try {
-      proc = spawn("yt-dlp", args, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch {
+      proc = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e: any) {
+      console.warn("[music/ytdlp] spawn threw", videoId, e?.code, e?.message);
       resolve(null);
       return;
     }
     let out = "";
+    let err = "";
     proc.stdout?.on("data", (d) => { out += d.toString(); });
-    proc.stderr?.on("data", () => {});
+    proc.stderr?.on("data", (d) => { err += d.toString(); });
     const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} resolve(null); }, 25000);
     proc.on("close", (code) => {
       clearTimeout(timer);
@@ -39,10 +45,56 @@ function extractAudioUrl(videoId: string): Promise<string | null> {
         const first = out.trim().split("\n")[0];
         if (first.startsWith("http")) return resolve(first);
       }
+      console.warn("[music/ytdlp] failed", videoId, "exit=", code, "stderr=", err.slice(0, 300));
       resolve(null);
     });
-    proc.on("error", () => { clearTimeout(timer); resolve(null); });
+    proc.on("error", (e: any) => {
+      clearTimeout(timer);
+      console.warn("[music/ytdlp] error", videoId, e?.code, e?.message);
+      resolve(null);
+    });
   });
+}
+
+// Pure-JS fallback (no subprocess, works in any Node runtime including Cloud
+// Run where yt-dlp may not be on PATH). Picks the best audio-only format.
+async function extractAudioUrlYtdlCore(videoId: string): Promise<string | null> {
+  try {
+    const ytdl = (await import("@distube/ytdl-core")).default;
+    const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`, {
+      requestOptions: {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        },
+      },
+    } as any);
+    const audioFormats = info.formats.filter((f: any) => f.hasAudio && !f.hasVideo);
+    if (audioFormats.length === 0) {
+      console.warn("[music/ytdl-core] no audio formats", videoId);
+      return null;
+    }
+    // Prefer m4a (AAC) → broadest native player support, then by bitrate.
+    audioFormats.sort((a: any, b: any) => {
+      const aM4a = (a.container === "mp4" || a.mimeType?.includes("mp4")) ? 1 : 0;
+      const bM4a = (b.container === "mp4" || b.mimeType?.includes("mp4")) ? 1 : 0;
+      if (aM4a !== bM4a) return bM4a - aM4a;
+      return (b.audioBitrate ?? 0) - (a.audioBitrate ?? 0);
+    });
+    const pick = audioFormats[0];
+    return typeof pick?.url === "string" ? pick.url : null;
+  } catch (e: any) {
+    console.warn("[music/ytdl-core] failed", videoId, e?.message);
+    return null;
+  }
+}
+
+async function extractAudioUrl(videoId: string): Promise<string | null> {
+  const viaYtDlp = await extractAudioUrlYtDlp(videoId);
+  if (viaYtDlp) return viaYtDlp;
+  const viaYtdlCore = await extractAudioUrlYtdlCore(videoId);
+  if (viaYtdlCore) return viaYtdlCore;
+  return null;
 }
 
 // ─── iTunes catalog (search + curated rows) ─────────────────────────────
