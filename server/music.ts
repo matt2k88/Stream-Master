@@ -23,7 +23,17 @@ function initCookies() {
     const path = join(tmpdir(), "yt-cookies.txt");
     writeFileSync(path, raw, { mode: 0o600 });
     COOKIES_FILE = path;
-    console.log("[music/cookies] wrote cookies to", path, `(${raw.length} bytes)`);
+    const parsedCount = parseCookiesTxtToHeader(raw).split(";").filter(Boolean).length;
+    console.log(
+      "[music/cookies] wrote cookies to",
+      path,
+      `(${raw.length} bytes, ${parsedCount} youtube cookies parsed)`,
+    );
+    if (parsedCount === 0) {
+      console.warn(
+        "[music/cookies] WARNING: 0 youtube.com cookies parsed — secret may be malformed or for the wrong domain",
+      );
+    }
   } catch (e: any) {
     console.warn("[music/cookies] failed to write cookies file:", e?.message);
   }
@@ -31,10 +41,18 @@ function initCookies() {
 initCookies();
 
 function parseCookiesTxtToHeader(txt: string): string {
-  // Netscape cookies.txt → "name=value; name2=value2" for the youtube.com domain
+  // Netscape cookies.txt → "name=value; name2=value2" for the youtube.com domain.
+  // Lines starting with "#HttpOnly_" are valid cookie records (not comments) —
+  // strip the prefix and parse normally. True comments (other "#" lines) are skipped.
   const pairs: string[] = [];
-  for (const line of txt.split(/\r?\n/)) {
-    if (!line || line.startsWith("#")) continue;
+  for (const rawLine of txt.split(/\r?\n/)) {
+    if (!rawLine) continue;
+    let line = rawLine;
+    if (line.startsWith("#HttpOnly_")) {
+      line = line.slice("#HttpOnly_".length);
+    } else if (line.startsWith("#")) {
+      continue;
+    }
     const parts = line.split("\t");
     if (parts.length < 7) continue;
     const domain = parts[0];
