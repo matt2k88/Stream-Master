@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useCallback } from "react";
-import { View, StyleSheet, Pressable, Platform } from "react-native";
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { View, StyleSheet, Pressable, Platform, useWindowDimensions } from "react-native";
+import { WebView } from "react-native-webview";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -11,86 +11,123 @@ import { useMusic } from "@/contexts/MusicContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 /**
- * MusicHost — single audio player + persistent mini-bar. Mounted once at
- * the App root inside MusicProvider so audio survives every navigation.
- * Uses expo-audio with audio URLs extracted server-side by yt-dlp.
+ * MusicHost — the SINGLE YouTube IFrame WebView for the app, plus the
+ * persistent mini-bar UI. Mounted once at the App root inside
+ * MusicProvider so it survives every navigation and keeps audio playing
+ * across screens. There is exactly one <WebView> instance; it is
+ * repositioned/resized based on `expanded` so it never remounts.
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const PLAYER_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/></head><body style="margin:0;background:#000;overflow:hidden;">
+<div id="player" style="width:100%;height:100%"></div>
+<script>
+  var tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+  var player = null;
+  var pendingId = null;
+  var currentVid = null;
+  var watchdog = null;
+  var watchdogVid = null;
+  var erroredVid = null;
+  function post(obj){ try{ window.ReactNativeWebView.postMessage(JSON.stringify(obj)); }catch(e){} }
+  function mapState(s){ if(s===1)return 'playing'; if(s===2)return 'paused'; if(s===3)return 'loading'; if(s===0)return 'ended'; if(s===5)return 'paused'; return 'idle'; }
+  function emitState(){ if(!player||!player.getCurrentTime) return; post({type:'state', state: mapState(player.getPlayerState()), position: player.getCurrentTime()||0, duration: player.getDuration()||0}); }
+  function clearWatchdog(){ if(watchdog){ clearTimeout(watchdog); watchdog=null; } watchdogVid = null; }
+  // After a load, watch for sustained no-progress. We re-check at 4s and 9s.
+  // Only fire 'error' if BOTH checks show no duration AND not in a real
+  // play/pause state. This avoids false-positives on slow networks /
+  // buffering, while still catching the silent embed-block case (YT 152).
+  function armWatchdog(forVid){
+    clearWatchdog();
+    watchdogVid = forVid;
+    var check = function(isFinal){
+      if(!player || watchdogVid !== forVid) return;
+      var d = 0; try{ d = player.getDuration()||0; }catch(e){}
+      var s = -1; try{ s = player.getPlayerState(); }catch(e){}
+      // Has real playback signal — clear and exit.
+      if(d > 0 || s === 1 || s === 2){ clearWatchdog(); return; }
+      if(isFinal){
+        if(erroredVid !== forVid){ erroredVid = forVid; post({type:'error', videoId: forVid}); }
+        clearWatchdog();
+      } else {
+        watchdog = setTimeout(function(){ check(true); }, 5000);
+      }
+    };
+    watchdog = setTimeout(function(){ check(false); }, 4000);
+  }
+  window.onYouTubeIframeAPIReady = function(){
+    player = new YT.Player('player', {
+      height: '100%', width: '100%',
+      videoId: pendingId || '',
+      playerVars: { autoplay:1, playsinline:1, controls:0, modestbranding:1, rel:0, fs:0, iv_load_policy:3, origin: 'https://www.youtube.com' },
+      events: {
+        onReady: function(e){ if(pendingId){ currentVid = pendingId; e.target.loadVideoById(pendingId); armWatchdog(pendingId); } emitState(); },
+        onStateChange: function(e){ if(e.data===1 || e.data===2){ clearWatchdog(); } if(e.data===0){ post({type:'ended'}); } emitState(); },
+        onError: function(){ var vid = currentVid; if(erroredVid !== vid){ erroredVid = vid; clearWatchdog(); post({type:'error', videoId: vid}); } }
+      }
+    });
+  };
+  setInterval(emitState, 1000);
+  function handleCmd(raw){
+    try {
+      var msg = JSON.parse(raw);
+      if(!player || !player.loadVideoById){ if(msg.cmd==='load') pendingId = msg.videoId; return; }
+      if(msg.cmd==='load'){ currentVid = msg.videoId; player.loadVideoById(msg.videoId); armWatchdog(msg.videoId); }
+      if(msg.cmd==='play'){ player.playVideo(); }
+      if(msg.cmd==='pause'){ player.pauseVideo(); }
+      if(msg.cmd==='seek'){ player.seekTo(msg.value, true); }
+    } catch(e){}
+  }
+  document.addEventListener('message', function(e){ handleCmd(e.data); });
+  window.addEventListener('message', function(e){ handleCmd(e.data); });
+</script>
+</body></html>`;
+
+const MINI_TILE_W = 96;
+const MINI_TILE_H = 54;
 const BAR_HEIGHT = 72;
 const BAR_MARGIN = Spacing.md;
 
 export default function MusicHost() {
   const {
-    current, audioUrl, isPreview, playState, expanded, position, duration,
+    current, videoId, playState, expanded, fullscreen, position, duration,
     _registerController, _onPlayerEvent, resume, pause, next, previous, setExpanded,
   } = useMusic();
-
-  // expo-audio: pass null to clear, URL to load. Player auto-plays once
-  // ready via the autoplay effect below.
-  const player = useAudioPlayer(audioUrl ?? null, { updateInterval: 500 });
-  const status = useAudioPlayerStatus(player);
+  const webRef = useRef<WebView>(null);
   const navigation = useNavigation<Nav>();
+  const { width: winW, height: winH } = useWindowDimensions();
 
-  // Track which URL the player is currently loaded with, so we don't
-  // double-replace and reset playback.
-  const loadedUrlRef = useRef<string | null>(null);
-  const reportedErrorRef = useRef(false);
+  const sendCmd = useCallback((obj: object) => {
+    if (!webRef.current) return;
+    const js = `(function(){ try { var e = new MessageEvent('message', { data: ${JSON.stringify(JSON.stringify(obj))} }); document.dispatchEvent(e); window.dispatchEvent(e); } catch(e){} })(); true;`;
+    webRef.current.injectJavaScript(js);
+  }, []);
 
-  // Register controller (play/pause/seek) so context can drive the player.
+  // Register controller so context can drive the WebView
   useEffect(() => {
     _registerController({
-      play: () => { try { player.play(); } catch {} },
-      pause: () => { try { player.pause(); } catch {} },
-      seek: (s: number) => { try { player.seekTo(s); } catch {} },
+      load: (id) => sendCmd({ cmd: "load", videoId: id }),
+      play: () => sendCmd({ cmd: "play" }),
+      pause: () => sendCmd({ cmd: "pause" }),
+      seek: (s) => sendCmd({ cmd: "seek", value: s }),
     });
     return () => _registerController(null);
-  }, [_registerController, player]);
+  }, [_registerController, sendCmd]);
 
-  // When audioUrl changes, replace source and auto-play.
+  // When videoId changes (new track resolved), push load
   useEffect(() => {
-    if (!audioUrl) {
-      loadedUrlRef.current = null;
-      reportedErrorRef.current = false;
-      return;
-    }
-    if (loadedUrlRef.current === audioUrl) return;
-    loadedUrlRef.current = audioUrl;
-    reportedErrorRef.current = false;
+    if (videoId) sendCmd({ cmd: "load", videoId });
+  }, [videoId, sendCmd]);
+
+  const onMessage = useCallback((e: any) => {
     try {
-      player.replace(audioUrl);
-      // Slight delay before play so iOS finishes loading metadata
-      setTimeout(() => { try { player.play(); } catch {} }, 100);
+      const data = JSON.parse(e.nativeEvent.data);
+      _onPlayerEvent(data);
     } catch {}
-  }, [audioUrl, player]);
-
-  // Bridge expo-audio status → MusicContext state machine.
-  useEffect(() => {
-    if (!status) return;
-    // Detect playback errors and emit exactly one error per loaded URL so
-    // MusicContext can refresh the (likely expired) extracted audio URL.
-    if (status.error && !reportedErrorRef.current) {
-      reportedErrorRef.current = true;
-      _onPlayerEvent({ type: "error" });
-      return;
-    }
-    // Map AudioStatus → our PlayState. Buffering/interruption → loading,
-    // never `ended` (that flag is reserved for true end-of-track).
-    let state: "loading" | "playing" | "paused" | "ended" | "error" | "idle" = "idle";
-    if (!status.isLoaded || status.isBuffering) state = "loading";
-    else if (status.playing) state = "playing";
-    else state = "paused";
-    _onPlayerEvent({
-      type: "state",
-      state: state as any,
-      position: status.currentTime || 0,
-      duration: status.duration || 0,
-    });
-    if (status.didJustFinish) {
-      _onPlayerEvent({ type: "ended" });
-    }
-  }, [status, _onPlayerEvent]);
+  }, [_onPlayerEvent]);
 
   if (!current) return null;
 
@@ -99,42 +136,93 @@ export default function MusicHost() {
     navigation.navigate("NowPlaying");
   };
 
-  if (expanded) {
-    // NowPlayingScreen owns the UI when expanded.
-    return null;
-  }
+  // Compute the WebView's absolute position/size. Expanded → top of
+  // NowPlaying area. Minimized → right edge of the mini bar.
+  const expandedW = Math.min(winW - 32, 480);
+  const expandedH = Math.round(expandedW * 9 / 16);
+  const webStyle = fullscreen
+    ? {
+        position: "absolute" as const,
+        top: 0, left: 0, width: winW, height: winH,
+        backgroundColor: "#000",
+        zIndex: 1000,
+      }
+    : expanded
+    ? {
+        position: "absolute" as const,
+        top: 80, left: (winW - expandedW) / 2,
+        width: expandedW, height: expandedH,
+        borderRadius: BorderRadius.md, overflow: "hidden" as const,
+        backgroundColor: "#000",
+        zIndex: 1000,
+      }
+    : {
+        position: "absolute" as const,
+        right: BAR_MARGIN + Spacing.sm,
+        bottom: BAR_MARGIN + (BAR_HEIGHT - MINI_TILE_H) / 2,
+        width: MINI_TILE_W, height: MINI_TILE_H,
+        borderRadius: 6, overflow: "hidden" as const,
+        backgroundColor: "#000",
+        zIndex: 1000,
+      };
 
   return (
-    <Pressable onPress={openNowPlaying} style={styles.bar}>
-      {current.artwork_url ? (
-        <Image source={{ uri: current.artwork_url }} style={styles.art} contentFit="cover" />
-      ) : (
-        <View style={[styles.art, styles.artFallback]}>
-          <Feather name="music" size={18} color={Colors.dark.accent} />
-        </View>
-      )}
-      <View style={styles.meta}>
-        <ThemedText style={styles.title} numberOfLines={1}>{current.title}</ThemedText>
-        <ThemedText style={styles.artist} numberOfLines={1}>
-          {current.artist}
-          {playState === "loading" ? " · loading…" : ""}
-          {playState === "error" ? " · unavailable" : ""}
-          {isPreview && playState !== "loading" ? " · preview (30s)" : ""}
-        </ThemedText>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }]} />
-        </View>
+    <>
+      {/* Mini bar — hidden while expanded so NowPlaying owns the screen.
+          The WebView (rendered below) stays mounted in both modes.
+          Rendered as a sibling (not wrapped in a full-screen overlay)
+          so it never blocks taps outside its own footprint. */}
+      {!expanded ? (
+        <Pressable onPress={openNowPlaying} style={styles.bar}>
+          {current.artwork_url ? (
+            <Image source={{ uri: current.artwork_url }} style={styles.art} contentFit="cover" />
+          ) : (
+            <View style={[styles.art, styles.artFallback]}>
+              <Feather name="music" size={18} color={Colors.dark.accent} />
+            </View>
+          )}
+          <View style={styles.meta}>
+            <ThemedText style={styles.title} numberOfLines={1}>{current.title}</ThemedText>
+            <ThemedText style={styles.artist} numberOfLines={1}>
+              {current.artist}{playState === "loading" ? " · loading…" : playState === "error" ? " · unavailable" : ""}
+            </ThemedText>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }]} />
+            </View>
+          </View>
+          <Pressable onPress={() => previous()} style={styles.ctrlBtn}>
+            <Feather name="skip-back" size={18} color={Colors.dark.text} />
+          </Pressable>
+          <Pressable onPress={() => playState === "playing" ? pause() : resume()} style={styles.ctrlBtnLg}>
+            <Feather name={playState === "playing" ? "pause" : "play"} size={22} color="#fff" />
+          </Pressable>
+          <Pressable onPress={() => next()} style={styles.ctrlBtn}>
+            <Feather name="skip-forward" size={18} color={Colors.dark.text} />
+          </Pressable>
+          {/* Reserve space for the floating WebView tile so the bar layout doesn't shift */}
+          <View style={{ width: MINI_TILE_W, height: MINI_TILE_H }} />
+        </Pressable>
+      ) : null}
+
+      {/* Single WebView — never unmounts while a track exists. Repositioned
+          via webStyle so toggling expanded does NOT remount. */}
+      <View style={webStyle}>
+        <WebView
+          ref={webRef}
+          source={{ html: PLAYER_HTML, baseUrl: "https://www.youtube.com" }}
+          style={styles.web}
+          originWhitelist={["*"]}
+          javaScriptEnabled
+          domStorageEnabled
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          onMessage={onMessage}
+          androidLayerType="hardware"
+          mixedContentMode="always"
+          setSupportMultipleWindows={false}
+        />
       </View>
-      <Pressable onPress={() => previous()} style={styles.ctrlBtn}>
-        <Feather name="skip-back" size={18} color={Colors.dark.text} />
-      </Pressable>
-      <Pressable onPress={() => playState === "playing" ? pause() : resume()} style={styles.ctrlBtnLg}>
-        <Feather name={playState === "playing" ? "pause" : "play"} size={22} color="#fff" />
-      </Pressable>
-      <Pressable onPress={() => next()} style={styles.ctrlBtn}>
-        <Feather name="skip-forward" size={18} color={Colors.dark.text} />
-      </Pressable>
-    </Pressable>
+    </>
   );
 }
 
@@ -167,4 +255,5 @@ const styles = StyleSheet.create({
   progressFill: { height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1 },
   ctrlBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.sm },
   ctrlBtnLg: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.accent },
+  web: { flex: 1, backgroundColor: "#000" },
 });

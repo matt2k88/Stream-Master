@@ -25,11 +25,16 @@ export default function NowPlayingScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {
-    current, playState, isPreview, position, duration, queue, queueIndex,
+    current, playState, position, duration, queue, queueIndex, fullscreen,
     pause, resume, next, previous, stop, seek, setExpanded, playQueue,
-    reorderQueue,
+    reorderQueue, setFullscreen,
   } = useMusic();
   const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    // Always exit fullscreen when leaving Now Playing.
+    return () => setFullscreen(false);
+  }, [setFullscreen]);
 
   useEffect(() => {
     setExpanded(true);
@@ -80,10 +85,16 @@ export default function NowPlayingScreen() {
           <Feather name="chevron-down" size={24} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Now Playing</ThemedText>
+        <Pressable onPress={() => setFullscreen(!fullscreen)} style={styles.iconBtn}>
+          <Feather name={fullscreen ? "minimize-2" : "maximize-2"} size={18} color={Colors.dark.text} />
+        </Pressable>
         <Pressable onPress={() => { stop(); navigation.goBack(); }} style={styles.iconBtn}>
           <Feather name="x" size={20} color={Colors.dark.text} />
         </Pressable>
       </View>
+
+      {/* The expanded WebView from MusicHost sits at top:80 — reserve room. */}
+      <View style={styles.videoSpacer} />
 
       <View style={styles.metaWrap}>
         {current.artwork_url ? (
@@ -94,9 +105,7 @@ export default function NowPlayingScreen() {
           </View>
         )}
         <ThemedText style={styles.title} numberOfLines={2}>{current.title}</ThemedText>
-        <ThemedText style={styles.artist} numberOfLines={1}>
-          {current.artist}{isPreview ? " · preview (30s)" : ""}
-        </ThemedText>
+        <ThemedText style={styles.artist} numberOfLines={1}>{current.artist}</ThemedText>
 
         <View style={styles.progressWrap}>
           <View style={styles.progressTrack}>
@@ -143,7 +152,7 @@ export default function NowPlayingScreen() {
         </Pressable>
       </View>
 
-      {queue.length > 1 ? (
+      {queue.length > 1 && !fullscreen ? (
         <View style={styles.queueWrap}>
           <ThemedText style={styles.queueTitle}>Up Next</ThemedText>
           <ScrollView style={{ maxHeight: 180 }}>
@@ -178,8 +187,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
   iconBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault, borderWidth: 1, borderColor: Colors.dark.border },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
-  metaWrap: { paddingHorizontal: Spacing.xl, alignItems: "center", gap: Spacing.sm, marginTop: Spacing.xl },
-  bigArt: { width: 240, height: 240, borderRadius: BorderRadius.md, backgroundColor: "#1A1A1A", marginBottom: Spacing.md },
+  // Spacer reserves space under the floating expanded WebView in MusicHost (top:80, ~270 high)
+  videoSpacer: { height: 280 },
+  metaWrap: { paddingHorizontal: Spacing.xl, alignItems: "center", gap: Spacing.sm },
+  bigArt: { width: 120, height: 120, borderRadius: BorderRadius.sm, backgroundColor: "#1A1A1A", marginBottom: Spacing.md },
   title: { color: Colors.dark.text, fontSize: 18, fontWeight: "700", textAlign: "center" },
   artist: { color: Colors.dark.textSecondary, fontSize: 14, marginBottom: Spacing.md },
   progressWrap: { width: "100%", maxWidth: 480 },

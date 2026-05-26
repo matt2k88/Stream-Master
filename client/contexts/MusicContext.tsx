@@ -11,23 +11,23 @@ export interface MusicTrack {
   album: string | null;
   artwork_url: string | null;
   duration_sec: number | null;
-  preview_url?: string | null;
 }
 
 export type PlayState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
 interface MusicContextValue {
+  // State
   current: MusicTrack | null;
-  audioUrl: string | null;
-  isPreview: boolean;
+  videoId: string | null;
   queue: MusicTrack[];
   queueIndex: number;
   playState: PlayState;
-  position: number;
-  duration: number;
-  expanded: boolean;
-  fullscreen: boolean;
+  position: number;        // seconds
+  duration: number;        // seconds
+  expanded: boolean;       // true while NowPlaying is visible
+  fullscreen: boolean;     // true when video should fill the screen
 
+  // Player commands (driven by MusicHost via setController)
   playTrack: (track: MusicTrack, queue?: MusicTrack[]) => Promise<void>;
   playQueue: (tracks: MusicTrack[], startIndex?: number) => Promise<void>;
   pause: () => void;
@@ -40,13 +40,14 @@ interface MusicContextValue {
   setFullscreen: (v: boolean) => void;
   reorderQueue: (from: number, to: number) => void;
 
-  // Wired by MusicHost so context can drive the audio player
+  // Internal — registered by MusicHost so context can drive the WebView
   _registerController: (ctl: ControllerCmds | null) => void;
+  // Internal — published by MusicHost on every WebView state event
   _onPlayerEvent: (e: PlayerEvent) => void;
-  _refreshAudioUrl: () => Promise<void>;
 }
 
 export interface ControllerCmds {
+  load: (videoId: string) => void;
   play: () => void;
   pause: () => void;
   seek: (seconds: number) => void;
@@ -55,13 +56,14 @@ export interface ControllerCmds {
 export type PlayerEvent =
   | { type: "state"; state: PlayState; position: number; duration: number }
   | { type: "ended" }
-  | { type: "error" };
+  | { type: "error"; videoId?: string };
 
 const MusicContext = createContext<MusicContextValue | undefined>(undefined);
 
 async function resolveVideoIds(track: MusicTrack): Promise<string[]> {
   try {
-    const res = await fetch(new URL("/api/music/resolve", getApiUrl()).toString(), {
+    const url = new URL("/api/music/resolve", getApiUrl());
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -76,17 +78,20 @@ async function resolveVideoIds(track: MusicTrack): Promise<string[]> {
     if (Array.isArray(data?.video_ids) && data.video_ids.length > 0) return data.video_ids;
     if (typeof data?.video_id === "string") return [data.video_id];
     return [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
-async function resolveAlternateVideoIds(track: MusicTrack, badId: string): Promise<string[]> {
+async function resolveAlternateVideoIds(track: MusicTrack, badVideoId: string): Promise<string[]> {
   try {
-    const res = await fetch(new URL("/api/music/resolve/bad", getApiUrl()).toString(), {
+    const url = new URL("/api/music/resolve/bad", getApiUrl());
+    const res = await fetch(url.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         itunes_track_id: track.itunes_track_id,
-        bad_video_id: badId,
+        bad_video_id: badVideoId,
         title: track.title,
         artist: track.artist,
         duration_sec: track.duration_sec,
@@ -95,26 +100,16 @@ async function resolveAlternateVideoIds(track: MusicTrack, badId: string): Promi
     if (!res.ok) return [];
     const data = await res.json();
     if (Array.isArray(data?.video_ids) && data.video_ids.length > 0) return data.video_ids;
+    if (typeof data?.video_id === "string") return [data.video_id];
     return [];
-  } catch { return []; }
-}
-
-async function fetchAudioUrl(videoId: string, refresh = false): Promise<string | null> {
-  try {
-    const u = new URL("/api/music/audio", getApiUrl());
-    u.searchParams.set("video_id", videoId);
-    if (refresh) u.searchParams.set("refresh", "1");
-    const res = await fetch(u.toString());
-    if (!res.ok) return null;
-    const data = await res.json();
-    return typeof data?.url === "string" ? data.url : null;
-  } catch { return null; }
+  } catch {
+    return [];
+  }
 }
 
 export function MusicProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<MusicTrack | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [isPreview, setIsPreview] = useState(false);
+  const [videoId, setVideoId] = useState<string | null>(null);
   const [queue, setQueue] = useState<MusicTrack[]>([]);
   const [queueIndex, setQueueIndex] = useState(-1);
   const [playState, setPlayState] = useState<PlayState>("idle");
@@ -127,52 +122,44 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef<MusicTrack[]>([]);
   const queueIndexRef = useRef(-1);
   const currentRef = useRef<MusicTrack | null>(null);
-  const currentVideoIdRef = useRef<string | null>(null);
+  // Alternate YouTube video candidates for the current track so we can fall
+  // through when one is unembeddable (YT error 150/153). videoCandidatesRef[0]
+  // is the currently-loaded video; pop from the front on error.
+  const videoCandidatesRef = useRef<string[]>([]);
+  // Monotonic token: any in-flight resolve whose token != current is ignored.
   const playTokenRef = useRef(0);
-  const refreshInFlightRef = useRef(false);
 
   const _registerController = useCallback((ctl: ControllerCmds | null) => {
     controllerRef.current = ctl;
   }, []);
 
-  // Restore last-known track on launch (paused). Only applies if the user
-  // hasn't already started playing something — guards against the async
-  // AsyncStorage read landing AFTER an active playback call and clobbering
-  // it with stale state.
+  // Restore last-known track (paused) on app start so the mini bar can resume.
+  // Persists videoId too so resume() works without re-resolving. Guard with
+  // playToken — if user starts playback before disk read resolves, abandon.
   useEffect(() => {
+    const tokenAtStart = playTokenRef.current;
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(LAST_TRACK_KEY);
         if (!raw) return;
-        if (currentRef.current || playTokenRef.current !== 0) return;
-        const parsed = JSON.parse(raw) as { track: MusicTrack; queue: MusicTrack[]; index: number } | null;
-        if (!parsed?.track) return;
-        if (currentRef.current || playTokenRef.current !== 0) return;
+        if (playTokenRef.current !== tokenAtStart) return;
+        const parsed = JSON.parse(raw) as { track: MusicTrack; queue: MusicTrack[]; index: number; videoId?: string | null } | null;
+        if (!parsed || !parsed.track) return;
         setCurrent(parsed.track);
-        currentRef.current = parsed.track;
         setQueue(parsed.queue ?? [parsed.track]);
         setQueueIndex(parsed.index ?? 0);
         queueRef.current = parsed.queue ?? [parsed.track];
         queueIndexRef.current = parsed.index ?? 0;
         setPlayState("paused");
         setDuration(parsed.track.duration_sec ?? 0);
+        if (parsed.videoId) {
+          setVideoId(parsed.videoId);
+          // Load (but don't auto-play) so the user's first press of play resumes.
+          // If controller mounts later, MusicHost picks up videoId via effect.
+          controllerRef.current?.load(parsed.videoId);
+        }
       } catch {}
     })();
-  }, []);
-
-  // Try a list of videoIds in order, returning the first that yields an
-  // audio URL. Tracks the chosen videoId for refresh-on-expire.
-  const tryVideoIds = useCallback(async (videoIds: string[], myToken: number): Promise<string | null> => {
-    for (const vid of videoIds) {
-      if (playTokenRef.current !== myToken) return null;
-      const url = await fetchAudioUrl(vid);
-      if (playTokenRef.current !== myToken) return null;
-      if (url) {
-        currentVideoIdRef.current = vid;
-        return url;
-      }
-    }
-    return null;
   }, []);
 
   const startTrackAt = useCallback(async (tracks: MusicTrack[], index: number) => {
@@ -188,68 +175,43 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setPlayState("loading");
     setPosition(0);
     setDuration(track.duration_sec ?? 0);
-    setAudioUrl(null);
-    setIsPreview(false);
-    currentVideoIdRef.current = null;
-    refreshInFlightRef.current = false;
-
-    // 1. Get YouTube candidate list
+    setVideoId(null);
+    videoCandidatesRef.current = [];
     const vids = await resolveVideoIds(track);
+    // Ignore stale resolves that completed after the user moved on.
     if (playTokenRef.current !== myToken) return;
-
-    // 2. Try to extract audio URL from each candidate
-    let url = vids.length > 0 ? await tryVideoIds(vids, myToken) : null;
-    if (playTokenRef.current !== myToken) return;
-
-    // 3. If all candidates failed, ask for alternates
-    if (!url && vids.length > 0) {
-      const alts = await resolveAlternateVideoIds(track, vids[0]);
-      if (playTokenRef.current !== myToken) return;
-      if (alts.length > 0) url = await tryVideoIds(alts, myToken);
-      if (playTokenRef.current !== myToken) return;
-    }
-
-    // 4. Last resort: iTunes 30s preview
-    if (!url && track.preview_url) {
-      url = track.preview_url;
-      setIsPreview(true);
-    }
-
-    if (!url) {
+    if (vids.length === 0) {
       setPlayState("error");
       return;
     }
-
-    setAudioUrl(url);
+    videoCandidatesRef.current = vids;
+    const vid = vids[0];
+    setVideoId(vid);
+    controllerRef.current?.load(vid);
     try {
-      AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index }));
+      AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index, videoId: vid }));
     } catch {}
-  }, [tryVideoIds]);
+  }, []);
 
-  // Force a fresh audio URL for the current videoId. Called by MusicHost
-  // when the player errors mid-stream (likely URL expired). Guarded by an
-  // in-flight ref so back-to-back error events don't trigger overlapping
-  // refresh storms.
-  const _refreshAudioUrl = useCallback(async () => {
-    const vid = currentVideoIdRef.current;
-    if (!vid) return;
-    if (refreshInFlightRef.current) return;
-    refreshInFlightRef.current = true;
-    const myToken = playTokenRef.current;
-    try {
-      const fresh = await fetchAudioUrl(vid, true);
-      if (playTokenRef.current !== myToken) return;
-      if (fresh) {
-        setAudioUrl(fresh);
-      } else if (currentRef.current?.preview_url) {
-        setAudioUrl(currentRef.current.preview_url);
-        setIsPreview(true);
-      } else {
-        setPlayState("error");
-      }
-    } finally {
-      refreshInFlightRef.current = false;
+  const tryNextCandidate = useCallback(async () => {
+    const track = currentRef.current;
+    if (!track) return false;
+    // Drop the failing first candidate
+    const remaining = videoCandidatesRef.current.slice(1);
+    let next = remaining[0];
+    if (!next) {
+      // Out of cached candidates — ask server for a fresh list excluding the bad pick
+      const bad = videoCandidatesRef.current[0] ?? "";
+      const fresh = await resolveAlternateVideoIds(track, bad);
+      if (fresh.length === 0) return false;
+      videoCandidatesRef.current = fresh;
+      next = fresh[0];
+    } else {
+      videoCandidatesRef.current = remaining;
     }
+    setVideoId(next);
+    controllerRef.current?.load(next);
+    return true;
   }, []);
 
   const reorderQueue = useCallback((from: number, to: number) => {
@@ -258,6 +220,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const currIdx = queueIndexRef.current;
     const [item] = q.splice(from, 1);
     q.splice(to, 0, item);
+    // Keep queueIndex pointing at the same currently-playing track
     let newIdx = currIdx;
     if (currIdx === from) newIdx = to;
     else if (from < currIdx && to >= currIdx) newIdx = currIdx - 1;
@@ -279,9 +242,20 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     await startTrackAt(tracks, Math.max(0, Math.min(tracks.length - 1, startIndex)));
   }, [startTrackAt]);
 
-  const pause = useCallback(() => { controllerRef.current?.pause(); setPlayState("paused"); }, []);
-  const resume = useCallback(() => { controllerRef.current?.play(); setPlayState("playing"); }, []);
-  const seek = useCallback((s: number) => { controllerRef.current?.seek(s); setPosition(s); }, []);
+  const pause = useCallback(() => {
+    controllerRef.current?.pause();
+    setPlayState("paused");
+  }, []);
+
+  const resume = useCallback(() => {
+    controllerRef.current?.play();
+    setPlayState("playing");
+  }, []);
+
+  const seek = useCallback((seconds: number) => {
+    controllerRef.current?.seek(seconds);
+    setPosition(seconds);
+  }, []);
 
   const next = useCallback(async () => {
     const q = queueRef.current;
@@ -293,18 +267,31 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const previous = useCallback(async () => {
     const q = queueRef.current;
     const idx = queueIndexRef.current;
-    if (position > 3) { controllerRef.current?.seek(0); setPosition(0); return; }
-    if (q.length === 0 || idx <= 0) { controllerRef.current?.seek(0); setPosition(0); return; }
+    // If >3s in, restart current; else go back
+    if (position > 3) {
+      controllerRef.current?.seek(0);
+      setPosition(0);
+      return;
+    }
+    if (q.length === 0 || idx <= 0) {
+      controllerRef.current?.seek(0);
+      setPosition(0);
+      return;
+    }
     await startTrackAt(q, idx - 1);
   }, [position, startTrackAt]);
 
   const stop = useCallback(() => {
     controllerRef.current?.pause();
-    setCurrent(null); setAudioUrl(null); setIsPreview(false);
-    setQueue([]); setQueueIndex(-1);
-    queueRef.current = []; queueIndexRef.current = -1;
-    currentVideoIdRef.current = null;
-    setPlayState("idle"); setPosition(0); setDuration(0);
+    setCurrent(null);
+    setVideoId(null);
+    setQueue([]);
+    setQueueIndex(-1);
+    queueRef.current = [];
+    queueIndexRef.current = -1;
+    setPlayState("idle");
+    setPosition(0);
+    setDuration(0);
     setExpanded(false);
   }, []);
 
@@ -314,22 +301,34 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       if (typeof e.position === "number" && !isNaN(e.position)) setPosition(e.position);
       if (typeof e.duration === "number" && !isNaN(e.duration) && e.duration > 0) setDuration(e.duration);
     } else if (e.type === "ended") {
+      // Auto-advance
       const q = queueRef.current;
       const idx = queueIndexRef.current;
-      if (q.length > 0 && idx + 1 < q.length) startTrackAt(q, idx + 1);
-      else setPlayState("ended");
+      if (q.length > 0 && idx + 1 < q.length) {
+        startTrackAt(q, idx + 1);
+      } else {
+        setPlayState("ended");
+      }
     } else if (e.type === "error") {
-      // Stream may have expired — try fresh URL
-      _refreshAudioUrl();
+      // Ignore stale errors from a previous video that arrive after we've
+      // already moved on to the next candidate.
+      const activeVid = videoCandidatesRef.current[0];
+      if (e.videoId && activeVid && e.videoId !== activeVid) return;
+      // YT errors 150/153/101/152 mean the video can't be embedded. Try the
+      // next candidate before giving up.
+      (async () => {
+        const ok = await tryNextCandidate();
+        if (!ok) setPlayState("error");
+      })();
     }
-  }, [startTrackAt, _refreshAudioUrl]);
+  }, [startTrackAt, tryNextCandidate]);
 
   const value = useMemo<MusicContextValue>(() => ({
-    current, audioUrl, isPreview, queue, queueIndex, playState, position, duration, expanded, fullscreen,
+    current, videoId, queue, queueIndex, playState, position, duration, expanded, fullscreen,
     playTrack, playQueue, pause, resume, next, previous, seek, stop, setExpanded, setFullscreen, reorderQueue,
-    _registerController, _onPlayerEvent, _refreshAudioUrl,
-  }), [current, audioUrl, isPreview, queue, queueIndex, playState, position, duration, expanded, fullscreen,
-       playTrack, playQueue, pause, resume, next, previous, seek, stop, reorderQueue, _registerController, _onPlayerEvent, _refreshAudioUrl]);
+    _registerController, _onPlayerEvent,
+  }), [current, videoId, queue, queueIndex, playState, position, duration, expanded, fullscreen,
+       playTrack, playQueue, pause, resume, next, previous, seek, stop, reorderQueue, _registerController, _onPlayerEvent]);
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
 }

@@ -1,54 +1,5 @@
 import type { Express } from "express";
-import { spawn } from "child_process";
 import { supabase } from "./supabase";
-
-// ─── yt-dlp audio extraction ──────────────────────────────────────────────
-// Runs the system yt-dlp binary to resolve a YouTube videoId to a direct
-// audio stream URL. URLs are time-limited (~6h) and tied to the requesting
-// IP, so we cache for 5h to leave headroom.
-const YT_DLP_BIN = "/home/runner/workspace/.pythonlibs/bin/python";
-const YT_DLP_ARGS_PREFIX = ["-m", "yt_dlp"];
-const YT_DLP_ENV = { ...process.env, PYTHONPATH: "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages" };
-
-interface AudioCacheEntry { url: string; expiresAt: number; }
-const audioCache = new Map<string, AudioCacheEntry>();
-const AUDIO_TTL_MS = 5 * 60 * 60 * 1000; // 5h
-
-function extractAudioUrl(videoId: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      ...YT_DLP_ARGS_PREFIX,
-      "-f", "bestaudio[ext=m4a]/bestaudio",
-      "-g",
-      "--no-warnings",
-      "--no-playlist",
-      `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
-    ];
-    const proc = spawn(YT_DLP_BIN, args, { env: YT_DLP_ENV });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} reject(new Error("yt-dlp timeout")); }, 25_000);
-    proc.stdout.on("data", (d) => { stdout += d.toString(); });
-    proc.stderr.on("data", (d) => { stderr += d.toString(); });
-    proc.on("error", (e) => { clearTimeout(timer); reject(e); });
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      const url = stdout.trim().split("\n").find((l) => l.startsWith("http"));
-      if (url) resolve(url);
-      else reject(new Error(stderr.split("\n").slice(-3).join(" ") || `yt-dlp exit ${code}`));
-    });
-  });
-}
-
-async function getAudioUrl(videoId: string, force = false): Promise<string> {
-  if (!force) {
-    const hit = audioCache.get(videoId);
-    if (hit && hit.expiresAt > Date.now()) return hit.url;
-  }
-  const url = await extractAudioUrl(videoId);
-  audioCache.set(videoId, { url, expiresAt: Date.now() + AUDIO_TTL_MS });
-  return url;
-}
 
 // ─── iTunes catalog (search + curated rows) ─────────────────────────────
 // Public, no API key, no auth. Rate-limited per IP (~20/min) — we cache
@@ -130,14 +81,15 @@ async function itunesSearch(term: string, limit = 30): Promise<ITunesTrack[]> {
 // These are responsible for the vast majority of error 150/152/153 embed
 // failures. Filter them out at the ranking stage — lyric / audio re-uploads
 // from independent channels almost always allow embedding.
-// Slightly PREFER official auto-uploaded channels (Topic / Vevo) — these
-// have the highest audio bitrate. yt-dlp extracts audio from them just
-// like any other video; embed restrictions no longer apply.
+// Soft-demote (don't exclude) rights-holder auto-upload channels.
+// Embeddability is enforced downstream via isEmbeddable(), so demoting
+// keeps these as last-resort candidates instead of removing the only
+// match for niche tracks.
 function channelPenalty(channel: string): number {
   const c = (channel || "").toLowerCase().trim();
   if (!c) return 0;
-  if (c.endsWith(" - topic")) return -40;
-  if (c.includes("vevo")) return -30;
+  if (c.endsWith(" - topic")) return 200;
+  if (c.includes("vevo")) return 200;
   return 0;
 }
 
@@ -165,11 +117,9 @@ function rankVideos(items: any[], targetSec: number | null): { videoId: string; 
     // Prefer lyric / audio uploads — these are nearly always embeddable
     const lc = title.toLowerCase();
     let boost = 0;
-    // Prefer official audio uploads (highest bitrate)
-    if (lc.includes("official audio") || lc.includes("audio only")) boost -= 50;
-    else if (lc.includes("lyric")) boost -= 20;
-    // Slightly demote music videos (typically lower audio bitrate)
-    if (lc.includes("music video")) boost += 20;
+    if (lc.includes("lyric")) boost -= 60;
+    else if (lc.includes("audio")) boost -= 30;
+    if (lc.includes("official video") || lc.includes("music video")) boost += 90;
     boost += chanPenalty;
     ranked.push({ videoId, title, channel, durDelta: delta, boost });
   }
@@ -337,25 +287,11 @@ export function registerMusicRoutes(app: Express) {
     }
   });
 
-  // ── Audio URL extraction (yt-dlp) ───────────────────────────────────
-  // Given a YouTube videoId, return a direct audio stream URL. Cached for
-  // ~5h. Pass ?refresh=1 to force a fresh extraction (when URL has expired).
-  app.get("/api/music/audio", async (req, res) => {
-    const video_id = String(req.query.video_id ?? "").trim();
-    const refresh = String(req.query.refresh ?? "") === "1";
-    if (!video_id) return res.status(400).json({ error: "video_id required" });
-    try {
-      const url = await getAudioUrl(video_id, refresh);
-      res.json({ url, expires_at: new Date(Date.now() + AUDIO_TTL_MS).toISOString() });
-    } catch (e: any) {
-      console.warn("[music/audio] extract failed:", e?.message);
-      res.status(502).json({ error: "Extraction failed", detail: e?.message });
-    }
-  });
-
   // ── Resolve iTunes track → YouTube video ─────────────────────────────
-  // Returns up to 5 candidates. yt-dlp handles audio extraction downstream
-  // so embed restrictions no longer matter — we prefer official audio.
+  // Returns up to 5 candidates. Client plays the first; if YouTube refuses
+  // it (error 150/153 — embedding disabled), client falls back to the next.
+  // The `skip` query param can be used to force a fresh search (ignoring
+  // the cached pick), e.g. when the cached video became unembeddable.
   app.post("/api/music/resolve", async (req, res) => {
     const { itunes_track_id, title, artist, duration_sec } = req.body ?? {};
     const skip = String(req.query.skip ?? "") === "1";
@@ -402,7 +338,12 @@ export function registerMusicRoutes(app: Express) {
       if (all.length === 0) {
         return res.status(404).json({ error: "No YouTube match found" });
       }
-      const top = all.slice(0, 5);
+      // Filter out unembeddable videos so the client doesn't hit error 150/152/153.
+      const embeddable = await filterEmbeddable(all, 5);
+      if (embeddable.length === 0) {
+        return res.status(404).json({ error: "No embeddable match found" });
+      }
+      const top = embeddable;
       const pick = top[0];
       // 3. Cache the best pick (best-effort, never blocks response)
       supabase
@@ -458,8 +399,8 @@ export function registerMusicRoutes(app: Express) {
         }
         if (all.length >= 15) break;
       }
-      if (all.length === 0) return res.status(404).json({ error: "No alternate found" });
-      const fresh = all.slice(0, 5);
+      const fresh = await filterEmbeddable(all, 5);
+      if (fresh.length === 0) return res.status(404).json({ error: "No alternate found" });
       const pick = fresh[0];
       supabase
         .from("music_resolved_tracks")
