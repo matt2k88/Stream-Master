@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { StyleSheet, AppState, AppStateStatus } from "react-native";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+
+export const navigationRef = createNavigationContainerRef<any>();
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -101,7 +103,7 @@ export default function App() {
                           <VpnProvider>
                           <MusicProvider>
                           <KeyboardProvider>
-                            <NavigationContainer>
+                            <NavigationContainer ref={navigationRef}>
                               <RootStackNavigator />
                               <MusicHost />
                             </NavigationContainer>

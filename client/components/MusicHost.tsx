@@ -1,15 +1,13 @@
-import React, { useEffect, useRef, useCallback, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Pressable, Platform } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useNavigation, useNavigationState } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useMusic } from "@/contexts/MusicContext";
 import { getApiUrl } from "@/lib/query-client";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { navigationRef } from "@/App";
 
 /**
  * MusicHost — persistent audio engine + mini bar for the music section.
@@ -23,8 +21,6 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
  * music-related screen. Navigating away pauses playback and hides the
  * bar; re-entering the music section restores the last track (paused).
  */
-
-type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 const BAR_HEIGHT = 72;
 const BAR_MARGIN = Spacing.md;
@@ -54,14 +50,19 @@ async function fetchStreamUrl(videoId: string): Promise<string | null> {
 }
 
 function useActiveRouteName(): string | undefined {
-  return useNavigationState((state) => {
-    if (!state) return undefined;
-    let s: any = state;
-    while (s?.routes && s.routes[s.index]?.state) {
-      s = s.routes[s.index].state;
-    }
-    return s?.routes?.[s.index]?.name as string | undefined;
-  });
+  const [name, setName] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const update = () => {
+      try {
+        if (!navigationRef.isReady()) return;
+        setName(navigationRef.getCurrentRoute()?.name);
+      } catch {}
+    };
+    update();
+    const unsub = navigationRef.addListener?.("state", update);
+    return () => { try { unsub?.(); } catch {} };
+  }, []);
+  return name;
 }
 
 export default function MusicHost() {
@@ -69,7 +70,6 @@ export default function MusicHost() {
     current, videoId, playState, position, duration,
     _registerController, _onPlayerEvent, resume, pause, next, previous, setExpanded,
   } = useMusic();
-  const navigation = useNavigation<Nav>();
 
   const routeName = useActiveRouteName();
   const inMusicSection = !!routeName && MUSIC_ROUTES.has(routeName);
@@ -193,7 +193,9 @@ export default function MusicHost() {
 
   const openNowPlaying = () => {
     setExpanded(true);
-    navigation.navigate("NowPlaying");
+    try {
+      if (navigationRef.isReady()) navigationRef.navigate("NowPlaying" as never);
+    } catch {}
   };
 
   // The hidden VideoView must stay mounted always so expo-video keeps a
