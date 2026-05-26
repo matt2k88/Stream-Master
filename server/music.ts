@@ -105,6 +105,40 @@ function rankVideos(items: any[], targetSec: number | null): { videoId: string; 
   return ranked.filter((r) => (seen.has(r.videoId) ? false : (seen.add(r.videoId), true))).map(({ videoId, title, channel }) => ({ videoId, title, channel }));
 }
 
+// Probe a videoId via YouTube oEmbed — returns 200 only when the video
+// exists AND allows third-party embedding. Returns false on 401/404/etc.
+const embedProbeCache = new Map<string, { ok: boolean; at: number }>();
+async function isEmbeddable(videoId: string): Promise<boolean> {
+  const cached = embedProbeCache.get(videoId);
+  if (cached && Date.now() - cached.at < 24 * 60 * 60 * 1000) return cached.ok;
+  try {
+    const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&format=json`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const ok = res.ok;
+    embedProbeCache.set(videoId, { ok, at: Date.now() });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+async function filterEmbeddable(
+  candidates: { videoId: string; title: string; channel: string }[],
+  maxKeep: number,
+): Promise<{ videoId: string; title: string; channel: string }[]> {
+  // Probe in parallel batches; stop once we have enough good ones.
+  const out: { videoId: string; title: string; channel: string }[] = [];
+  for (let i = 0; i < candidates.length && out.length < maxKeep; i += 5) {
+    const batch = candidates.slice(i, i + 5);
+    const oks = await Promise.all(batch.map((c) => isEmbeddable(c.videoId)));
+    batch.forEach((c, j) => { if (oks[j]) out.push(c); });
+  }
+  return out;
+}
+
 async function youtubeSearchAll(query: string, targetSec: number | null): Promise<{ videoId: string; title: string; channel: string }[]> {
   const url = new URL("https://www.youtube.com/results");
   url.searchParams.set("search_query", query);
@@ -258,13 +292,34 @@ export function registerMusicRoutes(app: Express) {
           });
         }
       }
-      // 2. Live YouTube search — keep top 5 so the client can fall through.
-      const query = `${artist} ${title} official audio`;
-      const results = await youtubeSearchAll(query, typeof duration_sec === "number" ? duration_sec : null);
-      if (!results || results.length === 0) {
+      // 2. Live YouTube search — broaden across a few query phrasings since
+      // "official" results are often Vevo/Sony and block embedding.
+      const queries = [
+        `${artist} ${title} audio`,
+        `${artist} ${title} lyrics`,
+        `${artist} ${title}`,
+      ];
+      const all: { videoId: string; title: string; channel: string }[] = [];
+      const seen = new Set<string>();
+      for (const q of queries) {
+        const r = await youtubeSearchAll(q, typeof duration_sec === "number" ? duration_sec : null);
+        for (const c of r) {
+          if (!seen.has(c.videoId)) {
+            seen.add(c.videoId);
+            all.push(c);
+          }
+        }
+        if (all.length >= 15) break;
+      }
+      if (all.length === 0) {
         return res.status(404).json({ error: "No YouTube match found" });
       }
-      const top = results.slice(0, 5);
+      // Filter out unembeddable videos so the client doesn't hit error 150/152/153.
+      const embeddable = await filterEmbeddable(all, 5);
+      if (embeddable.length === 0) {
+        return res.status(404).json({ error: "No embeddable match found" });
+      }
+      const top = embeddable;
       const pick = top[0];
       // 3. Cache the best pick (best-effort, never blocks response)
       supabase
@@ -302,9 +357,25 @@ export function registerMusicRoutes(app: Express) {
       return res.status(400).json({ error: "itunes_track_id, title, artist required" });
     }
     try {
-      const query = `${artist} ${title} official audio`;
-      const results = await youtubeSearchAll(query, typeof duration_sec === "number" ? duration_sec : null);
-      const fresh = (results ?? []).filter((r) => r.videoId !== String(bad_video_id ?? ""));
+      const queries = [
+        `${artist} ${title} audio`,
+        `${artist} ${title} lyrics`,
+        `${artist} ${title}`,
+      ];
+      const all: { videoId: string; title: string; channel: string }[] = [];
+      const seen = new Set<string>();
+      seen.add(String(bad_video_id ?? ""));
+      for (const q of queries) {
+        const r = await youtubeSearchAll(q, typeof duration_sec === "number" ? duration_sec : null);
+        for (const c of r) {
+          if (!seen.has(c.videoId)) {
+            seen.add(c.videoId);
+            all.push(c);
+          }
+        }
+        if (all.length >= 15) break;
+      }
+      const fresh = await filterEmbeddable(all, 5);
       if (fresh.length === 0) return res.status(404).json({ error: "No alternate found" });
       const pick = fresh[0];
       supabase
