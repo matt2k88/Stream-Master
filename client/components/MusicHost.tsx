@@ -118,6 +118,7 @@ export default function MusicHost() {
         position: "absolute" as const,
         top: 0, left: 0, width: winW, height: winH,
         backgroundColor: "#000",
+        zIndex: 1000,
       }
     : expanded
     ? {
@@ -126,6 +127,7 @@ export default function MusicHost() {
         width: expandedW, height: expandedH,
         borderRadius: BorderRadius.md, overflow: "hidden" as const,
         backgroundColor: "#000",
+        zIndex: 1000,
       }
     : {
         position: "absolute" as const,
@@ -134,12 +136,15 @@ export default function MusicHost() {
         width: MINI_TILE_W, height: MINI_TILE_H,
         borderRadius: 6, overflow: "hidden" as const,
         backgroundColor: "#000",
+        zIndex: 1000,
       };
 
   return (
-    <View style={[styles.absRoot, { pointerEvents: "box-none" }]}>
+    <>
       {/* Mini bar — hidden while expanded so NowPlaying owns the screen.
-          The WebView (rendered below) stays mounted in both modes. */}
+          The WebView (rendered below) stays mounted in both modes.
+          Rendered as a sibling (not wrapped in a full-screen overlay)
+          so it never blocks taps outside its own footprint. */}
       {!expanded ? (
         <Pressable onPress={openNowPlaying} style={styles.bar}>
           {current.artwork_url ? (
@@ -190,17 +195,13 @@ export default function MusicHost() {
           setSupportMultipleWindows={false}
         />
       </View>
-    </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  absRoot: {
-    position: "absolute",
-    left: 0, right: 0, bottom: 0, top: 0,
-    zIndex: 999,
-  },
   bar: {
+    zIndex: 999,
     position: "absolute",
     left: BAR_MARGIN, right: BAR_MARGIN, bottom: BAR_MARGIN,
     height: BAR_HEIGHT,
