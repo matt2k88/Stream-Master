@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useCallback } from "react";
-import { View, StyleSheet, Pressable, Platform, useWindowDimensions } from "react-native";
-import { WebView } from "react-native-webview";
+import React, { useEffect, useRef, useCallback, useState } from "react";
+import { View, StyleSheet, Pressable, Platform } from "react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -8,126 +8,132 @@ import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useMusic } from "@/contexts/MusicContext";
+import { getApiUrl } from "@/lib/query-client";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 /**
- * MusicHost — the SINGLE YouTube IFrame WebView for the app, plus the
- * persistent mini-bar UI. Mounted once at the App root inside
- * MusicProvider so it survives every navigation and keeps audio playing
- * across screens. There is exactly one <WebView> instance; it is
- * repositioned/resized based on `expanded` so it never remounts.
+ * MusicHost — single audio player + persistent mini-bar for the app.
+ *
+ * Audio comes from yt-dlp extracting a direct googlevideo.com CDN URL on
+ * the server (no WebView, no YouTube IFrame, no embed restrictions).
+ * Mounted once at the App root inside MusicProvider so it survives every
+ * navigation and keeps audio playing across screens.
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const PLAYER_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/></head><body style="margin:0;background:#000;overflow:hidden;">
-<div id="player" style="width:100%;height:100%"></div>
-<script>
-  var tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(tag);
-  var player = null;
-  var pendingId = null;
-  var currentVid = null;
-  var watchdog = null;
-  var watchdogVid = null;
-  var erroredVid = null;
-  function post(obj){ try{ window.ReactNativeWebView.postMessage(JSON.stringify(obj)); }catch(e){} }
-  function mapState(s){ if(s===1)return 'playing'; if(s===2)return 'paused'; if(s===3)return 'loading'; if(s===0)return 'ended'; if(s===5)return 'paused'; return 'idle'; }
-  function emitState(){ if(!player||!player.getCurrentTime) return; post({type:'state', state: mapState(player.getPlayerState()), position: player.getCurrentTime()||0, duration: player.getDuration()||0}); }
-  function clearWatchdog(){ if(watchdog){ clearTimeout(watchdog); watchdog=null; } watchdogVid = null; }
-  // After a load, watch for sustained no-progress. We re-check at 4s and 9s.
-  // Only fire 'error' if BOTH checks show no duration AND not in a real
-  // play/pause state. This avoids false-positives on slow networks /
-  // buffering, while still catching the silent embed-block case (YT 152).
-  function armWatchdog(forVid){
-    clearWatchdog();
-    watchdogVid = forVid;
-    var check = function(isFinal){
-      if(!player || watchdogVid !== forVid) return;
-      var d = 0; try{ d = player.getDuration()||0; }catch(e){}
-      var s = -1; try{ s = player.getPlayerState(); }catch(e){}
-      // Has real playback signal — clear and exit.
-      if(d > 0 || s === 1 || s === 2){ clearWatchdog(); return; }
-      if(isFinal){
-        if(erroredVid !== forVid){ erroredVid = forVid; post({type:'error', videoId: forVid}); }
-        clearWatchdog();
-      } else {
-        watchdog = setTimeout(function(){ check(true); }, 5000);
-      }
-    };
-    watchdog = setTimeout(function(){ check(false); }, 4000);
-  }
-  window.onYouTubeIframeAPIReady = function(){
-    player = new YT.Player('player', {
-      height: '100%', width: '100%',
-      videoId: pendingId || '',
-      playerVars: { autoplay:1, playsinline:1, controls:0, modestbranding:1, rel:0, fs:0, iv_load_policy:3, origin: 'https://www.youtube.com' },
-      events: {
-        onReady: function(e){ if(pendingId){ currentVid = pendingId; e.target.loadVideoById(pendingId); armWatchdog(pendingId); } emitState(); },
-        onStateChange: function(e){ if(e.data===1 || e.data===2){ clearWatchdog(); } if(e.data===0){ post({type:'ended'}); } emitState(); },
-        onError: function(){ var vid = currentVid; if(erroredVid !== vid){ erroredVid = vid; clearWatchdog(); post({type:'error', videoId: vid}); } }
-      }
-    });
-  };
-  setInterval(emitState, 1000);
-  function handleCmd(raw){
-    try {
-      var msg = JSON.parse(raw);
-      if(!player || !player.loadVideoById){ if(msg.cmd==='load') pendingId = msg.videoId; return; }
-      if(msg.cmd==='load'){ currentVid = msg.videoId; player.loadVideoById(msg.videoId); armWatchdog(msg.videoId); }
-      if(msg.cmd==='play'){ player.playVideo(); }
-      if(msg.cmd==='pause'){ player.pauseVideo(); }
-      if(msg.cmd==='seek'){ player.seekTo(msg.value, true); }
-    } catch(e){}
-  }
-  document.addEventListener('message', function(e){ handleCmd(e.data); });
-  window.addEventListener('message', function(e){ handleCmd(e.data); });
-</script>
-</body></html>`;
-
-const MINI_TILE_W = 96;
-const MINI_TILE_H = 54;
 const BAR_HEIGHT = 72;
 const BAR_MARGIN = Spacing.md;
 
+async function fetchStreamUrl(videoId: string): Promise<string | null> {
+  try {
+    const url = new URL(`/api/music/stream/${videoId}`, getApiUrl());
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.url === "string" ? data.url : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function MusicHost() {
   const {
-    current, videoId, playState, expanded, fullscreen, position, duration,
+    current, videoId, playState, expanded, position, duration,
     _registerController, _onPlayerEvent, resume, pause, next, previous, setExpanded,
   } = useMusic();
-  const webRef = useRef<WebView>(null);
   const navigation = useNavigation<Nav>();
-  const { width: winW, height: winH } = useWindowDimensions();
 
-  const sendCmd = useCallback((obj: object) => {
-    if (!webRef.current) return;
-    const js = `(function(){ try { var e = new MessageEvent('message', { data: ${JSON.stringify(JSON.stringify(obj))} }); document.dispatchEvent(e); window.dispatchEvent(e); } catch(e){} })(); true;`;
-    webRef.current.injectJavaScript(js);
-  }, []);
+  // Active stream URL (set after server-side yt-dlp extraction).
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  // Track the videoId we last resolved so stale fetches don't override fresh ones.
+  const activeVidRef = useRef<string | null>(null);
 
-  // Register controller so context can drive the WebView
+  const player = useVideoPlayer(null, (p) => {
+    try {
+      p.staysActiveInBackground = true;
+      p.audioMixingMode = "auto";
+      p.timeUpdateEventInterval = 1;
+    } catch {}
+  });
+
+  // Fetch stream URL whenever videoId changes.
+  useEffect(() => {
+    if (!videoId) {
+      setStreamUrl(null);
+      activeVidRef.current = null;
+      try { player.replace(null); } catch {}
+      return;
+    }
+    activeVidRef.current = videoId;
+    const myVid = videoId;
+    (async () => {
+      const url = await fetchStreamUrl(myVid);
+      if (activeVidRef.current !== myVid) return; // stale
+      if (!url) {
+        _onPlayerEvent({ type: "error", videoId: myVid });
+        return;
+      }
+      setStreamUrl(url);
+    })();
+  }, [videoId, player, _onPlayerEvent]);
+
+  // Load the resolved stream URL into the player.
+  useEffect(() => {
+    if (!streamUrl) return;
+    try {
+      player.replace({ uri: streamUrl });
+      player.play();
+    } catch {
+      const v = activeVidRef.current ?? undefined;
+      _onPlayerEvent({ type: "error", videoId: v });
+    }
+  }, [streamUrl, player, _onPlayerEvent]);
+
+  // Register imperative controller for context.
   useEffect(() => {
     _registerController({
-      load: (id) => sendCmd({ cmd: "load", videoId: id }),
-      play: () => sendCmd({ cmd: "play" }),
-      pause: () => sendCmd({ cmd: "pause" }),
-      seek: (s) => sendCmd({ cmd: "seek", value: s }),
+      load: (_id) => { /* triggered by videoId change in effect above */ },
+      play: () => { try { player.play(); } catch {} },
+      pause: () => { try { player.pause(); } catch {} },
+      seek: (s) => { try { player.currentTime = Math.max(0, s); } catch {} },
     });
     return () => _registerController(null);
-  }, [_registerController, sendCmd]);
+  }, [player, _registerController]);
 
-  // When videoId changes (new track resolved), push load
+  // Forward player events to context.
   useEffect(() => {
-    if (videoId) sendCmd({ cmd: "load", videoId });
-  }, [videoId, sendCmd]);
-
-  const onMessage = useCallback((e: any) => {
-    try {
-      const data = JSON.parse(e.nativeEvent.data);
-      _onPlayerEvent(data);
-    } catch {}
-  }, [_onPlayerEvent]);
+    const subStatus = player.addListener("statusChange", ({ status, error }) => {
+      if (status === "error" || error) {
+        _onPlayerEvent({ type: "error", videoId: activeVidRef.current ?? undefined });
+      }
+    });
+    const subEnd = player.addListener("playToEnd", () => {
+      _onPlayerEvent({ type: "ended" });
+    });
+    const subPlaying = player.addListener("playingChange", ({ isPlaying }) => {
+      _onPlayerEvent({
+        type: "state",
+        state: isPlaying ? "playing" : "paused",
+        position: player.currentTime ?? 0,
+        duration: player.duration ?? 0,
+      });
+    });
+    const subTime = player.addListener("timeUpdate", ({ currentTime }) => {
+      _onPlayerEvent({
+        type: "state",
+        state: player.playing ? "playing" : "paused",
+        position: currentTime ?? 0,
+        duration: player.duration ?? 0,
+      });
+    });
+    return () => {
+      subStatus.remove();
+      subEnd.remove();
+      subPlaying.remove();
+      subTime.remove();
+    };
+  }, [player, _onPlayerEvent]);
 
   if (!current) return null;
 
@@ -136,44 +142,14 @@ export default function MusicHost() {
     navigation.navigate("NowPlaying");
   };
 
-  // Compute the WebView's absolute position/size. Expanded → top of
-  // NowPlaying area. Minimized → right edge of the mini bar.
-  const expandedW = Math.min(winW - 32, 480);
-  const expandedH = Math.round(expandedW * 9 / 16);
-  const webStyle = fullscreen
-    ? {
-        position: "absolute" as const,
-        top: 0, left: 0, width: winW, height: winH,
-        backgroundColor: "#000",
-        zIndex: 1000,
-      }
-    : expanded
-    ? {
-        position: "absolute" as const,
-        top: 80, left: (winW - expandedW) / 2,
-        width: expandedW, height: expandedH,
-        borderRadius: BorderRadius.md, overflow: "hidden" as const,
-        backgroundColor: "#000",
-        zIndex: 1000,
-      }
-    : {
-        position: "absolute" as const,
-        right: BAR_MARGIN + Spacing.sm,
-        bottom: BAR_MARGIN + (BAR_HEIGHT - MINI_TILE_H) / 2,
-        width: MINI_TILE_W, height: MINI_TILE_H,
-        borderRadius: 6, overflow: "hidden" as const,
-        backgroundColor: "#000",
-        zIndex: 1000,
-      };
-
   return (
     <>
-      {/* Mini bar — hidden while expanded so NowPlaying owns the screen.
-          The WebView (rendered below) stays mounted in both modes.
-          Rendered as a sibling (not wrapped in a full-screen overlay)
-          so it never blocks taps outside its own footprint. */}
+      {/* Mini bar — hidden while expanded so NowPlaying owns the screen. */}
       {!expanded ? (
-        <Pressable onPress={openNowPlaying} style={styles.bar}>
+        <Pressable
+          onPress={openNowPlaying}
+          style={({ pressed, hovered }: any) => [styles.bar, hovered && styles.barHover, pressed && styles.barPressed]}
+        >
           {current.artwork_url ? (
             <Image source={{ uri: current.artwork_url }} style={styles.art} contentFit="cover" />
           ) : (
@@ -190,38 +166,40 @@ export default function MusicHost() {
               <View style={[styles.progressFill, { width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }]} />
             </View>
           </View>
-          <Pressable onPress={() => previous()} style={styles.ctrlBtn}>
+          <Pressable
+            onPress={() => previous()}
+            style={({ pressed, hovered }: any) => [styles.ctrlBtn, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+            hitSlop={8}
+          >
             <Feather name="skip-back" size={18} color={Colors.dark.text} />
           </Pressable>
-          <Pressable onPress={() => playState === "playing" ? pause() : resume()} style={styles.ctrlBtnLg}>
+          <Pressable
+            onPress={() => playState === "playing" ? pause() : resume()}
+            style={({ pressed, hovered }: any) => [styles.ctrlBtnLg, hovered && styles.ctrlLgHover, pressed && styles.ctrlLgPressed]}
+            hitSlop={8}
+          >
             <Feather name={playState === "playing" ? "pause" : "play"} size={22} color="#fff" />
           </Pressable>
-          <Pressable onPress={() => next()} style={styles.ctrlBtn}>
+          <Pressable
+            onPress={() => next()}
+            style={({ pressed, hovered }: any) => [styles.ctrlBtn, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+            hitSlop={8}
+          >
             <Feather name="skip-forward" size={18} color={Colors.dark.text} />
           </Pressable>
-          {/* Reserve space for the floating WebView tile so the bar layout doesn't shift */}
-          <View style={{ width: MINI_TILE_W, height: MINI_TILE_H }} />
         </Pressable>
       ) : null}
 
-      {/* Single WebView — never unmounts while a track exists. Repositioned
-          via webStyle so toggling expanded does NOT remount. */}
-      <View style={webStyle}>
-        <WebView
-          ref={webRef}
-          source={{ html: PLAYER_HTML, baseUrl: "https://www.youtube.com" }}
-          style={styles.web}
-          originWhitelist={["*"]}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          onMessage={onMessage}
-          androidLayerType="hardware"
-          mixedContentMode="always"
-          setSupportMultipleWindows={false}
-        />
-      </View>
+      {/* Hidden VideoView (1×1) keeps the native audio engine alive on iOS/Android.
+          Audio-only, so no need to display the view anywhere. */}
+      <VideoView
+        player={player}
+        style={styles.hiddenVideo}
+        nativeControls={false}
+        contentFit="contain"
+        allowsFullscreen={false}
+        allowsPictureInPicture={false}
+      />
     </>
   );
 }
@@ -246,6 +224,8 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  barHover: { borderColor: Colors.dark.accent, backgroundColor: "#161616" },
+  barPressed: { opacity: 0.85 },
   art: { width: 56, height: 56, borderRadius: BorderRadius.sm, backgroundColor: "#1A1A1A" },
   artFallback: { alignItems: "center", justifyContent: "center" },
   meta: { flex: 1, justifyContent: "center", gap: 2 },
@@ -254,6 +234,10 @@ const styles = StyleSheet.create({
   progressTrack: { height: 2, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 1, marginTop: 4 },
   progressFill: { height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1 },
   ctrlBtn: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.sm },
+  ctrlHover: { backgroundColor: "rgba(255,102,0,0.15)" },
+  ctrlPressed: { opacity: 0.65 },
   ctrlBtnLg: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.accent },
-  web: { flex: 1, backgroundColor: "#000" },
+  ctrlLgHover: { backgroundColor: "#FF7A1F" },
+  ctrlLgPressed: { opacity: 0.8 },
+  hiddenVideo: { position: "absolute", width: 1, height: 1, opacity: 0, left: -10, top: -10 },
 });

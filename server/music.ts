@@ -1,5 +1,48 @@
 import type { Express } from "express";
+import { spawn } from "child_process";
 import { supabase } from "./supabase";
+
+// ─── yt-dlp audio stream extractor ─────────────────────────────────────
+// Resolves a YouTube videoId to a direct CDN audio URL. This bypasses
+// the IFrame embed restrictions entirely (errors 150/152/153), which
+// is why we can play Vevo/Topic uploads that the WebView refused.
+// Direct URLs from googlevideo.com expire after ~6h, so cache for 5h.
+
+const streamCache = new Map<string, { url: string; expiresAt: number }>();
+const STREAM_TTL_MS = 5 * 60 * 60 * 1000;
+
+function extractAudioUrl(videoId: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const args = [
+      "-f", "bestaudio[ext=m4a]/bestaudio",
+      "-g",
+      "--no-warnings",
+      "--no-playlist",
+      "--socket-timeout", "15",
+      `https://www.youtube.com/watch?v=${videoId}`,
+    ];
+    let proc: ReturnType<typeof spawn>;
+    try {
+      proc = spawn("yt-dlp", args, { stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    let out = "";
+    proc.stdout?.on("data", (d) => { out += d.toString(); });
+    proc.stderr?.on("data", () => {});
+    const timer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} resolve(null); }, 25000);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0 && out.trim()) {
+        const first = out.trim().split("\n")[0];
+        if (first.startsWith("http")) return resolve(first);
+      }
+      resolve(null);
+    });
+    proc.on("error", () => { clearTimeout(timer); resolve(null); });
+  });
+}
 
 // ─── iTunes catalog (search + curated rows) ─────────────────────────────
 // Public, no API key, no auth. Rate-limited per IP (~20/min) — we cache
@@ -239,6 +282,29 @@ async function verifyPlaylistTrackOwner(trackId: string, profileId: string): Pro
 }
 
 export function registerMusicRoutes(app: Express) {
+  // ── Stream URL extractor (yt-dlp) ────────────────────────────────────
+  // Returns a direct CDN audio URL (m4a/webm) the client can stream via
+  // expo-video. Cached in-memory for 5h (URLs expire after ~6h).
+  app.get("/api/music/stream/:videoId", async (req, res) => {
+    const vid = String(req.params.videoId || "");
+    if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) {
+      return res.status(400).json({ error: "Invalid videoId" });
+    }
+    const hit = streamCache.get(vid);
+    if (hit && hit.expiresAt > Date.now()) {
+      return res.json({ url: hit.url, cached: true });
+    }
+    try {
+      const url = await extractAudioUrl(vid);
+      if (!url) return res.status(502).json({ error: "Extraction failed" });
+      streamCache.set(vid, { url, expiresAt: Date.now() + STREAM_TTL_MS });
+      return res.json({ url, cached: false });
+    } catch (e: any) {
+      console.error("[music/stream]", e?.message);
+      return res.status(502).json({ error: "Extraction error" });
+    }
+  });
+
   // ── Search ───────────────────────────────────────────────────────────
   app.get("/api/music/search", async (req, res) => {
     const { q, limit } = req.query;
@@ -338,12 +404,9 @@ export function registerMusicRoutes(app: Express) {
       if (all.length === 0) {
         return res.status(404).json({ error: "No YouTube match found" });
       }
-      // Filter out unembeddable videos so the client doesn't hit error 150/152/153.
-      const embeddable = await filterEmbeddable(all, 5);
-      if (embeddable.length === 0) {
-        return res.status(404).json({ error: "No embeddable match found" });
-      }
-      const top = embeddable;
+      // yt-dlp extracts audio directly from googlevideo CDN, so embed
+      // restrictions no longer matter — every result is playable.
+      const top = all.slice(0, 5);
       const pick = top[0];
       // 3. Cache the best pick (best-effort, never blocks response)
       supabase
@@ -399,7 +462,7 @@ export function registerMusicRoutes(app: Express) {
         }
         if (all.length >= 15) break;
       }
-      const fresh = await filterEmbeddable(all, 5);
+      const fresh = all.slice(0, 5);
       if (fresh.length === 0) return res.status(404).json({ error: "No alternate found" });
       const pick = fresh[0];
       supabase

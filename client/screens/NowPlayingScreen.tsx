@@ -25,16 +25,11 @@ export default function NowPlayingScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {
-    current, playState, position, duration, queue, queueIndex, fullscreen,
+    current, playState, position, duration, queue, queueIndex,
     pause, resume, next, previous, stop, seek, setExpanded, playQueue,
-    reorderQueue, setFullscreen,
+    reorderQueue,
   } = useMusic();
   const [addOpen, setAddOpen] = useState(false);
-
-  useEffect(() => {
-    // Always exit fullscreen when leaving Now Playing.
-    return () => setFullscreen(false);
-  }, [setFullscreen]);
 
   useEffect(() => {
     setExpanded(true);
@@ -81,20 +76,20 @@ export default function NowPlayingScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={({ pressed, hovered }: any) => [styles.iconBtn, hovered && styles.iconBtnHover, pressed && styles.iconBtnPressed]}
+        >
           <Feather name="chevron-down" size={24} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Now Playing</ThemedText>
-        <Pressable onPress={() => setFullscreen(!fullscreen)} style={styles.iconBtn}>
-          <Feather name={fullscreen ? "minimize-2" : "maximize-2"} size={18} color={Colors.dark.text} />
-        </Pressable>
-        <Pressable onPress={() => { stop(); navigation.goBack(); }} style={styles.iconBtn}>
+        <Pressable
+          onPress={() => { stop(); navigation.goBack(); }}
+          style={({ pressed, hovered }: any) => [styles.iconBtn, hovered && styles.iconBtnHover, pressed && styles.iconBtnPressed]}
+        >
           <Feather name="x" size={20} color={Colors.dark.text} />
         </Pressable>
       </View>
-
-      {/* The expanded WebView from MusicHost sits at top:80 — reserve room. */}
-      <View style={styles.videoSpacer} />
 
       <View style={styles.metaWrap}>
         {current.artwork_url ? (
@@ -118,15 +113,21 @@ export default function NowPlayingScreen() {
         </View>
 
         <View style={styles.controls}>
-          <Pressable onPress={() => seek(Math.max(0, position - 15))} style={styles.ctrlSm}>
+          <Pressable
+            onPress={() => seek(Math.max(0, position - 15))}
+            style={({ pressed, hovered }: any) => [styles.ctrlSm, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+          >
             <Feather name="rotate-ccw" size={20} color={Colors.dark.text} />
           </Pressable>
-          <Pressable onPress={previous} style={styles.ctrlMd}>
+          <Pressable
+            onPress={previous}
+            style={({ pressed, hovered }: any) => [styles.ctrlMd, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+          >
             <Feather name="skip-back" size={26} color={Colors.dark.text} />
           </Pressable>
           <Pressable
             onPress={() => playState === "playing" ? pause() : resume()}
-            style={styles.ctrlLg}
+            style={({ pressed, hovered }: any) => [styles.ctrlLg, hovered && styles.ctrlLgHover, pressed && styles.ctrlLgPressed]}
             focusable
             // @ts-ignore — onKeyDown is supported on Android TV / web
             onKeyDown={onTvKey}
@@ -134,10 +135,16 @@ export default function NowPlayingScreen() {
           >
             <Feather name={playState === "playing" ? "pause" : "play"} size={32} color="#fff" />
           </Pressable>
-          <Pressable onPress={next} style={styles.ctrlMd}>
+          <Pressable
+            onPress={next}
+            style={({ pressed, hovered }: any) => [styles.ctrlMd, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+          >
             <Feather name="skip-forward" size={26} color={Colors.dark.text} />
           </Pressable>
-          <Pressable onPress={() => seek(Math.min(duration || position + 15, position + 15))} style={styles.ctrlSm}>
+          <Pressable
+            onPress={() => seek(Math.min(duration || position + 15, position + 15))}
+            style={({ pressed, hovered }: any) => [styles.ctrlSm, hovered && styles.ctrlHover, pressed && styles.ctrlPressed]}
+          >
             <Feather name="rotate-cw" size={20} color={Colors.dark.text} />
           </Pressable>
         </View>
@@ -152,7 +159,7 @@ export default function NowPlayingScreen() {
         </Pressable>
       </View>
 
-      {queue.length > 1 && !fullscreen ? (
+      {queue.length > 1 ? (
         <View style={styles.queueWrap}>
           <ThemedText style={styles.queueTitle}>Up Next</ThemedText>
           <ScrollView style={{ maxHeight: 180 }}>
@@ -186,11 +193,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md },
   iconBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault, borderWidth: 1, borderColor: Colors.dark.border },
+  iconBtnHover: { borderColor: Colors.dark.accent, backgroundColor: "#1A1A1A" },
+  iconBtnPressed: { opacity: 0.7 },
   headerTitle: { flex: 1, fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
-  // Spacer reserves space under the floating expanded WebView in MusicHost (top:80, ~270 high)
-  videoSpacer: { height: 280 },
-  metaWrap: { paddingHorizontal: Spacing.xl, alignItems: "center", gap: Spacing.sm },
-  bigArt: { width: 120, height: 120, borderRadius: BorderRadius.sm, backgroundColor: "#1A1A1A", marginBottom: Spacing.md },
+  metaWrap: { paddingHorizontal: Spacing.xl, alignItems: "center", gap: Spacing.sm, marginTop: Spacing.xl },
+  bigArt: { width: 220, height: 220, borderRadius: BorderRadius.md, backgroundColor: "#1A1A1A", marginBottom: Spacing.md },
   title: { color: Colors.dark.text, fontSize: 18, fontWeight: "700", textAlign: "center" },
   artist: { color: Colors.dark.textSecondary, fontSize: 14, marginBottom: Spacing.md },
   progressWrap: { width: "100%", maxWidth: 480 },
@@ -202,6 +209,10 @@ const styles = StyleSheet.create({
   ctrlSm: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full },
   ctrlMd: { width: 52, height: 52, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full },
   ctrlLg: { width: 68, height: 68, alignItems: "center", justifyContent: "center", borderRadius: BorderRadius.full, backgroundColor: Colors.dark.accent },
+  ctrlHover: { backgroundColor: "rgba(255,102,0,0.15)" },
+  ctrlPressed: { opacity: 0.6 },
+  ctrlLgHover: { backgroundColor: "#FF7A1F" },
+  ctrlLgPressed: { opacity: 0.8 },
   errText: { color: Colors.dark.error, fontSize: 12, marginTop: Spacing.md, textAlign: "center" },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: Spacing.md, paddingVertical: 8, borderRadius: BorderRadius.full, borderWidth: 1, borderColor: Colors.dark.border, marginTop: Spacing.md },
   addBtnText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
