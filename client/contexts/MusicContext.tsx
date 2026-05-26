@@ -177,6 +177,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setDuration(track.duration_sec ?? 0);
     setVideoId(null);
     videoCandidatesRef.current = [];
+    // Web autoplay unlock: call play() synchronously inside the user
+    // gesture (the tap handler that triggered this), before the async
+    // resolve fetch eats the gesture window. With no source loaded yet
+    // this is a no-op on native, but on web it primes the underlying
+    // HTMLAudioElement so the real play() after resolve isn't blocked.
+    try { controllerRef.current?.play(); } catch {}
     const vids = await resolveVideoIds(track);
     // Ignore stale resolves that completed after the user moved on.
     if (playTokenRef.current !== myToken) return;
