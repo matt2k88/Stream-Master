@@ -1,5 +1,6 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { spawn } from "child_process";
+import { Readable } from "node:stream";
 import { supabase } from "./supabase";
 
 // ─── yt-dlp audio stream extractor ─────────────────────────────────────
@@ -283,8 +284,10 @@ async function verifyPlaylistTrackOwner(trackId: string, profileId: string): Pro
 
 export function registerMusicRoutes(app: Express) {
   // ── Stream URL extractor (yt-dlp) ────────────────────────────────────
-  // Returns a direct CDN audio URL (m4a/webm) the client can stream via
-  // expo-video. Cached in-memory for 5h (URLs expire after ~6h).
+  // JSON endpoint kept for diagnostics. Returns the resolved (server-IP
+  // locked) googlevideo URL. The client should NOT load this URL directly
+  // — googlevideo URLs are signed with the requesting IP. Use the audio
+  // proxy below instead.
   app.get("/api/music/stream/:videoId", async (req, res) => {
     const vid = String(req.params.videoId || "");
     if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) {
@@ -302,6 +305,68 @@ export function registerMusicRoutes(app: Express) {
     } catch (e: any) {
       console.error("[music/stream]", e?.message);
       return res.status(502).json({ error: "Extraction error" });
+    }
+  });
+
+  // ── Audio proxy ──────────────────────────────────────────────────────
+  // expo-video / native players load this URL directly. We resolve the
+  // googlevideo CDN URL (signed with OUR server IP), then proxy the bytes
+  // back to the client. Forwards Range so seeking + progressive download
+  // work. On 403 (URL expired or rotated) we re-extract once and retry.
+  async function fetchUpstream(audioUrl: string, range?: string) {
+    const headers: Record<string, string> = {
+      "User-Agent":
+        "com.google.android.apps.youtube.music/7.16.53 (Linux; U; Android 13)",
+    };
+    if (range) headers["Range"] = range;
+    return fetch(audioUrl, { headers });
+  }
+
+  async function resolveFresh(vid: string): Promise<string | null> {
+    const url = await extractAudioUrl(vid);
+    if (!url) return null;
+    streamCache.set(vid, { url, expiresAt: Date.now() + STREAM_TTL_MS });
+    return url;
+  }
+
+  app.get("/api/music/audio/:videoId", async (req: Request, res: Response) => {
+    const vid = String(req.params.videoId || "");
+    if (!/^[A-Za-z0-9_-]{11}$/.test(vid)) {
+      return res.status(400).end("bad videoId");
+    }
+    try {
+      const hit = streamCache.get(vid);
+      let upstreamUrl = hit && hit.expiresAt > Date.now() ? hit.url : null;
+      if (!upstreamUrl) upstreamUrl = await resolveFresh(vid);
+      if (!upstreamUrl) return res.status(502).end("extract failed");
+
+      const range = req.headers.range as string | undefined;
+      let upstream = await fetchUpstream(upstreamUrl, range);
+      if (upstream.status === 403 || upstream.status === 410) {
+        // Cached URL went stale (rotated / IP changed) — refresh once.
+        streamCache.delete(vid);
+        const fresh = await resolveFresh(vid);
+        if (!fresh) return res.status(502).end("re-extract failed");
+        upstream = await fetchUpstream(fresh, range);
+      }
+      if (!upstream.ok && upstream.status !== 206) {
+        return res.status(upstream.status).end();
+      }
+      res.status(upstream.status);
+      for (const h of ["content-type", "content-length", "content-range", "accept-ranges", "cache-control", "last-modified", "etag"]) {
+        const v = upstream.headers.get(h);
+        if (v) res.setHeader(h, v);
+      }
+      if (!upstream.headers.get("accept-ranges")) res.setHeader("Accept-Ranges", "bytes");
+      if (!upstream.body) return res.end();
+      const nodeStream = Readable.fromWeb(upstream.body as any);
+      nodeStream.on("error", () => { try { res.end(); } catch {} });
+      req.on("close", () => { try { nodeStream.destroy(); } catch {} });
+      nodeStream.pipe(res);
+    } catch (e: any) {
+      console.error("[music/audio]", vid, e?.message);
+      if (!res.headersSent) res.status(502).end("proxy error");
+      else try { res.end(); } catch {}
     }
   });
 

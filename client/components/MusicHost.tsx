@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useMusic } from "@/contexts/MusicContext";
 import { getApiUrl } from "@/lib/query-client";
-import { navigationRef } from "@/App";
+import { navigationRef } from "@/lib/navigation-ref";
 
 /**
  * MusicHost — persistent audio engine + mini bar for the music section.
@@ -33,20 +33,11 @@ const MUSIC_ROUTES = new Set([
   "NowPlaying",
 ]);
 
-async function fetchStreamUrl(videoId: string): Promise<string | null> {
-  try {
-    const url = new URL(`/api/music/stream/${videoId}`, getApiUrl());
-    const res = await fetch(url.toString());
-    if (!res.ok) {
-      console.warn("[music] stream fetch failed", videoId, res.status);
-      return null;
-    }
-    const data = await res.json();
-    return typeof data?.url === "string" ? data.url : null;
-  } catch (e: any) {
-    console.warn("[music] stream fetch error", videoId, e?.message);
-    return null;
-  }
+function buildAudioProxyUrl(videoId: string): string {
+  // Server-side proxy. We can't load googlevideo CDN URLs directly from
+  // the client — they're signed with the requesting IP, which won't match
+  // the device. The proxy refetches with the server IP and pipes back.
+  return new URL(`/api/music/audio/${videoId}`, getApiUrl()).toString();
 }
 
 function useActiveRouteName(): string | undefined {
@@ -98,7 +89,8 @@ export default function MusicHost() {
     }
   }, [inMusicSection, player]);
 
-  // Fetch stream URL whenever videoId changes.
+  // Build proxy URL whenever videoId changes — no fetch needed; the
+  // server resolves + streams on demand.
   useEffect(() => {
     if (!videoId) {
       setStreamUrl(null);
@@ -108,19 +100,9 @@ export default function MusicHost() {
     }
     activeVidRef.current = videoId;
     wantPlayRef.current = true;
-    const myVid = videoId;
-    (async () => {
-      console.log("[music] resolving stream for", myVid);
-      const url = await fetchStreamUrl(myVid);
-      if (activeVidRef.current !== myVid) return; // stale
-      if (!url) {
-        console.warn("[music] no stream url for", myVid);
-        _onPlayerEvent({ type: "error", videoId: myVid });
-        return;
-      }
-      console.log("[music] got stream url for", myVid);
-      setStreamUrl(url);
-    })();
+    const url = buildAudioProxyUrl(videoId);
+    console.log("[music] loading proxy stream for", videoId, "→", url);
+    setStreamUrl(url);
   }, [videoId, player, _onPlayerEvent]);
 
   // Load the resolved stream into the player.

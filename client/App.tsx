@@ -1,9 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { StyleSheet, AppState, AppStateStatus } from "react-native";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
-import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
-
-export const navigationRef = createNavigationContainerRef<any>();
+import { NavigationContainer } from "@react-navigation/native";
+import { navigationRef } from "@/lib/navigation-ref";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
