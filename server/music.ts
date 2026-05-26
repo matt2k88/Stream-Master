@@ -77,15 +77,32 @@ async function itunesSearch(term: string, limit = 30): Promise<ITunesTrack[]> {
 // matching video id. This works without an API key. Cached forever in
 // Supabase so each track resolves at most once across all users.
 
+// Channels that auto-upload from rights-holders (Sony/UMG/Warner/Vevo).
+// These are responsible for the vast majority of error 150/152/153 embed
+// failures. Filter them out at the ranking stage — lyric / audio re-uploads
+// from independent channels almost always allow embedding.
+// Soft-demote (don't exclude) rights-holder auto-upload channels.
+// Embeddability is enforced downstream via isEmbeddable(), so demoting
+// keeps these as last-resort candidates instead of removing the only
+// match for niche tracks.
+function channelPenalty(channel: string): number {
+  const c = (channel || "").toLowerCase().trim();
+  if (!c) return 0;
+  if (c.endsWith(" - topic")) return 200;
+  if (c.includes("vevo")) return 200;
+  return 0;
+}
+
 function rankVideos(items: any[], targetSec: number | null): { videoId: string; title: string; channel: string }[] {
   // items is an array of { videoRenderer: { videoId, title.runs, lengthText.simpleText, ownerText.runs } }
-  const ranked: { videoId: string; title: string; channel: string; durDelta: number }[] = [];
+  const ranked: { videoId: string; title: string; channel: string; durDelta: number; boost: number }[] = [];
   for (const it of items) {
     const v = it?.videoRenderer;
     if (!v?.videoId) continue;
     const videoId = String(v.videoId);
     const title = (v?.title?.runs?.[0]?.text as string | undefined) ?? "";
     const channel = (v?.ownerText?.runs?.[0]?.text as string | undefined) ?? "";
+    const chanPenalty = channelPenalty(channel);
     const lenText = (v?.lengthText?.simpleText as string | undefined) ?? "";
     let durSec: number | null = null;
     if (lenText) {
@@ -97,9 +114,16 @@ function rankVideos(items: any[], targetSec: number | null): { videoId: string; 
     // Skip clearly-too-long results (>15 min) — usually full albums / hour mixes
     if (durSec != null && durSec > 15 * 60) continue;
     const delta = targetSec != null && durSec != null ? Math.abs(durSec - targetSec) : 0;
-    ranked.push({ videoId, title, channel, durDelta: delta });
+    // Prefer lyric / audio uploads — these are nearly always embeddable
+    const lc = title.toLowerCase();
+    let boost = 0;
+    if (lc.includes("lyric")) boost -= 60;
+    else if (lc.includes("audio")) boost -= 30;
+    if (lc.includes("official video") || lc.includes("music video")) boost += 90;
+    boost += chanPenalty;
+    ranked.push({ videoId, title, channel, durDelta: delta, boost });
   }
-  ranked.sort((a, b) => a.durDelta - b.durDelta);
+  ranked.sort((a, b) => (a.durDelta + a.boost) - (b.durDelta + b.boost));
   // Dedupe by videoId
   const seen = new Set<string>();
   return ranked.filter((r) => (seen.has(r.videoId) ? false : (seen.add(r.videoId), true))).map(({ videoId, title, channel }) => ({ videoId, title, channel }));

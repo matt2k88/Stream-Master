@@ -28,18 +28,45 @@ const PLAYER_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="w
   document.head.appendChild(tag);
   var player = null;
   var pendingId = null;
+  var currentVid = null;
+  var watchdog = null;
+  var watchdogVid = null;
+  var erroredVid = null;
   function post(obj){ try{ window.ReactNativeWebView.postMessage(JSON.stringify(obj)); }catch(e){} }
   function mapState(s){ if(s===1)return 'playing'; if(s===2)return 'paused'; if(s===3)return 'loading'; if(s===0)return 'ended'; if(s===5)return 'paused'; return 'idle'; }
   function emitState(){ if(!player||!player.getCurrentTime) return; post({type:'state', state: mapState(player.getPlayerState()), position: player.getCurrentTime()||0, duration: player.getDuration()||0}); }
+  function clearWatchdog(){ if(watchdog){ clearTimeout(watchdog); watchdog=null; } watchdogVid = null; }
+  // After a load, watch for sustained no-progress. We re-check at 4s and 9s.
+  // Only fire 'error' if BOTH checks show no duration AND not in a real
+  // play/pause state. This avoids false-positives on slow networks /
+  // buffering, while still catching the silent embed-block case (YT 152).
+  function armWatchdog(forVid){
+    clearWatchdog();
+    watchdogVid = forVid;
+    var check = function(isFinal){
+      if(!player || watchdogVid !== forVid) return;
+      var d = 0; try{ d = player.getDuration()||0; }catch(e){}
+      var s = -1; try{ s = player.getPlayerState(); }catch(e){}
+      // Has real playback signal — clear and exit.
+      if(d > 0 || s === 1 || s === 2){ clearWatchdog(); return; }
+      if(isFinal){
+        if(erroredVid !== forVid){ erroredVid = forVid; post({type:'error', videoId: forVid}); }
+        clearWatchdog();
+      } else {
+        watchdog = setTimeout(function(){ check(true); }, 5000);
+      }
+    };
+    watchdog = setTimeout(function(){ check(false); }, 4000);
+  }
   window.onYouTubeIframeAPIReady = function(){
     player = new YT.Player('player', {
       height: '100%', width: '100%',
       videoId: pendingId || '',
-      playerVars: { autoplay:1, playsinline:1, controls:0, modestbranding:1, rel:0, fs:0, iv_load_policy:3 },
+      playerVars: { autoplay:1, playsinline:1, controls:0, modestbranding:1, rel:0, fs:0, iv_load_policy:3, origin: 'https://www.youtube.com' },
       events: {
-        onReady: function(e){ if(pendingId){ e.target.loadVideoById(pendingId); } emitState(); },
-        onStateChange: function(e){ if(e.data===0){ post({type:'ended'}); } emitState(); },
-        onError: function(){ post({type:'error'}); }
+        onReady: function(e){ if(pendingId){ currentVid = pendingId; e.target.loadVideoById(pendingId); armWatchdog(pendingId); } emitState(); },
+        onStateChange: function(e){ if(e.data===1 || e.data===2){ clearWatchdog(); } if(e.data===0){ post({type:'ended'}); } emitState(); },
+        onError: function(){ var vid = currentVid; if(erroredVid !== vid){ erroredVid = vid; clearWatchdog(); post({type:'error', videoId: vid}); } }
       }
     });
   };
@@ -48,7 +75,7 @@ const PLAYER_HTML = `<!DOCTYPE html><html><head><meta name="viewport" content="w
     try {
       var msg = JSON.parse(raw);
       if(!player || !player.loadVideoById){ if(msg.cmd==='load') pendingId = msg.videoId; return; }
-      if(msg.cmd==='load'){ player.loadVideoById(msg.videoId); }
+      if(msg.cmd==='load'){ currentVid = msg.videoId; player.loadVideoById(msg.videoId); armWatchdog(msg.videoId); }
       if(msg.cmd==='play'){ player.playVideo(); }
       if(msg.cmd==='pause'){ player.pauseVideo(); }
       if(msg.cmd==='seek'){ player.seekTo(msg.value, true); }

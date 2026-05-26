@@ -56,7 +56,7 @@ export interface ControllerCmds {
 export type PlayerEvent =
   | { type: "state"; state: PlayState; position: number; duration: number }
   | { type: "ended" }
-  | { type: "error" };
+  | { type: "error"; videoId?: string };
 
 const MusicContext = createContext<MusicContextValue | undefined>(undefined);
 
@@ -310,8 +310,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         setPlayState("ended");
       }
     } else if (e.type === "error") {
-      // YT errors 150/153/101 mean the video can't be embedded. Try the next
-      // candidate before giving up.
+      // Ignore stale errors from a previous video that arrive after we've
+      // already moved on to the next candidate.
+      const activeVid = videoCandidatesRef.current[0];
+      if (e.videoId && activeVid && e.videoId !== activeVid) return;
+      // YT errors 150/153/101/152 mean the video can't be embedded. Try the
+      // next candidate before giving up.
       (async () => {
         const ok = await tryNextCandidate();
         if (!ok) setPlayState("error");
