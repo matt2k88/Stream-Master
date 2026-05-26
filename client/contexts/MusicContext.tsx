@@ -25,6 +25,7 @@ interface MusicContextValue {
   position: number;        // seconds
   duration: number;        // seconds
   expanded: boolean;       // true while NowPlaying is visible
+  fullscreen: boolean;     // true when video should fill the screen
 
   // Player commands (driven by MusicHost via setController)
   playTrack: (track: MusicTrack, queue?: MusicTrack[]) => Promise<void>;
@@ -36,6 +37,8 @@ interface MusicContextValue {
   seek: (seconds: number) => void;
   stop: () => void;
   setExpanded: (v: boolean) => void;
+  setFullscreen: (v: boolean) => void;
+  reorderQueue: (from: number, to: number) => void;
 
   // Internal — registered by MusicHost so context can drive the WebView
   _registerController: (ctl: ControllerCmds | null) => void;
@@ -87,6 +90,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const controllerRef = useRef<ControllerCmds | null>(null);
   const queueRef = useRef<MusicTrack[]>([]);
@@ -99,17 +103,16 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Restore last-known track (paused) on app start so the mini bar can resume.
-  // Guard: capture playToken at effect start. If user starts playback before
-  // restore resolves (token bumped), abandon the restore — otherwise we'd
-  // overwrite the active track they just queued.
+  // Persists videoId too so resume() works without re-resolving. Guard with
+  // playToken — if user starts playback before disk read resolves, abandon.
   useEffect(() => {
     const tokenAtStart = playTokenRef.current;
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(LAST_TRACK_KEY);
         if (!raw) return;
-        if (playTokenRef.current !== tokenAtStart) return; // user already played something
-        const parsed = JSON.parse(raw) as { track: MusicTrack; queue: MusicTrack[]; index: number } | null;
+        if (playTokenRef.current !== tokenAtStart) return;
+        const parsed = JSON.parse(raw) as { track: MusicTrack; queue: MusicTrack[]; index: number; videoId?: string | null } | null;
         if (!parsed || !parsed.track) return;
         setCurrent(parsed.track);
         setQueue(parsed.queue ?? [parsed.track]);
@@ -118,6 +121,12 @@ export function MusicProvider({ children }: { children: ReactNode }) {
         queueIndexRef.current = parsed.index ?? 0;
         setPlayState("paused");
         setDuration(parsed.track.duration_sec ?? 0);
+        if (parsed.videoId) {
+          setVideoId(parsed.videoId);
+          // Load (but don't auto-play) so the user's first press of play resumes.
+          // If controller mounts later, MusicHost picks up videoId via effect.
+          controllerRef.current?.load(parsed.videoId);
+        }
       } catch {}
     })();
   }, []);
@@ -145,10 +154,28 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     setVideoId(vid);
     // Controller may not be mounted yet — MusicHost will pick up videoId via effect.
     controllerRef.current?.load(vid);
-    // Persist last-played snapshot for next app launch
+    // Persist last-played snapshot for next app launch (including videoId so
+    // resume() works without re-resolving on cold start).
     try {
-      AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index }));
+      AsyncStorage.setItem(LAST_TRACK_KEY, JSON.stringify({ track, queue: tracks, index, videoId: vid }));
     } catch {}
+  }, []);
+
+  const reorderQueue = useCallback((from: number, to: number) => {
+    const q = [...queueRef.current];
+    if (from < 0 || from >= q.length || to < 0 || to >= q.length || from === to) return;
+    const currIdx = queueIndexRef.current;
+    const [item] = q.splice(from, 1);
+    q.splice(to, 0, item);
+    // Keep queueIndex pointing at the same currently-playing track
+    let newIdx = currIdx;
+    if (currIdx === from) newIdx = to;
+    else if (from < currIdx && to >= currIdx) newIdx = currIdx - 1;
+    else if (from > currIdx && to <= currIdx) newIdx = currIdx + 1;
+    queueRef.current = q;
+    queueIndexRef.current = newIdx;
+    setQueue(q);
+    setQueueIndex(newIdx);
   }, []);
 
   const playTrack = useCallback(async (track: MusicTrack, q?: MusicTrack[]) => {
@@ -235,11 +262,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [startTrackAt]);
 
   const value = useMemo<MusicContextValue>(() => ({
-    current, videoId, queue, queueIndex, playState, position, duration, expanded,
-    playTrack, playQueue, pause, resume, next, previous, seek, stop, setExpanded,
+    current, videoId, queue, queueIndex, playState, position, duration, expanded, fullscreen,
+    playTrack, playQueue, pause, resume, next, previous, seek, stop, setExpanded, setFullscreen, reorderQueue,
     _registerController, _onPlayerEvent,
-  }), [current, videoId, queue, queueIndex, playState, position, duration, expanded,
-       playTrack, playQueue, pause, resume, next, previous, seek, stop, _registerController, _onPlayerEvent]);
+  }), [current, videoId, queue, queueIndex, playState, position, duration, expanded, fullscreen,
+       playTrack, playQueue, pause, resume, next, previous, seek, stop, reorderQueue, _registerController, _onPlayerEvent]);
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
 }

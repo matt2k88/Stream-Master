@@ -66,12 +66,12 @@ const BAR_MARGIN = Spacing.md;
 
 export default function MusicHost() {
   const {
-    current, videoId, playState, expanded, position, duration,
+    current, videoId, playState, expanded, fullscreen, position, duration,
     _registerController, _onPlayerEvent, resume, pause, next, previous, setExpanded,
   } = useMusic();
   const webRef = useRef<WebView>(null);
   const navigation = useNavigation<Nav>();
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
 
   const sendCmd = useCallback((obj: object) => {
     if (!webRef.current) return;
@@ -113,7 +113,13 @@ export default function MusicHost() {
   // NowPlaying area. Minimized → right edge of the mini bar.
   const expandedW = Math.min(winW - 32, 480);
   const expandedH = Math.round(expandedW * 9 / 16);
-  const webStyle = expanded
+  const webStyle = fullscreen
+    ? {
+        position: "absolute" as const,
+        top: 0, left: 0, width: winW, height: winH,
+        backgroundColor: "#000",
+      }
+    : expanded
     ? {
         position: "absolute" as const,
         top: 80, left: (winW - expandedW) / 2,

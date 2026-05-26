@@ -972,6 +972,15 @@ export default function HomeScreen() {
                 textSize={13}
                 compact
               />
+              <NavButton
+                title="Music"
+                icon="music"
+                onPress={() => navigation.navigate("MusicHome")}
+                style={styles.catchUpBtn}
+                iconSize={16}
+                textSize={12}
+                compact
+              />
             </View>
             {/* Sub-column B: Movies | Series stacked 50/50 */}
             <View style={styles.colB}>

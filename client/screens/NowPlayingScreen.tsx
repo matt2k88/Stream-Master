@@ -25,10 +25,16 @@ export default function NowPlayingScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const {
-    current, playState, position, duration, queue, queueIndex,
+    current, playState, position, duration, queue, queueIndex, fullscreen,
     pause, resume, next, previous, stop, seek, setExpanded, playQueue,
+    reorderQueue, setFullscreen,
   } = useMusic();
   const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    // Always exit fullscreen when leaving Now Playing.
+    return () => setFullscreen(false);
+  }, [setFullscreen]);
 
   useEffect(() => {
     setExpanded(true);
@@ -79,6 +85,9 @@ export default function NowPlayingScreen() {
           <Feather name="chevron-down" size={24} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Now Playing</ThemedText>
+        <Pressable onPress={() => setFullscreen(!fullscreen)} style={styles.iconBtn}>
+          <Feather name={fullscreen ? "minimize-2" : "maximize-2"} size={18} color={Colors.dark.text} />
+        </Pressable>
         <Pressable onPress={() => { stop(); navigation.goBack(); }} style={styles.iconBtn}>
           <Feather name="x" size={20} color={Colors.dark.text} />
         </Pressable>
@@ -143,18 +152,26 @@ export default function NowPlayingScreen() {
         </Pressable>
       </View>
 
-      {queue.length > 1 ? (
+      {queue.length > 1 && !fullscreen ? (
         <View style={styles.queueWrap}>
           <ThemedText style={styles.queueTitle}>Up Next</ThemedText>
           <ScrollView style={{ maxHeight: 180 }}>
             {queue.map((t, i) => i === queueIndex ? null : (
-              <Pressable key={`${t.itunes_track_id}-${i}`} style={styles.qRow} onPress={() => playQueue(queue, i)}>
-                <ThemedText style={styles.qIdx}>{i + 1}</ThemedText>
-                <View style={{ flex: 1 }}>
-                  <ThemedText style={styles.qTitle} numberOfLines={1}>{t.title}</ThemedText>
-                  <ThemedText style={styles.qArtist} numberOfLines={1}>{t.artist}</ThemedText>
-                </View>
-              </Pressable>
+              <View key={`${t.itunes_track_id}-${i}`} style={styles.qRow}>
+                <Pressable onPress={() => playQueue(queue, i)} style={{ flexDirection: "row", flex: 1, alignItems: "center", gap: Spacing.md }}>
+                  <ThemedText style={styles.qIdx}>{i + 1}</ThemedText>
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.qTitle} numberOfLines={1}>{t.title}</ThemedText>
+                    <ThemedText style={styles.qArtist} numberOfLines={1}>{t.artist}</ThemedText>
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => reorderQueue(i, Math.max(0, i - 1))} disabled={i === 0} style={[styles.qBtn, i === 0 && { opacity: 0.3 }]}>
+                  <Feather name="chevron-up" size={16} color={Colors.dark.textSecondary} />
+                </Pressable>
+                <Pressable onPress={() => reorderQueue(i, Math.min(queue.length - 1, i + 1))} disabled={i === queue.length - 1} style={[styles.qBtn, i === queue.length - 1 && { opacity: 0.3 }]}>
+                  <Feather name="chevron-down" size={16} color={Colors.dark.textSecondary} />
+                </Pressable>
+              </View>
             ))}
           </ScrollView>
         </View>
@@ -194,4 +211,5 @@ const styles = StyleSheet.create({
   qIdx: { color: Colors.dark.textSecondary, fontSize: 12, width: 20 },
   qTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "600" },
   qArtist: { color: Colors.dark.textSecondary, fontSize: 11 },
+  qBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
 });
