@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { View, StyleSheet, Pressable, FlatList, ActivityIndicator, Alert, Modal, TextInput } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -10,7 +10,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import { useProfile } from "@/contexts/ProfileContext";
-import { useMusic } from "@/contexts/MusicContext";
+import { useMusicLayout } from "@/components/MusicHost";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -27,7 +27,7 @@ export default function MusicPlaylistsScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { activeProfile } = useProfile();
-  const { current } = useMusic();
+  const { rightInset, bottomInset } = useMusicLayout();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -115,7 +115,7 @@ export default function MusicPlaylistsScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { paddingRight: rightInset }]}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
@@ -134,7 +134,7 @@ export default function MusicPlaylistsScreen() {
           keyExtractor={(p) => p.id}
           contentContainerStyle={{
             paddingHorizontal: Spacing.lg,
-            paddingBottom: (current ? 96 : 0) + insets.bottom + Spacing.xl,
+            paddingBottom: bottomInset + insets.bottom + Spacing.xl,
           }}
           ListEmptyComponent={
             <ThemedText style={styles.hint}>No playlists yet. Tap + to create one, then add songs from search.</ThemedText>

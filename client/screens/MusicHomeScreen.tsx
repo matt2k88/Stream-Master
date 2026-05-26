@@ -10,6 +10,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import { useMusic, MusicTrack } from "@/contexts/MusicContext";
+import { useMusicLayout } from "@/components/MusicHost";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -23,7 +24,8 @@ interface BrowseRow {
 export default function MusicHomeScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const { playQueue, current } = useMusic();
+  const { playQueue } = useMusic();
+  const { rightInset, bottomInset } = useMusicLayout();
   const [rows, setRows] = useState<BrowseRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,7 +50,7 @@ export default function MusicHomeScreen() {
   );
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { paddingRight: rightInset }]}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
@@ -66,7 +68,7 @@ export default function MusicHomeScreen() {
 
       <ScrollView
         contentContainerStyle={{
-          paddingBottom: (current ? 96 : 0) + insets.bottom + Spacing.xl,
+          paddingBottom: bottomInset + insets.bottom + Spacing.xl,
           paddingHorizontal: Spacing.lg,
           paddingTop: Spacing.md,
         }}

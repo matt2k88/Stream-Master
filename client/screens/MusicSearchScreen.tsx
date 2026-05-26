@@ -10,6 +10,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import { useMusic, MusicTrack } from "@/contexts/MusicContext";
+import { useMusicLayout } from "@/components/MusicHost";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 
@@ -18,7 +19,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export default function MusicSearchScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
-  const { playQueue, current } = useMusic();
+  const { playQueue } = useMusic();
+  const { rightInset, bottomInset } = useMusicLayout();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(false);
@@ -51,7 +53,7 @@ export default function MusicSearchScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { paddingRight: rightInset }]}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
         <Pressable onPress={() => navigation.goBack()} style={styles.iconBtn}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
@@ -79,7 +81,7 @@ export default function MusicSearchScreen() {
           keyExtractor={(t) => t.itunes_track_id}
           contentContainerStyle={{
             paddingHorizontal: Spacing.lg,
-            paddingBottom: (current ? 96 : 0) + insets.bottom + Spacing.xl,
+            paddingBottom: bottomInset + insets.bottom + Spacing.xl,
           }}
           renderItem={({ item, index }) => (
             <TrackRow
