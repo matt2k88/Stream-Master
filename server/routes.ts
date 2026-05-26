@@ -1,10 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
-import { registerMusicRoutes } from "./music";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  registerMusicRoutes(app);
 
   // ── Servers ──────────────────────────────────────────────────────────────
   app.get("/api/servers", async (req, res) => {

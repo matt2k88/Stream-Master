@@ -26,8 +26,6 @@ import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
-import { MusicProvider } from "@/contexts/MusicContext";
-import MusicHost from "@/components/MusicHost";
 import MessagePopup from "@/components/MessagePopup";
 import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
@@ -100,16 +98,13 @@ export default function App() {
                         <GroupsProvider>
                         <MessageProvider>
                           <VpnProvider>
-                          <MusicProvider>
                           <KeyboardProvider>
                             <NavigationContainer ref={navigationRef}>
                               <RootStackNavigator />
-                              <MusicHost />
                             </NavigationContainer>
                             <StatusBar style="light" hidden={false} />
                             <MessagePopup />
                           </KeyboardProvider>
-                          </MusicProvider>
                           </VpnProvider>
                         </MessageProvider>
                         </GroupsProvider>
