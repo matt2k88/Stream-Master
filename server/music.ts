@@ -1,7 +1,50 @@
 import type { Express, Request, Response } from "express";
 import { spawn } from "child_process";
 import { Readable } from "node:stream";
+import { writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { supabase } from "./supabase";
+
+// ─── YouTube cookies (anti-bot bypass for Cloud Run) ────────────────────
+// YouTube blocks datacenter IPs (Cloud Run, AWS, GCP) with a "Sign in to
+// confirm you're not a bot" wall. Cookies from a logged-in browser session
+// bypass it. User stores a Netscape-format cookies.txt as the YT_COOKIES_TXT
+// secret; we write it to /tmp at startup and pass to yt-dlp / ytdl-core.
+
+let COOKIES_FILE: string | null = null;
+function initCookies() {
+  const raw = process.env.YT_COOKIES_TXT;
+  if (!raw || raw.trim().length === 0) {
+    console.log("[music/cookies] no YT_COOKIES_TXT set — extractors will run unauthenticated");
+    return;
+  }
+  try {
+    const path = join(tmpdir(), "yt-cookies.txt");
+    writeFileSync(path, raw, { mode: 0o600 });
+    COOKIES_FILE = path;
+    console.log("[music/cookies] wrote cookies to", path, `(${raw.length} bytes)`);
+  } catch (e: any) {
+    console.warn("[music/cookies] failed to write cookies file:", e?.message);
+  }
+}
+initCookies();
+
+function parseCookiesTxtToHeader(txt: string): string {
+  // Netscape cookies.txt → "name=value; name2=value2" for the youtube.com domain
+  const pairs: string[] = [];
+  for (const line of txt.split(/\r?\n/)) {
+    if (!line || line.startsWith("#")) continue;
+    const parts = line.split("\t");
+    if (parts.length < 7) continue;
+    const domain = parts[0];
+    if (!domain.includes("youtube.com")) continue;
+    const name = parts[5];
+    const value = parts[6];
+    if (name && value) pairs.push(`${name}=${value}`);
+  }
+  return pairs.join("; ");
+}
 
 // ─── yt-dlp audio stream extractor ─────────────────────────────────────
 // Resolves a YouTube videoId to a direct CDN audio URL. This bypasses
@@ -23,8 +66,11 @@ function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
       "--no-warnings",
       "--no-playlist",
       "--socket-timeout", "15",
-      `https://www.youtube.com/watch?v=${videoId}`,
     ];
+    if (COOKIES_FILE && existsSync(COOKIES_FILE)) {
+      args.push("--cookies", COOKIES_FILE);
+    }
+    args.push(`https://www.youtube.com/watch?v=${videoId}`);
     const binary = process.env.YT_DLP_PATH || "yt-dlp";
     let proc: ReturnType<typeof spawn>;
     try {
@@ -61,13 +107,17 @@ function extractAudioUrlYtDlp(videoId: string): Promise<string | null> {
 async function extractAudioUrlYtdlCore(videoId: string): Promise<string | null> {
   try {
     const ytdl = (await import("@distube/ytdl-core")).default;
+    const headers: Record<string, string> = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+    };
+    const cookiesRaw = process.env.YT_COOKIES_TXT;
+    if (cookiesRaw) {
+      const cookieHeader = parseCookiesTxtToHeader(cookiesRaw);
+      if (cookieHeader) headers["Cookie"] = cookieHeader;
+    }
     const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${videoId}`, {
-      requestOptions: {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        },
-      },
+      requestOptions: { headers },
     } as any);
     const audioFormats = info.formats.filter((f: any) => f.hasAudio && !f.hasVideo);
     if (audioFormats.length === 0) {
