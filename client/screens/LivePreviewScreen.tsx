@@ -1142,34 +1142,21 @@ export default function LivePreviewScreen() {
                 </View>
                 {hasChannelList ? (
                   <View style={styles.fsArrowCol}>
-                    <Pressable
-                      style={({ pressed, focused, hovered }) => [
-                        styles.fsArrowBtn,
-                        (pressed || focused || hovered) && styles.fsArrowBtnActive,
-                        atFirstChannel && styles.fsArrowBtnDisabled,
-                      ]}
-                      onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
-                      onFocus={resetFsHideTimer}
-                      onHoverIn={resetFsHideTimer}
+                    <FsArrowButton
+                      direction="up"
                       disabled={atFirstChannel}
+                      onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
+                      onActivity={resetFsHideTimer}
                       onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
-                    >
-                      <Feather name="chevron-up" size={26} color={atFirstChannel ? Colors.dark.border : Colors.dark.text} />
-                    </Pressable>
-                    <Pressable
-                      style={({ pressed, focused, hovered }) => [
-                        styles.fsArrowBtn,
-                        (pressed || focused || hovered) && styles.fsArrowBtnActive,
-                        atLastChannel && styles.fsArrowBtnDisabled,
-                      ]}
+                    />
+                    <FsArrowButton
+                      direction="down"
+                      disabled={atLastChannel}
+                      autoFocus
                       onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
-                      onFocus={resetFsHideTimer}
-                      onHoverIn={resetFsHideTimer}
+                      onActivity={resetFsHideTimer}
                       onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
-                      hasTVPreferredFocus
-                    >
-                      <Feather name="chevron-down" size={26} color={atLastChannel ? Colors.dark.border : Colors.dark.text} />
-                    </Pressable>
+                    />
                   </View>
                 ) : null}
                 </View>
@@ -1324,6 +1311,52 @@ function ReportCancelBtn({ onPress, disabled }: { onPress: () => void; disabled?
       disabled={disabled}
     >
       <ThemedText style={styles.reportCancelText}>Cancel</ThemedText>
+    </Pressable>
+  );
+}
+
+function FsArrowButton({
+  direction,
+  disabled,
+  autoFocus,
+  onPress,
+  onActivity,
+  onKeyDown,
+}: {
+  direction: "up" | "down";
+  disabled?: boolean;
+  autoFocus?: boolean;
+  onPress: () => void;
+  onActivity: () => void;
+  onKeyDown?: (e: any) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || hovered || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.fsArrowBtn,
+        isActive && styles.fsArrowBtnActive,
+        disabled && styles.fsArrowBtnDisabled,
+      ]}
+      onPress={onPress}
+      onFocus={() => { setFocused(true); onActivity(); }}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => { setHovered(true); onActivity(); }}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      disabled={disabled}
+      hasTVPreferredFocus={autoFocus}
+      onKeyDown={onKeyDown}
+    >
+      <Feather
+        name={direction === "up" ? "chevron-up" : "chevron-down"}
+        size={26}
+        color={disabled ? Colors.dark.border : isActive ? Colors.dark.accent : Colors.dark.text}
+      />
     </Pressable>
   );
 }
