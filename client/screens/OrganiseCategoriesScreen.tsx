@@ -16,6 +16,8 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useData } from "@/contexts/DataContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
+import { useProfile } from "@/contexts/ProfileContext";
+import GuestPrompt from "@/components/GuestPrompt";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteP = RouteProp<RootStackParamList, "OrganiseCategories">;
@@ -233,6 +235,7 @@ export default function OrganiseCategoriesScreen() {
   const { type } = route.params;
 
   const { liveCategories, vodCategories, seriesCategories } = useData();
+  const { isGuest } = useProfile();
   const {
     buildOrganiseList,
     toggleHidden,
@@ -308,6 +311,26 @@ export default function OrganiseCategoriesScreen() {
     "Series Categories";
 
   const visibleCount = list.filter((c) => !c.hidden).length;
+
+  if (isGuest) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+          <BackBtn onPress={() => navigation.goBack()} />
+          <View style={{ flex: 1 }}>
+            <ThemedText style={styles.headerTitle} numberOfLines={1}>{title}</ThemedText>
+          </View>
+        </View>
+        <View style={[styles.divider, { marginHorizontal: padH }]} />
+        <GuestPrompt
+          icon="sliders"
+          title="Save Your Category Layout"
+          message="Create a profile to organise and save your categories."
+          onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+        />
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>

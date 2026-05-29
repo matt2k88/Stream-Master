@@ -69,6 +69,14 @@ export default function GuestPrompt({
               borderColor: accent.accent,
               backgroundColor: active ? accent.accent : accent.accentDim,
             },
+            active && {
+              shadowColor: accent.accent,
+              shadowOffset: { width: 0, height: 0 },
+              shadowOpacity: 0.85,
+              shadowRadius: 12,
+              elevation: 8,
+              transform: [{ scale: 1.04 }],
+            },
           ]}
         >
           <Feather

@@ -20,6 +20,8 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useGroups, type UserGroup, type GroupType } from "@/contexts/GroupsContext";
 import { useData } from "@/contexts/DataContext";
+import { useProfile } from "@/contexts/ProfileContext";
+import GuestPrompt from "@/components/GuestPrompt";
 import GroupEditorModal from "@/components/GroupEditorModal";
 import { getGroupIconProps } from "@/lib/group-icons";
 import { xtreamApi, type LiveStream, type VodStream, type Series } from "@/lib/xtream-api";
@@ -224,6 +226,7 @@ export default function MyGroupsScreen() {
 
   const { groups, getGroupsByType, getItemsByGroup, createGroup, updateGroup, deleteGroup, removeItem } = useGroups();
   const { liveStreams, vodStreams, seriesList } = useData();
+  const { isGuest } = useProfile();
 
   const myGroups = useMemo(() => getGroupsByType(type), [getGroupsByType, type, groups]);
 
@@ -347,6 +350,27 @@ export default function MyGroupsScreen() {
   }, [width, type]);
 
   const padH = Math.max(insets.left, Spacing.md);
+
+  if (isGuest) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, paddingHorizontal: padH }]}>
+          <HeaderBtn icon="arrow-left" label="Back" iconOnly onPress={() => navigation.goBack()} />
+          <View style={styles.headerTitleWrap}>
+            <Feather name="folder" size={16} color={Colors.dark.accent} />
+            <ThemedText style={styles.headerTitle}>My {typeLabel} Groups</ThemedText>
+          </View>
+        </View>
+        <View style={[styles.divider, { marginHorizontal: padH }]} />
+        <GuestPrompt
+          icon="folder-plus"
+          title="Save Your Own Groups"
+          message="Create a profile to make and save your own groups."
+          onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+        />
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
