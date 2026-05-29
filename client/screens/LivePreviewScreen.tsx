@@ -1100,6 +1100,7 @@ export default function LivePreviewScreen() {
                   { paddingLeft: padL + Spacing.md, paddingRight: padL + Spacing.md, paddingBottom: insets.bottom + Spacing.md },
                 ]}
               >
+                <View pointerEvents="box-none" style={styles.fsBottomCard}>
                 {selectedIcon ? (
                   <View style={styles.fsBottomLogoWrap}>
                     <Image source={{ uri: selectedIcon }} style={styles.fsBottomLogo} contentFit="contain" />
@@ -1142,26 +1143,28 @@ export default function LivePreviewScreen() {
                 {hasChannelList ? (
                   <View style={styles.fsArrowCol}>
                     <Pressable
-                      style={({ pressed, focused }) => [
+                      style={({ pressed, focused, hovered }) => [
                         styles.fsArrowBtn,
-                        (pressed || focused) && styles.fsArrowBtnActive,
+                        (pressed || focused || hovered) && styles.fsArrowBtnActive,
                         atFirstChannel && styles.fsArrowBtnDisabled,
                       ]}
                       onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
                       onFocus={resetFsHideTimer}
+                      onHoverIn={resetFsHideTimer}
                       disabled={atFirstChannel}
                       onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                     >
                       <Feather name="chevron-up" size={26} color={atFirstChannel ? Colors.dark.border : Colors.dark.text} />
                     </Pressable>
                     <Pressable
-                      style={({ pressed, focused }) => [
+                      style={({ pressed, focused, hovered }) => [
                         styles.fsArrowBtn,
-                        (pressed || focused) && styles.fsArrowBtnActive,
+                        (pressed || focused || hovered) && styles.fsArrowBtnActive,
                         atLastChannel && styles.fsArrowBtnDisabled,
                       ]}
                       onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
                       onFocus={resetFsHideTimer}
+                      onHoverIn={resetFsHideTimer}
                       onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                       hasTVPreferredFocus
                     >
@@ -1169,6 +1172,7 @@ export default function LivePreviewScreen() {
                     </Pressable>
                   </View>
                 ) : null}
+                </View>
               </View>
             </View>
           )}
@@ -1816,9 +1820,17 @@ const styles = StyleSheet.create({
   fsBottomBar: {
     position: "absolute",
     bottom: 0, left: 0, right: 0,
+  },
+  fsBottomCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
+    backgroundColor: "rgba(10,10,10,0.94)",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
   },
   fsBottomLogoWrap: {
     width: 56,
@@ -1836,10 +1848,9 @@ const styles = StyleSheet.create({
   fsBottomInfo: { flex: 1, gap: 4 },
   fsBottomChannel: { fontSize: 18, fontWeight: "800", color: "#fff" },
   fsBottomEpgRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: Spacing.md,
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
   },
   fsBottomNow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexShrink: 1 },
   fsBottomNowTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.accent, flexShrink: 1 },
