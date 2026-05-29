@@ -566,15 +566,39 @@ export default function LivePreviewScreen() {
     if (categoryChannels.length === 0) return;
     const idx = categoryChannels.findIndex((c) => c.stream_id === selectedId);
     if (idx === -1) return;
-    let nextIdx = idx + dir;
-    if (nextIdx < 0) nextIdx = categoryChannels.length - 1;
-    if (nextIdx >= categoryChannels.length) nextIdx = 0;
+    const nextIdx = idx + dir;
+    // Clamp at the edges — no wrap-around. Up on the first channel and down
+    // on the last channel are intentional no-ops (no channel above / below).
+    if (nextIdx < 0 || nextIdx >= categoryChannels.length) return;
     const next = categoryChannels[nextIdx];
     if (next.stream_id === selectedId) return;
     switchToChannel(next);
     setShowFsOverlay(true);
     resetFsHideTimer();
   }, [categoryChannels, selectedId, switchToChannel, resetFsHideTimer]);
+
+  // Boundary state for the fullscreen up/down arrow buttons — drives the
+  // disabled/dimmed look and the no-op behaviour at the first/last channel.
+  const channelIdx = React.useMemo(
+    () => categoryChannels.findIndex((c) => c.stream_id === selectedId),
+    [categoryChannels, selectedId],
+  );
+  const hasChannelList = categoryChannels.length > 0 && channelIdx !== -1;
+  const atFirstChannel = !hasChannelList || channelIdx <= 0;
+  const atLastChannel = !hasChannelList || channelIdx >= categoryChannels.length - 1;
+
+  // NOW / NEXT programmes for the fullscreen info bar, derived from the
+  // already-fetched short EPG for the playing channel.
+  const nowProg = React.useMemo<EpgListing | null>(() => {
+    if (epgListings.length === 0) return null;
+    const i = epgListings.findIndex((l) => l.now_playing === 1);
+    return epgListings[i === -1 ? 0 : i] ?? null;
+  }, [epgListings]);
+  const nextProg = React.useMemo<EpgListing | null>(() => {
+    if (epgListings.length === 0) return null;
+    const i = epgListings.findIndex((l) => l.now_playing === 1);
+    return epgListings[(i === -1 ? 0 : i) + 1] ?? null;
+  }, [epgListings]);
 
   // Keep a ref to the latest channel-step closure so the Android onKeyDown
   // handler (attached once to a Pressable) and the web keydown listener
@@ -702,10 +726,15 @@ export default function LivePreviewScreen() {
   }, []);
 
   const handleFullScreen = useCallback(() => {
+    // Pin the EPG preview to the *playing* channel so the fullscreen NOW/NEXT
+    // bar always matches selectedName (the user may have hovered a different
+    // channel in the sidebar before pressing Watch Full Screen).
+    setPreviewedId(selectedId);
+    setPreviewedName(selectedName);
     setIsFullscreen(true);
     setShowFsOverlay(true);
     resetFsHideTimer();
-  }, [resetFsHideTimer]);
+  }, [resetFsHideTimer, selectedId, selectedName]);
 
   // Initial TV focus target — the channel we entered with. Captured once so
   // it never re-fires on subsequent channel switches (otherwise focus would
@@ -1037,7 +1066,6 @@ export default function LivePreviewScreen() {
                   onPressIn={() => setBackPressed(true)}
                   onPressOut={() => setBackPressed(false)}
                   onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
-                  hasTVPreferredFocus
                 >
                   <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
@@ -1057,6 +1085,90 @@ export default function LivePreviewScreen() {
                   <Feather name="flag" size={18} color={reportActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
                 <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+              </View>
+
+              {/* Bottom info bar — channel + NOW/NEXT programmes + channel up/down */}
+              <LinearGradient
+                colors={["transparent", "rgba(0,0,0,0.92)"]}
+                style={styles.fsBottomGradient}
+                pointerEvents="none"
+              />
+              <View
+                pointerEvents="box-none"
+                style={[
+                  styles.fsBottomBar,
+                  { paddingLeft: padL + Spacing.md, paddingRight: padL + Spacing.md, paddingBottom: insets.bottom + Spacing.md },
+                ]}
+              >
+                {selectedIcon ? (
+                  <View style={styles.fsBottomLogoWrap}>
+                    <Image source={{ uri: selectedIcon }} style={styles.fsBottomLogo} contentFit="contain" />
+                  </View>
+                ) : null}
+                <View style={styles.fsBottomInfo}>
+                  <ThemedText style={styles.fsBottomChannel} numberOfLines={1}>{selectedName}</ThemedText>
+                  <View style={styles.fsBottomEpgRow}>
+                    {nowProg ? (
+                      <View style={styles.fsBottomNow}>
+                        <ThemedText style={styles.fsBottomNowTitle} numberOfLines={1}>
+                          {decodeEpgString(nowProg.title) || "No programme info"}
+                        </ThemedText>
+                        {nowProg.start_timestamp ? (
+                          <ThemedText style={styles.fsBottomTime}>
+                            {formatEpgTime(nowProg.start_timestamp)} - {formatEpgTime(nowProg.stop_timestamp)}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    ) : (
+                      <ThemedText style={styles.fsBottomNowTitle} numberOfLines={1}>
+                        {epgLoading ? "Loading guide…" : "No programme info"}
+                      </ThemedText>
+                    )}
+                    {nextProg ? (
+                      <View style={styles.fsBottomNext}>
+                        <ThemedText style={styles.fsBottomNextLabel}>NEXT:</ThemedText>
+                        <ThemedText style={styles.fsBottomNextTitle} numberOfLines={1}>
+                          {decodeEpgString(nextProg.title)}
+                        </ThemedText>
+                        {nextProg.start_timestamp ? (
+                          <ThemedText style={styles.fsBottomTime}>
+                            {formatEpgTime(nextProg.start_timestamp)} - {formatEpgTime(nextProg.stop_timestamp)}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                {hasChannelList ? (
+                  <View style={styles.fsArrowCol}>
+                    <Pressable
+                      style={({ pressed, focused }) => [
+                        styles.fsArrowBtn,
+                        (pressed || focused) && styles.fsArrowBtnActive,
+                        atFirstChannel && styles.fsArrowBtnDisabled,
+                      ]}
+                      onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
+                      onFocus={resetFsHideTimer}
+                      disabled={atFirstChannel}
+                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                    >
+                      <Feather name="chevron-up" size={26} color={atFirstChannel ? Colors.dark.border : Colors.dark.text} />
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed, focused }) => [
+                        styles.fsArrowBtn,
+                        (pressed || focused) && styles.fsArrowBtnActive,
+                        atLastChannel && styles.fsArrowBtnDisabled,
+                      ]}
+                      onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
+                      onFocus={resetFsHideTimer}
+                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                      hasTVPreferredFocus
+                    >
+                      <Feather name="chevron-down" size={26} color={atLastChannel ? Colors.dark.border : Colors.dark.text} />
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             </View>
           )}
@@ -1694,6 +1806,63 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
   },
+
+  // ── Fullscreen bottom info bar (channel + NOW/NEXT + up/down) ───────────────
+  fsBottomGradient: {
+    position: "absolute",
+    bottom: 0, left: 0, right: 0,
+    height: 160,
+  },
+  fsBottomBar: {
+    position: "absolute",
+    bottom: 0, left: 0, right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  fsBottomLogoWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 4,
+    flexShrink: 0,
+  },
+  fsBottomLogo: { width: "100%", height: "100%" },
+  fsBottomInfo: { flex: 1, gap: 4 },
+  fsBottomChannel: { fontSize: 18, fontWeight: "800", color: "#fff" },
+  fsBottomEpgRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: Spacing.md,
+  },
+  fsBottomNow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexShrink: 1 },
+  fsBottomNowTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.accent, flexShrink: 1 },
+  fsBottomNext: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
+  fsBottomNextLabel: { fontSize: 11, fontWeight: "800", color: Colors.dark.textSecondary, letterSpacing: 0.5 },
+  fsBottomNextTitle: { fontSize: 13, fontWeight: "600", color: "#fff", flexShrink: 1 },
+  fsBottomTime: { fontSize: 12, fontWeight: "500", color: Colors.dark.textSecondary },
+  fsArrowCol: { gap: Spacing.sm, flexShrink: 0 },
+  fsArrowBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(20,20,20,0.85)",
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fsArrowBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  fsArrowBtnDisabled: { opacity: 0.35 },
 
   // ── Report content modal ──────────────────────────────────────────────────
   reportBackdrop: {
