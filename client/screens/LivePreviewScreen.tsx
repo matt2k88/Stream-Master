@@ -1041,12 +1041,14 @@ export default function LivePreviewScreen() {
           {/* Tap target: catches all taps to toggle overlay. zIndex above
               the playerWrap (50) but below the controls (70). Transparent,
               so the SurfaceView underneath shows through. Focusable on
-              Android TV / Fire TV so D-pad up/down events route to
-              onKeyDown for quick channel switching. */}
+              Android TV / Fire TV ONLY while the overlay is hidden — it then
+              captures D-pad up/down (channel switch) via onKeyDown. When the
+              overlay is visible the top buttons own focus, so left/right cycles
+              cleanly among back/report/favourite. */}
           <Pressable
             style={[StyleSheet.absoluteFill, { zIndex: 60 }]}
             onPress={handlePlayerTap}
-            focusable={Platform.OS === "android"}
+            focusable={Platform.OS === "android" && !showFsOverlay}
             onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
           />
 
@@ -1066,6 +1068,7 @@ export default function LivePreviewScreen() {
                   onPressIn={() => setBackPressed(true)}
                   onPressOut={() => setBackPressed(false)}
                   onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                  hasTVPreferredFocus
                 >
                   <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
@@ -1081,10 +1084,11 @@ export default function LivePreviewScreen() {
                   onBlur={() => setReportFocused(false)}
                   onPressIn={() => setReportPressed(true)}
                   onPressOut={() => setReportPressed(false)}
+                  onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                 >
                   <Feather name="flag" size={18} color={reportActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
-                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined} />
               </View>
 
               {/* Bottom info bar — channel + NOW/NEXT programmes + channel up/down */}
@@ -1141,29 +1145,29 @@ export default function LivePreviewScreen() {
                 </View>
                 {hasChannelList ? (
                   <View style={styles.fsArrowCol}>
+                    {/* Touch / mouse only — D-pad up/down is handled globally via
+                        handleFsKeyDown, so these are not TV-focusable. */}
                     <Pressable
-                      style={({ pressed, focused }) => [
+                      style={({ pressed }) => [
                         styles.fsArrowBtn,
-                        (pressed || focused) && styles.fsArrowBtnActive,
+                        pressed && styles.fsArrowBtnActive,
                         atFirstChannel && styles.fsArrowBtnDisabled,
                       ]}
                       onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
-                      onFocus={resetFsHideTimer}
                       disabled={atFirstChannel}
-                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                      focusable={false}
                     >
                       <Feather name="chevron-up" size={26} color={atFirstChannel ? Colors.dark.border : Colors.dark.text} />
                     </Pressable>
                     <Pressable
-                      style={({ pressed, focused }) => [
+                      style={({ pressed }) => [
                         styles.fsArrowBtn,
-                        (pressed || focused) && styles.fsArrowBtnActive,
+                        pressed && styles.fsArrowBtnActive,
                         atLastChannel && styles.fsArrowBtnDisabled,
                       ]}
                       onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
-                      onFocus={resetFsHideTimer}
-                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
-                      hasTVPreferredFocus
+                      disabled={atLastChannel}
+                      focusable={false}
                     >
                       <Feather name="chevron-down" size={26} color={atLastChannel ? Colors.dark.border : Colors.dark.text} />
                     </Pressable>
@@ -1357,7 +1361,7 @@ function ReportSubmitBtn({
   );
 }
 
-function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPress: () => void }) {
+function FavBtnHeader({ isFavourited, onPress, onKeyDown }: { isFavourited: boolean; onPress: () => void; onKeyDown?: any }) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
@@ -1365,6 +1369,7 @@ function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPres
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onKeyDown={onKeyDown}
     >
       <Feather
         name="star"
@@ -1819,6 +1824,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
+    paddingTop: Spacing.md,
+    backgroundColor: "rgba(8,8,8,0.94)",
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.accent,
   },
   fsBottomLogoWrap: {
     width: 56,
