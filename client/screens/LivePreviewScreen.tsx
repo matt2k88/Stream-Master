@@ -600,15 +600,15 @@ export default function LivePreviewScreen() {
     return epgListings[(i === -1 ? 0 : i) + 1] ?? null;
   }, [epgListings]);
 
-  // Keep a ref to the latest channel-step closure so the Android onKeyDown
-  // handler (attached once to a Pressable) and the web keydown listener
-  // never read stale state.
+  // Keep refs to the latest channel-step closure and fullscreen state so the
+  // globally-subscribed Android TVEventHandler and the web keydown listener
+  // (both empty-deps effects) never read stale state.
   const stepRef = useRef<(dir: -1 | 1) => void>(() => {});
-  const fsStateRef = useRef({ isFullscreen: false, showReport: false });
+  const fsStateRef = useRef({ isFullscreen: false, showReport: false, showFsOverlay: true });
   useEffect(() => {
     stepRef.current = stepChannelInFullscreen;
-    fsStateRef.current = { isFullscreen, showReport };
-  }, [stepChannelInFullscreen, isFullscreen, showReport]);
+    fsStateRef.current = { isFullscreen, showReport, showFsOverlay };
+  }, [stepChannelInFullscreen, isFullscreen, showReport, showFsOverlay]);
 
   // Web: listen for ArrowUp / ArrowDown while in fullscreen.
   useEffect(() => {
@@ -623,16 +623,40 @@ export default function LivePreviewScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Android TV / Fire TV: handler attached to the focused fullscreen
-  // Pressable. Returns nothing — React Native swallows the event when we
-  // call stepRef which performs the navigation.
-  const handleFsKeyDown = useCallback(({ nativeEvent }: any) => {
-    const { isFullscreen: fs, showReport: rep } = fsStateRef.current;
-    if (!fs || rep) return;
-    const { keyCode } = nativeEvent;
-    // 19 = DPAD_UP, 20 = DPAD_DOWN, 166 = CHANNEL_UP, 167 = CHANNEL_DOWN
-    if (keyCode === 19 || keyCode === 166) stepRef.current(-1);
-    else if (keyCode === 20 || keyCode === 167) stepRef.current(1);
+  // Android TV / Fire TV: capture D-pad up/down GLOBALLY via the class-based
+  // TVEventHandler (the same proven pattern PlayerScreen uses). This fires
+  // regardless of which element currently has focus — or whether the overlay
+  // is even visible — so up/down on the remote always steps the channel,
+  // exactly as if the on-screen up/down arrow button had been pressed. The
+  // per-Pressable onKeyDown approach only worked when that element happened to
+  // hold focus, which is why it felt unreliable. Empty deps — all state is
+  // read through stable refs (stepRef / fsStateRef).
+  useEffect(() => {
+    if (Platform.OS !== "android" && Platform.OS !== "ios") return;
+    let tvHandler: any = null;
+    try {
+      const TVEventHandler = (require as any)("react-native").TVEventHandler;
+      if (!TVEventHandler) return;
+      tvHandler = new TVEventHandler();
+      tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
+        const { isFullscreen: fs, showReport: rep, showFsOverlay: shown } = fsStateRef.current;
+        if (!fs || rep) return;
+        if (evt.eventType === "up") stepRef.current(-1);
+        else if (evt.eventType === "down") stepRef.current(1);
+        else if (evt.eventType === "select" && !shown) {
+          // Controls hidden → the remote OK button reveals them. The
+          // tap-catcher is intentionally not focusable, so its onPress can't
+          // be reached by a D-pad remote; this is the only way back to the
+          // controls without changing channel. When the overlay is already
+          // visible, the focused button (back/report/favourite) handles OK,
+          // so we leave it alone here.
+          setShowFsOverlay(true);
+        }
+      });
+    } catch {
+      // TVEventHandler not available on this platform/build
+    }
+    return () => { try { tvHandler?.disable(); } catch {} };
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -1040,16 +1064,14 @@ export default function LivePreviewScreen() {
         <>
           {/* Tap target: catches all taps to toggle overlay. zIndex above
               the playerWrap (50) but below the controls (70). Transparent,
-              so the SurfaceView underneath shows through. Focusable on
-              Android TV / Fire TV ONLY while the overlay is hidden — it then
-              captures D-pad up/down (channel switch) via onKeyDown. When the
-              overlay is visible the top buttons own focus, so left/right cycles
-              cleanly among back/report/favourite. */}
+              so the SurfaceView underneath shows through. Taps toggle the
+              overlay (touch/mouse). It is NOT focusable — D-pad up/down channel
+              stepping is handled globally by the TVEventHandler above, so this
+              never needs to steal remote focus. */}
           <Pressable
             style={[StyleSheet.absoluteFill, { zIndex: 60 }]}
             onPress={handlePlayerTap}
-            focusable={Platform.OS === "android" && !showFsOverlay}
-            onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+            focusable={false}
           />
 
           {showFsOverlay && (
@@ -1067,7 +1089,6 @@ export default function LivePreviewScreen() {
                   onBlur={() => setBackFocused(false)}
                   onPressIn={() => setBackPressed(true)}
                   onPressOut={() => setBackPressed(false)}
-                  onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                   hasTVPreferredFocus
                 >
                   <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
@@ -1084,11 +1105,10 @@ export default function LivePreviewScreen() {
                   onBlur={() => setReportFocused(false)}
                   onPressIn={() => setReportPressed(true)}
                   onPressOut={() => setReportPressed(false)}
-                  onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
                 >
                   <Feather name="flag" size={18} color={reportActive ? Colors.dark.accent : Colors.dark.text} />
                 </Pressable>
-                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined} />
+                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
               </View>
 
               {/* Bottom info bar — channel + NOW/NEXT programmes + channel up/down */}
@@ -1146,7 +1166,7 @@ export default function LivePreviewScreen() {
                 {hasChannelList ? (
                   <View style={styles.fsArrowCol}>
                     {/* Touch / mouse only — D-pad up/down is handled globally via
-                        handleFsKeyDown, so these are not TV-focusable. */}
+                        the TVEventHandler, so these are not TV-focusable. */}
                     <Pressable
                       style={({ pressed }) => [
                         styles.fsArrowBtn,
@@ -1361,7 +1381,7 @@ function ReportSubmitBtn({
   );
 }
 
-function FavBtnHeader({ isFavourited, onPress, onKeyDown }: { isFavourited: boolean; onPress: () => void; onKeyDown?: any }) {
+function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   return (
     <Pressable
@@ -1369,7 +1389,6 @@ function FavBtnHeader({ isFavourited, onPress, onKeyDown }: { isFavourited: bool
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      onKeyDown={onKeyDown}
     >
       <Feather
         name="star"
