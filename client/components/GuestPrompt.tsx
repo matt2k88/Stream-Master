@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useAccent } from "@/contexts/ThemeContext";
@@ -79,6 +80,14 @@ export default function GuestPrompt({
             },
           ]}
         >
+          {active ? (
+            <LinearGradient
+              colors={[accent.accent, accent.withAlpha(accent.accent, 0.75)]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : null}
           <Feather
             name="plus"
             size={compact ? 12 : 14}
@@ -168,6 +177,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     marginTop: Spacing.xs,
+    overflow: "hidden",
   },
   btnSm: {
     flexDirection: "row",
@@ -178,6 +188,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     marginTop: 2,
+    overflow: "hidden",
   },
   btnText: {
     fontSize: 13,
