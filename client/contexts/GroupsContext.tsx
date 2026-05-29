@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 
 export type GroupType = "live" | "movies" | "series";
@@ -87,7 +87,8 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (activeProfile?.id) {
+    // Guest can't save groups — never fetch, always empty.
+    if (activeProfile?.id && activeProfile.id !== GUEST_PROFILE_ID) {
       load(activeProfile.id);
     } else {
       setGroups([]);
@@ -96,7 +97,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
   }, [activeProfile?.id, load]);
 
   const refresh = useCallback(async () => {
-    if (activeProfile?.id) await load(activeProfile.id);
+    if (activeProfile?.id && activeProfile.id !== GUEST_PROFILE_ID) await load(activeProfile.id);
   }, [activeProfile?.id, load]);
 
   const getGroupsByType = useCallback(
@@ -127,7 +128,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
 
   const createGroup = useCallback(
     async ({ type, name, iconKey, color, pinned }: CreateGroupParams): Promise<UserGroup | null> => {
-      if (!activeProfile?.id) return null;
+      if (!activeProfile?.id || activeProfile.id === GUEST_PROFILE_ID) return null;
       try {
         const url = new URL("/api/groups", getApiUrl());
         const res = await fetch(url.toString(), {
@@ -155,6 +156,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
 
   const updateGroup = useCallback(
     async (id: string, patch: Partial<Pick<UserGroup, "name" | "icon_key" | "color" | "pinned">>) => {
+      if (activeProfile?.id === GUEST_PROFILE_ID) return;
       // Optimistic
       const prev = groups;
       setGroups((cur) => cur.map((g) => (g.id === id ? { ...g, ...patch } : g)));
@@ -170,10 +172,11 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
         setGroups(prev);
       }
     },
-    [groups],
+    [groups, activeProfile?.id],
   );
 
   const deleteGroup = useCallback(async (id: string) => {
+    if (activeProfile?.id === GUEST_PROFILE_ID) return;
     setGroups((prev) => prev.filter((g) => g.id !== id));
     setItems((prev) => prev.filter((it) => it.group_id !== id));
     try {
@@ -182,10 +185,11 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     } catch {
       // best-effort
     }
-  }, []);
+  }, [activeProfile?.id]);
 
   const addItem = useCallback(
     async ({ groupId, streamId, streamName, streamIcon, categoryId }: AddItemParams) => {
+      if (activeProfile?.id === GUEST_PROFILE_ID) return;
       // Optimistic
       const temp: UserGroupItem = {
         id: `temp-${groupId}-${streamId}`,
@@ -225,10 +229,11 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
         setItems((prev) => prev.filter((it) => it.id !== temp.id));
       }
     },
-    [],
+    [activeProfile?.id],
   );
 
   const removeItem = useCallback(async (groupId: string, streamId: number) => {
+    if (activeProfile?.id === GUEST_PROFILE_ID) return;
     const prev = items;
     setItems((cur) =>
       cur.filter((it) => !(it.group_id === groupId && Number(it.stream_id) === Number(streamId))),
@@ -240,7 +245,7 @@ export function GroupsProvider({ children }: { children: ReactNode }) {
     } catch {
       setItems(prev);
     }
-  }, [items]);
+  }, [items, activeProfile?.id]);
 
   const toggleItem = useCallback(
     async (params: AddItemParams) => {

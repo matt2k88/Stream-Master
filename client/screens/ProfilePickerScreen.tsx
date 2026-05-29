@@ -18,9 +18,10 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { Profile, useProfile } from "@/contexts/ProfileContext";
+import { Profile, useProfile, makeGuestProfile } from "@/contexts/ProfileContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
+import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ProfilePickerRouteProp = RouteProp<RootStackParamList, "ProfilePicker">;
@@ -298,6 +299,121 @@ function AddProfileCard({
   );
 }
 
+function GuestCard({
+  onPress,
+  size,
+  avatarSize,
+}: {
+  onPress: () => void;
+  size: number;
+  avatarSize: number;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = pressed || focused || hovered;
+
+  const scale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(scale, {
+      toValue: isActive ? 1.07 : 1,
+      duration: 180,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isActive, scale]);
+
+  const ring = avatarSize + 14;
+
+  return (
+    <Pressable
+      style={{ width: size }}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      <Animated.View
+        style={[
+          styles.profileCard,
+          isActive && styles.profileCardActive,
+          { transform: [{ scale }] },
+        ]}
+      >
+        <View style={{ width: ring, height: ring, alignItems: "center", justifyContent: "center" }}>
+          {isActive ? (
+            <View
+              style={[
+                styles.haloOuter,
+                {
+                  width: ring + 22,
+                  height: ring + 22,
+                  borderRadius: (ring + 22) / 2,
+                  shadowColor: Colors.dark.accent,
+                  backgroundColor: Colors.dark.accent + "1A",
+                },
+              ]}
+            />
+          ) : null}
+          <View
+            style={[
+              styles.addRing,
+              {
+                width: ring,
+                height: ring,
+                borderRadius: ring / 2,
+                borderColor: isActive ? Colors.dark.accent : Colors.dark.border,
+                shadowColor: Colors.dark.accent,
+                shadowOpacity: isActive ? 0.7 : 0,
+                shadowRadius: isActive ? 14 : 0,
+                elevation: isActive ? 10 : 0,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.addInner,
+                {
+                  width: avatarSize,
+                  height: avatarSize,
+                  borderRadius: avatarSize / 2,
+                  backgroundColor: isActive ? Colors.dark.accentDim : "rgba(255,255,255,0.03)",
+                },
+              ]}
+            >
+              <Feather
+                name="user"
+                size={avatarSize * 0.5}
+                color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+              />
+            </View>
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.namePill,
+            isActive && { backgroundColor: Colors.dark.accentDim, borderColor: Colors.dark.accent },
+          ]}
+        >
+          <ThemedText
+            style={[
+              styles.profileName,
+              { color: isActive ? Colors.dark.accent : Colors.dark.textSecondary },
+            ]}
+            numberOfLines={1}
+          >
+            Guest
+          </ThemedText>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 async function fetchProfiles(username: string): Promise<Profile[]> {
   const base = new URL("/api/profiles", getApiUrl());
   base.searchParams.set("username", username);
@@ -368,8 +484,22 @@ export default function ProfilePickerScreen() {
     }
   };
 
+  const handleSelectGuest = useCallback(async () => {
+    const prefs = await loadGuestPlayerPrefs();
+    setActiveProfile(makeGuestProfile(username, prefs));
+    if (fromHome) {
+      navigation.goBack();
+    } else {
+      navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+    }
+  }, [username, fromHome, navigation, setActiveProfile]);
+
   const canAddMore = profiles.length < 10;
-  const items: Array<Profile | "add"> = canAddMore ? [...profiles, "add"] : profiles;
+  const items: Array<Profile | "add" | "guest"> = [
+    ...profiles,
+    "guest",
+    ...(canAddMore ? (["add"] as const) : []),
+  ];
 
   return (
     <ThemedView style={styles.container}>
@@ -434,7 +564,9 @@ export default function ProfilePickerScreen() {
         <View style={styles.gridOuter}>
           <FlatList
             data={items}
-            keyExtractor={(item) => (item === "add" ? "__add__" : (item as Profile).id)}
+            keyExtractor={(item) =>
+              item === "add" ? "__add__" : item === "guest" ? "__guest__" : (item as Profile).id
+            }
             numColumns={numCols}
             key={`profiles-${numCols}`}
             contentContainerStyle={[
@@ -457,6 +589,15 @@ export default function ProfilePickerScreen() {
                     size={cardSize}
                     avatarSize={avatarSize}
                     onPress={() => navigation.navigate("CreateProfile", {})}
+                  />
+                );
+              }
+              if (item === "guest") {
+                return (
+                  <GuestCard
+                    size={cardSize}
+                    avatarSize={avatarSize}
+                    onPress={handleSelectGuest}
                   />
                 );
               }

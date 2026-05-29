@@ -297,7 +297,7 @@ export default function AccountInfoScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
-  const { activeProfile, clearProfile } = useProfile();
+  const { activeProfile, clearProfile, isGuest } = useProfile();
   const { textSize, toggleTextSize } = useUISettings();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
@@ -564,19 +564,21 @@ export default function AccountInfoScreen() {
             <View style={{ gap: Spacing.sm }}>
               <SectionHeading label="Profile" />
               <View style={styles.tileGrid}>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="edit-2"
-                    title="Edit Profile"
-                    subtitle="Name, icon, colour"
-                    onPress={() => navigation.navigate("CreateProfile", { profile: activeProfile })}
-                  />
-                </View>
+                {!isGuest ? (
+                  <View style={styles.tileGridItem}>
+                    <ActionTile
+                      icon="edit-2"
+                      title="Edit Profile"
+                      subtitle="Name, icon, colour"
+                      onPress={() => navigation.navigate("CreateProfile", { profile: activeProfile })}
+                    />
+                  </View>
+                ) : null}
                 <View style={styles.tileGridItem}>
                   <ActionTile
                     icon="users"
                     title="Switch Profile"
-                    subtitle="Change active profile"
+                    subtitle={isGuest ? "Create or pick a profile" : "Change active profile"}
                     onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
                   />
                 </View>

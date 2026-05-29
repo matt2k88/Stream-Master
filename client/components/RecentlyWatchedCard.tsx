@@ -6,6 +6,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import { useAccent } from "@/contexts/ThemeContext";
 
 export interface RecentlyWatched {
@@ -342,6 +343,8 @@ export async function saveRecentlyWatched(params: {
   seriesFinalSeason?: number;
   seriesFinalEpisode?: number;
 }): Promise<RecentlyWatched | null> {
+  // Guest keeps no watch history — never persist.
+  if (params.profileId === GUEST_PROFILE_ID) return null;
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
     const res = await fetch(url.toString(), {
@@ -376,6 +379,7 @@ export async function saveRecentlyWatched(params: {
 }
 
 export async function fetchResumeFor(profileId: string, streamId: string): Promise<RecentlyWatched | null> {
+  if (profileId === GUEST_PROFILE_ID) return null;
   try {
     const url = new URL("/api/recently-watched/by-stream", getApiUrl());
     url.searchParams.set("profile_id", profileId);

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 
 export interface Favourite {
@@ -55,7 +55,8 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (activeProfile?.id) {
+    // Guest can't save favourites — never fetch, always empty.
+    if (activeProfile?.id && activeProfile.id !== GUEST_PROFILE_ID) {
       load(activeProfile.id);
     } else {
       setFavourites([]);
@@ -70,7 +71,7 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
 
   const toggleFavourite = useCallback(
     async (params: ToggleParams) => {
-      if (!activeProfile?.id) return;
+      if (!activeProfile?.id || activeProfile.id === GUEST_PROFILE_ID) return;
       const { streamId, streamType, streamName, streamIcon, categoryId } = params;
       const existing = favourites.find((f) => f.stream_id === streamId && f.stream_type === streamType);
 
@@ -137,7 +138,7 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
 
   const clearAllFavourites = useCallback(
     async (streamType: "live" | "movies" | "series") => {
-      if (!activeProfile?.id) return;
+      if (!activeProfile?.id || activeProfile.id === GUEST_PROFILE_ID) return;
       // Optimistic clear
       setFavourites((prev) => prev.filter((f) => f.stream_type !== streamType));
       try {

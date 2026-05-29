@@ -25,6 +25,7 @@ import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
+import GuestPrompt from "@/components/GuestPrompt";
 import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
@@ -589,7 +590,7 @@ export default function HomeScreen() {
   const minSide = Math.min(width, height);
   const isSmallLandscape = minSide < 500;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
-  const { refreshActiveProfile } = useProfile();
+  const { refreshActiveProfile, isGuest } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme } = useAppTheme();
 
@@ -987,13 +988,25 @@ export default function HomeScreen() {
             {/* Advert carousel */}
             <AdvertCarousel style={styles.carouselFill} />
             {/* Recently Watched (live) + Continue Watching (movies/series) */}
-            <RecentlyWatchedCard
-              style={styles.recentlyWatched}
-              refreshKey={recentRefreshKey}
-              maxItems={2}
-              sections={watchSections}
-              onPress={handleRecentPress}
-            />
+            {isGuest ? (
+              <View style={[styles.recentlyWatched, styles.guestPromptCard]}>
+                <GuestPrompt
+                  variant="compact"
+                  icon="clock"
+                  title="No Watch History"
+                  message="Create a profile to keep your watch history and continue watching."
+                  onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+                />
+              </View>
+            ) : (
+              <RecentlyWatchedCard
+                style={styles.recentlyWatched}
+                refreshKey={recentRefreshKey}
+                maxItems={2}
+                sections={watchSections}
+                onPress={handleRecentPress}
+              />
+            )}
           </View>
         </View>
       ) : (
@@ -1070,13 +1083,25 @@ export default function HomeScreen() {
               compact
             />
           </View>
-          <RecentlyWatchedCard
-            style={styles.portraitRecent}
-            refreshKey={recentRefreshKey}
-            maxItems={2}
-            sections={watchSections}
-            onPress={handleRecentPress}
-          />
+          {isGuest ? (
+            <View style={[styles.portraitRecent, styles.guestPromptCard]}>
+              <GuestPrompt
+                variant="compact"
+                icon="clock"
+                title="No Watch History"
+                message="Create a profile to keep your watch history and continue watching."
+                onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+              />
+            </View>
+          ) : (
+            <RecentlyWatchedCard
+              style={styles.portraitRecent}
+              refreshKey={recentRefreshKey}
+              maxItems={2}
+              sections={watchSections}
+              onPress={handleRecentPress}
+            />
+          )}
           <View style={styles.portraitCarousel}>
             <AdvertCarousel style={StyleSheet.absoluteFill} />
           </View>
@@ -1451,6 +1476,14 @@ const styles = StyleSheet.create({
   },
   portraitRecent: {
     width: "100%",
+  },
+  guestPromptCard: {
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    overflow: "hidden",
+    justifyContent: "center",
   },
 
   // ── Portrait body ────────────────────────────────────────────────────────

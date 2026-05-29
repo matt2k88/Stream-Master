@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import { getApiUrl } from "@/lib/query-client";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 export interface SeriesProgress {
@@ -70,7 +70,8 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
   // effect re-runs → triggers another profile refresh → flips again).
   const profileId = activeProfile?.id ?? null;
   const refetch = useCallback(async () => {
-    if (!profileId) {
+    // Guest keeps no history — never fetch, always empty.
+    if (!profileId || profileId === GUEST_PROFILE_ID) {
       setEntries([]);
       return;
     }
@@ -99,6 +100,8 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
   }, [refetch]);
 
   const upsertLocal = useCallback((entry: RecentlyWatched) => {
+    // Guest never accumulates history, even in memory.
+    if (profileId === GUEST_PROFILE_ID) return;
     setEntries((prev) => {
       const sid = entry.stream_id != null ? String(entry.stream_id) : null;
       const without = sid
@@ -106,7 +109,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
         : prev.filter((e) => e.id !== entry.id);
       return [entry, ...without];
     });
-  }, []);
+  }, [profileId]);
 
   const { byStreamId, bySeriesId, bySeriesIdAll } = useMemo(() => {
     const sMap = new Map<string, RecentlyWatched>();
@@ -230,7 +233,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
 
   const clearHistory = useCallback(
     async (contentType: "movie" | "series" | "live") => {
-      if (!activeProfile) return;
+      if (!activeProfile || activeProfile.id === GUEST_PROFILE_ID) return;
       // Optimistic clear
       setEntries((prev) => prev.filter((e) => e.content_type !== contentType));
       try {
@@ -247,7 +250,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
 
   const removeOne = useCallback(
     async (id: string) => {
-      if (!id) return;
+      if (!id || activeProfile?.id === GUEST_PROFILE_ID) return;
       // Optimistic remove
       setEntries((prev) => prev.filter((e) => e.id !== id));
       try {
@@ -257,7 +260,7 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
         refetch();
       }
     },
-    [refetch],
+    [activeProfile, refetch],
   );
 
   const value = useMemo<WatchHistoryContextValue>(

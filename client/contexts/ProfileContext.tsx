@@ -18,8 +18,43 @@ export interface Profile {
   player_live?: PlayerEngine;
 }
 
+/**
+ * Sentinel id for the synthetic "Guest" profile. A guest is never stored in
+ * the database — it exists only in memory for the current session — so no
+ * per-profile data (recently watched, favourites, groups, category prefs) is
+ * ever read or written for it.
+ */
+export const GUEST_PROFILE_ID = "guest";
+
+export function isGuestProfile(profile: Profile | null | undefined): boolean {
+  return !!profile && profile.id === GUEST_PROFILE_ID;
+}
+
+/**
+ * Build the in-memory Guest profile. Player engine prefs are device-local
+ * (loaded from AsyncStorage by the caller) since a guest has no DB row.
+ */
+export function makeGuestProfile(
+  accountUsername: string,
+  prefs?: { player_vod?: PlayerEngine; player_live?: PlayerEngine },
+): Profile {
+  return {
+    id: GUEST_PROFILE_ID,
+    account_username: accountUsername,
+    name: "Guest",
+    avatar_icon: "user",
+    avatar_color: "#FF6600",
+    pin: null,
+    created_at: new Date().toISOString(),
+    player_vod: prefs?.player_vod === "expo" ? "expo" : "vlc",
+    player_live: prefs?.player_live === "expo" ? "expo" : "vlc",
+  };
+}
+
 interface ProfileContextType {
   activeProfile: Profile | null;
+  /** True when the active profile is the synthetic guest profile. */
+  isGuest: boolean;
   setActiveProfile: (profile: Profile) => void;
   clearProfile: () => void;
   /** Patch fields on the active profile (in-memory only). */
@@ -51,6 +86,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const refreshActiveProfile = useCallback(async (): Promise<Profile | null> => {
     const current = activeRef.current;
     if (!current) return null;
+    // Guest has no DB row — nothing to refresh.
+    if (current.id === GUEST_PROFILE_ID) return current;
     // Dedupe concurrent calls (e.g. focus + button press both firing).
     if (inflightRef.current) return inflightRef.current;
     const p = (async () => {
@@ -100,7 +137,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   return (
     <ProfileContext.Provider
-      value={{ activeProfile, setActiveProfile, clearProfile, updateActiveProfile, refreshActiveProfile }}
+      value={{ activeProfile, isGuest: activeProfile?.id === GUEST_PROFILE_ID, setActiveProfile, clearProfile, updateActiveProfile, refreshActiveProfile }}
     >
       {children}
     </ProfileContext.Provider>

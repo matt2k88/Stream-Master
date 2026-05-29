@@ -34,6 +34,8 @@ import { getGroupIconProps, getGroupIconDef } from "@/lib/group-icons";
 import { useWatchHistory, getWatchState, type SeriesProgress } from "@/contexts/WatchHistoryContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { useProfile } from "@/contexts/ProfileContext";
+import GuestPrompt from "@/components/GuestPrompt";
 import { normaliseSearch } from "@/lib/search";
 import { computeSuggestions } from "@/lib/suggestions";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
@@ -922,6 +924,7 @@ export default function ContentListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ContentListRouteProp>();
+  const { isGuest } = useProfile();
   const { type, categoryId, categoryName } = route.params;
   const { width, height } = useWindowDimensions();
   // Portrait phones: collapse text-label header buttons (Watchlist /
@@ -1901,23 +1904,41 @@ export default function ContentListScreen() {
               <ActivityIndicator size="large" color={Colors.dark.accent} />
             </View>
           ) : isFavouritesView && !isSearching && categoryContent.length === 0 ? (
-            <View style={styles.centered}>
-              <Feather name="star" size={44} color={Colors.dark.border} />
-              <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
-              <ThemedText style={styles.emptyText}>
-                Hold any item to add it to your favourites
-              </ThemedText>
-            </View>
+            isGuest ? (
+              <GuestPrompt
+                icon="star"
+                title="Save Your Favourites"
+                message="Create a profile to save favourites and access them on any device."
+                onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+              />
+            ) : (
+              <View style={styles.centered}>
+                <Feather name="star" size={44} color={Colors.dark.border} />
+                <ThemedText style={styles.emptyTitle}>No Favourites Yet</ThemedText>
+                <ThemedText style={styles.emptyText}>
+                  Hold any item to add it to your favourites
+                </ThemedText>
+              </View>
+            )
           ) : isRecentlyView && !isSearching && categoryContent.length === 0 ? (
-            <View style={styles.centered}>
-              <Feather name="clock" size={44} color={Colors.dark.border} />
-              <ThemedText style={styles.emptyTitle}>Nothing Watched Yet</ThemedText>
-              <ThemedText style={styles.emptyText}>
-                {type === "movies"
-                  ? "Movies you watch will show up here"
-                  : "Series you watch will show up here"}
-              </ThemedText>
-            </View>
+            isGuest ? (
+              <GuestPrompt
+                icon="clock"
+                title="Keep Your Watch History"
+                message="Create a profile to save your watch history and continue watching."
+                onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+              />
+            ) : (
+              <View style={styles.centered}>
+                <Feather name="clock" size={44} color={Colors.dark.border} />
+                <ThemedText style={styles.emptyTitle}>Nothing Watched Yet</ThemedText>
+                <ThemedText style={styles.emptyText}>
+                  {type === "movies"
+                    ? "Movies you watch will show up here"
+                    : "Series you watch will show up here"}
+                </ThemedText>
+              </View>
+            )
           ) : isWatchlistView && !isSearching && categoryContent.length === 0 ? (
             <View style={styles.centered}>
               <Feather name="bookmark" size={44} color={Colors.dark.border} />

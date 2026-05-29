@@ -19,6 +19,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useProfile, type PlayerEngine } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
+import { saveGuestPlayerPrefs } from "@/lib/guest-prefs";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -107,7 +108,7 @@ function EngineToggle({
 export default function PlayerSettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
-  const { activeProfile, updateActiveProfile, refreshActiveProfile } = useProfile();
+  const { activeProfile, isGuest, updateActiveProfile, refreshActiveProfile } = useProfile();
 
   const [savingKey, setSavingKey] = useState<"player_vod" | "player_live" | null>(null);
 
@@ -132,6 +133,26 @@ export default function PlayerSettingsScreen() {
     setSavingKey(key);
     // Optimistic update so the UI feels instant; revert on failure.
     updateActiveProfile({ [key]: next } as any);
+
+    // Guest: persist device-locally (AsyncStorage), never touch the API.
+    if (isGuest) {
+      try {
+        await saveGuestPlayerPrefs({
+          player_vod: key === "player_vod" ? next : vod,
+          player_live: key === "player_live" ? next : live,
+        });
+      } catch (e) {
+        updateActiveProfile({ [key]: prev } as any);
+        Alert.alert(
+          "Could not save",
+          "We couldn't save your player choice on this device. Please try again.",
+        );
+      } finally {
+        setSavingKey(null);
+      }
+      return;
+    }
+
     try {
       const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
       const res = await fetch(url.toString(), {

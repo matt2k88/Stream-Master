@@ -9,7 +9,7 @@ import React, {
   ReactNode,
 } from "react";
 import { Category } from "@/lib/xtream-api";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 
 export type CategoryType = "live" | "movies" | "series";
@@ -115,7 +115,8 @@ export function CategoryOrderProvider({ children }: { children: ReactNode }) {
     setPrefs(EMPTY);
     setLoadedProfileId(null);
     const pid = activeProfile?.id ?? null;
-    if (!pid) return;
+    // Guest can't save category prefs — leave defaults, never fetch.
+    if (!pid || pid === GUEST_PROFILE_ID) return;
     (async () => {
       try {
         const url = new URL("/api/category-prefs", getApiUrl());
