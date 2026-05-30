@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, StyleSheet, ScrollView, ViewStyle } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -12,7 +12,9 @@ import { leagueName } from "@/constants/football-leagues";
 
 const LINE_HEIGHT = 30;
 const MAX_LINES = 5;
-const SCROLL_PERIOD = 4000;
+// Continuous auto-scroll: slow glide speed (px/sec) with a pause at each end.
+const SCROLL_SPEED = 14;
+const SCROLL_PAUSE = 2200;
 
 const FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
 
@@ -68,22 +70,62 @@ export function FootballScoreTracker({
   const scrollRef = useRef<ScrollView>(null);
   const [contentH, setContentH] = useState(0);
 
-  const containerH = Math.max(1, Math.min(scores.length, MAX_LINES)) * LINE_HEIGHT;
-  const canScroll = contentH > containerH + 4;
+  // Always list games alphabetically by home team (stable, not by minute).
+  const sortedScores = useMemo(
+    () =>
+      [...scores].sort((a, b) =>
+        (a.home_team ?? "").localeCompare(b.home_team ?? "", undefined, {
+          sensitivity: "base",
+        }),
+      ),
+    [scores],
+  );
 
-  // Auto-scroll loop: glide to the bottom, pause, glide back to the top.
+  const containerH =
+    Math.max(1, Math.min(sortedScores.length, MAX_LINES)) * LINE_HEIGHT;
+  const canScroll = sortedScores.length > 0 && contentH > containerH + 4;
+
+  // When the list empties, drop the stale measured height so the scroll loop
+  // tears down instead of running forever in the empty/loading state.
+  useEffect(() => {
+    if (sortedScores.length === 0) setContentH(0);
+  }, [sortedScores.length]);
+
+  // Auto-scroll loop: a slow, continuous glide to the bottom, pause, then glide
+  // back to the top (frame-by-frame so it's smooth rather than jumpy).
   useEffect(() => {
     if (!canScroll) {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
       return;
     }
-    let toBottom = true;
-    const id = setInterval(() => {
-      const y = toBottom ? Math.max(0, contentH - containerH) : 0;
-      scrollRef.current?.scrollTo({ y, animated: true });
-      toBottom = !toBottom;
-    }, SCROLL_PERIOD);
-    return () => clearInterval(id);
+    const maxY = Math.max(0, contentH - containerH);
+    let y = 0;
+    let dir = 1;
+    let last = Date.now();
+    let pausedUntil = last + SCROLL_PAUSE;
+    let raf = 0;
+
+    const tick = () => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      if (now >= pausedUntil) {
+        y += dir * SCROLL_SPEED * (dt / 1000);
+        if (y >= maxY) {
+          y = maxY;
+          dir = -1;
+          pausedUntil = now + SCROLL_PAUSE;
+        } else if (y <= 0) {
+          y = 0;
+          dir = 1;
+          pausedUntil = now + SCROLL_PAUSE;
+        }
+        scrollRef.current?.scrollTo({ y, animated: false });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [canScroll, contentH, containerH]);
 
   const name =
@@ -107,7 +149,7 @@ export function FootballScoreTracker({
           {name}
         </ThemedText>
       </View>
-      {scores.length === 0 ? (
+      {sortedScores.length === 0 ? (
         <View style={styles.emptyRow}>
           <ThemedText style={styles.emptyText}>{emptyMessage}</ThemedText>
         </View>
@@ -119,7 +161,7 @@ export function FootballScoreTracker({
           showsVerticalScrollIndicator={false}
           onContentSizeChange={(_w, h) => setContentH(h)}
         >
-          {scores.map((s) => (
+          {sortedScores.map((s) => (
             <View key={s.fixture_id} style={styles.row}>
               <ThemedText style={[styles.team, styles.teamHome]} numberOfLines={1}>
                 {s.home_team ?? "?"}
