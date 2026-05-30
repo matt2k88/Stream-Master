@@ -58,17 +58,14 @@ function isLive(s: FootballScore): boolean {
 }
 
 function announcementText(a: GoalAnnouncement): string {
-  const home = a.home ?? "?";
-  const away = a.away ?? "?";
-  const homeDisp = a.scoredSide === "home" ? home.toUpperCase() : home;
-  const awayDisp = a.scoredSide === "away" ? away.toUpperCase() : away;
-  const score = `${a.homeGoals}-${a.awayGoals}`;
-  const game = `${homeDisp} ${score} ${awayDisp}`;
-  if (a.scorer) {
-    const min = a.minute != null ? ` ${a.minute}'` : "";
-    return `GOAL! ${a.scorer}${min} — ${game}`;
-  }
-  return `GOAL! ${game}`;
+  const team =
+    a.scoredSide === "home"
+      ? a.home ?? "?"
+      : a.scoredSide === "away"
+        ? a.away ?? "?"
+        : "?";
+  const min = a.minute != null ? ` (${a.minute}')` : "";
+  return `GOAL! ${team}${min}`;
 }
 
 function cornerStyle(
