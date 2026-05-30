@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
+import { markFootballDemand } from "./football";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -1116,6 +1117,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // every ~30s instead of hitting api-football directly.
   app.get("/api/football/scores", async (req, res) => {
     const { league_id } = req.query;
+    // Signal that a client is actively watching so the poller keeps the API
+    // cache warm. With no recent requests the poller stops calling api-football.
+    if (league_id) markFootballDemand();
     try {
       let q = supabase
         .from("football_scores")
