@@ -51,28 +51,6 @@ async function fetchLive(): Promise<any[] | null> {
   }
 }
 
-// The set of league ids that are actually selected in user profiles
-// (football_prefs). We only track/store these leagues so we never spend quota
-// on games nobody is watching. A single `live=all` request already returns all
-// live games in ONE call, so we filter that response down to this set rather
-// than making a separate request per league.
-async function selectedLeagueIds(): Promise<Set<number>> {
-  const ids = new Set<number>();
-  const { data, error } = await supabase
-    .from("football_prefs")
-    .select("league_id, enabled");
-  if (error) {
-    console.error("[football] prefs read error:", error.message);
-    return ids;
-  }
-  for (const r of data ?? []) {
-    if ((r as any).enabled !== false && (r as any).league_id != null) {
-      ids.add(Number((r as any).league_id));
-    }
-  }
-  return ids;
-}
-
 function mapFixture(f: any, nowIso: string): FixtureRow {
   return {
     fixture_id: f?.fixture?.id,
@@ -93,25 +71,13 @@ function mapFixture(f: any, nowIso: string): FixtureRow {
 // One poll cycle. Returns the number of live fixtures found (used to decide the
 // next interval). Returns 0 on error/no-key so the poller backs off.
 async function pollOnce(): Promise<number> {
-  // Only the leagues users actually track. If nobody has a league selected we
-  // don't spend any API quota at all this cycle.
-  const leagueIds = await selectedLeagueIds();
-  if (leagueIds.size === 0) {
-    return 0; // no tracked leagues — skip the api-football call entirely
-  }
-
   const live = await fetchLive();
   if (live === null) return 0; // error/disabled — skip this cycle, back off
 
   const nowIso = new Date().toISOString();
   const rows = live
     .map((f) => mapFixture(f, nowIso))
-    .filter(
-      (r) =>
-        r.fixture_id != null &&
-        r.league_id != null &&
-        leagueIds.has(r.league_id),
-    );
+    .filter((r) => r.fixture_id != null && r.league_id != null);
   const liveIds = new Set(rows.map((r) => r.fixture_id));
 
   if (rows.length) {
