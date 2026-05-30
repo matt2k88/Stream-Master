@@ -64,8 +64,7 @@ function announcementText(a: GoalAnnouncement): string {
       : a.scoredSide === "away"
         ? a.away ?? "?"
         : "?";
-  const min = a.minute != null ? ` (${a.minute}')` : "";
-  return `GOAL! ${team}${min}`;
+  return `GOAL! ${team}`;
 }
 
 function cornerStyle(
