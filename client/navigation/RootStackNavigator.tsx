@@ -33,6 +33,7 @@ import MultiScreenLayoutScreen, { type MultiLayout } from "@/screens/MultiScreen
 import MultiScreenScreen from "@/screens/MultiScreenScreen";
 import MultiScreenPickerScreen from "@/screens/MultiScreenPickerScreen";
 import MyGroupsScreen from "@/screens/MyGroupsScreen";
+import FootballSettingsScreen from "@/screens/FootballSettingsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -66,6 +67,7 @@ export type RootStackParamList = {
   MultiScreen: { layout: MultiLayout };
   MultiScreenPicker: { slotIndex: number };
   MyGroups: { type: "live" | "movies" | "series" };
+  FootballSettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -132,6 +134,7 @@ export default function RootStackNavigator() {
               options={{ orientation: "landscape" }}
             />
             <Stack.Screen name="MyGroups" component={MyGroupsScreen} />
+            <Stack.Screen name="FootballSettings" component={FootballSettingsScreen} />
           </>
         )}
       </Stack.Navigator>

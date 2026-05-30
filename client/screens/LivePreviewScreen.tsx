@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { Feather } from "@expo/vector-icons";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useVideoPlayer, VideoView, makeVideoSource } from "@/lib/video-player";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -31,6 +31,8 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useData } from "@/contexts/DataContext";
 import { useGroups } from "@/contexts/GroupsContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useFootball } from "@/contexts/FootballContext";
+import { FootballScoreTracker } from "@/components/FootballScoreTracker";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import type { LiveStream } from "@/lib/xtream-api";
 
@@ -306,6 +308,14 @@ export default function LivePreviewScreen() {
   const [reportFocused, setReportFocused] = useState(false);
   const [reportPressed, setReportPressed] = useState(false);
   const reportActive = reportFocused || reportPressed;
+
+  // ── Football scores tracker ────────────────────────────────────────────────
+  const { prefs: footballPrefs } = useFootball();
+  const footballEnabled = footballPrefs.enabled;
+  const [showFootball, setShowFootball] = useState(false);
+  const [footballFocused, setFootballFocused] = useState(false);
+  const [footballPressed, setFootballPressed] = useState(false);
+  const footballActive = footballFocused || footballPressed;
 
   const listRef = useRef<FlatList>(null);
 
@@ -1074,6 +1084,22 @@ export default function LivePreviewScreen() {
                   <ThemedText style={styles.liveText}>LIVE</ThemedText>
                 </View>
                 <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                {footballEnabled ? (
+                  <Pressable
+                    style={[styles.headerBtn, footballActive && styles.headerBtnActive, showFootball && styles.headerBtnActive]}
+                    onPress={() => { setShowFootball((v) => !v); resetFsHideTimer(); }}
+                    onFocus={() => { setFootballFocused(true); resetFsHideTimer(); }}
+                    onBlur={() => setFootballFocused(false)}
+                    onPressIn={() => setFootballPressed(true)}
+                    onPressOut={() => setFootballPressed(false)}
+                  >
+                    <MaterialCommunityIcons
+                      name="soccer"
+                      size={19}
+                      color={footballActive || showFootball ? Colors.dark.accent : Colors.dark.text}
+                    />
+                  </Pressable>
+                ) : null}
                 <Pressable
                   style={[styles.headerBtn, reportActive && styles.headerBtnActive]}
                   onPress={() => { setShowReport(true); resetFsHideTimer(); }}
@@ -1163,6 +1189,14 @@ export default function LivePreviewScreen() {
               </View>
             </View>
           )}
+
+          {showFootball && footballEnabled ? (
+            <FootballScoreTracker
+              topInset={padT + 44}
+              bottomInset={insets.bottom + Spacing.md}
+              sideInset={padL}
+            />
+          ) : null}
         </>
       )}
 

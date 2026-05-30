@@ -616,6 +616,14 @@ export default function AccountInfoScreen() {
                 </View>
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    icon="award"
+                    title="Football Scores"
+                    subtitle="Live tracker"
+                    onPress={() => navigation.navigate("FootballSettings")}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
                     icon="type"
                     title={`Text Size: ${textSize === "large" ? "Large" : textSize === "medium" ? "Medium" : "Normal"}`}
                     subtitle="Tap to toggle"

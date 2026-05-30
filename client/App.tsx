@@ -21,6 +21,7 @@ import { FavouritesProvider } from "@/contexts/FavouritesContext";
 import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { GroupsProvider } from "@/contexts/GroupsContext";
+import { FootballProvider } from "@/contexts/FootballContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
@@ -96,6 +97,7 @@ export default function App() {
                       <WatchHistoryProvider>
                         <WatchlistProvider>
                         <GroupsProvider>
+                        <FootballProvider>
                         <MessageProvider>
                           <VpnProvider>
                           <KeyboardProvider>
@@ -107,6 +109,7 @@ export default function App() {
                           </KeyboardProvider>
                           </VpnProvider>
                         </MessageProvider>
+                        </FootballProvider>
                         </GroupsProvider>
                         </WatchlistProvider>
                       </WatchHistoryProvider>

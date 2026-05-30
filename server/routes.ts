@@ -1059,6 +1059,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Football Scores ───────────────────────────────────────────────────────
+  // Per-profile tracker settings (selected league + screen corner).
+  const FOOTBALL_CORNERS = [
+    "top-left",
+    "top-right",
+    "bottom-left",
+    "bottom-right",
+    "middle-left",
+    "middle-right",
+  ];
+
+  app.get("/api/football/prefs", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("football_prefs")
+        .select("league_id, corner, enabled")
+        .eq("profile_id", profile_id as string)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? { league_id: null, corner: "top-right", enabled: true });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch football prefs" });
+    }
+  });
+
+  app.put("/api/football/prefs", async (req, res) => {
+    const { profile_id, league_id, corner, enabled } = req.body;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    const c = FOOTBALL_CORNERS.includes(corner) ? corner : "top-right";
+    try {
+      const { data, error } = await supabase
+        .from("football_prefs")
+        .upsert(
+          {
+            profile_id,
+            league_id: league_id == null ? null : Number(league_id),
+            corner: c,
+            enabled: typeof enabled === "boolean" ? enabled : true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "profile_id" },
+        )
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to save football prefs" });
+    }
+  });
+
+  // Live scores cache (maintained by the background poller). Clients poll this
+  // every ~30s instead of hitting api-football directly.
+  app.get("/api/football/scores", async (req, res) => {
+    const { league_id } = req.query;
+    try {
+      let q = supabase
+        .from("football_scores")
+        .select(
+          "fixture_id, league_id, league_name, league_country, home_team, away_team, home_goals, away_goals, status_short, elapsed, finished_at",
+        )
+        .order("finished_at", { ascending: true, nullsFirst: true })
+        .order("elapsed", { ascending: false, nullsFirst: false });
+      if (league_id) q = q.eq("league_id", Number(league_id));
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch football scores" });
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {

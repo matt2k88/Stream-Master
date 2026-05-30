@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { startFootballPoller } from "./football";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -226,6 +227,8 @@ function setupErrorHandler(app: express.Application) {
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);
+
+  startFootballPoller();
 
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(
