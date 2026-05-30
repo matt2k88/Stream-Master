@@ -14,10 +14,6 @@ export interface FootballLeagueGroup {
 
 export const FOOTBALL_LEAGUE_GROUPS: FootballLeagueGroup[] = [
   {
-    group: "Testing",
-    leagues: [{ id: 783, name: "III Liga · Group 4 (Poland) — test" }],
-  },
-  {
     group: "English Football",
     leagues: [
       { id: 39, name: "Premier League" },
