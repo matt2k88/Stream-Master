@@ -30,6 +30,10 @@ export interface FootballScore {
   status_short: string | null;
   elapsed: number | null;
   finished_at: string | null;
+  last_goal_player?: string | null;
+  last_goal_team?: string | null;
+  last_goal_minute?: number | null;
+  last_goal_at?: string | null;
 }
 
 export interface FootballPrefs {

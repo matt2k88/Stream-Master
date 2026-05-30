@@ -68,6 +68,44 @@ function mapFixture(f: any, nowIso: string): FixtureRow {
   };
 }
 
+interface GoalScorer {
+  player: string | null;
+  team: string | null;
+  minute: number | null;
+}
+
+// Fetch the most-recent goal's scorer for a single fixture. Only called when a
+// fixture's score went up this cycle — at most one request per scoring fixture
+// per poll (not per poll for all games) — so it stays cheap on API quota.
+async function fetchGoalScorer(fixtureId: number): Promise<GoalScorer | null> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return null;
+  try {
+    const r = await fetch(`${API_BASE}/fixtures/events?fixture=${fixtureId}`, {
+      headers: { "x-apisports-key": key },
+    });
+    if (!r.ok) {
+      console.error(`[football] events fetch failed: ${r.status}`);
+      return null;
+    }
+    const json = await r.json();
+    const events = Array.isArray(json?.response) ? json.response : [];
+    const goals = events.filter(
+      (e: any) => String(e?.type || "").toLowerCase() === "goal",
+    );
+    if (!goals.length) return null;
+    const last = goals[goals.length - 1];
+    return {
+      player: last?.player?.name ?? null,
+      team: last?.team?.name ?? null,
+      minute: last?.time?.elapsed ?? null,
+    };
+  } catch (e: any) {
+    console.error("[football] events exception:", e?.message);
+    return null;
+  }
+}
+
 // One poll cycle. Returns the number of live fixtures found (used to decide the
 // next interval). Returns 0 on error/no-key so the poller backs off.
 async function pollOnce(): Promise<number> {
@@ -80,6 +118,23 @@ async function pollOnce(): Promise<number> {
     .filter((r) => r.fixture_id != null && r.league_id != null);
   const liveIds = new Set(rows.map((r) => r.fixture_id));
 
+  // Snapshot the existing rows first — used both to detect goals (total score
+  // increased) and to mark vanished games as finished.
+  const { data: existing, error: exErr } = await supabase
+    .from("football_scores")
+    .select("fixture_id, home_goals, away_goals, finished_at");
+  if (exErr) console.error("[football] select existing error:", exErr.message);
+
+  const prevTotals = new Map<number, number>();
+  for (const e of existing ?? []) {
+    prevTotals.set(e.fixture_id, (e.home_goals ?? 0) + (e.away_goals ?? 0));
+  }
+  // A fixture whose total score went up since we last saw it = a fresh goal.
+  const goalFixtures = rows.filter((r) => {
+    const prev = prevTotals.get(r.fixture_id);
+    return prev != null && r.home_goals + r.away_goals > prev;
+  });
+
   if (rows.length) {
     const { error } = await supabase
       .from("football_scores")
@@ -87,15 +142,34 @@ async function pollOnce(): Promise<number> {
     if (error) console.error("[football] upsert error:", error.message);
   }
 
+  // For each fresh goal, look up the scorer once and store it. Kept as a
+  // separate best-effort update so a not-yet-run migration (012) never blocks
+  // the core score cache.
+  for (const g of goalFixtures) {
+    let scorer: GoalScorer | null = null;
+    try {
+      scorer = await fetchGoalScorer(g.fixture_id);
+    } catch (e: any) {
+      console.error("[football] scorer fetch error:", e?.message);
+    }
+    const { error } = await supabase
+      .from("football_scores")
+      .update({
+        last_goal_player: scorer?.player ?? null,
+        last_goal_team: scorer?.team ?? null,
+        last_goal_minute: scorer?.minute ?? null,
+        last_goal_at: nowIso,
+      })
+      .eq("fixture_id", g.fixture_id);
+    if (error)
+      console.error(
+        "[football] goal update error (has migration 012 been run?):",
+        error.message,
+      );
+  }
+
   // Games that were live but are no longer in the feed: mark them finished so
   // clients can show FT for a short while, then purge older finished rows.
-  const { data: existing, error: exErr } = await supabase
-    .from("football_scores")
-    .select("fixture_id, finished_at");
-  if (exErr) {
-    console.error("[football] select existing error:", exErr.message);
-    return rows.length;
-  }
   const vanished = (existing ?? []).filter(
     (e: any) => e.finished_at == null && !liveIds.has(e.fixture_id),
   );

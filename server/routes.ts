@@ -1119,9 +1119,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       let q = supabase
         .from("football_scores")
-        .select(
-          "fixture_id, league_id, league_name, league_country, home_team, away_team, home_goals, away_goals, status_short, elapsed, finished_at",
-        )
+        .select("*")
         .order("finished_at", { ascending: true, nullsFirst: true })
         .order("elapsed", { ascending: false, nullsFirst: false });
       if (league_id) q = q.eq("league_id", Number(league_id));
