@@ -12,24 +12,6 @@ const FT_LINGER_MS = 15 * 60 * 1000;
 const ACTIVE_INTERVAL_MS = 60 * 1000;
 const IDLE_INTERVAL_MS = 5 * 60 * 1000;
 
-// Demand gating. We only call api-football while at least one client is
-// actually watching scores (i.e. has hit /api/football/scores recently). With
-// no viewers we stop hitting the API entirely and just re-check this flag
-// locally every DORMANT_CHECK_MS — that local check costs no API quota.
-const DEMAND_WINDOW_MS = 3 * 60 * 1000;
-const DORMANT_CHECK_MS = 30 * 1000;
-
-let lastDemandAt = 0;
-
-// Called by the /api/football/scores route each time a client requests scores.
-export function markFootballDemand() {
-  lastDemandAt = Date.now();
-}
-
-function hasDemand(): boolean {
-  return lastDemandAt > 0 && Date.now() - lastDemandAt < DEMAND_WINDOW_MS;
-}
-
 interface FixtureRow {
   fixture_id: number;
   league_id: number;
@@ -145,12 +127,6 @@ export function startFootballPoller() {
     return;
   }
   const loop = async () => {
-    // No active viewers → don't spend any API quota. Re-check locally soon so
-    // polling resumes promptly once someone opens the tracker again.
-    if (!hasDemand()) {
-      setTimeout(loop, DORMANT_CHECK_MS);
-      return;
-    }
     let liveCount = 0;
     try {
       liveCount = await pollOnce();
@@ -161,5 +137,5 @@ export function startFootballPoller() {
     setTimeout(loop, next);
   };
   loop();
-  console.log("[football] live scores poller started (demand-gated)");
+  console.log("[football] live scores poller started");
 }
