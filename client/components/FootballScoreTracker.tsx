@@ -30,6 +30,7 @@ interface GoalAnnouncement {
   away: string | null;
   homeGoals: number;
   awayGoals: number;
+  scoredSide: "home" | "away" | null;
   scorer: string | null;
   minute: number | null;
   expiresAt: number;
@@ -55,8 +56,12 @@ function isLive(s: FootballScore): boolean {
 }
 
 function announcementText(a: GoalAnnouncement): string {
+  const home = a.home ?? "?";
+  const away = a.away ?? "?";
+  const homeDisp = a.scoredSide === "home" ? home.toUpperCase() : home;
+  const awayDisp = a.scoredSide === "away" ? away.toUpperCase() : away;
   const score = `${a.homeGoals}-${a.awayGoals}`;
-  const game = `${a.home ?? "?"} ${score} ${a.away ?? "?"}`;
+  const game = `${homeDisp} ${score} ${awayDisp}`;
   if (a.scorer) {
     const min = a.minute != null ? ` ${a.minute}'` : "";
     return `GOAL! ${a.scorer}${min} — ${game}`;
@@ -112,6 +117,9 @@ export function FootballScoreTracker({
   // Compare each poll's totals against the previous poll. A fixture whose total
   // goals went up = a fresh goal → flash its row + add an announcement line.
   const prevTotalsRef = useRef<Map<number, number>>(new Map());
+  // fixture_id -> previous {home, away} goal counts, used to work out which side
+  // scored (so we can highlight that team in the announcement).
+  const prevSidesRef = useRef<Map<number, { h: number; a: number }>>(new Map());
   // fixture_id -> timestamp the flash should stop. A re-score just pushes the
   // deadline out, so the row keeps flashing the full FLASH_MS from the last goal.
   const flashUntilRef = useRef<Map<number, number>>(new Map());
@@ -122,6 +130,7 @@ export function FootballScoreTracker({
   // Reset goal state when the tracked league changes (avoids false positives).
   useEffect(() => {
     prevTotalsRef.current = new Map();
+    prevSidesRef.current = new Map();
     flashUntilRef.current = new Map();
     setFlashIds(new Set());
     setAnnouncements([]);
@@ -130,28 +139,49 @@ export function FootballScoreTracker({
   useEffect(() => {
     const prev = prevTotalsRef.current;
     const next = new Map<number, number>();
-    const goals: FootballScore[] = [];
+    const prevSides = prevSidesRef.current;
+    const nextSides = new Map<number, { h: number; a: number }>();
+    const goals: { s: FootballScore; scoredSide: "home" | "away" | null }[] = [];
     for (const s of scores) {
-      const total = (s.home_goals ?? 0) + (s.away_goals ?? 0);
+      const h = s.home_goals ?? 0;
+      const a = s.away_goals ?? 0;
+      const total = h + a;
       next.set(s.fixture_id, total);
+      nextSides.set(s.fixture_id, { h, a });
       const before = prev.get(s.fixture_id);
-      if (before != null && total > before) goals.push(s);
+      if (before != null && total > before) {
+        const beforeSides = prevSides.get(s.fixture_id);
+        let scoredSide: "home" | "away" | null = null;
+        if (beforeSides) {
+          const homeInc = h > beforeSides.h;
+          const awayInc = a > beforeSides.a;
+          // Only highlight a side when exactly one side increased. If both went
+          // up in the same poll window it's ambiguous, so leave it unhighlighted.
+          if (homeInc && !awayInc) scoredSide = "home";
+          else if (awayInc && !homeInc) scoredSide = "away";
+        }
+        goals.push({ s, scoredSide });
+      }
     }
     prevTotalsRef.current = next;
+    prevSidesRef.current = nextSides;
 
     if (goals.length) {
       const now = Date.now();
-      goals.forEach((s) => flashUntilRef.current.set(s.fixture_id, now + FLASH_MS));
+      goals.forEach(({ s }) =>
+        flashUntilRef.current.set(s.fixture_id, now + FLASH_MS),
+      );
       setFlashIds(new Set(flashUntilRef.current.keys()));
       setAnnouncements((cur) => [
         ...cur,
-        ...goals.map((s) => ({
+        ...goals.map(({ s, scoredSide }) => ({
           id: `${s.fixture_id}-${now}-${s.home_goals}-${s.away_goals}`,
           fixtureId: s.fixture_id,
           home: s.home_team,
           away: s.away_team,
           homeGoals: s.home_goals,
           awayGoals: s.away_goals,
+          scoredSide,
           scorer: s.last_goal_player ?? null,
           minute: s.last_goal_minute ?? null,
           expiresAt: now + ANNOUNCE_MS,
