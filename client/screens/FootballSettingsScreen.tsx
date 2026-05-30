@@ -98,6 +98,14 @@ export default function FootballSettingsScreen() {
           Show a floating live football tracker on the live TV player. Pick a competition and where it appears on screen.
         </ThemedText>
 
+        {/* Broadcast-delay notice */}
+        <View style={styles.notice}>
+          <Feather name="alert-triangle" size={16} color={Colors.dark.accent} style={{ marginTop: 1 }} />
+          <ThemedText style={styles.noticeText}>
+            Scores update in real time and can be a little ahead of your TV stream, which is usually slightly delayed. This may reveal a goal before you see it on screen — leave the tracker off during a match if that would spoil it for you.
+          </ThemedText>
+        </View>
+
         {/* Enable toggle */}
         <Touchable
           style={styles.toggleRow}
@@ -142,6 +150,37 @@ export default function FootballSettingsScreen() {
                       ]}
                     >
                       {c.label}
+                    </ThemedText>
+                  )}
+                </Touchable>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Lines shown picker */}
+        <SectionHeading label="Scorelines Shown" />
+        <ThemedText style={styles.linesHint}>
+          How many games show at once before the tracker scrolls through the rest.
+        </ThemedText>
+        <View style={styles.linesRow}>
+          {[1, 2, 3, 4, 5, 6].map((n) => {
+            const selected = (prefs.visibleLines ?? 5) === n;
+            return (
+              <View key={n} style={styles.linesCell}>
+                <Touchable
+                  style={[styles.linesBtn, selected && styles.linesBtnSelected]}
+                  activeStyle={styles.linesBtnActive}
+                  onPress={() => savePrefs({ visibleLines: n })}
+                >
+                  {(active) => (
+                    <ThemedText
+                      style={[
+                        styles.linesLabel,
+                        (selected || active) && { color: Colors.dark.accent, fontWeight: "800" },
+                      ]}
+                    >
+                      {n}
                     </ThemedText>
                   )}
                 </Touchable>
@@ -237,6 +276,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.textSecondary,
     lineHeight: 18,
+  },
+  notice: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.45)",
+    backgroundColor: "rgba(255,102,0,0.10)",
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Colors.dark.text,
+  },
+  linesHint: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    lineHeight: 16,
+    marginTop: -2,
+  },
+  linesRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  linesCell: {
+    flex: 1,
+  },
+  linesBtn: {
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  linesBtnSelected: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "1A",
+  },
+  linesBtnActive: {
+    borderColor: Colors.dark.accent,
+  },
+  linesLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.dark.text,
   },
   toggleRow: {
     flexDirection: "row",

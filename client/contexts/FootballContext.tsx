@@ -40,6 +40,7 @@ export interface FootballPrefs {
   league_id: number | null;
   corner: FootballCorner;
   enabled: boolean;
+  visibleLines: number;
 }
 
 interface FootballContextType {
@@ -49,13 +50,23 @@ interface FootballContextType {
   scores: FootballScore[];
   scoresLoading: boolean;
   refreshScores: () => void;
+  // Admin global kill-switch. When false the whole feature is off regardless of
+  // per-profile prefs (profile button hidden, tracker never shows).
+  globalEnabled: boolean;
 }
 
 const DEFAULT_PREFS: FootballPrefs = {
   league_id: null,
   corner: "top-right",
   enabled: true,
+  visibleLines: 5,
 };
+
+function clampLines(n: unknown): number {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return 5;
+  return Math.min(6, Math.max(1, v));
+}
 
 const POLL_MS = 30000;
 
@@ -67,8 +78,29 @@ export function FootballProvider({ children }: { children: ReactNode }) {
 
   const [prefs, setPrefs] = useState<FootballPrefs>(DEFAULT_PREFS);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [globalEnabled, setGlobalEnabled] = useState(true);
   const [scores, setScores] = useState<FootballScore[]>([]);
   const [scoresLoading, setScoresLoading] = useState(false);
+
+  // Load the admin global kill-switch once on mount (defaults to enabled).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = new URL("/api/football/global", getApiUrl());
+        const res = await fetch(url.toString());
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setGlobalEnabled(data?.enabled !== false);
+        }
+      } catch {
+        // silent — defaults to enabled
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load prefs whenever the active profile changes.
   useEffect(() => {
@@ -91,6 +123,7 @@ export function FootballProvider({ children }: { children: ReactNode }) {
               league_id: data?.league_id ?? null,
               corner: (data?.corner ?? "top-right") as FootballCorner,
               enabled: data?.enabled !== false,
+              visibleLines: clampLines(data?.visible_lines ?? 5),
             });
           }
         }
@@ -120,6 +153,7 @@ export function FootballProvider({ children }: { children: ReactNode }) {
             league_id: next.league_id,
             corner: next.corner,
             enabled: next.enabled,
+            visible_lines: next.visibleLines,
           }),
         });
       } catch {
@@ -130,7 +164,8 @@ export function FootballProvider({ children }: { children: ReactNode }) {
   );
 
   const leagueId = prefs.league_id;
-  const enabled = prefs.enabled;
+  // Per-profile enabled AND the admin global switch must both be on.
+  const enabled = prefs.enabled && globalEnabled;
 
   const fetchScores = useCallback(async () => {
     if (leagueId == null) {
@@ -178,8 +213,9 @@ export function FootballProvider({ children }: { children: ReactNode }) {
       scores,
       scoresLoading,
       refreshScores: fetchScores,
+      globalEnabled,
     }),
-    [prefs, prefsLoaded, savePrefs, scores, scoresLoading, fetchScores],
+    [prefs, prefsLoaded, savePrefs, scores, scoresLoading, fetchScores, globalEnabled],
   );
 
   return <FootballContext.Provider value={value}>{children}</FootballContext.Provider>;

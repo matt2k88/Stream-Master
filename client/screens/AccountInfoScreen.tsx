@@ -25,6 +25,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { useFootball } from "@/contexts/FootballContext";
 import { LinearGradient } from "expo-linear-gradient";
 import { getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
@@ -299,6 +300,7 @@ export default function AccountInfoScreen() {
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile, isGuest } = useProfile();
   const { textSize, toggleTextSize } = useUISettings();
+  const { globalEnabled: footballGlobalEnabled } = useFootball();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
   const [devLoading, setDevLoading] = useState(true);
@@ -614,14 +616,16 @@ export default function AccountInfoScreen() {
                     onPress={() => navigation.navigate("SpeedTest")}
                   />
                 </View>
-                <View style={styles.tileGridItem}>
-                  <ActionTile
-                    icon="award"
-                    title="Football Scores"
-                    subtitle="Live tracker"
-                    onPress={() => navigation.navigate("FootballSettings")}
-                  />
-                </View>
+                {footballGlobalEnabled ? (
+                  <View style={styles.tileGridItem}>
+                    <ActionTile
+                      icon="award"
+                      title="Football Scores"
+                      subtitle="Live tracker"
+                      onPress={() => navigation.navigate("FootballSettings")}
+                    />
+                  </View>
+                ) : null}
                 <View style={styles.tileGridItem}>
                   <ActionTile
                     icon="type"

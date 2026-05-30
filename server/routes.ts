@@ -1070,24 +1070,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     "middle-right",
   ];
 
+  // Global kill-switch for the whole football feature (singleton row, admin
+  // flips it externally). Defaults to enabled=true and degrades gracefully when
+  // the table is missing (migration 013 not yet run), so the feature stays on.
+  app.get("/api/football/global", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("football_global")
+        .select("enabled")
+        .eq("id", 1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") {
+        return res.json({ enabled: true });
+      }
+      res.json({ enabled: data?.enabled !== false });
+    } catch {
+      res.json({ enabled: true });
+    }
+  });
+
   app.get("/api/football/prefs", async (req, res) => {
     const { profile_id } = req.query;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     try {
+      // Select "*" so visible_lines flows through when present, but the route
+      // still works before migration 014 adds that column.
       const { data, error } = await supabase
         .from("football_prefs")
-        .select("league_id, corner, enabled")
+        .select("*")
         .eq("profile_id", profile_id as string)
         .maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
-      res.json(data ?? { league_id: null, corner: "top-right", enabled: true });
+      res.json(
+        data
+          ? {
+              league_id: data.league_id ?? null,
+              corner: data.corner ?? "top-right",
+              enabled: data.enabled !== false,
+              visible_lines: data.visible_lines ?? 5,
+            }
+          : { league_id: null, corner: "top-right", enabled: true, visible_lines: 5 },
+      );
     } catch {
       res.status(500).json({ error: "Failed to fetch football prefs" });
     }
   });
 
   app.put("/api/football/prefs", async (req, res) => {
-    const { profile_id, league_id, corner, enabled } = req.body;
+    const { profile_id, league_id, corner, enabled, visible_lines } = req.body;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     const c = FOOTBALL_CORNERS.includes(corner) ? corner : "top-right";
     try {
@@ -1106,7 +1136,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .select()
         .single();
       if (error) return res.status(500).json({ error: error.message });
-      res.json(data);
+
+      // visible_lines is written separately and best-effort so a not-yet-run
+      // migration (014) never blocks the core pref save.
+      let visibleLines = data?.visible_lines ?? 5;
+      if (visible_lines != null) {
+        const vl = Math.min(6, Math.max(1, Math.round(Number(visible_lines))));
+        const { error: vlErr } = await supabase
+          .from("football_prefs")
+          .update({ visible_lines: vl })
+          .eq("profile_id", profile_id);
+        if (vlErr) {
+          console.error(
+            "[football] visible_lines update error (has migration 014 been run?):",
+            vlErr.message,
+          );
+        } else {
+          visibleLines = vl;
+        }
+      }
+      res.json({ ...data, visible_lines: visibleLines });
     } catch {
       res.status(500).json({ error: "Failed to save football prefs" });
     }

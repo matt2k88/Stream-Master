@@ -310,8 +310,8 @@ export default function LivePreviewScreen() {
   const reportActive = reportFocused || reportPressed;
 
   // ── Football scores tracker ────────────────────────────────────────────────
-  const { prefs: footballPrefs } = useFootball();
-  const footballEnabled = footballPrefs.enabled;
+  const { prefs: footballPrefs, globalEnabled: footballGlobalEnabled } = useFootball();
+  const footballEnabled = footballPrefs.enabled && footballGlobalEnabled;
   const [showFootball, setShowFootball] = useState(false);
   const [footballFocused, setFootballFocused] = useState(false);
   const [footballPressed, setFootballPressed] = useState(false);

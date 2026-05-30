@@ -27,6 +27,23 @@ interface FixtureRow {
   updated_at: string;
 }
 
+// Reads the admin global kill-switch. Defaults to enabled (true) when the table
+// is missing (migration 013 not yet run) so the feature stays on. When disabled
+// the poller skips the api-football request entirely to save quota.
+async function isGloballyEnabled(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("football_global")
+      .select("enabled")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error) return true;
+    return data?.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 // Returns the list of live fixtures, or null if the request failed (so callers
 // can skip the "mark vanished as finished" step and avoid false positives).
 async function fetchLive(): Promise<any[] | null> {
@@ -109,6 +126,9 @@ async function fetchGoalScorer(fixtureId: number): Promise<GoalScorer | null> {
 // One poll cycle. Returns the number of live fixtures found (used to decide the
 // next interval). Returns 0 on error/no-key so the poller backs off.
 async function pollOnce(): Promise<number> {
+  // Admin global kill-switch off → skip the API call entirely (saves quota).
+  if (!(await isGloballyEnabled())) return 0;
+
   const live = await fetchLive();
   if (live === null) return 0; // error/disabled — skip this cycle, back off
 

@@ -11,7 +11,9 @@ import {
 import { leagueName } from "@/constants/football-leagues";
 
 const LINE_HEIGHT = 30;
-const MAX_LINES = 5;
+const DEFAULT_LINES = 5;
+const MIN_LINES = 1;
+const MAX_LINES = 6;
 // Continuous auto-scroll: slow glide speed (px/sec) with a pause at each end.
 const SCROLL_SPEED = 14;
 const SCROLL_PAUSE = 2200;
@@ -273,8 +275,12 @@ export function FootballScoreTracker({
     outputRange: ["rgba(61,220,132,0.0)", "rgba(61,220,132,0.5)"],
   });
 
+  const maxLines = Math.min(
+    MAX_LINES,
+    Math.max(MIN_LINES, prefs.visibleLines ?? DEFAULT_LINES),
+  );
   const containerH =
-    Math.max(1, Math.min(sortedScores.length, MAX_LINES)) * LINE_HEIGHT;
+    Math.max(1, Math.min(sortedScores.length, maxLines)) * LINE_HEIGHT;
   const canScroll = sortedScores.length > 0 && contentH > containerH + 4;
 
   // When the list empties, drop the stale measured height so the scroll loop
