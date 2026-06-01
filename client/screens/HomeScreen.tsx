@@ -315,6 +315,7 @@ function ProfileButton() {
                   return (
                     <Pressable
                       key={p.id}
+                      hasTVPreferredFocus={selected}
                       style={({ pressed: pr, focused: fc, hovered: hv }) => [
                         styles.profileRow,
                         (pr || fc || hv) && styles.profileRowActive,
@@ -334,6 +335,7 @@ function ProfileButton() {
                 })}
 
                 <Pressable
+                  hasTVPreferredFocus={activeProfile.id === "guest"}
                   style={({ pressed: pr, focused: fc, hovered: hv }) => [
                     styles.profileRow,
                     (pr || fc || hv) && styles.profileRowActive,
