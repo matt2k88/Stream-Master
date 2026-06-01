@@ -253,6 +253,7 @@ export default function ReferralsScreen() {
 
   const [data, setData] = useState<ReferralData | null>(null);
   const [history, setHistory] = useState<ReferralLog[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -442,43 +443,6 @@ export default function ReferralsScreen() {
             />
           )}
 
-          {/* Referral history */}
-          <View style={styles.historyCard}>
-            <View style={styles.historyHead}>
-              <Feather name="calendar" size={18} color={Colors.dark.accent} />
-              <View style={{ flex: 1 }}>
-                <ThemedText style={styles.historyTitle}>Referral History</ThemedText>
-                <ThemedText style={styles.historySub}>
-                  A log of your successful referrals.
-                </ThemedText>
-              </View>
-            </View>
-            {history.length === 0 ? (
-              <View style={styles.historyEmpty}>
-                <Feather name="inbox" size={22} color={Colors.dark.textSecondary} />
-                <ThemedText style={styles.historyEmptyText}>
-                  No referrals yet — share your code to get started.
-                </ThemedText>
-              </View>
-            ) : (
-              <View style={styles.historyList}>
-                {history.map((row) => (
-                  <View key={row.id} style={styles.historyRow}>
-                    <View style={styles.historyRowLeft}>
-                      <Feather name="clock" size={15} color={Colors.dark.textSecondary} />
-                      <ThemedText style={styles.historyRowLabel}>
-                        Referral Received
-                      </ThemedText>
-                    </View>
-                    <ThemedText style={styles.historyRowDate}>
-                      {formatLogDate(row.created_at)}
-                    </ThemedText>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-
           {/* Store callout */}
           <View style={styles.storeCard}>
             <LinearGradient
@@ -572,6 +536,67 @@ export default function ReferralsScreen() {
               </ThemedText>
             </View>
           </View>
+
+          {/* Referral history (collapsible, bottom of page) */}
+          <View style={styles.historyCard}>
+            <HoverBtn
+              style={styles.historyHead}
+              activeStyle={styles.historyHeadActive}
+              onPress={() => setHistoryOpen((v) => !v)}
+            >
+              {(active) => (
+                <>
+                  <Feather name="calendar" size={18} color={Colors.dark.accent} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.historyTitle}>
+                      Referral History
+                    </ThemedText>
+                    <ThemedText style={styles.historySub}>
+                      A log of your successful referrals.
+                    </ThemedText>
+                  </View>
+                  {history.length > 0 ? (
+                    <View style={styles.historyCountChip}>
+                      <ThemedText style={styles.historyCountText}>
+                        {history.length}
+                      </ThemedText>
+                    </View>
+                  ) : null}
+                  <Feather
+                    name={historyOpen ? "chevron-up" : "chevron-down"}
+                    size={20}
+                    color={active ? Colors.dark.accent : Colors.dark.textSecondary}
+                  />
+                </>
+              )}
+            </HoverBtn>
+            {historyOpen ? (
+              history.length === 0 ? (
+                <View style={styles.historyEmpty}>
+                  <Feather name="inbox" size={22} color={Colors.dark.textSecondary} />
+                  <ThemedText style={styles.historyEmptyText}>
+                    No referrals yet — share your code to get started.
+                  </ThemedText>
+                </View>
+              ) : (
+                <View style={styles.historyList}>
+                  {history.map((row) => (
+                    <View key={row.id} style={styles.historyRow}>
+                      <View style={styles.historyRowLeft}>
+                        <Feather name="clock" size={15} color={Colors.dark.textSecondary} />
+                        <ThemedText style={styles.historyRowLabel}>
+                          Referral Received
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={styles.historyRowDate}>
+                        {formatLogDate(row.created_at)}
+                      </ThemedText>
+                    </View>
+                  ))}
+                </View>
+              )
+            ) : null}
+          </View>
         </ScrollView>
       )}
     </ThemedView>
@@ -649,7 +674,31 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundSecondary + "80",
   },
-  historyHead: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  historyHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xs,
+    margin: -Spacing.xs,
+  },
+  historyHeadActive: {
+    backgroundColor: Colors.dark.accent + "1A",
+    borderWidth: 1,
+    borderColor: Colors.dark.accent + "66",
+  },
+  historyCountChip: {
+    minWidth: 26,
+    height: 24,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: 12,
+    backgroundColor: Colors.dark.accent + "22",
+    borderWidth: 1,
+    borderColor: Colors.dark.accent + "55",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyCountText: { fontSize: 12, fontWeight: "800", color: Colors.dark.accent },
   historyTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
   historySub: { fontSize: 12.5, color: Colors.dark.textSecondary, marginTop: 2 },
   historyList: { gap: Spacing.sm },
