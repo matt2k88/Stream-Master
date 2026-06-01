@@ -400,19 +400,93 @@ export default function ReferralsScreen() {
 
           {/* How it works */}
           <View style={styles.howSection}>
-            <ThemedText style={styles.howTitle}>How it works</ThemedText>
-            {[
-              { n: "1", text: "Share your unique referral code with friends" },
-              { n: "2", text: "They sign up and enter your code during registration" },
-              { n: "3", text: "You earn tokens automatically — no action needed" },
-            ].map((step) => (
-              <View key={step.n} style={styles.howRow}>
-                <View style={styles.howNum}>
-                  <ThemedText style={styles.howNumText}>{step.n}</ThemedText>
+            <View style={styles.sectionHead}>
+              <Feather name="help-circle" size={15} color={Colors.dark.accent} />
+              <ThemedText style={styles.howTitle}>How it works</ThemedText>
+            </View>
+            <View style={styles.howCard}>
+              {[
+                {
+                  icon: "share-2",
+                  text: "Pass your unique code to your friends and family.",
+                },
+                {
+                  icon: "message-circle",
+                  text: "Ask them to contact us to sign up and provide the code.",
+                },
+                {
+                  icon: "star",
+                  text: "Each successful referral gets you 10 tokens!",
+                  highlight: true,
+                },
+              ].map((step, i, arr) => (
+                <View
+                  key={step.icon}
+                  style={[styles.howRow, i < arr.length - 1 && styles.howRowDivider]}
+                >
+                  <View style={[styles.howIcon, step.highlight && styles.howIconHi]}>
+                    <Feather
+                      name={step.icon as any}
+                      size={16}
+                      color={step.highlight ? "#FFD24A" : Colors.dark.accent}
+                    />
+                  </View>
+                  <ThemedText
+                    style={[styles.howText, step.highlight && styles.howTextHi]}
+                  >
+                    {step.text}
+                  </ThemedText>
                 </View>
-                <ThemedText style={styles.howText}>{step.text}</ThemedText>
-              </View>
-            ))}
+              ))}
+            </View>
+          </View>
+
+          {/* Store callout */}
+          <View style={styles.storeCard}>
+            <LinearGradient
+              colors={["rgba(124,77,255,0.20)", "rgba(255,102,0,0.10)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+            <View style={styles.storeIconWrap}>
+              <Feather name="shopping-bag" size={22} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <ThemedText style={styles.storeTitle}>Redeem your tokens</ThemedText>
+              <ThemedText style={styles.storeSub}>
+                Head to the Referrals Store at{" "}
+                <ThemedText style={styles.storeLink}>UltraCast.co.uk</ThemedText> to
+                trade your tokens for amazing prizes.
+              </ThemedText>
+            </View>
+          </View>
+
+          {/* Promo tip */}
+          <View style={styles.promoRow}>
+            <Feather name="trending-up" size={16} color="#FFD24A" />
+            <ThemedText style={styles.promoText}>
+              Keep an eye out! Occasionally we run promotions that earn you more
+              tokens per referral.
+            </ThemedText>
+          </View>
+
+          {/* Referral notice */}
+          <View style={styles.noticeCard}>
+            <View style={styles.noticeHead}>
+              <Feather name="shield" size={16} color="#e57373" />
+              <ThemedText style={styles.noticeTitle}>Referral Notice</ThemedText>
+            </View>
+            <ThemedText style={styles.noticeText}>
+              Please only refer friends, family, or people you personally know and
+              trust. Referring random people is strictly forbidden.
+            </ThemedText>
+            <ThemedText style={styles.noticeText}>
+              Doing so not only puts the security and reliability of the service at
+              risk, but may also create unnecessary risks for yourself. Any
+              referrals found to be unsafe, suspicious, or made to unknown/random
+              individuals will be removed or refused.
+            </ThemedText>
           </View>
         </ScrollView>
       )}
@@ -567,20 +641,95 @@ const styles = StyleSheet.create({
   generateBtnLabel: { fontSize: 15, fontWeight: "700", color: "#fff" },
 
   // How it works
-  howSection: { gap: Spacing.md },
-  howTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
-  howRow: { flexDirection: "row", gap: Spacing.md, alignItems: "flex-start" },
-  howNum: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.dark.accent + "22",
+  howSection: { gap: Spacing.sm },
+  sectionHead: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  howTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  howCard: {
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.dark.accent + "55",
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary + "80",
+    paddingHorizontal: Spacing.lg,
+  },
+  howRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+  },
+  howRowDivider: { borderBottomWidth: 1, borderBottomColor: Colors.dark.border },
+  howIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.dark.accent + "1A",
+    borderWidth: 1,
+    borderColor: Colors.dark.accent + "44",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
-  howNumText: { fontSize: 13, fontWeight: "800", color: Colors.dark.accent },
-  howText: { flex: 1, fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, paddingTop: 4 },
+  howIconHi: {
+    backgroundColor: "rgba(255,210,74,0.16)",
+    borderColor: "rgba(255,210,74,0.5)",
+  },
+  howText: { flex: 1, fontSize: 13.5, color: Colors.dark.text, lineHeight: 19 },
+  howTextHi: { fontWeight: "700", color: "#FFE08A" },
+
+  // Store callout
+  storeCard: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(124,77,255,0.4)",
+    overflow: "hidden",
+  },
+  storeIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(124,77,255,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  storeTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text, marginBottom: 3 },
+  storeSub: { fontSize: 12.5, color: Colors.dark.textSecondary, lineHeight: 18 },
+  storeLink: { color: "#fff", fontWeight: "700" },
+
+  // Promo tip
+  promoRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,210,74,0.35)",
+    backgroundColor: "rgba(255,210,74,0.08)",
+  },
+  promoText: { flex: 1, fontSize: 12.5, color: "#FFE08A", lineHeight: 18 },
+
+  // Referral notice
+  noticeCard: {
+    gap: Spacing.sm,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(229,115,115,0.4)",
+    backgroundColor: "rgba(229,115,115,0.07)",
+  },
+  noticeHead: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  noticeTitle: { fontSize: 14, fontWeight: "700", color: "#e57373" },
+  noticeText: { fontSize: 12.5, color: Colors.dark.textSecondary, lineHeight: 18 },
 });
