@@ -290,7 +290,7 @@ function AccountButton({ onPress }: { onPress: () => void }) {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      <Feather name="user" size={18} color={accent.accent} />
+      <Feather name="settings" size={18} color={accent.accent} />
     </Pressable>
   );
 }

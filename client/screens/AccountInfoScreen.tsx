@@ -473,7 +473,7 @@ export default function AccountInfoScreen() {
         <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
           {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
         </HoverBtn>
-        <ThemedText style={styles.headerTitle}>Account</ThemedText>
+        <ThemedText style={styles.headerTitle}>Settings</ThemedText>
         <HoverBtn style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={handleRefresh} disabled={isRefreshing}>
           {isRefreshing
             ? <ActivityIndicator size="small" color={Colors.dark.accent} />
