@@ -198,12 +198,35 @@ interface ReferralData {
   referral_tokens: number;
 }
 
+interface ReferralLog {
+  id: number;
+  created_at: string;
+}
+
 const BASE = `${process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "http://localhost:5000"}`;
 
 async function fetchReferrals(username: string): Promise<ReferralData> {
   const res = await fetch(`${BASE}/api/referrals?username=${encodeURIComponent(username)}`);
   if (!res.ok) throw new Error("Failed to load referral data");
   return res.json();
+}
+
+async function fetchHistory(username: string): Promise<ReferralLog[]> {
+  const res = await fetch(`${BASE}/api/referrals/history?username=${encodeURIComponent(username)}`);
+  if (!res.ok) throw new Error("Failed to load referral history");
+  const json = await res.json();
+  return Array.isArray(json.history) ? json.history : [];
+}
+
+function formatLogDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleString("en-GB", { month: "short" });
+  const year = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hh}:${mm}`;
 }
 
 async function generateCode(username: string): Promise<string> {
@@ -229,6 +252,7 @@ export default function ReferralsScreen() {
   const username = userInfo?.user_info?.username ?? "";
 
   const [data, setData] = useState<ReferralData | null>(null);
+  const [history, setHistory] = useState<ReferralLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -246,8 +270,12 @@ export default function ReferralsScreen() {
       else setRefreshing(true);
       setError(null);
       try {
-        const result = await fetchReferrals(username);
+        const [result, logs] = await Promise.all([
+          fetchReferrals(username),
+          fetchHistory(username).catch(() => [] as ReferralLog[]),
+        ]);
         setData(result);
+        setHistory(logs);
       } catch (e: any) {
         setError(e?.message ?? "Failed to load referral data");
       } finally {
@@ -414,6 +442,43 @@ export default function ReferralsScreen() {
             />
           )}
 
+          {/* Referral history */}
+          <View style={styles.historyCard}>
+            <View style={styles.historyHead}>
+              <Feather name="calendar" size={18} color={Colors.dark.accent} />
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.historyTitle}>Referral History</ThemedText>
+                <ThemedText style={styles.historySub}>
+                  A log of your successful referrals.
+                </ThemedText>
+              </View>
+            </View>
+            {history.length === 0 ? (
+              <View style={styles.historyEmpty}>
+                <Feather name="inbox" size={22} color={Colors.dark.textSecondary} />
+                <ThemedText style={styles.historyEmptyText}>
+                  No referrals yet — share your code to get started.
+                </ThemedText>
+              </View>
+            ) : (
+              <View style={styles.historyList}>
+                {history.map((row) => (
+                  <View key={row.id} style={styles.historyRow}>
+                    <View style={styles.historyRowLeft}>
+                      <Feather name="clock" size={15} color={Colors.dark.textSecondary} />
+                      <ThemedText style={styles.historyRowLabel}>
+                        Referral Received
+                      </ThemedText>
+                    </View>
+                    <ThemedText style={styles.historyRowDate}>
+                      {formatLogDate(row.created_at)}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+
           {/* Store callout */}
           <View style={styles.storeCard}>
             <LinearGradient
@@ -574,6 +639,36 @@ const styles = StyleSheet.create({
   bottomWrap: { gap: Spacing.lg },
   bottomWrapLandscape: { flexDirection: "row", gap: Spacing.lg, alignItems: "flex-start" },
   bottomCol: { flex: 1 },
+
+  // Referral history
+  historyCard: {
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary + "80",
+  },
+  historyHead: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  historyTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  historySub: { fontSize: 12.5, color: Colors.dark.textSecondary, marginTop: 2 },
+  historyList: { gap: Spacing.sm },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.background + "80",
+  },
+  historyRowLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  historyRowLabel: { fontSize: 14, fontWeight: "700", color: Colors.dark.text },
+  historyRowDate: { fontSize: 12.5, color: Colors.dark.textSecondary },
+  historyEmpty: { alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.xl },
+  historyEmptyText: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center" },
   statCard: {
     flex: 1,
     borderRadius: BorderRadius.lg,

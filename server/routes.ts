@@ -1241,6 +1241,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Referral history — rows from the lifetime DB `referral_logs` table where
+  // `referrer_username` matches the logged-in user. Each row = one referral
+  // received. Returns newest first. Gracefully returns [] when none/not found.
+  app.get("/api/referrals/history", async (req, res) => {
+    const { username } = req.query;
+    if (!username || typeof username !== "string") {
+      return res.status(400).json({ error: "username required" });
+    }
+    try {
+      const { data, error } = await lifetimeDb
+        .from("referral_logs")
+        .select("id, created_at")
+        .eq("referrer_username", username)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) {
+        console.error("[referrals/history] fetch error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ history: data ?? [] });
+    } catch (e: any) {
+      console.error("[referrals/history] exception:", e?.message);
+      res.status(500).json({ error: "Failed to fetch referral history" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
