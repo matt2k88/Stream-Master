@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView } from "react-native";
 import Constants from "expo-constants";
 import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,7 +14,8 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useProfile } from "@/contexts/ProfileContext";
+import { useProfile, makeGuestProfile, type Profile } from "@/contexts/ProfileContext";
+import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
@@ -220,31 +221,156 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function ProfileButton({ onPress }: { onPress: () => void }) {
-  const { activeProfile } = useProfile();
+function ProfileButton() {
+  const { activeProfile, setActiveProfile } = useProfile();
+  const navigation = useNavigation<NavigationProp>();
+  const { userInfo } = useAuth();
+  const username = userInfo?.user_info?.username ?? "";
+
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
 
+  const [open, setOpen] = useState(false);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+  const btnRef = useRef<View>(null);
+  const { width: winW } = useWindowDimensions();
+
+  const openDropdown = useCallback(() => {
+    btnRef.current?.measureInWindow((x, y, w, h) => {
+      setAnchor({ top: y + h + Spacing.xs, right: Math.max(Spacing.md, winW - (x + w)) });
+    });
+    setOpen(true);
+    setLoading(true);
+    const url = new URL("/api/profiles", getApiUrl());
+    url.searchParams.set("username", username);
+    fetch(url.toString())
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list: Profile[]) => setProfiles(Array.isArray(list) ? list : []))
+      .catch(() => setProfiles([]))
+      .finally(() => setLoading(false));
+  }, [username, winW]);
+
+  const selectProfile = useCallback(
+    (profile: Profile) => {
+      setOpen(false);
+      if (profile.pin) {
+        navigation.navigate("PinEntry", { profile, fromHome: true });
+      } else {
+        setActiveProfile(profile);
+      }
+    },
+    [navigation, setActiveProfile],
+  );
+
+  const selectGuest = useCallback(async () => {
+    setOpen(false);
+    const prefs = await loadGuestPlayerPrefs();
+    setActiveProfile(makeGuestProfile(username, prefs));
+  }, [username, setActiveProfile]);
+
+  const createProfile = useCallback(() => {
+    setOpen(false);
+    navigation.navigate("CreateProfile", {});
+  }, [navigation]);
+
   if (!activeProfile) return null;
 
   return (
-    <Pressable
-      style={[styles.profileBtn, isActive && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    >
-      <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
-        <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
-      </View>
-      <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
-        {activeProfile.name}
-      </ThemedText>
-      <Feather name="chevron-down" size={12} color={activeProfile.avatar_color + "99"} />
-    </Pressable>
+    <>
+      <Pressable
+        ref={btnRef}
+        style={[styles.profileBtn, isActive && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
+        onPress={openDropdown}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      >
+        <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
+          <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
+        </View>
+        <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
+          {activeProfile.name}
+        </ThemedText>
+        <Feather name={open ? "chevron-up" : "chevron-down"} size={12} color={activeProfile.avatar_color + "99"} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.profileDropdownBackdrop} onPress={() => setOpen(false)}>
+          <Pressable
+            style={[styles.profileDropdown, anchor ? { top: anchor.top, right: anchor.right } : { top: 64, right: Spacing.md }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {loading ? (
+              <View style={styles.profileDropdownLoading}>
+                <ActivityIndicator color={Colors.dark.accent} />
+              </View>
+            ) : (
+              <ScrollView style={styles.profileDropdownScroll} contentContainerStyle={styles.profileDropdownContent}>
+                {profiles.map((p) => {
+                  const selected = p.id === activeProfile.id;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      style={({ pressed: pr, focused: fc, hovered: hv }) => [
+                        styles.profileRow,
+                        (pr || fc || hv) && styles.profileRowActive,
+                      ]}
+                      onPress={() => selectProfile(p)}
+                    >
+                      <View style={[styles.profileRowAvatar, { backgroundColor: p.avatar_color + "33", borderColor: p.avatar_color }]}>
+                        <Feather name={p.avatar_icon as any} size={16} color={p.avatar_color} />
+                      </View>
+                      <ThemedText style={[styles.profileRowName, { color: p.avatar_color }]} numberOfLines={1}>
+                        {p.name}
+                      </ThemedText>
+                      {p.pin ? <Feather name="lock" size={12} color={Colors.dark.textSecondary} /> : null}
+                      {selected ? <Feather name="check" size={16} color={Colors.dark.accent} /> : null}
+                    </Pressable>
+                  );
+                })}
+
+                <Pressable
+                  style={({ pressed: pr, focused: fc, hovered: hv }) => [
+                    styles.profileRow,
+                    (pr || fc || hv) && styles.profileRowActive,
+                  ]}
+                  onPress={selectGuest}
+                >
+                  <View style={[styles.profileRowAvatar, { backgroundColor: "#FF660033", borderColor: "#FF6600" }]}>
+                    <Feather name="user" size={16} color="#FF6600" />
+                  </View>
+                  <ThemedText style={[styles.profileRowName, { color: Colors.dark.text }]} numberOfLines={1}>
+                    Guest
+                  </ThemedText>
+                  {activeProfile.id === "guest" ? <Feather name="check" size={16} color={Colors.dark.accent} /> : null}
+                </Pressable>
+
+                <View style={styles.profileDropdownDivider} />
+
+                <Pressable
+                  style={({ pressed: pr, focused: fc, hovered: hv }) => [
+                    styles.profileRow,
+                    (pr || fc || hv) && styles.profileRowActive,
+                  ]}
+                  onPress={createProfile}
+                >
+                  <View style={[styles.profileRowAvatar, styles.profileRowAvatarAdd]}>
+                    <Feather name="plus" size={16} color={Colors.dark.textSecondary} />
+                  </View>
+                  <ThemedText style={[styles.profileRowName, { color: Colors.dark.text }]} numberOfLines={1}>
+                    Create a Profile
+                  </ThemedText>
+                </Pressable>
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
@@ -882,9 +1008,7 @@ export default function HomeScreen() {
           {/* Profile pill is large; hide on portrait where the header
               is cramped — users can still switch profile via the
               Profile option in Account Info. */}
-          {isLandscape ? (
-            <ProfileButton onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })} />
-          ) : null}
+          {isLandscape ? <ProfileButton /> : null}
           <UpdateAvailableButton />
           <MessagesButton onPress={() => navigation.navigate("Messages")} />
           <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
@@ -1368,6 +1492,42 @@ const styles = StyleSheet.create({
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
+  profileDropdownBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  profileDropdown: {
+    position: "absolute",
+    width: 240,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingVertical: Spacing.xs,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  profileDropdownLoading: { paddingVertical: Spacing.lg, alignItems: "center" },
+  profileDropdownScroll: { maxHeight: 320 },
+  profileDropdownContent: { paddingHorizontal: Spacing.xs },
+  profileDropdownDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: Spacing.xs, marginHorizontal: Spacing.xs },
+  profileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  profileRowActive: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.accent + "66" },
+  profileRowAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    borderWidth: 1, justifyContent: "center", alignItems: "center",
+  },
+  profileRowAvatarAdd: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.border },
+  profileRowName: { fontSize: 14, fontWeight: "600", flex: 1 },
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
   expiryBannerWrap: {
