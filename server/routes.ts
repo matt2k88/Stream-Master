@@ -1195,6 +1195,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Referrals ─────────────────────────────────────────────────────────────
+  // Queries the lifetime DB `profiles` table by Xtream username.
+  // Returns referral_code (null if not yet generated), referral_count,
+  // referral_tokens. Gracefully returns nulls when the row isn't found.
+  app.get("/api/referrals", async (req, res) => {
+    const { username } = req.query;
+    if (!username || typeof username !== "string") {
+      return res.status(400).json({ error: "username required" });
+    }
+    try {
+      const { data, error } = await lifetimeDb
+        .from("profiles")
+        .select("referral_code, referral_count, referral_tokens")
+        .eq("username", username)
+        .maybeSingle();
+      if (error) {
+        console.error("[referrals] fetch error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json(data ?? { referral_code: null, referral_count: 0, referral_tokens: 0 });
+    } catch (e: any) {
+      console.error("[referrals] exception:", e?.message);
+      res.status(500).json({ error: "Failed to fetch referral data" });
+    }
+  });
+
+  // Calls the Supabase RPC `create_referral_code_for_user` on the lifetime DB.
+  // Returns { referral_code } on success.
+  app.post("/api/referrals/generate", async (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: "username required" });
+    try {
+      const { data, error } = await lifetimeDb.rpc("create_referral_code_for_user", {
+        p_username: username,
+      });
+      if (error) {
+        console.error("[referrals/generate] rpc error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      res.json({ referral_code: data });
+    } catch (e: any) {
+      console.error("[referrals/generate] exception:", e?.message);
+      res.status(500).json({ error: "Failed to generate referral code" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

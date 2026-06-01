@@ -584,6 +584,14 @@ export default function AccountInfoScreen() {
                     onPress={() => navigation.navigate("ProfilePicker", { fromHome: true })}
                   />
                 </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    icon="gift"
+                    title="Referrals"
+                    subtitle="Code & rewards"
+                    onPress={() => navigation.navigate("Referrals")}
+                  />
+                </View>
               </View>
             </View>
           ) : null;
