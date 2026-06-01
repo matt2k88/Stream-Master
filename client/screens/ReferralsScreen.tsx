@@ -16,6 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 
 // ─── Hover-aware Pressable ────────────────────────────────────────────────────
 function HoverBtn({
@@ -203,16 +204,18 @@ interface ReferralLog {
   created_at: string;
 }
 
-const BASE = `${process.env.EXPO_PUBLIC_DOMAIN ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` : "http://localhost:5000"}`;
-
 async function fetchReferrals(username: string): Promise<ReferralData> {
-  const res = await fetch(`${BASE}/api/referrals?username=${encodeURIComponent(username)}`);
+  const url = new URL("/api/referrals", getApiUrl());
+  url.searchParams.set("username", username);
+  const res = await fetch(url.toString());
   if (!res.ok) throw new Error("Failed to load referral data");
   return res.json();
 }
 
 async function fetchHistory(username: string): Promise<ReferralLog[]> {
-  const res = await fetch(`${BASE}/api/referrals/history?username=${encodeURIComponent(username)}`);
+  const url = new URL("/api/referrals/history", getApiUrl());
+  url.searchParams.set("username", username);
+  const res = await fetch(url.toString());
   if (!res.ok) throw new Error("Failed to load referral history");
   const json = await res.json();
   return Array.isArray(json.history) ? json.history : [];
@@ -230,7 +233,7 @@ function formatLogDate(iso: string): string {
 }
 
 async function generateCode(username: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/referrals/generate`, {
+  const res = await fetch(new URL("/api/referrals/generate", getApiUrl()).toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username }),

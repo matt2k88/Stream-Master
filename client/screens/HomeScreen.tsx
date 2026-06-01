@@ -221,6 +221,36 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function ProfileDropdownRow({
+  preferFocus,
+  onPress,
+  children,
+}: {
+  preferFocus?: boolean;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = pressed || focused || hovered;
+  return (
+    <Pressable
+      hasTVPreferredFocus={preferFocus}
+      style={[styles.profileRow, isActive && styles.profileRowActive]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 function ProfileButton() {
   const { activeProfile, setActiveProfile } = useProfile();
   const navigation = useNavigation<NavigationProp>();
@@ -313,15 +343,7 @@ function ProfileButton() {
                 {profiles.map((p) => {
                   const selected = p.id === activeProfile.id;
                   return (
-                    <Pressable
-                      key={p.id}
-                      hasTVPreferredFocus={selected}
-                      style={({ pressed: pr, focused: fc, hovered: hv }) => [
-                        styles.profileRow,
-                        (pr || fc || hv) && styles.profileRowActive,
-                      ]}
-                      onPress={() => selectProfile(p)}
-                    >
+                    <ProfileDropdownRow key={p.id} preferFocus={selected} onPress={() => selectProfile(p)}>
                       <View style={[styles.profileRowAvatar, { backgroundColor: p.avatar_color + "33", borderColor: p.avatar_color }]}>
                         <Feather name={p.avatar_icon as any} size={16} color={p.avatar_color} />
                       </View>
@@ -330,18 +352,11 @@ function ProfileButton() {
                       </ThemedText>
                       {p.pin ? <Feather name="lock" size={12} color={Colors.dark.textSecondary} /> : null}
                       {selected ? <Feather name="check" size={16} color={Colors.dark.accent} /> : null}
-                    </Pressable>
+                    </ProfileDropdownRow>
                   );
                 })}
 
-                <Pressable
-                  hasTVPreferredFocus={activeProfile.id === "guest"}
-                  style={({ pressed: pr, focused: fc, hovered: hv }) => [
-                    styles.profileRow,
-                    (pr || fc || hv) && styles.profileRowActive,
-                  ]}
-                  onPress={selectGuest}
-                >
+                <ProfileDropdownRow preferFocus={activeProfile.id === "guest"} onPress={selectGuest}>
                   <View style={[styles.profileRowAvatar, { backgroundColor: "#FF660033", borderColor: "#FF6600" }]}>
                     <Feather name="user" size={16} color="#FF6600" />
                   </View>
@@ -349,24 +364,18 @@ function ProfileButton() {
                     Guest
                   </ThemedText>
                   {activeProfile.id === "guest" ? <Feather name="check" size={16} color={Colors.dark.accent} /> : null}
-                </Pressable>
+                </ProfileDropdownRow>
 
                 <View style={styles.profileDropdownDivider} />
 
-                <Pressable
-                  style={({ pressed: pr, focused: fc, hovered: hv }) => [
-                    styles.profileRow,
-                    (pr || fc || hv) && styles.profileRowActive,
-                  ]}
-                  onPress={createProfile}
-                >
+                <ProfileDropdownRow onPress={createProfile}>
                   <View style={[styles.profileRowAvatar, styles.profileRowAvatarAdd]}>
                     <Feather name="plus" size={16} color={Colors.dark.textSecondary} />
                   </View>
                   <ThemedText style={[styles.profileRowName, { color: Colors.dark.text }]} numberOfLines={1}>
                     Create a Profile
                   </ThemedText>
-                </Pressable>
+                </ProfileDropdownRow>
               </ScrollView>
             )}
           </Pressable>
