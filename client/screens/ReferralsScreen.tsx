@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Pressable,
   Clipboard,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -222,6 +223,8 @@ async function generateCode(username: string): Promise<string> {
 export default function ReferralsScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const { userInfo } = useAuth();
   const username = userInfo?.user_info?.username ?? "";
 
@@ -369,8 +372,8 @@ export default function ReferralsScreen() {
             </View>
           </View>
 
-          {/* Stat cards */}
-          <View style={styles.statsRow}>
+          {/* Stat + code row: 33/33/33 on landscape, stacked on portrait */}
+          <View style={isLandscape ? styles.topGridLandscape : styles.statsRow}>
             <View style={{ flex: 1 }}>
               <StatCard
                 label="Referrals Made"
@@ -387,59 +390,29 @@ export default function ReferralsScreen() {
                 accent={(data?.referral_tokens ?? 0) > 0}
               />
             </View>
+            {isLandscape ? (
+              <View style={{ flex: 1 }}>
+                <CodeCard
+                  code={data?.referral_code ?? null}
+                  onGenerate={handleGenerate}
+                  generating={generating}
+                  copied={copied}
+                  onCopy={handleCopy}
+                />
+              </View>
+            ) : null}
           </View>
 
-          {/* Code card */}
-          <CodeCard
-            code={data?.referral_code ?? null}
-            onGenerate={handleGenerate}
-            generating={generating}
-            copied={copied}
-            onCopy={handleCopy}
-          />
-
-          {/* How it works */}
-          <View style={styles.howSection}>
-            <View style={styles.sectionHead}>
-              <Feather name="help-circle" size={15} color={Colors.dark.accent} />
-              <ThemedText style={styles.howTitle}>How it works</ThemedText>
-            </View>
-            <View style={styles.howCard}>
-              {[
-                {
-                  icon: "share-2",
-                  text: "Pass your unique code to your friends and family.",
-                },
-                {
-                  icon: "message-circle",
-                  text: "Ask them to contact us to sign up and provide the code.",
-                },
-                {
-                  icon: "star",
-                  text: "Each successful referral gets you 10 tokens!",
-                  highlight: true,
-                },
-              ].map((step, i, arr) => (
-                <View
-                  key={step.icon}
-                  style={[styles.howRow, i < arr.length - 1 && styles.howRowDivider]}
-                >
-                  <View style={[styles.howIcon, step.highlight && styles.howIconHi]}>
-                    <Feather
-                      name={step.icon as any}
-                      size={16}
-                      color={step.highlight ? "#FFD24A" : Colors.dark.accent}
-                    />
-                  </View>
-                  <ThemedText
-                    style={[styles.howText, step.highlight && styles.howTextHi]}
-                  >
-                    {step.text}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          </View>
+          {/* Code card (portrait only — landscape renders it in the row above) */}
+          {isLandscape ? null : (
+            <CodeCard
+              code={data?.referral_code ?? null}
+              onGenerate={handleGenerate}
+              generating={generating}
+              copied={copied}
+              onCopy={handleCopy}
+            />
+          )}
 
           {/* Store callout */}
           <View style={styles.storeCard}>
@@ -471,22 +444,68 @@ export default function ReferralsScreen() {
             </ThemedText>
           </View>
 
-          {/* Referral notice */}
-          <View style={styles.noticeCard}>
-            <View style={styles.noticeHead}>
-              <Feather name="shield" size={16} color="#e57373" />
-              <ThemedText style={styles.noticeTitle}>Referral Notice</ThemedText>
+          {/* How it works + Referral notice: 50/50 on landscape, stacked on portrait */}
+          <View style={[styles.bottomWrap, isLandscape && styles.bottomWrapLandscape]}>
+            {/* How it works */}
+            <View style={[styles.howSection, isLandscape && styles.bottomCol]}>
+              <View style={styles.sectionHead}>
+                <Feather name="help-circle" size={15} color={Colors.dark.accent} />
+                <ThemedText style={styles.howTitle}>How it works</ThemedText>
+              </View>
+              <View style={styles.howCard}>
+                {[
+                  {
+                    icon: "share-2",
+                    text: "Pass your unique code to your friends and family.",
+                  },
+                  {
+                    icon: "message-circle",
+                    text: "Ask them to contact us to sign up and provide the code.",
+                  },
+                  {
+                    icon: "star",
+                    text: "Each successful referral gets you 10 tokens!",
+                    highlight: true,
+                  },
+                ].map((step, i, arr) => (
+                  <View
+                    key={step.icon}
+                    style={[styles.howRow, i < arr.length - 1 && styles.howRowDivider]}
+                  >
+                    <View style={[styles.howIcon, step.highlight && styles.howIconHi]}>
+                      <Feather
+                        name={step.icon as any}
+                        size={16}
+                        color={step.highlight ? "#FFD24A" : Colors.dark.accent}
+                      />
+                    </View>
+                    <ThemedText
+                      style={[styles.howText, step.highlight && styles.howTextHi]}
+                    >
+                      {step.text}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
             </View>
-            <ThemedText style={styles.noticeText}>
-              Please only refer friends, family, or people you personally know and
-              trust. Referring random people is strictly forbidden.
-            </ThemedText>
-            <ThemedText style={styles.noticeText}>
-              Doing so not only puts the security and reliability of the service at
-              risk, but may also create unnecessary risks for yourself. Any
-              referrals found to be unsafe, suspicious, or made to unknown/random
-              individuals will be removed or refused.
-            </ThemedText>
+
+            {/* Referral notice */}
+            <View style={[styles.noticeCard, isLandscape && styles.bottomCol]}>
+              <View style={styles.noticeHead}>
+                <Feather name="shield" size={16} color="#e57373" />
+                <ThemedText style={styles.noticeTitle}>Referral Notice</ThemedText>
+              </View>
+              <ThemedText style={styles.noticeText}>
+                Please only refer friends, family, or people you personally know and
+                trust. Referring random people is strictly forbidden.
+              </ThemedText>
+              <ThemedText style={styles.noticeText}>
+                Doing so not only puts the security and reliability of the service at
+                risk, but may also create unnecessary risks for yourself. Any
+                referrals found to be unsafe, suspicious, or made to unknown/random
+                individuals will be removed or refused.
+              </ThemedText>
+            </View>
           </View>
         </ScrollView>
       )}
@@ -551,6 +570,10 @@ const styles = StyleSheet.create({
 
   // Stat cards
   statsRow: { flexDirection: "row", gap: Spacing.md },
+  topGridLandscape: { flexDirection: "row", gap: Spacing.md, alignItems: "stretch" },
+  bottomWrap: { gap: Spacing.lg },
+  bottomWrapLandscape: { flexDirection: "row", gap: Spacing.lg, alignItems: "flex-start" },
+  bottomCol: { flex: 1 },
   statCard: {
     flex: 1,
     borderRadius: BorderRadius.lg,
