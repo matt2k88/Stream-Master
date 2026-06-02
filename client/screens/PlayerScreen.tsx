@@ -973,9 +973,17 @@ function LegacyPlayerScreen() {
     lastLiveTimeAtRef.current = Date.now();
     stallTimerRef.current = setInterval(() => {
       const now = Date.now();
-      // Gate 1: don't count toward stall while the player isn't actively
-      // playing (buffering, paused, ad-break, etc.).
-      if (!player.playing) {
+      // Gate 1: don't count toward stall while the player is paused.
+      // On the expo engine a non-playing flag also covers normal buffering,
+      // so we treat "!playing" as paused and reset. On the VLC engine a
+      // provider-side connection drop (e.g. the ~3h Xtream session cap)
+      // leaves the player reporting not-playing while it actually sits
+      // frozen mid-stream — so we only reset on an explicit user pause and
+      // otherwise fall through to the currentTime-advance check, letting a
+      // silent freeze trip the reload.
+      const vlcEngine = playerEngineRef.current === "vlc";
+      const intentionallyPaused = vlcEngine ? !!player._paused : !player.playing;
+      if (intentionallyPaused) {
         lastLiveTimeAtRef.current = now;
         return;
       }
@@ -1004,6 +1012,20 @@ function LegacyPlayerScreen() {
     }, 3000);
     return clearStallTimer;
   }, [isLive, isLoading, reconnecting, error, player, scheduleLiveRetry, clearStallTimer]);
+
+  // A live channel never legitimately reaches end-of-stream. If the player
+  // reports playToEnd on a live stream it's a provider-side disconnect
+  // (e.g. the ~3h Xtream session cap) surfacing as a clean stop rather than
+  // an error — route it into the same auto-reconnect backoff instead of
+  // dead-ending. VOD end (next episode / completion) is left untouched.
+  useEffect(() => {
+    if (!isLive) return;
+    const sub = player.addListener("playToEnd", () => {
+      clearLoadWatchdog();
+      scheduleLiveRetry();
+    });
+    return () => sub.remove();
+  }, [player, isLive, scheduleLiveRetry, clearLoadWatchdog]);
 
   useEffect(() => {
     const sub = player.addListener("playingChange", (e) => {

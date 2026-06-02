@@ -684,6 +684,17 @@ export default function LivePreviewScreen() {
     return () => sub.remove();
   }, [player, activeProfile, selectedId, selectedName, selectedIcon, upsertLocal, scheduleAutoRetry, resetRetryState, clearLoadingTimeout]);
 
+  // A live channel never legitimately ends. A playToEnd here means the
+  // provider dropped the connection (e.g. the ~3h Xtream session cap) as a
+  // clean stop rather than an error — run the same auto-retry loop.
+  useEffect(() => {
+    const sub = player.addListener("playToEnd", () => {
+      clearLoadingTimeout();
+      scheduleAutoRetry();
+    });
+    return () => sub.remove();
+  }, [player, scheduleAutoRetry, clearLoadingTimeout]);
+
   // ── Stall detector: while we believe we're playing, poll currentTime.
   // If it hasn't advanced for ~15s the stream has frozen and we need to reload.
   //
@@ -700,7 +711,14 @@ export default function LivePreviewScreen() {
     lastTimeAtRef.current = Date.now();
     stallTimerRef.current = setInterval(() => {
       const now = Date.now();
-      if (!player.playing) {
+      // On the expo engine "!playing" covers paused + normal buffering, so
+      // we reset. On VLC a provider-side connection drop (e.g. the ~3h
+      // Xtream session cap) leaves the player reporting not-playing while it
+      // sits frozen mid-stream, so we only reset on an explicit user pause
+      // and otherwise fall through to the currentTime-advance check below.
+      const vlcEngine = playerEngineRef.current === "vlc";
+      const intentionallyPaused = vlcEngine ? !!player._paused : !player.playing;
+      if (intentionallyPaused) {
         lastTimeAtRef.current = now;
         return;
       }

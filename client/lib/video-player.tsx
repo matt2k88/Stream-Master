@@ -135,6 +135,11 @@ type Subscription = { remove: () => void };
 // suffix instead of generic "VLC/3.0.x LibVLC/3.0.x".
 const DEFAULT_INIT_OPTIONS = [
   "--network-caching=300",
+  // Let libvlc transparently re-open an HTTP(S) connection that the
+  // provider drops mid-stream (e.g. the common ~3h Xtream session cap)
+  // instead of stalling on the last decoded frame forever. The standalone
+  // VOD VLC screen already sets this; the shared live path now matches.
+  "--http-reconnect",
   `--http-user-agent=${UA_VLC}`,
 ];
 

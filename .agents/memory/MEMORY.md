@@ -1,2 +1,3 @@
 - [YouTube audio extraction on server](youtube-audio-extraction.md) — yt-dlp needs Deno 2 + yt-dlp-ejs plugin to solve JS challenges; cookies bypass bot wall but Replit Secrets UI strips newlines.
 - [Guest profile guards](guest-profile.md) — every per-profile context must guard load AND all mutations against GUEST_PROFILE_ID, not just create/load.
+- [VLC live reconnect](vlc-live-reconnect.md) — live freeze is provider-side (no 3h timer in our code); recovery needs --http-reconnect + engine-aware stall gate + playToEnd→reconnect, all three.
