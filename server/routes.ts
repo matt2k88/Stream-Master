@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
-import { CURATED_LEAGUE_IDS } from "./football";
+import { CURATED_LEAGUE_IDS, fetchFixtureDetail } from "./football";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -1248,6 +1248,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data ?? []);
     } catch {
       res.json([]);
+    }
+  });
+
+  // On-demand detail (stats / lineups / events) for a single live fixture.
+  // Fetched only when a user opens a game; returns null fields gracefully when
+  // the kill-switch is off or the API key is missing.
+  app.get("/api/football/centre/fixture/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "invalid fixture id" });
+    }
+    try {
+      const detail = await fetchFixtureDetail(id);
+      if (!detail) {
+        return res.json({ statistics: [], lineups: [], events: [] });
+      }
+      res.json(detail);
+    } catch (e: any) {
+      console.error("[football] fixture detail error:", e?.message);
+      res.json({ statistics: [], lineups: [], events: [] });
     }
   });
 

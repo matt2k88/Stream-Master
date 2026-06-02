@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  Modal,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -234,6 +235,7 @@ function MatchCard({
   upcoming,
   channels,
   onChannelPress,
+  onCardPress,
   cardWidth,
 }: {
   home: string;
@@ -247,10 +249,11 @@ function MatchCard({
   upcoming: boolean;
   channels: FixtureChannel[];
   onChannelPress: (ch: FixtureChannel) => void;
+  onCardPress?: () => void;
   cardWidth: number;
 }) {
-  return (
-    <View style={[styles.gameCard, { width: cardWidth }]}>
+  const body = (active: boolean) => (
+    <>
       <View style={styles.cardTop}>
         {statusLabel ? (
           <View
@@ -271,6 +274,14 @@ function MatchCard({
               {statusLabel}
             </ThemedText>
           </View>
+        ) : null}
+        {onCardPress ? (
+          <Feather
+            name="bar-chart-2"
+            size={14}
+            color={active ? Colors.dark.accent : Colors.dark.textSecondary}
+            style={styles.statsHint}
+          />
         ) : null}
       </View>
 
@@ -300,9 +311,371 @@ function MatchCard({
           </ThemedText>
         ) : null}
       </View>
+    </>
+  );
+
+  return (
+    <View style={[styles.gameCard, { width: cardWidth }]}>
+      {onCardPress ? (
+        <Touchable
+          style={styles.cardPressable}
+          activeStyle={styles.cardPressableActive}
+          onPress={onCardPress}
+        >
+          {body}
+        </Touchable>
+      ) : (
+        <View style={styles.cardPressable}>{body(false)}</View>
+      )}
 
       <ChannelBadges channels={channels} onPress={onChannelPress} />
     </View>
+  );
+}
+
+interface FixtureDetail {
+  statistics: {
+    team_name: string | null;
+    team_logo: string | null;
+    items: { type: string; value: string | number | null }[];
+  }[];
+  lineups: {
+    team_name: string | null;
+    team_logo: string | null;
+    formation: string | null;
+    coach: string | null;
+    startXI: { name: string; number: number | null; pos: string | null }[];
+    substitutes: { name: string; number: number | null; pos: string | null }[];
+  }[];
+  events: {
+    minute: string;
+    team_name: string | null;
+    player: string | null;
+    assist: string | null;
+    type: string | null;
+    detail: string | null;
+  }[];
+}
+
+interface DetailTarget {
+  fixtureId: number;
+  home: string;
+  away: string;
+  homeLogo?: string | null;
+  awayLogo?: string | null;
+  homeScore?: number;
+  awayScore?: number;
+  statusLabel: string;
+  leagueName: string;
+  watchChannel: FixtureChannel | null;
+}
+
+type DetailTab = "stats" | "lineups" | "events";
+
+function eventIcon(type: string | null, detail: string | null): React.ReactNode {
+  const t = (type ?? "").toLowerCase();
+  const d = (detail ?? "").toLowerCase();
+  if (t === "goal") {
+    return <MaterialCommunityIcons name="soccer" size={14} color={Colors.dark.success} />;
+  }
+  if (t === "card") {
+    return (
+      <View
+        style={[
+          styles.cardChip,
+          { backgroundColor: d.includes("red") ? "#FF3B3B" : "#F5C518" },
+        ]}
+      />
+    );
+  }
+  if (t === "subst") {
+    return <Feather name="repeat" size={13} color={Colors.dark.accent} />;
+  }
+  return <Feather name="circle" size={11} color={Colors.dark.textSecondary} />;
+}
+
+function GameDetailModal({
+  target,
+  onClose,
+  onWatchLive,
+}: {
+  target: DetailTarget | null;
+  onClose: () => void;
+  onWatchLive: (ch: FixtureChannel) => void;
+}) {
+  const [tab, setTab] = useState<DetailTab>("stats");
+  const [detail, setDetail] = useState<FixtureDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (!target) return;
+    setTab("stats");
+    setDetail(null);
+    setLoading(true);
+    let active = true;
+    const url = new URL(
+      `/api/football/centre/fixture/${target.fixtureId}`,
+      getApiUrl(),
+    );
+    fetch(url.toString())
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (active) setDetail(data ?? null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [target]);
+
+  if (!target) return null;
+
+  const home = detail?.statistics?.[0];
+  const away = detail?.statistics?.[1];
+  // Build a unified stat-type list preserving order from the home team's list.
+  const statTypes: string[] = [];
+  for (const it of home?.items ?? []) if (!statTypes.includes(it.type)) statTypes.push(it.type);
+  for (const it of away?.items ?? []) if (!statTypes.includes(it.type)) statTypes.push(it.type);
+  const statVal = (team: FixtureDetail["statistics"][number] | undefined, type: string) => {
+    const v = team?.items.find((i) => i.type === type)?.value;
+    return v == null || v === "" ? "—" : String(v);
+  };
+
+  const renderStats = () => {
+    if (!statTypes.length) {
+      return <ThemedText style={styles.modalEmpty}>No stats available yet.</ThemedText>;
+    }
+    return (
+      <View>
+        <View style={[styles.statRow, styles.statHeaderRow]}>
+          <ThemedText style={[styles.statSide, styles.statHeaderText]} numberOfLines={1}>
+            {home?.team_name ?? target.home}
+          </ThemedText>
+          <ThemedText style={[styles.statMid, styles.statHeaderText]}>Stat</ThemedText>
+          <ThemedText
+            style={[styles.statSide, styles.statHeaderText, styles.statSideRight]}
+            numberOfLines={1}
+          >
+            {away?.team_name ?? target.away}
+          </ThemedText>
+        </View>
+        {statTypes.map((type, i) => (
+          <View key={type} style={[styles.statRow, i % 2 === 1 && styles.statRowAlt]}>
+            <ThemedText style={[styles.statSide, styles.statValue]}>
+              {statVal(home, type)}
+            </ThemedText>
+            <ThemedText style={styles.statMid} numberOfLines={1}>
+              {type}
+            </ThemedText>
+            <ThemedText style={[styles.statSide, styles.statValue, styles.statSideRight]}>
+              {statVal(away, type)}
+            </ThemedText>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const renderLineups = () => {
+    if (!detail?.lineups?.length) {
+      return <ThemedText style={styles.modalEmpty}>Lineups not announced yet.</ThemedText>;
+    }
+    return (
+      <View style={{ gap: Spacing.lg }}>
+        {detail.lineups.map((l, idx) => (
+          <View key={idx} style={{ gap: Spacing.xs }}>
+            <View style={styles.lineupHead}>
+              <TeamBadge uri={l.team_logo} />
+              <ThemedText style={styles.lineupTeam} numberOfLines={1}>
+                {l.team_name ?? "Team"}
+              </ThemedText>
+              {l.formation ? (
+                <ThemedText style={styles.lineupFormation}>{l.formation}</ThemedText>
+              ) : null}
+            </View>
+            {l.coach ? (
+              <ThemedText style={styles.lineupCoach}>Coach: {l.coach}</ThemedText>
+            ) : null}
+            <ThemedText style={styles.lineupSection}>Starting XI</ThemedText>
+            {l.startXI.map((p, i) => (
+              <View key={`s${i}`} style={styles.playerRow}>
+                <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
+                <ThemedText style={styles.playerName} numberOfLines={1}>
+                  {p.name}
+                </ThemedText>
+                {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
+              </View>
+            ))}
+            {l.substitutes.length ? (
+              <>
+                <ThemedText style={styles.lineupSection}>Substitutes</ThemedText>
+                {l.substitutes.map((p, i) => (
+                  <View key={`b${i}`} style={styles.playerRow}>
+                    <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
+                    <ThemedText
+                      style={[styles.playerName, styles.playerSub]}
+                      numberOfLines={1}
+                    >
+                      {p.name}
+                    </ThemedText>
+                    {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
+                  </View>
+                ))}
+              </>
+            ) : null}
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const renderEvents = () => {
+    if (!detail?.events?.length) {
+      return <ThemedText style={styles.modalEmpty}>No events yet.</ThemedText>;
+    }
+    return (
+      <View style={{ gap: 2 }}>
+        {detail.events.map((e, i) => (
+          <View key={i} style={styles.eventRow}>
+            <ThemedText style={styles.eventMinute}>{e.minute || "·"}</ThemedText>
+            <View style={styles.eventIcon}>{eventIcon(e.type, e.detail)}</View>
+            <View style={styles.eventBody}>
+              <ThemedText style={styles.eventPlayer} numberOfLines={1}>
+                {e.player ?? e.detail ?? e.type ?? "—"}
+              </ThemedText>
+              <ThemedText style={styles.eventMeta} numberOfLines={1}>
+                {[e.team_name, e.assist ? `assist: ${e.assist}` : null, e.detail]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </ThemedText>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
+
+  const tabBtn = (key: DetailTab, label: string) => (
+    <Touchable
+      style={[styles.modalTab, tab === key && styles.modalTabSelected]}
+      activeStyle={styles.modalTabActive}
+      onPress={() => setTab(key)}
+    >
+      {(active) => (
+        <ThemedText
+          style={[
+            styles.modalTabText,
+            (tab === key || active) && styles.modalTabTextSelected,
+          ]}
+        >
+          {label}
+        </ThemedText>
+      )}
+    </Touchable>
+  );
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <ThemedText style={styles.modalLeague} numberOfLines={1}>
+              {target.leagueName.toUpperCase()}
+            </ThemedText>
+            <Touchable
+              style={styles.modalClose}
+              activeStyle={styles.modalCloseActive}
+              onPress={onClose}
+            >
+              {(active) => (
+                <Feather
+                  name="x"
+                  size={20}
+                  color={active ? Colors.dark.accent : Colors.dark.text}
+                />
+              )}
+            </Touchable>
+          </View>
+
+          <View style={styles.modalScore}>
+            <View style={styles.modalTeam}>
+              <TeamBadge uri={target.homeLogo} />
+              <ThemedText style={styles.modalTeamName} numberOfLines={1}>
+                {target.home}
+              </ThemedText>
+            </View>
+            <View style={styles.modalScoreMid}>
+              <ThemedText style={styles.modalScoreText}>
+                {target.homeScore ?? 0} - {target.awayScore ?? 0}
+              </ThemedText>
+              <ThemedText style={styles.modalStatus}>{target.statusLabel}</ThemedText>
+            </View>
+            <View style={[styles.modalTeam, styles.modalTeamRight]}>
+              <ThemedText style={[styles.modalTeamName, styles.modalTeamNameRight]} numberOfLines={1}>
+                {target.away}
+              </ThemedText>
+              <TeamBadge uri={target.awayLogo} />
+            </View>
+          </View>
+
+          {target.watchChannel ? (
+            <Touchable
+              style={styles.watchBtn}
+              activeStyle={styles.watchBtnActive}
+              onPress={() => onWatchLive(target.watchChannel!)}
+            >
+              {(active) => (
+                <>
+                  <Feather
+                    name="play"
+                    size={15}
+                    color={active ? Colors.dark.accent : Colors.dark.backgroundRoot}
+                  />
+                  <ThemedText style={[styles.watchBtnText, active && styles.watchBtnTextActive]}>
+                    Watch Live · {target.watchChannel!.channel_name}
+                  </ThemedText>
+                </>
+              )}
+            </Touchable>
+          ) : null}
+
+          {/* Tabs */}
+          <View style={styles.modalTabs}>
+            {tabBtn("stats", "Team Stats")}
+            {tabBtn("lineups", "Lineups")}
+            {tabBtn("events", "Events")}
+          </View>
+
+          {/* Body */}
+          {loading ? (
+            <View style={styles.modalLoading}>
+              <ActivityIndicator color={Colors.dark.accent} />
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={{ paddingBottom: Spacing.lg }}
+            >
+              {tab === "stats"
+                ? renderStats()
+                : tab === "lineups"
+                ? renderLineups()
+                : renderEvents()}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -318,6 +691,7 @@ export default function FootballCentreScreen() {
   const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Leagues start collapsed (empty set = nothing expanded) so a busy day isn't
@@ -519,6 +893,25 @@ export default function FootballCentreScreen() {
     [liveStreams, navigation, showToast],
   );
 
+  const openDetail = useCallback(
+    (s: FootballScore) => {
+      const chans = channelMap.get(s.fixture_id) ?? [];
+      setDetailTarget({
+        fixtureId: s.fixture_id,
+        home: s.home_team ?? "?",
+        away: s.away_team ?? "?",
+        homeLogo: s.home_logo,
+        awayLogo: s.away_logo,
+        homeScore: s.home_goals,
+        awayScore: s.away_goals,
+        statusLabel: minuteLabel(s),
+        leagueName: s.league_name ?? "Football",
+        watchChannel: chans.length ? chans[0] : null,
+      });
+    },
+    [channelMap],
+  );
+
   const renderEmpty = (msg: string) => (
     <View style={styles.emptyBox}>
       <MaterialCommunityIcons
@@ -636,6 +1029,7 @@ export default function FootballCentreScreen() {
                             upcoming={false}
                             channels={channelMap.get(s.fixture_id) ?? []}
                             onChannelPress={handleChannelPress}
+                            onCardPress={() => openDetail(s)}
                             cardWidth={cardWidth}
                           />
                         ))}
@@ -690,6 +1084,15 @@ export default function FootballCentreScreen() {
             )}
         </ScrollView>
       )}
+
+      <GameDetailModal
+        target={detailTarget}
+        onClose={() => setDetailTarget(null)}
+        onWatchLive={(ch) => {
+          setDetailTarget(null);
+          handleChannelPress(ch);
+        }}
+      />
 
       {toast ? (
         <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + Spacing.lg }]}>
@@ -985,5 +1388,283 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: Colors.dark.text,
+  },
+  cardPressable: {
+    gap: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  cardPressableActive: {
+    backgroundColor: Colors.dark.accentDim,
+    marginHorizontal: -Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+  },
+  statsHint: {
+    marginLeft: 6,
+  },
+  // ── Game detail modal ─────────────────────────────────────────────────────
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 560,
+    maxHeight: "92%",
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalLeague: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    color: Colors.dark.accent,
+  },
+  modalClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.dark.backgroundRoot,
+  },
+  modalCloseActive: {
+    backgroundColor: Colors.dark.accentDim,
+  },
+  modalScore: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  modalTeam: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  modalTeamRight: {
+    justifyContent: "flex-end",
+  },
+  modalTeamName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  modalTeamNameRight: {
+    textAlign: "right",
+  },
+  modalScoreMid: {
+    alignItems: "center",
+    minWidth: 84,
+  },
+  modalScoreText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  modalStatus: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+  },
+  watchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.accent,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+  },
+  watchBtnActive: {
+    backgroundColor: Colors.dark.accentDim,
+  },
+  watchBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: Colors.dark.backgroundRoot,
+  },
+  watchBtnTextActive: {
+    color: Colors.dark.accent,
+  },
+  modalTabs: {
+    flexDirection: "row",
+    gap: Spacing.xs,
+  },
+  modalTab: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  modalTabSelected: {
+    borderColor: Colors.dark.accent,
+  },
+  modalTabActive: {
+    borderColor: Colors.dark.accentHover,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  modalTabText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+  },
+  modalTabTextSelected: {
+    color: Colors.dark.accent,
+  },
+  modalBody: {
+    flexGrow: 0,
+  },
+  modalLoading: {
+    paddingVertical: Spacing.xl,
+    alignItems: "center",
+  },
+  modalEmpty: {
+    paddingVertical: Spacing.lg,
+    textAlign: "center",
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+  },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 7,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+  },
+  statRowAlt: {
+    backgroundColor: Colors.dark.backgroundRoot,
+  },
+  statHeaderRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.dark.border,
+  },
+  statHeaderText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.dark.textSecondary,
+  },
+  statSide: {
+    flex: 1,
+  },
+  statSideRight: {
+    textAlign: "right",
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  statMid: {
+    flex: 1.4,
+    textAlign: "center",
+    fontSize: 12.5,
+    color: Colors.dark.textSecondary,
+  },
+  lineupHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  lineupTeam: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  lineupFormation: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.dark.accent,
+  },
+  lineupCoach: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+  },
+  lineupSection: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    color: Colors.dark.accent,
+    marginTop: Spacing.xs,
+  },
+  playerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: 3,
+  },
+  playerNum: {
+    width: 24,
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+  },
+  playerName: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "600",
+    color: Colors.dark.text,
+  },
+  playerSub: {
+    color: Colors.dark.textSecondary,
+    fontWeight: "500",
+  },
+  playerPos: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+  },
+  eventRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: 6,
+  },
+  eventMinute: {
+    width: 34,
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  eventIcon: {
+    width: 18,
+    alignItems: "center",
+  },
+  cardChip: {
+    width: 10,
+    height: 13,
+    borderRadius: 2,
+  },
+  eventBody: {
+    flex: 1,
+  },
+  eventPlayer: {
+    fontSize: 13.5,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  eventMeta: {
+    fontSize: 11.5,
+    color: Colors.dark.textSecondary,
   },
 });

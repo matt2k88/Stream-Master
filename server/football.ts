@@ -146,6 +146,123 @@ async function fetchGoalScorer(fixtureId: number): Promise<GoalScorer | null> {
   }
 }
 
+// ── On-demand single-fixture detail (stats / lineups / events) ──────────────
+// Fetched only when a user opens a live game in the Football Centre, so it's
+// cheap on quota. Three api-football calls per open, cached briefly so quick
+// re-opens / the 30s screen poll don't re-hit the API.
+export interface FixtureDetail {
+  statistics: {
+    team_name: string | null;
+    team_logo: string | null;
+    items: { type: string; value: string | number | null }[];
+  }[];
+  lineups: {
+    team_name: string | null;
+    team_logo: string | null;
+    formation: string | null;
+    coach: string | null;
+    startXI: { name: string; number: number | null; pos: string | null }[];
+    substitutes: { name: string; number: number | null; pos: string | null }[];
+  }[];
+  events: {
+    minute: string;
+    team_name: string | null;
+    player: string | null;
+    assist: string | null;
+    type: string | null;
+    detail: string | null;
+  }[];
+}
+
+const DETAIL_TTL_MS = 20 * 1000;
+const detailCache = new Map<number, { at: number; data: FixtureDetail }>();
+
+async function apiGet(path: string): Promise<any[] | null> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return null;
+  try {
+    const r = await fetch(`${API_BASE}${path}`, {
+      headers: { "x-apisports-key": key },
+    });
+    if (!r.ok) {
+      console.error(`[football] ${path} failed: ${r.status}`);
+      return null;
+    }
+    const json = await r.json();
+    return Array.isArray(json?.response) ? json.response : [];
+  } catch (e: any) {
+    console.error(`[football] ${path} exception:`, e?.message);
+    return null;
+  }
+}
+
+function mapPlayers(arr: any[]): { name: string; number: number | null; pos: string | null }[] {
+  return (Array.isArray(arr) ? arr : []).map((p: any) => ({
+    name: p?.player?.name ?? "—",
+    number: p?.player?.number ?? null,
+    pos: p?.player?.pos ?? null,
+  }));
+}
+
+// Returns combined detail for one fixture, or null when disabled / no key.
+export async function fetchFixtureDetail(
+  fixtureId: number,
+): Promise<FixtureDetail | null> {
+  if (!(await isGloballyEnabled())) return null;
+  if (!process.env.API_FOOTBALL_KEY) return null;
+
+  const cached = detailCache.get(fixtureId);
+  if (cached && Date.now() - cached.at < DETAIL_TTL_MS) return cached.data;
+
+  const [statsRaw, lineupsRaw, eventsRaw] = await Promise.all([
+    apiGet(`/fixtures/statistics?fixture=${fixtureId}`),
+    apiGet(`/fixtures/lineups?fixture=${fixtureId}`),
+    apiGet(`/fixtures/events?fixture=${fixtureId}`),
+  ]);
+
+  const statistics = (statsRaw ?? []).map((s: any) => ({
+    team_name: s?.team?.name ?? null,
+    team_logo: s?.team?.logo ?? null,
+    items: (Array.isArray(s?.statistics) ? s.statistics : []).map((it: any) => ({
+      type: String(it?.type ?? ""),
+      value: it?.value ?? null,
+    })),
+  }));
+
+  const lineups = (lineupsRaw ?? []).map((l: any) => ({
+    team_name: l?.team?.name ?? null,
+    team_logo: l?.team?.logo ?? null,
+    formation: l?.formation ?? null,
+    coach: l?.coach?.name ?? null,
+    startXI: mapPlayers(l?.startXI),
+    substitutes: mapPlayers(l?.substitutes),
+  }));
+
+  const events = (eventsRaw ?? []).map((e: any) => {
+    const elapsed = e?.time?.elapsed;
+    const extra = e?.time?.extra;
+    const minute =
+      elapsed != null ? `${elapsed}${extra ? `+${extra}` : ""}'` : "";
+    return {
+      minute,
+      team_name: e?.team?.name ?? null,
+      player: e?.player?.name ?? null,
+      assist: e?.assist?.name ?? null,
+      type: e?.type ?? null,
+      detail: e?.detail ?? null,
+    };
+  });
+
+  const data: FixtureDetail = { statistics, lineups, events };
+  const now = Date.now();
+  // Drop expired entries so the cache can't grow unbounded over a long run.
+  for (const [id, v] of detailCache) {
+    if (now - v.at >= DETAIL_TTL_MS) detailCache.delete(id);
+  }
+  detailCache.set(fixtureId, { at: now, data });
+  return data;
+}
+
 // ── Upcoming fixtures ───────────────────────────────────────────────────────
 function dateKey(d: Date): string {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
