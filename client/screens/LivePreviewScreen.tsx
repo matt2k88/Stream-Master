@@ -1709,7 +1709,11 @@ const styles = StyleSheet.create({
   channelIcon: { width: "100%", height: "100%" },
   statusOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: Colors.dark.background,
+    // Opaque so the previous channel's last decoded frame is fully hidden
+    // while loading/reconnecting and the status text stays readable. (Was
+    // `Colors.dark.background`, which doesn't exist on the theme → resolved
+    // to undefined/transparent, letting the stale frame show through.)
+    backgroundColor: Colors.dark.backgroundRoot,
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.sm,
@@ -1740,7 +1744,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.surface,
+    backgroundColor: Colors.dark.backgroundSecondary,
     marginTop: Spacing.xs,
   },
   retryBtnActive: {

@@ -2025,7 +2025,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.75)",
+    // Opaque so the previous channel's last decoded frame is fully hidden
+    // while loading/reconnecting (the VideoView keeps painting it underneath)
+    // and the status text stays readable regardless of that frame.
+    backgroundColor: Colors.dark.backgroundRoot,
     gap: Spacing.md,
   },
   loadingText: { color: Colors.dark.textSecondary, fontSize: 14 },
