@@ -881,9 +881,18 @@ export default function FootballCentreScreen() {
 
   // Upcoming fixtures grouped by day, then league (English-first within a day).
   const fixtureDays = useMemo(() => {
+    // The fixtures cache is refreshed only once a day, so a same-day game that
+    // has already kicked off (and since dropped out of the live cache) would
+    // otherwise linger here. Exclude anything whose kickoff is in the past, plus
+    // anything already in the live cache or flagged finished. Kickoff time is
+    // the reliable signal since the cached status_short is stale (fetched once).
+    const now = Date.now();
     const byDay = new Map<string, FootballFixture[]>();
     for (const f of fixtures) {
       if (liveIds.has(f.fixture_id)) continue;
+      const ko = f.kickoff ? new Date(f.kickoff).getTime() : NaN;
+      if (!isNaN(ko) && ko <= now) continue;
+      if (FINISHED.includes((f.status_short || "").toUpperCase())) continue;
       const arr = byDay.get(f.date_key) ?? [];
       arr.push(f);
       byDay.set(f.date_key, arr);
