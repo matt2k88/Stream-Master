@@ -881,9 +881,15 @@ export default function FootballCentreScreen() {
 
   // Upcoming fixtures grouped by day, then league (English-first within a day).
   const fixtureDays = useMemo(() => {
+    const now = Date.now();
     const byDay = new Map<string, FootballFixture[]>();
     for (const f of fixtures) {
+      // Already in the live-scores cache → it's live now, not upcoming.
       if (liveIds.has(f.fixture_id)) continue;
+      // Kickoff already passed (e.g. an early-morning game that has since been
+      // played) → no longer upcoming even if it never entered the live cache.
+      const kt = f.kickoff ? Date.parse(f.kickoff) : NaN;
+      if (!Number.isNaN(kt) && kt <= now) continue;
       const arr = byDay.get(f.date_key) ?? [];
       arr.push(f);
       byDay.set(f.date_key, arr);
