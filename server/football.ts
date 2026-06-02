@@ -12,6 +12,24 @@ const FT_LINGER_MS = 15 * 60 * 1000;
 const ACTIVE_INTERVAL_MS = 60 * 1000;
 const IDLE_INTERVAL_MS = 5 * 60 * 1000;
 
+// Upcoming fixtures: how many days ahead to fetch and how often to refresh.
+// One /fixtures?date= request per day = ~7 requests every 24h, filtered to the
+// curated leagues below.
+const FIXTURES_DAYS_AHEAD = 7;
+const FIXTURES_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+// Curated api-football league/competition ids the Football Centre is scoped to.
+// Mirrors client/constants/football-leagues.ts (English football & cups first).
+export const CURATED_LEAGUE_IDS = [
+  39, 40, 41, 42, 43, // English football
+  45, 48, 528, // English cups
+  2, 3, 848, 531, // European competitions
+  140, 135, 78, 61, 88, 94, 179, // top European leagues
+  143, 137, 81, 66, // other domestic cups
+  1, 4, 5, 15, 253, 71, // international
+];
+const CURATED_SET = new Set(CURATED_LEAGUE_IDS);
+
 interface FixtureRow {
   fixture_id: number;
   league_id: number;
@@ -123,6 +141,110 @@ async function fetchGoalScorer(fixtureId: number): Promise<GoalScorer | null> {
   }
 }
 
+// ── Upcoming fixtures ───────────────────────────────────────────────────────
+function dateKey(d: Date): string {
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+}
+
+interface UpcomingRow {
+  fixture_id: number;
+  league_id: number;
+  league_name: string | null;
+  league_country: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
+  kickoff: string | null;
+  date_key: string;
+  status_short: string | null;
+  updated_at: string;
+}
+
+// Fetch fixtures for a single date (one api-football request), filtered to the
+// curated leagues. Returns [] on error so a bad day doesn't abort the rest.
+async function fetchFixturesForDate(date: string): Promise<any[]> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return [];
+  try {
+    const r = await fetch(`${API_BASE}/fixtures?date=${date}`, {
+      headers: { "x-apisports-key": key },
+    });
+    if (!r.ok) {
+      console.error(`[football] fixtures fetch failed (${date}): ${r.status}`);
+      return [];
+    }
+    const json = await r.json();
+    if (Array.isArray(json?.errors) && json.errors.length) {
+      console.error("[football] fixtures api errors:", JSON.stringify(json.errors));
+    }
+    return Array.isArray(json?.response) ? json.response : [];
+  } catch (e: any) {
+    console.error(`[football] fixtures exception (${date}):`, e?.message);
+    return [];
+  }
+}
+
+// Once-per-day: pull the next FIXTURES_DAYS_AHEAD days of fixtures for the
+// curated leagues into the football_fixtures cache, then purge past days.
+// Guarded by the global kill-switch and a 24h timestamp. Degrades gracefully
+// when the table is missing (migration 015 not yet run).
+async function refreshUpcomingFixtures(): Promise<void> {
+  if (!(await isGloballyEnabled())) return;
+
+  const nowIso = new Date().toISOString();
+  const rows: UpcomingRow[] = [];
+  for (let i = 0; i < FIXTURES_DAYS_AHEAD; i++) {
+    const d = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
+    const dk = dateKey(d);
+    const fixtures = await fetchFixturesForDate(dk);
+    for (const f of fixtures) {
+      const leagueId = f?.league?.id;
+      if (leagueId == null || !CURATED_SET.has(leagueId)) continue;
+      const fixtureId = f?.fixture?.id;
+      if (fixtureId == null) continue;
+      const ts = f?.fixture?.timestamp;
+      rows.push({
+        fixture_id: fixtureId,
+        league_id: leagueId,
+        league_name: f?.league?.name ?? null,
+        league_country: f?.league?.country ?? null,
+        home_team: f?.teams?.home?.name ?? null,
+        away_team: f?.teams?.away?.name ?? null,
+        home_logo: f?.teams?.home?.logo ?? null,
+        away_logo: f?.teams?.away?.logo ?? null,
+        kickoff: ts ? new Date(ts * 1000).toISOString() : null,
+        date_key: dk,
+        status_short: f?.fixture?.status?.short ?? null,
+        updated_at: nowIso,
+      });
+    }
+  }
+
+  if (rows.length) {
+    const { error } = await supabase
+      .from("football_fixtures")
+      .upsert(rows, { onConflict: "fixture_id" });
+    if (error) {
+      console.error(
+        "[football] fixtures upsert error (has migration 015 been run?):",
+        error.message,
+      );
+      return; // table likely missing — skip the purge too
+    }
+  }
+
+  // Purge fixtures whose day has already passed.
+  const today = dateKey(new Date());
+  const { error: purgeErr } = await supabase
+    .from("football_fixtures")
+    .delete()
+    .lt("date_key", today);
+  if (purgeErr) console.error("[football] fixtures purge error:", purgeErr.message);
+
+  console.log(`[football] upcoming fixtures refreshed: ${rows.length} curated fixtures`);
+}
+
 // One poll cycle. Returns the number of live fixtures found (used to decide the
 // next interval). Returns 0 on error/no-key so the poller backs off.
 async function pollOnce(): Promise<number> {
@@ -212,6 +334,21 @@ async function pollOnce(): Promise<number> {
 }
 
 let started = false;
+let lastFixturesFetch = 0;
+
+// Refresh upcoming fixtures at most once per FIXTURES_REFRESH_MS. Called on each
+// poll cycle but cheaply short-circuits until a day has elapsed.
+async function maybeRefreshFixtures() {
+  if (Date.now() - lastFixturesFetch < FIXTURES_REFRESH_MS) return;
+  lastFixturesFetch = Date.now();
+  try {
+    await refreshUpcomingFixtures();
+  } catch (e: any) {
+    console.error("[football] fixtures refresh error:", e?.message);
+    // Allow a retry sooner if it failed outright.
+    lastFixturesFetch = 0;
+  }
+}
 
 export function startFootballPoller() {
   if (started) return;
@@ -227,6 +364,8 @@ export function startFootballPoller() {
     } catch (e: any) {
       console.error("[football] poll cycle error:", e?.message);
     }
+    // Once-per-day upcoming fixtures refresh (own internal 24h guard).
+    await maybeRefreshFixtures();
     const next = liveCount > 0 ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
     setTimeout(loop, next);
   };

@@ -83,3 +83,21 @@ export function leagueName(id: number | null | undefined): string | null {
   if (id == null) return null;
   return ID_TO_NAME[id] ?? null;
 }
+
+// Flat, English-first ordered list of the curated league ids. Used by the
+// Football Centre to order league groups (English football & cups first, then
+// European, top leagues, domestic cups, international).
+export const CURATED_LEAGUE_IDS: number[] = FOOTBALL_LEAGUE_GROUPS.flatMap((g) =>
+  g.leagues.map((l) => l.id),
+);
+
+const RANK: Record<number, number> = {};
+CURATED_LEAGUE_IDS.forEach((id, i) => {
+  RANK[id] = i;
+});
+
+// Lower rank = higher in the list. Non-curated leagues sort to the bottom.
+export function leagueRank(id: number | null | undefined): number {
+  if (id == null) return Number.MAX_SAFE_INTEGER;
+  return RANK[id] ?? Number.MAX_SAFE_INTEGER - 1;
+}

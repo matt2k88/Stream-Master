@@ -34,6 +34,7 @@ import MultiScreenScreen from "@/screens/MultiScreenScreen";
 import MultiScreenPickerScreen from "@/screens/MultiScreenPickerScreen";
 import MyGroupsScreen from "@/screens/MyGroupsScreen";
 import FootballSettingsScreen from "@/screens/FootballSettingsScreen";
+import FootballCentreScreen from "@/screens/FootballCentreScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
 
 export type RootStackParamList = {
@@ -69,6 +70,7 @@ export type RootStackParamList = {
   MultiScreenPicker: { slotIndex: number };
   MyGroups: { type: "live" | "movies" | "series" };
   FootballSettings: undefined;
+  FootballCentre: undefined;
   Referrals: undefined;
 };
 
@@ -137,6 +139,7 @@ export default function RootStackNavigator() {
             />
             <Stack.Screen name="MyGroups" component={MyGroupsScreen} />
             <Stack.Screen name="FootballSettings" component={FootballSettingsScreen} />
+            <Stack.Screen name="FootballCentre" component={FootballCentreScreen} />
             <Stack.Screen name="Referrals" component={ReferralsScreen} />
           </>
         )}

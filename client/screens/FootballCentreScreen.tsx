@@ -1,0 +1,696 @@
+import React, { useCallback, useMemo, useState } from "react";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import { Colors, Spacing, BorderRadius } from "@/constants/theme";
+import { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { getApiUrl } from "@/lib/query-client";
+import { useData } from "@/contexts/DataContext";
+import { xtreamApi } from "@/lib/xtream-api";
+import { leagueRank } from "@/constants/football-leagues";
+import type { FootballScore } from "@/contexts/FootballContext";
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+interface FootballFixture {
+  fixture_id: number;
+  league_id: number;
+  league_name: string | null;
+  league_country: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
+  kickoff: string | null;
+  date_key: string;
+  status_short: string | null;
+}
+
+interface FixtureChannel {
+  fixture_id: number;
+  channel_name: string;
+  stream_id: string | null;
+}
+
+const SCORES_POLL_MS = 30000;
+const FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
+
+function minuteLabel(s: FootballScore): string {
+  const st = (s.status_short || "").toUpperCase();
+  if (st === "HT") return "HT";
+  if (FINISHED.includes(st) || s.finished_at) return "FT";
+  if (s.elapsed != null) return `${s.elapsed}'`;
+  if (st) return st;
+  return "";
+}
+
+function isLive(s: FootballScore): boolean {
+  const st = (s.status_short || "").toUpperCase();
+  return (
+    !s.finished_at &&
+    !FINISHED.includes(st) &&
+    !["NS", "PST", "CANC", "TBD", "SUSP"].includes(st)
+  );
+}
+
+function kickoffTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayLabel(dateKey: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (dateKey === today) return "Today";
+  if (dateKey === tomorrow) return "Tomorrow";
+  const d = new Date(dateKey + "T00:00:00");
+  if (isNaN(d.getTime())) return dateKey;
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function Touchable({
+  style,
+  activeStyle,
+  onPress,
+  children,
+}: {
+  style: any;
+  activeStyle: any;
+  onPress: () => void;
+  children: React.ReactNode | ((active: boolean) => React.ReactNode);
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const active = focused || pressed;
+  return (
+    <Pressable
+      style={[style, active && activeStyle]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {typeof children === "function" ? children(active) : children}
+    </Pressable>
+  );
+}
+
+function ChannelBadges({
+  channels,
+  onPress,
+}: {
+  channels: FixtureChannel[];
+  onPress: (ch: FixtureChannel) => void;
+}) {
+  if (!channels.length) return null;
+  return (
+    <View style={styles.channelWrap}>
+      {channels.map((ch, i) => (
+        <Touchable
+          key={`${ch.fixture_id}-${i}`}
+          style={styles.channelBadge}
+          activeStyle={styles.channelBadgeActive}
+          onPress={() => onPress(ch)}
+        >
+          {(active) => (
+            <>
+              <Feather
+                name="tv"
+                size={11}
+                color={active ? Colors.dark.accent : "#3ddc84"}
+              />
+              <ThemedText style={styles.channelText} numberOfLines={1}>
+                {ch.channel_name}
+              </ThemedText>
+            </>
+          )}
+        </Touchable>
+      ))}
+    </View>
+  );
+}
+
+export default function FootballCentreScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NavigationProp>();
+  const { liveStreams } = useData();
+
+  const [tab, setTab] = useState<"live" | "upcoming">("live");
+  const [scores, setScores] = useState<FootballScore[]>([]);
+  const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
+  const [channels, setChannels] = useState<FixtureChannel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
+  const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
+
+  const fetchScores = useCallback(async () => {
+    try {
+      const url = new URL("/api/football/centre/scores", getApiUrl());
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setScores(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const fetchFixtures = useCallback(async () => {
+    try {
+      const url = new URL("/api/football/centre/fixtures", getApiUrl());
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setFixtures(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const fetchChannels = useCallback(async () => {
+    try {
+      const url = new URL("/api/football/centre/channels", getApiUrl());
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json();
+        setChannels(Array.isArray(data) ? data : []);
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
+  // Poll live scores every 30s while focused; fetch fixtures + channels once
+  // on focus (fixtures are a once-a-day server cache, channels rarely change).
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setLoading(true);
+      Promise.all([fetchScores(), fetchFixtures(), fetchChannels()]).finally(
+        () => {
+          if (active) setLoading(false);
+        },
+      );
+      const id = setInterval(() => {
+        fetchScores();
+        fetchChannels();
+      }, SCORES_POLL_MS);
+      return () => {
+        active = false;
+        clearInterval(id);
+      };
+    }, [fetchScores, fetchFixtures, fetchChannels]),
+  );
+
+  // fixture_id -> channels[]
+  const channelMap = useMemo(() => {
+    const m = new Map<number, FixtureChannel[]>();
+    for (const c of channels) {
+      const arr = m.get(c.fixture_id) ?? [];
+      arr.push(c);
+      m.set(c.fixture_id, arr);
+    }
+    return m;
+  }, [channels]);
+
+  // Live scores grouped by league, English-first.
+  const scoreGroups = useMemo(() => {
+    const m = new Map<number, { name: string; rows: FootballScore[] }>();
+    for (const s of scores) {
+      const key = s.league_id;
+      const g = m.get(key) ?? { name: s.league_name ?? "Football", rows: [] };
+      g.rows.push(s);
+      m.set(key, g);
+    }
+    const groups = Array.from(m.entries()).map(([league_id, g]) => ({
+      league_id,
+      name: g.name,
+      rows: g.rows.sort((a, b) =>
+        (a.home_team ?? "").localeCompare(b.home_team ?? ""),
+      ),
+    }));
+    return groups.sort((a, b) => leagueRank(a.league_id) - leagueRank(b.league_id));
+  }, [scores]);
+
+  // Upcoming fixtures grouped by day, then league (English-first within a day).
+  const fixtureDays = useMemo(() => {
+    const byDay = new Map<string, FootballFixture[]>();
+    for (const f of fixtures) {
+      const arr = byDay.get(f.date_key) ?? [];
+      arr.push(f);
+      byDay.set(f.date_key, arr);
+    }
+    const days = Array.from(byDay.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date_key, list]) => {
+        const leagues = new Map<number, { name: string; rows: FootballFixture[] }>();
+        for (const f of list) {
+          const g = leagues.get(f.league_id) ?? {
+            name: f.league_name ?? "Football",
+            rows: [],
+          };
+          g.rows.push(f);
+          leagues.set(f.league_id, g);
+        }
+        const groups = Array.from(leagues.entries())
+          .map(([league_id, g]) => ({
+            league_id,
+            name: g.name,
+            rows: g.rows.sort((a, b) =>
+              (a.kickoff ?? "").localeCompare(b.kickoff ?? ""),
+            ),
+          }))
+          .sort((a, b) => leagueRank(a.league_id) - leagueRank(b.league_id));
+        return { date_key, groups };
+      });
+    return days;
+  }, [fixtures]);
+
+  const handleChannelPress = useCallback(
+    (ch: FixtureChannel) => {
+      if (!ch.stream_id) return;
+      const sid = Number(ch.stream_id);
+      if (!Number.isFinite(sid)) return;
+      const stream = liveStreams.find((s) => s.stream_id === sid);
+      navigation.navigate("LivePreview", {
+        streamId: sid,
+        name: stream?.name ?? ch.channel_name,
+        streamUrl: xtreamApi.getLiveStreamUrl(sid),
+        thumbnail: stream?.stream_icon ?? undefined,
+        streamIcon: stream?.stream_icon ?? undefined,
+        categoryId: stream?.category_id,
+        initialFullscreen: true,
+      });
+    },
+    [liveStreams, navigation],
+  );
+
+  const renderEmpty = (msg: string) => (
+    <View style={styles.emptyBox}>
+      <MaterialCommunityIcons
+        name="soccer"
+        size={40}
+        color={Colors.dark.textSecondary}
+      />
+      <ThemedText style={styles.emptyText}>{msg}</ThemedText>
+    </View>
+  );
+
+  return (
+    <ThemedView style={styles.container}>
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <Touchable
+          style={styles.iconBtn}
+          activeStyle={styles.iconBtnActive}
+          onPress={() => navigation.goBack()}
+        >
+          {(active) => (
+            <Feather
+              name="arrow-left"
+              size={20}
+              color={active ? Colors.dark.accent : Colors.dark.text}
+            />
+          )}
+        </Touchable>
+        <View style={styles.titleWrap}>
+          <MaterialCommunityIcons name="soccer" size={20} color={Colors.dark.accent} />
+          <ThemedText style={styles.headerTitle}>Football Centre</ThemedText>
+        </View>
+        <View style={styles.iconBtn} />
+      </View>
+
+      {/* Tab switch */}
+      <View style={[styles.tabRow, { marginHorizontal: padH }]}>
+        <Touchable
+          style={[styles.tab, tab === "live" && styles.tabSelected]}
+          activeStyle={styles.tabActive}
+          onPress={() => setTab("live")}
+        >
+          {(active) => (
+            <>
+              <View style={styles.liveDot} />
+              <ThemedText
+                style={[
+                  styles.tabText,
+                  (tab === "live" || active) && styles.tabTextSelected,
+                ]}
+              >
+                Live Now
+              </ThemedText>
+            </>
+          )}
+        </Touchable>
+        <Touchable
+          style={[styles.tab, tab === "upcoming" && styles.tabSelected]}
+          activeStyle={styles.tabActive}
+          onPress={() => setTab("upcoming")}
+        >
+          {(active) => (
+            <ThemedText
+              style={[
+                styles.tabText,
+                (tab === "upcoming" || active) && styles.tabTextSelected,
+              ]}
+            >
+              Upcoming
+            </ThemedText>
+          )}
+        </Touchable>
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color={Colors.dark.accent} />
+        </View>
+      ) : (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: padH,
+            paddingTop: Spacing.md,
+            paddingBottom: insets.bottom + Spacing.xl,
+            gap: Spacing.lg,
+          }}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
+        >
+          {tab === "live"
+            ? scoreGroups.length === 0
+              ? renderEmpty("No live games right now")
+              : scoreGroups.map((g) => (
+                  <View key={g.league_id} style={{ gap: Spacing.sm }}>
+                    <View style={styles.leagueHeader}>
+                      <ThemedText style={styles.leagueName} numberOfLines={1}>
+                        {g.name}
+                      </ThemedText>
+                    </View>
+                    {g.rows.map((s) => {
+                      const chans = channelMap.get(s.fixture_id) ?? [];
+                      return (
+                        <View key={s.fixture_id} style={styles.gameCard}>
+                          <View style={styles.gameRow}>
+                            <ThemedText
+                              style={[styles.team, styles.teamHome]}
+                              numberOfLines={1}
+                            >
+                              {s.home_team ?? "?"}
+                            </ThemedText>
+                            <View style={styles.scorePill}>
+                              <ThemedText style={styles.scoreText}>
+                                {s.home_goals} - {s.away_goals}
+                              </ThemedText>
+                            </View>
+                            <ThemedText
+                              style={[styles.team, styles.teamAway]}
+                              numberOfLines={1}
+                            >
+                              {s.away_team ?? "?"}
+                            </ThemedText>
+                            <View style={styles.minuteBox}>
+                              <ThemedText
+                                style={[
+                                  styles.minute,
+                                  isLive(s) && styles.minuteLive,
+                                ]}
+                              >
+                                {minuteLabel(s)}
+                              </ThemedText>
+                            </View>
+                          </View>
+                          <ChannelBadges
+                            channels={chans}
+                            onPress={handleChannelPress}
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))
+            : fixtureDays.length === 0
+              ? renderEmpty("No upcoming fixtures")
+              : fixtureDays.map((day) => (
+                  <View key={day.date_key} style={{ gap: Spacing.sm }}>
+                    <ThemedText style={styles.dayHeader}>
+                      {dayLabel(day.date_key)}
+                    </ThemedText>
+                    {day.groups.map((g) => (
+                      <View key={g.league_id} style={{ gap: Spacing.sm }}>
+                        <View style={styles.leagueHeader}>
+                          <ThemedText style={styles.leagueName} numberOfLines={1}>
+                            {g.name}
+                          </ThemedText>
+                        </View>
+                        {g.rows.map((f) => {
+                          const chans = channelMap.get(f.fixture_id) ?? [];
+                          return (
+                            <View key={f.fixture_id} style={styles.gameCard}>
+                              <View style={styles.gameRow}>
+                                <ThemedText
+                                  style={[styles.team, styles.teamHome]}
+                                  numberOfLines={1}
+                                >
+                                  {f.home_team ?? "?"}
+                                </ThemedText>
+                                <View style={styles.scorePill}>
+                                  <ThemedText style={styles.kickoff}>
+                                    {kickoffTime(f.kickoff)}
+                                  </ThemedText>
+                                </View>
+                                <ThemedText
+                                  style={[styles.team, styles.teamAway]}
+                                  numberOfLines={1}
+                                >
+                                  {f.away_team ?? "?"}
+                                </ThemedText>
+                                <View style={styles.minuteBox} />
+                              </View>
+                              <ChannelBadges
+                                channels={chans}
+                                onPress={handleChannelPress}
+                              />
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ))}
+                  </View>
+                ))}
+        </ScrollView>
+      )}
+    </ThemedView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  titleWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  iconBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  tabRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  tab: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  tabSelected: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  tabActive: {
+    borderColor: Colors.dark.accent,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+  },
+  tabTextSelected: {
+    color: Colors.dark.accent,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#3ddc84",
+  },
+  loadingBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing["4xl"],
+    gap: Spacing.md,
+  },
+  emptyText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  leagueHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingLeft: 2,
+  },
+  leagueName: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  dayHeader: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: Colors.dark.text,
+    marginBottom: 2,
+  },
+  gameCard: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    gap: Spacing.sm,
+  },
+  gameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  team: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  teamHome: {
+    textAlign: "right",
+  },
+  teamAway: {
+    textAlign: "left",
+  },
+  scorePill: {
+    minWidth: 64,
+    marginHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.backgroundRoot,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scoreText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  kickoff: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  minuteBox: {
+    width: 40,
+    alignItems: "flex-end",
+  },
+  minute: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
+  },
+  minuteLive: {
+    color: "#3ddc84",
+  },
+  channelWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+    paddingTop: Spacing.sm,
+  },
+  channelBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: "rgba(61,220,132,0.4)",
+    backgroundColor: "rgba(61,220,132,0.1)",
+    maxWidth: 220,
+  },
+  channelBadgeActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  channelText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+});

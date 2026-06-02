@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
+import { CURATED_LEAGUE_IDS } from "./football";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -1177,6 +1178,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data ?? []);
     } catch {
       res.status(500).json({ error: "Failed to fetch football scores" });
+    }
+  });
+
+  // ── Football Centre ───────────────────────────────────────────────────────
+  // All Football Centre read endpoints are best-effort cache reads and never
+  // hard-fail the UI — they degrade gracefully to [] when a migration hasn't
+  // been run or the table is otherwise unavailable.
+  //
+  // Live scores scoped to the curated leagues only (the poller caches every
+  // live game worldwide; the Centre shows just the curated set).
+  app.get("/api/football/centre/scores", async (_req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("football_scores")
+        .select("*")
+        .in("league_id", CURATED_LEAGUE_IDS)
+        .order("elapsed", { ascending: false, nullsFirst: false });
+      if (error) {
+        console.error("[football] centre scores fetch error:", error.message);
+        return res.json([]);
+      }
+      res.json(data ?? []);
+    } catch {
+      res.json([]);
+    }
+  });
+
+  // Upcoming fixtures (next ~7 days, curated leagues), ordered by kickoff.
+  // Degrades gracefully to [] when migration 015 hasn't been run.
+  app.get("/api/football/centre/fixtures", async (_req, res) => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data, error } = await supabase
+        .from("football_fixtures")
+        .select("*")
+        .gte("date_key", today)
+        .order("kickoff", { ascending: true, nullsFirst: false });
+      if (error) {
+        console.error("[football] fixtures fetch error:", error.message);
+        return res.json([]);
+      }
+      res.json(data ?? []);
+    } catch {
+      res.json([]);
+    }
+  });
+
+  // TV-channel links for fixtures. Optional ?fixture_ids=1,2,3 filter.
+  // Degrades gracefully to [] when migration 016 hasn't been run.
+  app.get("/api/football/centre/channels", async (req, res) => {
+    try {
+      const { fixture_ids } = req.query;
+      let q = supabase
+        .from("football_fixture_channels")
+        .select("fixture_id, channel_name, stream_id");
+      if (typeof fixture_ids === "string" && fixture_ids.trim()) {
+        const ids = fixture_ids
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isFinite(n));
+        if (ids.length) q = q.in("fixture_id", ids);
+      }
+      const { data, error } = await q;
+      if (error) {
+        console.error("[football] channels fetch error:", error.message);
+        return res.json([]);
+      }
+      res.json(data ?? []);
+    } catch {
+      res.json([]);
     }
   });
 

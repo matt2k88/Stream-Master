@@ -18,6 +18,7 @@ import { useProfile, makeGuestProfile, type Profile } from "@/contexts/ProfileCo
 import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
+import { useFootball } from "@/contexts/FootballContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
@@ -409,6 +410,29 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
   );
 }
 
+function FootballCentreButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <MaterialCommunityIcons name="soccer" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
 function AccountButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -730,6 +754,7 @@ export default function HomeScreen() {
   const { refreshActiveProfile, isGuest } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme } = useAppTheme();
+  const { globalEnabled: footballEnabled } = useFootball();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -1015,6 +1040,9 @@ export default function HomeScreen() {
         <View style={styles.headerActions}>
           <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+          {footballEnabled ? (
+            <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+          ) : null}
           <VpnButton />
           {/* Profile pill is large; hide on portrait where the header
               is cramped — users can still switch profile via the
