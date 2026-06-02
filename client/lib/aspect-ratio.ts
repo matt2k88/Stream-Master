@@ -8,6 +8,7 @@
 // expects every subsequent video to open in Zoom until they change it.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StyleSheet, type ViewStyle } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type AspectMode = "fit" | "fill" | "zoom" | "16:9" | "4:3";
@@ -42,6 +43,30 @@ export function aspectModeRatio(mode: AspectMode): number | null {
   if (mode === "16:9") return 16 / 9;
   if (mode === "4:3")  return 4 / 3;
   return null;
+}
+
+/** Compute the inner video-surface style for a mode inside a parent of
+ *  width×height. Free modes (fit/fill/zoom) fill the whole parent and let
+ *  contentFit/resizeMode decide how the picture sits. Forced ratios
+ *  (16:9 / 4:3) get an explicit, centred box sized to fit inside the parent
+ *  while preserving that exact ratio — giving deterministic letter/pillarbox
+ *  instead of relying on `aspectRatio`+`maxWidth`, which RN sizes unreliably. */
+export function aspectInnerStyle(
+  mode: AspectMode,
+  width: number,
+  height: number,
+): ViewStyle {
+  const ratio = aspectModeRatio(mode);
+  if (ratio == null || !width || !height) {
+    return StyleSheet.absoluteFillObject;
+  }
+  let w = width;
+  let h = width / ratio;
+  if (h > height) {
+    h = height;
+    w = height * ratio;
+  }
+  return { width: w, height: h };
 }
 
 const STORAGE_KEY = "uc.player.aspectMode.v1";

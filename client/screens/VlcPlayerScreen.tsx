@@ -30,6 +30,7 @@ import {
   Animated,
   Modal,
   TextInput,
+  useWindowDimensions,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -41,6 +42,7 @@ import {
   ASPECT_LABELS,
   aspectModeToContentFit,
   aspectModeRatio,
+  aspectInnerStyle,
   type AspectMode,
 } from "@/lib/aspect-ratio";
 import { ThemedText } from "@/components/ThemedText";
@@ -159,6 +161,19 @@ export default function VlcPlayerScreen() {
   const [activePanel, setActivePanel] = useState<"cc" | "audio" | "aspect" | null>(null);
   const activePanelRef = useRef<"cc" | "audio" | "aspect" | null>(null);
   const [aspectMode, setAspectMode] = useAspectMode();
+  const { width: winW, height: winH } = useWindowDimensions();
+  // Changing the aspect mode remounts the VLC surface (keyed on aspectMode)
+  // so the new ratio is always applied — VLC does not re-apply resizeMode /
+  // aspect props live on Android. Remounting reloads the stream, so we stash
+  // the current position to resume seamlessly (onLoad re-issues the seek).
+  const aspectFirstRef = useRef(true);
+  useEffect(() => {
+    if (aspectFirstRef.current) { aspectFirstRef.current = false; return; }
+    if (currentTimeRef.current > 0) {
+      pendingSeekSecondsRef.current = currentTimeRef.current;
+      resumeAppliedRef.current = true;
+    }
+  }, [aspectMode]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // When controls hide and re-show, the previously-focused button has been
   // pulled out of the focus tree (pointerEvents=none) and TV remote D-pad
@@ -885,11 +900,10 @@ export default function VlcPlayerScreen() {
         {(() => {
           const ratio = aspectModeRatio(aspectMode);
           const fit = aspectModeToContentFit(aspectMode);
-          const innerStyle = ratio
-            ? { height: "100%" as const, aspectRatio: ratio, maxWidth: "100%" as const }
-            : StyleSheet.absoluteFill;
+          const innerStyle = aspectInnerStyle(aspectMode, winW, winH);
           return (
             <VLCPlayer
+              key={`asp-${aspectMode}`}
               ref={vlcRef}
               style={innerStyle}
               source={source}

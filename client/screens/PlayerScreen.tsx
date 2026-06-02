@@ -13,6 +13,7 @@ import {
   Modal,
   TextInput,
   findNodeHandle,
+  useWindowDimensions,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -23,7 +24,7 @@ import {
   ASPECT_MODES,
   ASPECT_LABELS,
   aspectModeToContentFit,
-  aspectModeRatio,
+  aspectInnerStyle,
   type AspectMode,
 } from "@/lib/aspect-ratio";
 import type { SubtitleTrack, AudioTrack } from "@/lib/video-player";
@@ -529,6 +530,7 @@ function LegacyPlayerScreen() {
   const [activeAudio, setActiveAudio] = useState<AudioTrack | null>(null);
   const [activePanel, setActivePanel] = useState<"cc" | "audio" | "aspect" | null>(null);
   const [aspectMode, setAspectMode] = useAspectMode();
+  const { width: winW, height: winH } = useWindowDimensions();
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const isSeekingRef = useRef(false);
@@ -1564,13 +1566,16 @@ function LegacyPlayerScreen() {
           whole screen and contentFit decides how the picture sits. */}
       <View style={styles.videoStage}>
         {(() => {
-          const ratio = aspectModeRatio(aspectMode);
           const fit = aspectModeToContentFit(aspectMode);
-          const innerStyle = ratio
-            ? { height: "100%" as const, aspectRatio: ratio, maxWidth: "100%" as const }
-            : StyleSheet.absoluteFill;
+          const innerStyle = aspectInnerStyle(aspectMode, winW, winH);
+          // Remount the surface when the mode changes so the new contentFit /
+          // size is always applied live. The player object persists (it's
+          // created by useVideoPlayer, not the view) so playback continues —
+          // this fixes ratios that previously only took effect after backing
+          // out of the content and resuming.
           return (
             <VideoView
+              key={`asp-${aspectMode}`}
               style={innerStyle}
               player={player}
               contentFit={fit}
