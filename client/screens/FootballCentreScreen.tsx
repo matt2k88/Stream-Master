@@ -73,6 +73,24 @@ function kickoffTime(iso: string | null): string {
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+function kickoffLabel(iso: string | null): string {
+  const t = kickoffTime(iso);
+  return t ? `Kick Off ${t}` : "";
+}
+
+function ChannelNotice() {
+  return (
+    <View style={styles.noticeBox}>
+      <Feather name="info" size={15} color={Colors.dark.accent} style={styles.noticeIcon} />
+      <ThemedText style={styles.noticeText}>
+        Heads up: TV channels for some matches aren't confirmed until a few hours
+        before kick-off, and the listings here can occasionally be wrong. Always
+        check official broadcaster sources for the most accurate channel info.
+      </ThemedText>
+    </View>
+  );
+}
+
 function dayLabel(dateKey: string): string {
   const today = new Date().toISOString().slice(0, 10);
   const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
@@ -574,9 +592,12 @@ export default function FootballCentreScreen() {
                     </View>
                   </View>
                 ))
-            : fixtureDays.length === 0
-              ? renderEmpty("No upcoming fixtures")
-              : fixtureDays.map((day) => (
+            : (
+              <>
+                <ChannelNotice />
+                {fixtureDays.length === 0
+                  ? renderEmpty("No upcoming fixtures")
+                  : fixtureDays.map((day) => (
                   <View key={day.date_key} style={{ gap: Spacing.sm }}>
                     <ThemedText style={styles.dayHeader}>
                       {dayLabel(day.date_key)}
@@ -604,7 +625,7 @@ export default function FootballCentreScreen() {
                               away={f.away_team ?? "?"}
                               homeLogo={f.home_logo}
                               awayLogo={f.away_logo}
-                              statusLabel={kickoffTime(f.kickoff)}
+                              statusLabel={kickoffLabel(f.kickoff)}
                               live={false}
                               upcoming
                               channels={channelMap.get(f.fixture_id) ?? []}
@@ -617,6 +638,8 @@ export default function FootballCentreScreen() {
                     ))}
                   </View>
                 ))}
+              </>
+            )}
         </ScrollView>
       )}
 
@@ -819,6 +842,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: Spacing.sm,
     paddingVertical: 5,
+  },
+  noticeBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(255,102,0,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.35)",
+  },
+  noticeIcon: {
+    marginTop: 1,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Colors.dark.textSecondary ?? Colors.dark.text,
   },
   teamInfo: {
     flex: 1,
