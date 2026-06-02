@@ -148,6 +148,83 @@ function ChannelBadges({
   );
 }
 
+function MatchCard({
+  leagueName,
+  home,
+  away,
+  homeScore,
+  awayScore,
+  statusLabel,
+  live,
+  upcoming,
+  channels,
+  onChannelPress,
+}: {
+  leagueName: string;
+  home: string;
+  away: string;
+  homeScore?: number;
+  awayScore?: number;
+  statusLabel: string;
+  live: boolean;
+  upcoming: boolean;
+  channels: FixtureChannel[];
+  onChannelPress: (ch: FixtureChannel) => void;
+}) {
+  return (
+    <View style={styles.gameCard}>
+      <View style={styles.cardHeader}>
+        <ThemedText style={styles.cardLeague} numberOfLines={1}>
+          {leagueName}
+        </ThemedText>
+        {statusLabel ? (
+          <View
+            style={[
+              styles.statusPill,
+              live && styles.statusPillLive,
+              upcoming && styles.statusPillUpcoming,
+            ]}
+          >
+            {live ? <View style={styles.liveDot} /> : null}
+            <ThemedText
+              style={[
+                styles.statusText,
+                live && styles.statusTextLive,
+                upcoming && styles.statusTextUpcoming,
+              ]}
+            >
+              {statusLabel}
+            </ThemedText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.teamLine}>
+        <ThemedText style={styles.teamName} numberOfLines={1}>
+          {home}
+        </ThemedText>
+        {!upcoming ? (
+          <ThemedText style={[styles.teamScore, live && styles.teamScoreLive]}>
+            {homeScore ?? 0}
+          </ThemedText>
+        ) : null}
+      </View>
+      <View style={styles.teamLine}>
+        <ThemedText style={styles.teamName} numberOfLines={1}>
+          {away}
+        </ThemedText>
+        {!upcoming ? (
+          <ThemedText style={[styles.teamScore, live && styles.teamScoreLive]}>
+            {awayScore ?? 0}
+          </ThemedText>
+        ) : null}
+      </View>
+
+      <ChannelBadges channels={channels} onPress={onChannelPress} />
+    </View>
+  );
+}
+
 export default function FootballCentreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
@@ -436,46 +513,21 @@ export default function FootballCentreScreen() {
                         {g.name}
                       </ThemedText>
                     </View>
-                    {g.rows.map((s) => {
-                      const chans = channelMap.get(s.fixture_id) ?? [];
-                      return (
-                        <View key={s.fixture_id} style={styles.gameCard}>
-                          <View style={styles.gameRow}>
-                            <ThemedText
-                              style={[styles.team, styles.teamHome]}
-                              numberOfLines={1}
-                            >
-                              {s.home_team ?? "?"}
-                            </ThemedText>
-                            <View style={styles.scorePill}>
-                              <ThemedText style={styles.scoreText}>
-                                {s.home_goals} - {s.away_goals}
-                              </ThemedText>
-                            </View>
-                            <ThemedText
-                              style={[styles.team, styles.teamAway]}
-                              numberOfLines={1}
-                            >
-                              {s.away_team ?? "?"}
-                            </ThemedText>
-                            <View style={styles.minuteBox}>
-                              <ThemedText
-                                style={[
-                                  styles.minute,
-                                  isLive(s) && styles.minuteLive,
-                                ]}
-                              >
-                                {minuteLabel(s)}
-                              </ThemedText>
-                            </View>
-                          </View>
-                          <ChannelBadges
-                            channels={chans}
-                            onPress={handleChannelPress}
-                          />
-                        </View>
-                      );
-                    })}
+                    {g.rows.map((s) => (
+                      <MatchCard
+                        key={s.fixture_id}
+                        leagueName={s.league_name ?? g.name}
+                        home={s.home_team ?? "?"}
+                        away={s.away_team ?? "?"}
+                        homeScore={s.home_goals}
+                        awayScore={s.away_goals}
+                        statusLabel={minuteLabel(s)}
+                        live={isLive(s)}
+                        upcoming={false}
+                        channels={channelMap.get(s.fixture_id) ?? []}
+                        onChannelPress={handleChannelPress}
+                      />
+                    ))}
                   </View>
                 ))
             : fixtureDays.length === 0
@@ -500,37 +552,19 @@ export default function FootballCentreScreen() {
                             {g.name}
                           </ThemedText>
                         </View>
-                        {g.rows.map((f) => {
-                          const chans = channelMap.get(f.fixture_id) ?? [];
-                          return (
-                            <View key={f.fixture_id} style={styles.gameCard}>
-                              <View style={styles.gameRow}>
-                                <ThemedText
-                                  style={[styles.team, styles.teamHome]}
-                                  numberOfLines={1}
-                                >
-                                  {f.home_team ?? "?"}
-                                </ThemedText>
-                                <View style={styles.scorePill}>
-                                  <ThemedText style={styles.kickoff}>
-                                    {kickoffTime(f.kickoff)}
-                                  </ThemedText>
-                                </View>
-                                <ThemedText
-                                  style={[styles.team, styles.teamAway]}
-                                  numberOfLines={1}
-                                >
-                                  {f.away_team ?? "?"}
-                                </ThemedText>
-                                <View style={styles.minuteBox} />
-                              </View>
-                              <ChannelBadges
-                                channels={chans}
-                                onPress={handleChannelPress}
-                              />
-                            </View>
-                          );
-                        })}
+                        {g.rows.map((f) => (
+                          <MatchCard
+                            key={f.fixture_id}
+                            leagueName={f.league_name ?? g.name}
+                            home={f.home_team ?? "?"}
+                            away={f.away_team ?? "?"}
+                            statusLabel={kickoffTime(f.kickoff)}
+                            live={false}
+                            upcoming
+                            channels={channelMap.get(f.fixture_id) ?? []}
+                            onChannelPress={handleChannelPress}
+                          />
+                        ))}
                       </View>
                     ))}
                   </View>
@@ -688,55 +722,77 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 2,
-    gap: Spacing.sm,
+    gap: 2,
   },
-  gameRow: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.dark.border,
+    paddingBottom: Spacing.sm,
+    marginBottom: 4,
   },
-  team: {
+  cardLeague: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.dark.text,
+    fontSize: 11,
+    fontWeight: "800",
+    color: Colors.dark.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  teamHome: {
-    textAlign: "right",
-  },
-  teamAway: {
-    textAlign: "left",
-  },
-  scorePill: {
-    minWidth: 64,
-    marginHorizontal: Spacing.sm,
-    paddingVertical: 4,
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundRoot,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  scoreText: {
-    fontSize: 16,
+  statusPillLive: {
+    backgroundColor: "rgba(61,220,132,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(61,220,132,0.5)",
+  },
+  statusPillUpcoming: {
+    backgroundColor: Colors.dark.accentDim,
+  },
+  statusText: {
+    fontSize: 11,
     fontWeight: "800",
+    color: Colors.dark.textSecondary,
+    letterSpacing: 0.3,
+  },
+  statusTextLive: {
+    color: "#3ddc84",
+  },
+  statusTextUpcoming: {
     color: Colors.dark.accent,
   },
-  kickoff: {
-    fontSize: 13,
+  teamLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+    paddingVertical: 5,
+  },
+  teamName: {
+    flex: 1,
+    fontSize: 15,
     fontWeight: "700",
     color: Colors.dark.text,
   },
-  minuteBox: {
-    width: 40,
-    alignItems: "flex-end",
+  teamScore: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: Colors.dark.text,
+    minWidth: 26,
+    textAlign: "right",
   },
-  minute: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.dark.textSecondary,
-  },
-  minuteLive: {
-    color: "#3ddc84",
+  teamScoreLive: {
+    color: Colors.dark.accent,
   },
   channelWrap: {
     flexDirection: "row",

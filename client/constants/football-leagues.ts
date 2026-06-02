@@ -72,6 +72,12 @@ export const FOOTBALL_LEAGUE_GROUPS: FootballLeagueGroup[] = [
       { id: 71, name: "Brazil Série A" },
     ],
   },
+  {
+    group: "Other Leagues",
+    leagues: [
+      { id: 245, name: "Ykkönen (Finland)" },
+    ],
+  },
 ];
 
 const ID_TO_NAME: Record<number, string> = {};

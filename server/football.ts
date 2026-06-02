@@ -27,6 +27,7 @@ export const CURATED_LEAGUE_IDS = [
   140, 135, 78, 61, 88, 94, 179, // top European leagues
   143, 137, 81, 66, // other domestic cups
   1, 4, 5, 15, 253, 71, // international
+  245, // Ykkönen (Finland)
 ];
 const CURATED_SET = new Set(CURATED_LEAGUE_IDS);
 
