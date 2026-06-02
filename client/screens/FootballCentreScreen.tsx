@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -149,7 +150,6 @@ function ChannelBadges({
 }
 
 function MatchCard({
-  leagueName,
   home,
   away,
   homeScore,
@@ -159,8 +159,8 @@ function MatchCard({
   upcoming,
   channels,
   onChannelPress,
+  cardWidth,
 }: {
-  leagueName: string;
   home: string;
   away: string;
   homeScore?: number;
@@ -170,13 +170,11 @@ function MatchCard({
   upcoming: boolean;
   channels: FixtureChannel[];
   onChannelPress: (ch: FixtureChannel) => void;
+  cardWidth: number;
 }) {
   return (
-    <View style={styles.gameCard}>
-      <View style={styles.cardHeader}>
-        <ThemedText style={styles.cardLeague} numberOfLines={1}>
-          {leagueName}
-        </ThemedText>
+    <View style={[styles.gameCard, { width: cardWidth }]}>
+      <View style={styles.cardTop}>
         {statusLabel ? (
           <View
             style={[
@@ -255,6 +253,17 @@ export default function FootballCentreScreen() {
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
+
+  // Responsive grid: cap at 3-4 cards per row so a single match never spans the
+  // full width and ultra-wide TVs don't end up with 6+ tiny cards in a row.
+  const { width: winW } = useWindowDimensions();
+  const gridGap = Spacing.sm;
+  const gridAvail = winW - padH * 2;
+  const columns =
+    gridAvail >= 1100 ? 4 : gridAvail >= 760 ? 3 : gridAvail >= 480 ? 2 : 1;
+  const cardWidth = Math.floor(
+    (gridAvail - gridGap * (columns - 1)) / columns,
+  );
 
   const fetchScores = useCallback(async () => {
     try {
@@ -347,10 +356,18 @@ export default function FootballCentreScreen() {
     return groups.sort((a, b) => rank(a.league_id) - rank(b.league_id));
   }, [scores, rank]);
 
+  // Any fixture currently in the live-scores cache is no longer "upcoming",
+  // so exclude it from the Upcoming tab to avoid showing a game in both lists.
+  const liveIds = useMemo(
+    () => new Set(scores.map((s) => s.fixture_id)),
+    [scores],
+  );
+
   // Upcoming fixtures grouped by day, then league (English-first within a day).
   const fixtureDays = useMemo(() => {
     const byDay = new Map<string, FootballFixture[]>();
     for (const f of fixtures) {
+      if (liveIds.has(f.fixture_id)) continue;
       const arr = byDay.get(f.date_key) ?? [];
       arr.push(f);
       byDay.set(f.date_key, arr);
@@ -379,7 +396,7 @@ export default function FootballCentreScreen() {
         return { date_key, groups };
       });
     return days;
-  }, [fixtures, rank]);
+  }, [fixtures, rank, liveIds]);
 
   const handleChannelPress = useCallback(
     (ch: FixtureChannel) => {
@@ -513,21 +530,23 @@ export default function FootballCentreScreen() {
                         {g.name}
                       </ThemedText>
                     </View>
-                    {g.rows.map((s) => (
-                      <MatchCard
-                        key={s.fixture_id}
-                        leagueName={s.league_name ?? g.name}
-                        home={s.home_team ?? "?"}
-                        away={s.away_team ?? "?"}
-                        homeScore={s.home_goals}
-                        awayScore={s.away_goals}
-                        statusLabel={minuteLabel(s)}
-                        live={isLive(s)}
-                        upcoming={false}
-                        channels={channelMap.get(s.fixture_id) ?? []}
-                        onChannelPress={handleChannelPress}
-                      />
-                    ))}
+                    <View style={styles.cardGrid}>
+                      {g.rows.map((s) => (
+                        <MatchCard
+                          key={s.fixture_id}
+                          home={s.home_team ?? "?"}
+                          away={s.away_team ?? "?"}
+                          homeScore={s.home_goals}
+                          awayScore={s.away_goals}
+                          statusLabel={minuteLabel(s)}
+                          live={isLive(s)}
+                          upcoming={false}
+                          channels={channelMap.get(s.fixture_id) ?? []}
+                          onChannelPress={handleChannelPress}
+                          cardWidth={cardWidth}
+                        />
+                      ))}
+                    </View>
                   </View>
                 ))
             : fixtureDays.length === 0
@@ -552,19 +571,21 @@ export default function FootballCentreScreen() {
                             {g.name}
                           </ThemedText>
                         </View>
-                        {g.rows.map((f) => (
-                          <MatchCard
-                            key={f.fixture_id}
-                            leagueName={f.league_name ?? g.name}
-                            home={f.home_team ?? "?"}
-                            away={f.away_team ?? "?"}
-                            statusLabel={kickoffTime(f.kickoff)}
-                            live={false}
-                            upcoming
-                            channels={channelMap.get(f.fixture_id) ?? []}
-                            onChannelPress={handleChannelPress}
-                          />
-                        ))}
+                        <View style={styles.cardGrid}>
+                          {g.rows.map((f) => (
+                            <MatchCard
+                              key={f.fixture_id}
+                              home={f.home_team ?? "?"}
+                              away={f.away_team ?? "?"}
+                              statusLabel={kickoffTime(f.kickoff)}
+                              live={false}
+                              upcoming
+                              channels={channelMap.get(f.fixture_id) ?? []}
+                              onChannelPress={handleChannelPress}
+                              cardWidth={cardWidth}
+                            />
+                          ))}
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -715,6 +736,11 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
     marginBottom: 2,
   },
+  cardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
   gameCard: {
     backgroundColor: Colors.dark.backgroundSecondary,
     borderRadius: BorderRadius.md,
@@ -724,23 +750,12 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm + 2,
     gap: 2,
   },
-  cardHeader: {
+  cardTop: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.dark.border,
-    paddingBottom: Spacing.sm,
-    marginBottom: 4,
-  },
-  cardLeague: {
-    flex: 1,
-    fontSize: 11,
-    fontWeight: "800",
-    color: Colors.dark.textSecondary,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
+    justifyContent: "flex-end",
+    minHeight: 22,
+    marginBottom: 2,
   },
   statusPill: {
     flexDirection: "row",
