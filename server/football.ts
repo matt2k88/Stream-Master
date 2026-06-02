@@ -147,9 +147,13 @@ async function fetchGoalScorer(fixtureId: number): Promise<GoalScorer | null> {
 }
 
 // ── On-demand single-fixture detail (stats / lineups / events) ──────────────
-// Fetched only when a user opens a live game in the Football Centre, so it's
-// cheap on quota. Three api-football calls per open, cached briefly so quick
-// re-opens / the 30s screen poll don't re-hit the API.
+// Fetched only when a user opens a live game in the Football Centre (never for
+// every game) — so it's cheap on quota. The client refetches on open and then
+// every ~60s while the popup stays open. The tiny cache below is NOT a shared
+// "serve everyone stale data" strategy: it's a short burst guard so a rapid
+// double-tap / two viewers opening the same game in the same instant don't
+// trigger duplicate api-football calls. It expires well within the client's
+// poll interval, so every open and every poll still gets fresh data.
 export interface FixtureDetail {
   statistics: {
     team_name: string | null;
@@ -174,7 +178,7 @@ export interface FixtureDetail {
   }[];
 }
 
-const DETAIL_TTL_MS = 20 * 1000;
+const DETAIL_TTL_MS = 5 * 1000;
 const detailCache = new Map<number, { at: number; data: FixtureDetail }>();
 
 async function apiGet(path: string): Promise<any[] | null> {

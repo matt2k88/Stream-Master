@@ -47,6 +47,10 @@ interface FixtureChannel {
 }
 
 const SCORES_POLL_MS = 30000;
+// While a game's detail popup is open, refresh its stats/lineups/events on this
+// cadence. Detail is fetched on-demand only (when a user opens a game) — never
+// for every game — so this is one user's open popup, not a global poll.
+const DETAIL_POLL_MS = 60000;
 const FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
 
 function minuteLabel(s: FootballScore): string {
@@ -407,29 +411,39 @@ function GameDetailModal({
   const [detail, setDetail] = useState<FixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const fixtureId = target?.fixtureId ?? null;
+
   React.useEffect(() => {
-    if (!target) return;
+    if (fixtureId == null) return;
     setTab("stats");
     setDetail(null);
-    setLoading(true);
     let active = true;
-    const url = new URL(
-      `/api/football/centre/fixture/${target.fixtureId}`,
-      getApiUrl(),
-    );
-    fetch(url.toString())
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (active) setDetail(data ?? null);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    // Refetch on open (with the spinner) and then every DETAIL_POLL_MS while the
+    // popup stays open (silently, keeping the current data on screen so it never
+    // flashes back to a loader). Each call hits the API fresh for this user.
+    const load = async (showLoader: boolean) => {
+      if (showLoader) setLoading(true);
+      try {
+        const url = new URL(
+          `/api/football/centre/fixture/${fixtureId}`,
+          getApiUrl(),
+        );
+        const res = await fetch(url.toString());
+        const data = res.ok ? await res.json() : null;
+        if (active && data) setDetail(data);
+      } catch {
+        // silent
+      } finally {
+        if (active && showLoader) setLoading(false);
+      }
+    };
+    load(true);
+    const id = setInterval(() => load(false), DETAIL_POLL_MS);
     return () => {
       active = false;
+      clearInterval(id);
     };
-  }, [target]);
+  }, [fixtureId]);
 
   if (!target) return null;
 
