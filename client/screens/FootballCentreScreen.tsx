@@ -133,6 +133,48 @@ function Touchable({
   );
 }
 
+function CollapsibleLeague({
+  name,
+  count,
+  isPref,
+  expanded,
+  onToggle,
+  children,
+}: {
+  name: string;
+  count: number;
+  isPref: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={{ gap: Spacing.sm }}>
+      <Touchable
+        style={[styles.leagueHeader, isPref && styles.leagueHeaderPref]}
+        activeStyle={styles.leagueHeaderActive}
+        onPress={onToggle}
+      >
+        <Feather
+          name={expanded ? "chevron-down" : "chevron-right"}
+          size={16}
+          color={Colors.dark.accent}
+        />
+        {isPref ? (
+          <Feather name="star" size={12} color={Colors.dark.accent} />
+        ) : null}
+        <ThemedText style={styles.leagueName} numberOfLines={1}>
+          {name}
+        </ThemedText>
+        <View style={styles.leagueCount}>
+          <ThemedText style={styles.leagueCountText}>{count}</ThemedText>
+        </View>
+      </Touchable>
+      {expanded ? children : null}
+    </View>
+  );
+}
+
 function ChannelBadges({
   channels,
   onPress,
@@ -278,6 +320,18 @@ export default function FootballCentreScreen() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Leagues start collapsed (empty set = nothing expanded) so a busy day isn't
+  // overwhelming. Keys are unique per group: `live-<leagueId>` or
+  // `up-<dateKey>-<leagueId>`.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToast(msg);
@@ -556,42 +610,39 @@ export default function FootballCentreScreen() {
           {tab === "live"
             ? scoreGroups.length === 0
               ? renderEmpty("No live games right now")
-              : scoreGroups.map((g) => (
-                  <View key={g.league_id} style={{ gap: Spacing.sm }}>
-                    <View
-                      style={[
-                        styles.leagueHeader,
-                        g.league_id === prefLeague && styles.leagueHeaderPref,
-                      ]}
+              : scoreGroups.map((g) => {
+                  const key = `live-${g.league_id}`;
+                  return (
+                    <CollapsibleLeague
+                      key={g.league_id}
+                      name={g.name}
+                      count={g.rows.length}
+                      isPref={g.league_id === prefLeague}
+                      expanded={expandedGroups.has(key)}
+                      onToggle={() => toggleGroup(key)}
                     >
-                      {g.league_id === prefLeague ? (
-                        <Feather name="star" size={12} color={Colors.dark.accent} />
-                      ) : null}
-                      <ThemedText style={styles.leagueName} numberOfLines={1}>
-                        {g.name}
-                      </ThemedText>
-                    </View>
-                    <View style={styles.cardGrid}>
-                      {g.rows.map((s) => (
-                        <MatchCard
-                          key={s.fixture_id}
-                          home={s.home_team ?? "?"}
-                          away={s.away_team ?? "?"}
-                          homeLogo={s.home_logo}
-                          awayLogo={s.away_logo}
-                          homeScore={s.home_goals}
-                          awayScore={s.away_goals}
-                          statusLabel={minuteLabel(s)}
-                          live={isLive(s)}
-                          upcoming={false}
-                          channels={channelMap.get(s.fixture_id) ?? []}
-                          onChannelPress={handleChannelPress}
-                          cardWidth={cardWidth}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                ))
+                      <View style={styles.cardGrid}>
+                        {g.rows.map((s) => (
+                          <MatchCard
+                            key={s.fixture_id}
+                            home={s.home_team ?? "?"}
+                            away={s.away_team ?? "?"}
+                            homeLogo={s.home_logo}
+                            awayLogo={s.away_logo}
+                            homeScore={s.home_goals}
+                            awayScore={s.away_goals}
+                            statusLabel={minuteLabel(s)}
+                            live={isLive(s)}
+                            upcoming={false}
+                            channels={channelMap.get(s.fixture_id) ?? []}
+                            onChannelPress={handleChannelPress}
+                            cardWidth={cardWidth}
+                          />
+                        ))}
+                      </View>
+                    </CollapsibleLeague>
+                  );
+                })
             : (
               <>
                 <ChannelNotice />
@@ -602,40 +653,37 @@ export default function FootballCentreScreen() {
                     <ThemedText style={styles.dayHeader}>
                       {dayLabel(day.date_key)}
                     </ThemedText>
-                    {day.groups.map((g) => (
-                      <View key={g.league_id} style={{ gap: Spacing.sm }}>
-                        <View
-                          style={[
-                            styles.leagueHeader,
-                            g.league_id === prefLeague && styles.leagueHeaderPref,
-                          ]}
+                    {day.groups.map((g) => {
+                      const key = `up-${day.date_key}-${g.league_id}`;
+                      return (
+                        <CollapsibleLeague
+                          key={g.league_id}
+                          name={g.name}
+                          count={g.rows.length}
+                          isPref={g.league_id === prefLeague}
+                          expanded={expandedGroups.has(key)}
+                          onToggle={() => toggleGroup(key)}
                         >
-                          {g.league_id === prefLeague ? (
-                            <Feather name="star" size={12} color={Colors.dark.accent} />
-                          ) : null}
-                          <ThemedText style={styles.leagueName} numberOfLines={1}>
-                            {g.name}
-                          </ThemedText>
-                        </View>
-                        <View style={styles.cardGrid}>
-                          {g.rows.map((f) => (
-                            <MatchCard
-                              key={f.fixture_id}
-                              home={f.home_team ?? "?"}
-                              away={f.away_team ?? "?"}
-                              homeLogo={f.home_logo}
-                              awayLogo={f.away_logo}
-                              statusLabel={kickoffLabel(f.kickoff)}
-                              live={false}
-                              upcoming
-                              channels={channelMap.get(f.fixture_id) ?? []}
-                              onChannelPress={handleChannelPress}
-                              cardWidth={cardWidth}
-                            />
-                          ))}
-                        </View>
-                      </View>
-                    ))}
+                          <View style={styles.cardGrid}>
+                            {g.rows.map((f) => (
+                              <MatchCard
+                                key={f.fixture_id}
+                                home={f.home_team ?? "?"}
+                                away={f.away_team ?? "?"}
+                                homeLogo={f.home_logo}
+                                awayLogo={f.away_logo}
+                                statusLabel={kickoffLabel(f.kickoff)}
+                                live={false}
+                                upcoming
+                                channels={channelMap.get(f.fixture_id) ?? []}
+                                onChannelPress={handleChannelPress}
+                                cardWidth={cardWidth}
+                              />
+                            ))}
+                          </View>
+                        </CollapsibleLeague>
+                      );
+                    })}
                   </View>
                 ))}
               </>
@@ -744,16 +792,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    paddingLeft: 2,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  leagueHeaderActive: {
+    backgroundColor: "rgba(255, 102, 0, 0.32)",
+    borderColor: Colors.dark.accentHover,
   },
   leagueHeaderPref: {
-    alignSelf: "flex-start",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.accentDim,
-    borderWidth: 1,
     borderColor: Colors.dark.accent,
+  },
+  leagueCount: {
+    marginLeft: "auto",
+    minWidth: 24,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+  },
+  leagueCountText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: Colors.dark.text,
   },
   toast: {
     position: "absolute",
@@ -774,6 +839,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
   },
   leagueName: {
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "800",
     color: Colors.dark.accent,
