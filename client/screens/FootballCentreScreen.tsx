@@ -6,6 +6,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Modal,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,6 +24,31 @@ import { useData } from "@/contexts/DataContext";
 import { xtreamApi } from "@/lib/xtream-api";
 import { leagueRank } from "@/constants/football-leagues";
 import { useFootball, type FootballScore } from "@/contexts/FootballContext";
+
+// Theme the web scrollbars (orange thumb on near-black track) so the modal and
+// other scroll areas match the app instead of showing the OS's generic grey bar.
+// No-op on native (RN scrollbars are already minimal/overlaid).
+if (
+  Platform.OS === "web" &&
+  typeof document !== "undefined" &&
+  !document.getElementById("ultracast-scrollbar-style")
+) {
+  const style = document.createElement("style");
+  style.id = "ultracast-scrollbar-style";
+  style.textContent = `
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: ${Colors.dark.backgroundRoot}; }
+    ::-webkit-scrollbar-thumb {
+      background: ${Colors.dark.accent};
+      border-radius: 4px;
+      border: 2px solid ${Colors.dark.backgroundRoot};
+    }
+    ::-webkit-scrollbar-thumb:hover { background: ${Colors.dark.accentHover}; }
+    ::-webkit-scrollbar-corner { background: ${Colors.dark.backgroundRoot}; }
+    * { scrollbar-width: thin; scrollbar-color: ${Colors.dark.accent} ${Colors.dark.backgroundRoot}; }
+  `;
+  document.head.appendChild(style);
+}
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -411,6 +437,11 @@ function GameDetailModal({
   const [detail, setDetail] = useState<FixtureDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const { width } = useWindowDimensions();
+  // On a wide landscape/TV screen there's room to show both teams' lineups
+  // side by side instead of one long stacked column.
+  const wide = width >= 900;
+
   const fixtureId = target?.fixtureId ?? null;
 
   React.useEffect(() => {
@@ -493,55 +524,57 @@ function GameDetailModal({
     );
   };
 
+  const renderTeamLineup = (l: FixtureDetail["lineups"][number], idx: number) => (
+    <View key={idx} style={[{ gap: Spacing.xs }, wide && styles.lineupColumn]}>
+      <View style={styles.lineupHead}>
+        <TeamBadge uri={l.team_logo} />
+        <ThemedText style={styles.lineupTeam} numberOfLines={1}>
+          {l.team_name ?? "Team"}
+        </ThemedText>
+        {l.formation ? (
+          <ThemedText style={styles.lineupFormation}>{l.formation}</ThemedText>
+        ) : null}
+      </View>
+      {l.coach ? (
+        <ThemedText style={styles.lineupCoach}>Coach: {l.coach}</ThemedText>
+      ) : null}
+      <ThemedText style={styles.lineupSection}>Starting XI</ThemedText>
+      {l.startXI.map((p, i) => (
+        <View key={`s${i}`} style={styles.playerRow}>
+          <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
+          <ThemedText style={styles.playerName} numberOfLines={1}>
+            {p.name}
+          </ThemedText>
+          {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
+        </View>
+      ))}
+      {l.substitutes.length ? (
+        <>
+          <ThemedText style={styles.lineupSection}>Substitutes</ThemedText>
+          {l.substitutes.map((p, i) => (
+            <View key={`b${i}`} style={styles.playerRow}>
+              <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
+              <ThemedText
+                style={[styles.playerName, styles.playerSub]}
+                numberOfLines={1}
+              >
+                {p.name}
+              </ThemedText>
+              {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
+            </View>
+          ))}
+        </>
+      ) : null}
+    </View>
+  );
+
   const renderLineups = () => {
     if (!detail?.lineups?.length) {
       return <ThemedText style={styles.modalEmpty}>Lineups not announced yet.</ThemedText>;
     }
     return (
-      <View style={{ gap: Spacing.lg }}>
-        {detail.lineups.map((l, idx) => (
-          <View key={idx} style={{ gap: Spacing.xs }}>
-            <View style={styles.lineupHead}>
-              <TeamBadge uri={l.team_logo} />
-              <ThemedText style={styles.lineupTeam} numberOfLines={1}>
-                {l.team_name ?? "Team"}
-              </ThemedText>
-              {l.formation ? (
-                <ThemedText style={styles.lineupFormation}>{l.formation}</ThemedText>
-              ) : null}
-            </View>
-            {l.coach ? (
-              <ThemedText style={styles.lineupCoach}>Coach: {l.coach}</ThemedText>
-            ) : null}
-            <ThemedText style={styles.lineupSection}>Starting XI</ThemedText>
-            {l.startXI.map((p, i) => (
-              <View key={`s${i}`} style={styles.playerRow}>
-                <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
-                <ThemedText style={styles.playerName} numberOfLines={1}>
-                  {p.name}
-                </ThemedText>
-                {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
-              </View>
-            ))}
-            {l.substitutes.length ? (
-              <>
-                <ThemedText style={styles.lineupSection}>Substitutes</ThemedText>
-                {l.substitutes.map((p, i) => (
-                  <View key={`b${i}`} style={styles.playerRow}>
-                    <ThemedText style={styles.playerNum}>{p.number ?? "-"}</ThemedText>
-                    <ThemedText
-                      style={[styles.playerName, styles.playerSub]}
-                      numberOfLines={1}
-                    >
-                      {p.name}
-                    </ThemedText>
-                    {p.pos ? <ThemedText style={styles.playerPos}>{p.pos}</ThemedText> : null}
-                  </View>
-                ))}
-              </>
-            ) : null}
-          </View>
-        ))}
+      <View style={wide ? styles.lineupRow : { gap: Spacing.lg }}>
+        {detail.lineups.map((l, idx) => renderTeamLineup(l, idx))}
       </View>
     );
   };
@@ -600,7 +633,7 @@ function GameDetailModal({
       statusBarTranslucent
     >
       <View style={styles.modalBackdrop}>
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, wide && styles.modalCardWide]}>
           {/* Header */}
           <View style={styles.modalHeader}>
             <ThemedText style={styles.modalLeague} numberOfLines={1}>
@@ -1434,6 +1467,9 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.md,
   },
+  modalCardWide: {
+    maxWidth: 900,
+  },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1592,6 +1628,15 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12.5,
     color: Colors.dark.textSecondary,
+  },
+  lineupRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.xl,
+  },
+  lineupColumn: {
+    flex: 1,
+    minWidth: 0,
   },
   lineupHead: {
     flexDirection: "row",
