@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -19,7 +19,7 @@ import { getApiUrl } from "@/lib/query-client";
 import { useData } from "@/contexts/DataContext";
 import { xtreamApi } from "@/lib/xtream-api";
 import { leagueRank } from "@/constants/football-leagues";
-import type { FootballScore } from "@/contexts/FootballContext";
+import { useFootball, type FootballScore } from "@/contexts/FootballContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -152,12 +152,29 @@ export default function FootballCentreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { liveStreams } = useData();
+  const { prefs } = useFootball();
+  const prefLeague = prefs.league_id;
 
   const [tab, setTab] = useState<"live" | "upcoming">("live");
   const [scores, setScores] = useState<FootballScore[]>([]);
   const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  // Pin the profile's preferred league to the very top of every group list,
+  // otherwise fall back to the curated English-first ordering.
+  const rank = useCallback(
+    (id: number) => (prefLeague != null && id === prefLeague ? -1 : leagueRank(id)),
+    [prefLeague],
+  );
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
@@ -250,8 +267,8 @@ export default function FootballCentreScreen() {
         (a.home_team ?? "").localeCompare(b.home_team ?? ""),
       ),
     }));
-    return groups.sort((a, b) => leagueRank(a.league_id) - leagueRank(b.league_id));
-  }, [scores]);
+    return groups.sort((a, b) => rank(a.league_id) - rank(b.league_id));
+  }, [scores, rank]);
 
   // Upcoming fixtures grouped by day, then league (English-first within a day).
   const fixtureDays = useMemo(() => {
@@ -281,29 +298,36 @@ export default function FootballCentreScreen() {
               (a.kickoff ?? "").localeCompare(b.kickoff ?? ""),
             ),
           }))
-          .sort((a, b) => leagueRank(a.league_id) - leagueRank(b.league_id));
+          .sort((a, b) => rank(a.league_id) - rank(b.league_id));
         return { date_key, groups };
       });
     return days;
-  }, [fixtures]);
+  }, [fixtures, rank]);
 
   const handleChannelPress = useCallback(
     (ch: FixtureChannel) => {
-      if (!ch.stream_id) return;
-      const sid = Number(ch.stream_id);
-      if (!Number.isFinite(sid)) return;
-      const stream = liveStreams.find((s) => s.stream_id === sid);
+      // Resolve the linked stream against the cached live streams. If it isn't
+      // there (id missing, unmapped, or not in this user's package) keep the
+      // badge but show a graceful message rather than opening a dead channel.
+      const sid = ch.stream_id != null ? Number(ch.stream_id) : NaN;
+      const stream = Number.isFinite(sid)
+        ? liveStreams.find((s) => s.stream_id === sid)
+        : undefined;
+      if (!stream) {
+        showToast("Channel unavailable");
+        return;
+      }
       navigation.navigate("LivePreview", {
-        streamId: sid,
-        name: stream?.name ?? ch.channel_name,
-        streamUrl: xtreamApi.getLiveStreamUrl(sid),
-        thumbnail: stream?.stream_icon ?? undefined,
-        streamIcon: stream?.stream_icon ?? undefined,
-        categoryId: stream?.category_id,
+        streamId: stream.stream_id,
+        name: stream.name ?? ch.channel_name,
+        streamUrl: xtreamApi.getLiveStreamUrl(stream.stream_id),
+        thumbnail: stream.stream_icon ?? undefined,
+        streamIcon: stream.stream_icon ?? undefined,
+        categoryId: stream.category_id,
         initialFullscreen: true,
       });
     },
-    [liveStreams, navigation],
+    [liveStreams, navigation, showToast],
   );
 
   const renderEmpty = (msg: string) => (
@@ -399,7 +423,15 @@ export default function FootballCentreScreen() {
               ? renderEmpty("No live games right now")
               : scoreGroups.map((g) => (
                   <View key={g.league_id} style={{ gap: Spacing.sm }}>
-                    <View style={styles.leagueHeader}>
+                    <View
+                      style={[
+                        styles.leagueHeader,
+                        g.league_id === prefLeague && styles.leagueHeaderPref,
+                      ]}
+                    >
+                      {g.league_id === prefLeague ? (
+                        <Feather name="star" size={12} color={Colors.dark.accent} />
+                      ) : null}
                       <ThemedText style={styles.leagueName} numberOfLines={1}>
                         {g.name}
                       </ThemedText>
@@ -455,7 +487,15 @@ export default function FootballCentreScreen() {
                     </ThemedText>
                     {day.groups.map((g) => (
                       <View key={g.league_id} style={{ gap: Spacing.sm }}>
-                        <View style={styles.leagueHeader}>
+                        <View
+                          style={[
+                            styles.leagueHeader,
+                            g.league_id === prefLeague && styles.leagueHeaderPref,
+                          ]}
+                        >
+                          {g.league_id === prefLeague ? (
+                            <Feather name="star" size={12} color={Colors.dark.accent} />
+                          ) : null}
                           <ThemedText style={styles.leagueName} numberOfLines={1}>
                             {g.name}
                           </ThemedText>
@@ -497,6 +537,13 @@ export default function FootballCentreScreen() {
                 ))}
         </ScrollView>
       )}
+
+      {toast ? (
+        <View pointerEvents="none" style={[styles.toast, { bottom: insets.bottom + Spacing.lg }]}>
+          <Feather name="alert-circle" size={14} color={Colors.dark.text} />
+          <ThemedText style={styles.toastText}>{toast}</ThemedText>
+        </View>
+      ) : null}
     </ThemedView>
   );
 }
@@ -593,6 +640,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.sm,
     paddingLeft: 2,
+  },
+  leagueHeaderPref: {
+    alignSelf: "flex-start",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.accentDim,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+  },
+  toast: {
+    position: "absolute",
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+  },
+  toastText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.text,
   },
   leagueName: {
     fontSize: 13,
