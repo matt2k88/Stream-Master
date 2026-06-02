@@ -163,12 +163,12 @@ function CollapsibleLeague({
         {isPref ? (
           <Feather name="star" size={12} color={Colors.dark.accent} />
         ) : null}
-        <ThemedText style={styles.leagueName} numberOfLines={1}>
-          {name}
-        </ThemedText>
         <View style={styles.leagueCount}>
           <ThemedText style={styles.leagueCountText}>{count}</ThemedText>
         </View>
+        <ThemedText style={styles.leagueName} numberOfLines={1}>
+          {name}
+        </ThemedText>
       </Touchable>
       {expanded ? children : null}
     </View>
@@ -807,7 +807,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.accent,
   },
   leagueCount: {
-    marginLeft: "auto",
     minWidth: 24,
     paddingHorizontal: 7,
     paddingVertical: 1,
