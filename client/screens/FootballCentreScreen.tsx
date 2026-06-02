@@ -12,6 +12,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -149,9 +150,23 @@ function ChannelBadges({
   );
 }
 
+function TeamBadge({ uri }: { uri?: string | null }) {
+  if (!uri) return <View style={styles.teamLogoPlaceholder} />;
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.teamLogo}
+      contentFit="contain"
+      transition={150}
+    />
+  );
+}
+
 function MatchCard({
   home,
   away,
+  homeLogo,
+  awayLogo,
   homeScore,
   awayScore,
   statusLabel,
@@ -163,6 +178,8 @@ function MatchCard({
 }: {
   home: string;
   away: string;
+  homeLogo?: string | null;
+  awayLogo?: string | null;
   homeScore?: number;
   awayScore?: number;
   statusLabel: string;
@@ -198,9 +215,12 @@ function MatchCard({
       </View>
 
       <View style={styles.teamLine}>
-        <ThemedText style={styles.teamName} numberOfLines={1}>
-          {home}
-        </ThemedText>
+        <View style={styles.teamInfo}>
+          <TeamBadge uri={homeLogo} />
+          <ThemedText style={styles.teamName} numberOfLines={1}>
+            {home}
+          </ThemedText>
+        </View>
         {!upcoming ? (
           <ThemedText style={[styles.teamScore, live && styles.teamScoreLive]}>
             {homeScore ?? 0}
@@ -208,9 +228,12 @@ function MatchCard({
         ) : null}
       </View>
       <View style={styles.teamLine}>
-        <ThemedText style={styles.teamName} numberOfLines={1}>
-          {away}
-        </ThemedText>
+        <View style={styles.teamInfo}>
+          <TeamBadge uri={awayLogo} />
+          <ThemedText style={styles.teamName} numberOfLines={1}>
+            {away}
+          </ThemedText>
+        </View>
         {!upcoming ? (
           <ThemedText style={[styles.teamScore, live && styles.teamScoreLive]}>
             {awayScore ?? 0}
@@ -536,6 +559,8 @@ export default function FootballCentreScreen() {
                           key={s.fixture_id}
                           home={s.home_team ?? "?"}
                           away={s.away_team ?? "?"}
+                          homeLogo={s.home_logo}
+                          awayLogo={s.away_logo}
                           homeScore={s.home_goals}
                           awayScore={s.away_goals}
                           statusLabel={minuteLabel(s)}
@@ -577,6 +602,8 @@ export default function FootballCentreScreen() {
                               key={f.fixture_id}
                               home={f.home_team ?? "?"}
                               away={f.away_team ?? "?"}
+                              homeLogo={f.home_logo}
+                              awayLogo={f.away_logo}
                               statusLabel={kickoffTime(f.kickoff)}
                               live={false}
                               upcoming
@@ -792,6 +819,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: Spacing.sm,
     paddingVertical: 5,
+  },
+  teamInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  teamLogo: {
+    width: 22,
+    height: 22,
+  },
+  teamLogoPlaceholder: {
+    width: 22,
+    height: 22,
   },
   teamName: {
     flex: 1,

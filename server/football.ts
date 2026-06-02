@@ -38,6 +38,8 @@ interface FixtureRow {
   league_country: string | null;
   home_team: string | null;
   away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
   home_goals: number;
   away_goals: number;
   status_short: string | null;
@@ -95,6 +97,8 @@ function mapFixture(f: any, nowIso: string): FixtureRow {
     league_country: f?.league?.country ?? null,
     home_team: f?.teams?.home?.name ?? null,
     away_team: f?.teams?.away?.name ?? null,
+    home_logo: f?.teams?.home?.logo ?? null,
+    away_logo: f?.teams?.away?.logo ?? null,
     home_goals: f?.goals?.home ?? 0,
     away_goals: f?.goals?.away ?? 0,
     status_short: f?.fixture?.status?.short ?? null,
@@ -282,7 +286,20 @@ async function pollOnce(): Promise<number> {
     const { error } = await supabase
       .from("football_scores")
       .upsert(rows, { onConflict: "fixture_id" });
-    if (error) console.error("[football] upsert error:", error.message);
+    if (error) {
+      // The logo columns may not exist yet (migration 017 not run). Retry the
+      // upsert without them so the core score cache still updates.
+      console.warn(
+        "[football] score upsert with logos failed, retrying without (has migration 017 been run?):",
+        error.message,
+      );
+      const stripped = rows.map(({ home_logo, away_logo, ...rest }) => rest);
+      const retry = await supabase
+        .from("football_scores")
+        .upsert(stripped, { onConflict: "fixture_id" });
+      if (retry.error)
+        console.error("[football] upsert error:", retry.error.message);
+    }
   }
 
   // For each fresh goal, look up the scorer once and store it. Kept as a

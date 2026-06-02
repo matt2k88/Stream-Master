@@ -25,6 +25,8 @@ export interface FootballScore {
   league_country: string | null;
   home_team: string | null;
   away_team: string | null;
+  home_logo?: string | null;
+  away_logo?: string | null;
   home_goals: number;
   away_goals: number;
   status_short: string | null;
