@@ -70,12 +70,7 @@ export const FOOTBALL_LEAGUE_GROUPS: FootballLeagueGroup[] = [
       { id: 15, name: "FIFA Club World Cup" },
       { id: 253, name: "MLS (USA)" },
       { id: 71, name: "Brazil Série A" },
-    ],
-  },
-  {
-    group: "Other Leagues",
-    leagues: [
-      { id: 245, name: "Ykkönen (Finland)" },
+      { id: 10, name: "Friendlies (International)" },
     ],
   },
 ];
