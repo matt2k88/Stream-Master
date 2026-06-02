@@ -18,7 +18,6 @@ import { useProfile, makeGuestProfile, type Profile } from "@/contexts/ProfileCo
 import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
-import { useFootball } from "@/contexts/FootballContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
@@ -754,7 +753,6 @@ export default function HomeScreen() {
   const { refreshActiveProfile, isGuest } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme } = useAppTheme();
-  const { globalEnabled: footballEnabled } = useFootball();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -1040,9 +1038,11 @@ export default function HomeScreen() {
         <View style={styles.headerActions}>
           <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
           <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-          {footballEnabled ? (
-            <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
-          ) : null}
+          {/* Football Centre stays reachable regardless of the kill-switch —
+              the switch only hides the in-player GOAL tracker overlay, not the
+              dedicated Centre (whose scores keep updating server-side). */}
+          <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+
           <VpnButton />
           {/* Profile pill is large; hide on portrait where the header
               is cramped — users can still switch profile via the

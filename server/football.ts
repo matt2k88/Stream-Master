@@ -48,23 +48,6 @@ interface FixtureRow {
   updated_at: string;
 }
 
-// Reads the admin global kill-switch. Defaults to enabled (true) when the table
-// is missing (migration 013 not yet run) so the feature stays on. When disabled
-// the poller skips the api-football request entirely to save quota.
-async function isGloballyEnabled(): Promise<boolean> {
-  try {
-    const { data, error } = await supabase
-      .from("football_global")
-      .select("enabled")
-      .eq("id", 1)
-      .maybeSingle();
-    if (error) return true;
-    return data?.enabled !== false;
-  } catch {
-    return true;
-  }
-}
-
 // Returns the list of live fixtures, or null if the request failed (so callers
 // can skip the "mark vanished as finished" step and avoid false positives).
 async function fetchLive(): Promise<any[] | null> {
@@ -208,11 +191,12 @@ function mapPlayers(arr: any[]): { name: string; number: number | null; pos: str
   }));
 }
 
-// Returns combined detail for one fixture, or null when disabled / no key.
+// Returns combined detail for one fixture, or null when no key. Not gated by
+// the kill-switch — the Football Centre stays functional regardless (the
+// switch only hides the in-player tracker, enforced client-side).
 export async function fetchFixtureDetail(
   fixtureId: number,
 ): Promise<FixtureDetail | null> {
-  if (!(await isGloballyEnabled())) return null;
   if (!process.env.API_FOOTBALL_KEY) return null;
 
   const cached = detailCache.get(fixtureId);
@@ -313,11 +297,10 @@ async function fetchFixturesForDate(date: string): Promise<any[]> {
 
 // Once-per-day: pull the next FIXTURES_DAYS_AHEAD days of fixtures for the
 // curated leagues into the football_fixtures cache, then purge past days.
-// Guarded by the global kill-switch and a 24h timestamp. Degrades gracefully
-// when the table is missing (migration 015 not yet run).
+// Throttled by a 24h timestamp. NOT gated by the kill-switch — the Football
+// Centre's upcoming list must stay fresh regardless. Degrades gracefully when
+// the table is missing (migration 015 not yet run).
 async function refreshUpcomingFixtures(): Promise<void> {
-  if (!(await isGloballyEnabled())) return;
-
   const nowIso = new Date().toISOString();
   const rows: UpcomingRow[] = [];
   for (let i = 0; i < FIXTURES_DAYS_AHEAD; i++) {
@@ -374,9 +357,12 @@ async function refreshUpcomingFixtures(): Promise<void> {
 // One poll cycle. Returns the number of live fixtures found (used to decide the
 // next interval). Returns 0 on error/no-key so the poller backs off.
 async function pollOnce(): Promise<number> {
-  // Admin global kill-switch off → skip the API call entirely (saves quota).
-  if (!(await isGloballyEnabled())) return 0;
-
+  // NOTE: the admin global kill-switch (football_global.enabled) intentionally
+  // does NOT gate this poller. The score cache must keep updating even when the
+  // switch is off — the kill-switch only controls the in-player GOAL-alert /
+  // tracker visibility, which is enforced client-side (see FootballContext).
+  // Freezing the whole scores table when disabled was the cause of the Football
+  // Centre going stale.
   const live = await fetchLive();
   if (live === null) return 0; // error/disabled — skip this cycle, back off
 
