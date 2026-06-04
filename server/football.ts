@@ -18,6 +18,13 @@ const IDLE_INTERVAL_MS = 5 * 60 * 1000;
 const FIXTURES_DAYS_AHEAD = 7;
 const FIXTURES_REFRESH_MS = 24 * 60 * 60 * 1000;
 
+// A fixture is only purged once its kickoff is at least this far in the past, so
+// a still-in-progress match (which can run ~2h, plus stoppages/extra time) is
+// never deleted mid-game — important because deleting the row cascades to its
+// channel links. Time-based (not day-based) so games crossing UTC midnight are
+// safe.
+const FIXTURE_PURGE_GRACE_MS = 4 * 60 * 60 * 1000;
+
 // Curated api-football league/competition ids the Football Centre is scoped to.
 // Mirrors client/constants/football-leagues.ts (English football & cups first).
 export const CURATED_LEAGUE_IDS = [
@@ -296,10 +303,12 @@ async function fetchFixturesForDate(date: string): Promise<any[]> {
 }
 
 // Once-per-day: pull the next FIXTURES_DAYS_AHEAD days of fixtures for the
-// curated leagues into the football_fixtures cache, then purge past days.
-// Throttled by a 24h timestamp. NOT gated by the kill-switch — the Football
-// Centre's upcoming list must stay fresh regardless. Degrades gracefully when
-// the table is missing (migration 015 not yet run).
+// curated leagues into the football_fixtures cache. Throttled by a 24h
+// timestamp. NOT gated by the kill-switch — the Football Centre's upcoming
+// list must stay fresh regardless. Degrades gracefully when the table is
+// missing (migration 015 not yet run). NOTE: purging of past fixtures is
+// handled separately by purgePastFixtures() on every poll cycle so stale rows
+// are removed promptly rather than only once a day.
 async function refreshUpcomingFixtures(): Promise<void> {
   const nowIso = new Date().toISOString();
   const rows: UpcomingRow[] = [];
@@ -343,15 +352,32 @@ async function refreshUpcomingFixtures(): Promise<void> {
     }
   }
 
-  // Purge fixtures whose day has already passed.
+  console.log(`[football] upcoming fixtures refreshed: ${rows.length} curated fixtures`);
+}
+
+// Delete fixtures whose kickoff is well in the past. Cheap single indexed
+// DELETE, so it runs on every poll cycle (decoupled from the throttled 24h fetch
+// above) to ensure past fixtures are removed promptly. Uses a kickoff grace
+// window rather than a day boundary so a still-live match (incl. one that has
+// crossed UTC midnight) is never deleted mid-game. Rows with no kickoff fall
+// back to the day-based check. Degrades gracefully (logs once) when the table is
+// missing (migration 015 not yet run).
+let purgeWarned = false;
+async function purgePastFixtures(): Promise<void> {
+  const cutoffIso = new Date(Date.now() - FIXTURE_PURGE_GRACE_MS).toISOString();
   const today = dateKey(new Date());
-  const { error: purgeErr } = await supabase
+  const { error } = await supabase
     .from("football_fixtures")
     .delete()
-    .lt("date_key", today);
-  if (purgeErr) console.error("[football] fixtures purge error:", purgeErr.message);
-
-  console.log(`[football] upcoming fixtures refreshed: ${rows.length} curated fixtures`);
+    .or(`kickoff.lt.${cutoffIso},and(kickoff.is.null,date_key.lt.${today})`);
+  if (error) {
+    if (!purgeWarned) {
+      console.error("[football] fixtures purge error (has migration 015 been run?):", error.message);
+      purgeWarned = true;
+    }
+    return;
+  }
+  purgeWarned = false;
 }
 
 // One poll cycle. Returns the number of live fixtures found (used to decide the
@@ -491,6 +517,12 @@ export function startFootballPoller() {
     }
     // Once-per-day upcoming fixtures refresh (own internal 24h guard).
     await maybeRefreshFixtures();
+    // Purge past fixtures every cycle (cheap DELETE) so stale rows don't linger.
+    try {
+      await purgePastFixtures();
+    } catch (e: any) {
+      console.error("[football] fixtures purge cycle error:", e?.message);
+    }
     const next = liveCount > 0 ? ACTIVE_INTERVAL_MS : IDLE_INTERVAL_MS;
     setTimeout(loop, next);
   };

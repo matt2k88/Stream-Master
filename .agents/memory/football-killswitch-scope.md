@@ -29,3 +29,12 @@ button must stay visible regardless, or users can't see the updating scores.
 **Also note:** the poller backs off to a 5-min idle interval when `pollOnce`
 returns 0 (no live games / error), and polls every 60s when games are live —
 so a freshly-changed condition can take up to one idle interval to take effect.
+
+**Fixtures purge:** removing past `football_fixtures` rows must run on every poll
+cycle (cheap indexed DELETE via `purgePastFixtures`), NOT be bundled with the
+once-per-24h upcoming-fixtures API fetch. Bundling it meant stale fixtures only
+got purged daily or on restart. Keep cheap DB upkeep decoupled from throttled
+quota-limited API fetches. The purge must be time-based (kickoff older than a
+~4h grace window), NOT a day boundary: `football_fixture_channels` has an
+`ON DELETE CASCADE` FK, so deleting a still-live match that crossed UTC midnight
+would drop its channel links mid-game.
