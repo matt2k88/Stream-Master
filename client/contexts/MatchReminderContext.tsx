@@ -87,7 +87,11 @@ const MatchReminderContext = createContext<MatchReminderContextType | undefined>
 const PREMATCH_LEAD_MS = 15 * 60 * 1000; // notify 15 min before kick off
 const KICKOFF_GRACE_MS = 15 * 60 * 1000; // don't fire a kick-off reminder for games long started
 const ENGINE_MS = 30 * 1000;
-const FIXTURES_REFRESH_MS = 10 * 60 * 1000;
+// The schedule (next 10 fixtures) covers many days, and the 15-min countdown is
+// evaluated locally by the engine — so we only need to refresh the schedule
+// occasionally to catch kick-off/channel changes, not poll it. Refetch at most
+// once per this window; a team switch or app cold-start always forces a fresh load.
+const FIXTURES_STALE_MS = 12 * 60 * 60 * 1000;
 
 function norm(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
@@ -238,6 +242,7 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
 
   const favTeamId = favouriteTeam?.id ?? null;
 
+  const lastLoadAt = useRef(0);
   useEffect(() => {
     if (!remindersActive) {
       setFixtures([]);
@@ -249,7 +254,16 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
     // Re-tag to the current team with empty rows so a team switch can never
     // momentarily fire a reminder for the old team.
     setTeamFixtures({ teamId: favTeamId, rows: [] });
-    const load = async () => {
+    // Mark stale on every (re)mount/team change so the forced load below always
+    // runs; if that forced load fails, the timestamp stays old and the next
+    // resume retries rather than being suppressed for a full window.
+    lastLoadAt.current = 0;
+    // force=true ignores the staleness window (used on mount and team switch);
+    // otherwise we only hit the network if the cached schedule is older than
+    // FIXTURES_STALE_MS, so a backgrounded app coming forward refetches at most
+    // ~once per window instead of every resume.
+    const load = async (force = false) => {
+      if (!force && Date.now() - lastLoadAt.current < FIXTURES_STALE_MS) return;
       try {
         const reqs: Promise<Response>[] = [
           fetch(new URL("/api/football/centre/fixtures", getApiUrl()).toString()),
@@ -280,15 +294,23 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
             setTeamFixtures({ teamId: favTeamId, rows: [] });
           }
         }
+        // Only mark fresh when this effect is still current AND the
+        // reminder-critical team fixtures actually loaded; otherwise leave the
+        // timestamp stale so the next resume retries instead of waiting a window.
+        const teamOk = favTeamId == null || (!!tRes && tRes.ok);
+        if (!cancelled && teamOk) lastLoadAt.current = Date.now();
       } catch {
-        // Network blip — drop team fixtures so we never fire on stale data.
+        // Network blip — drop team fixtures so we never fire on stale data, and
+        // leave lastLoadAt untouched so the next resume retries.
         if (!cancelled) setTeamFixtures({ teamId: favTeamId, rows: [] });
       }
     };
-    void load();
-    const id = setInterval(load, FIXTURES_REFRESH_MS);
-    // Refresh fixtures immediately when the app returns to the foreground so a
-    // due match is caught right away rather than on the next polling cycle.
+    // Force a load on mount and whenever the favourite team changes.
+    void load(true);
+    // Periodic check for the rare always-on (TV) case that never backgrounds;
+    // gated by staleness so it only actually fetches once per window.
+    const id = setInterval(() => void load(), FIXTURES_STALE_MS);
+    // On foreground resume, refresh only if the schedule is stale.
     const sub = AppState.addEventListener("change", (s) => {
       if (s === "active") void load();
     });

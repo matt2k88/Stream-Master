@@ -229,7 +229,7 @@ export interface TeamFixtureRow {
   kickoff: string | null;
 }
 
-const TEAM_FIXTURES_TTL_MS = 5 * 60 * 1000;
+const TEAM_FIXTURES_TTL_MS = 30 * 60 * 1000;
 const teamFixturesCache = new Map<number, { at: number; data: TeamFixtureRow[] }>();
 
 // Upcoming fixtures for ONE team, straight from api-football (NOT limited to the
