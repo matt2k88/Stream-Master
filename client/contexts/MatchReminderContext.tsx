@@ -84,12 +84,6 @@ interface MatchReminderContextType {
   dismissReminder: () => void;
   watchReminder: () => void;
   remindAtKickoff: () => void;
-
-  // Dev-only test helper: fire a Man Utd reminder after a short countdown so the
-  // overlay can be verified over the player without waiting for a real match.
-  // `testCountdown` is the seconds remaining (null when idle).
-  testCountdown: number | null;
-  triggerTestReminder: () => void;
 }
 
 const MatchReminderContext = createContext<MatchReminderContextType | undefined>(undefined);
@@ -102,13 +96,6 @@ const ENGINE_MS = 30 * 1000;
 // occasionally to catch kick-off/channel changes, not poll it. Refetch at most
 // once per this window; a team switch or app cold-start always forces a fresh load.
 const FIXTURES_STALE_MS = 12 * 60 * 60 * 1000;
-
-// Dev-only test reminder: a fake Man Utd fixture surfaced after a short
-// countdown so the overlay can be checked over the player on demand. The
-// negative id can never collide with a real api-football fixture id.
-const TEST_FIXTURE_ID = -1;
-const TEST_COUNTDOWN_SEC = 10;
-const MAN_UTD_LOGO = "https://media.api-sports.io/football/teams/33.png";
 
 function norm(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
@@ -569,45 +556,6 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
     return resolveStream(activeReminder.fixtureId) != null;
   }, [activeReminder, resolveStream]);
 
-  // ── Test reminder (countdown → fake Man Utd overlay) ──
-  const [testCountdown, setTestCountdown] = useState<number | null>(null);
-  const testTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const triggerTestReminder = useCallback(() => {
-    if (testTimerRef.current) return; // already counting down
-    let n = TEST_COUNTDOWN_SEC;
-    setTestCountdown(n);
-    testTimerRef.current = setInterval(() => {
-      n -= 1;
-      if (n > 0) {
-        setTestCountdown(n);
-        return;
-      }
-      if (testTimerRef.current) {
-        clearInterval(testTimerRef.current);
-        testTimerRef.current = null;
-      }
-      setTestCountdown(null);
-      setActiveReminder({
-        fixtureId: TEST_FIXTURE_ID,
-        home: "Manchester United",
-        away: "Test Opponent",
-        homeLogo: MAN_UTD_LOGO,
-        awayLogo: null,
-        league: "Test Reminder",
-        kickoff: new Date(Date.now() + PREMATCH_LEAD_MS).toISOString(),
-        kind: "prematch",
-      });
-    }, 1000);
-  }, []);
-
-  useEffect(
-    () => () => {
-      if (testTimerRef.current) clearInterval(testTimerRef.current);
-    },
-    [],
-  );
-
   const value = useMemo<MatchReminderContextType>(
     () => ({
       favouriteTeam,
@@ -623,8 +571,6 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
       dismissReminder,
       watchReminder,
       remindAtKickoff,
-      testCountdown,
-      triggerTestReminder,
     }),
     [
       favouriteTeam,
@@ -640,8 +586,6 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
       dismissReminder,
       watchReminder,
       remindAtKickoff,
-      testCountdown,
-      triggerTestReminder,
     ],
   );
 
