@@ -116,6 +116,8 @@ function FavouriteTeamSection() {
     remindersReady,
     setRemindersEnabled,
     globalEnabled,
+    testCountdown,
+    triggerTestReminder,
   } = useMatchReminder();
 
   const [searchOpen, setSearchOpen] = useState(false);
@@ -355,6 +357,39 @@ function FavouriteTeamSection() {
                   list and appear while the app is open.
                 </ThemedText>
               </View>
+
+              {__DEV__ ? (
+                <View style={styles.testBlock}>
+                  <Touchable
+                    style={[styles.testBtn, testCountdown != null && styles.testBtnActive]}
+                    activeStyle={styles.testBtnFocused}
+                    onPress={() => {
+                      if (testCountdown == null) triggerTestReminder();
+                    }}
+                  >
+                    {(active) => (
+                      <>
+                        <Feather
+                          name={testCountdown != null ? "clock" : "play-circle"}
+                          size={16}
+                          color={Colors.dark.accent}
+                        />
+                        <ThemedText
+                          style={[styles.testBtnText, active && { color: Colors.dark.accent }]}
+                        >
+                          {testCountdown != null
+                            ? `Opening in ${testCountdown}s — go to a channel`
+                            : "Send test reminder (Man Utd)"}
+                        </ThemedText>
+                      </>
+                    )}
+                  </Touchable>
+                  <ThemedText style={styles.testHint}>
+                    Developer only. Fires a sample reminder after a short countdown so you can open a
+                    channel and check the popup appears over the player.
+                  </ThemedText>
+                </View>
+              ) : null}
             </View>
           ) : null}
         </>
@@ -730,6 +765,38 @@ const styles = StyleSheet.create({
   notifyBlock: {
     gap: Spacing.md,
     marginTop: Spacing.xs,
+  },
+  testBlock: {
+    gap: Spacing.xs,
+  },
+  testBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    height: 44,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.45)",
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  testBtnActive: {
+    opacity: 0.7,
+  },
+  testBtnFocused: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "1A",
+  },
+  testBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  testHint: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: Colors.dark.textSecondary,
   },
   toggleRowDisabled: {
     opacity: 0.6,
