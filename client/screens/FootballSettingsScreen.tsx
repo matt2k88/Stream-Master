@@ -19,17 +19,11 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useFootball, FootballCorner } from "@/contexts/FootballContext";
 import { useProfile } from "@/contexts/ProfileContext";
+import { useMatchReminder, type FavTeam } from "@/contexts/MatchReminderContext";
 import { FOOTBALL_LEAGUE_GROUPS } from "@/constants/football-leagues";
 import { getApiUrl } from "@/lib/query-client";
-import {
-  loadGuestFavouriteTeam,
-  saveGuestFavouriteTeam,
-  type GuestFavouriteTeam,
-} from "@/lib/guest-prefs";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-type FavTeam = GuestFavouriteTeam;
 
 const CORNERS: { key: FootballCorner; label: string }[] = [
   { key: "top-left", label: "Top Left" },
@@ -112,12 +106,18 @@ function TeamBadge({ logo, size = 40 }: { logo: string | null; size?: number }) 
 }
 
 function FavouriteTeamSection() {
-  const { activeProfile, isGuest } = useProfile();
-  const profileId = activeProfile?.id ?? null;
+  const { activeProfile } = useProfile();
+  const {
+    favouriteTeam: favTeam,
+    favLoading,
+    favSaving,
+    saveFavouriteTeam,
+    remindersEnabled,
+    remindersReady,
+    setRemindersEnabled,
+    globalEnabled,
+  } = useMatchReminder();
 
-  const [favTeam, setFavTeam] = useState<FavTeam | null>(null);
-  const [favLoading, setFavLoading] = useState(true);
-  const [favSaving, setFavSaving] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const [query, setQuery] = useState("");
@@ -125,39 +125,13 @@ function FavouriteTeamSection() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Load the current favourite when the active profile changes.
+  // Reset the inline search whenever the active profile (and so the favourite)
+  // changes. The favourite itself is loaded by MatchReminderContext.
   useEffect(() => {
-    let cancelled = false;
-    setFavLoading(true);
     setSearchOpen(false);
     setQuery("");
     setResults([]);
-    (async () => {
-      try {
-        if (isGuest) {
-          const t = await loadGuestFavouriteTeam();
-          if (!cancelled) setFavTeam(t);
-        } else if (profileId) {
-          const url = new URL("/api/football/favourite-team", getApiUrl());
-          url.searchParams.set("profile_id", profileId);
-          const res = await fetch(url.toString());
-          if (res.ok) {
-            const data = await res.json();
-            if (!cancelled) setFavTeam(data?.team ?? null);
-          }
-        } else if (!cancelled) {
-          setFavTeam(null);
-        }
-      } catch {
-        // silent — non-critical
-      } finally {
-        if (!cancelled) setFavLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [profileId, isGuest]);
+  }, [activeProfile?.id]);
 
   // Debounced team search (min 3 chars).
   useEffect(() => {
@@ -195,33 +169,10 @@ function FavouriteTeamSection() {
   }, [query]);
 
   const selectTeam = async (t: FavTeam) => {
-    const prev = favTeam;
-    setFavSaving(true);
-    setFavTeam(t);
     setSearchOpen(false);
     setQuery("");
     setResults([]);
-    try {
-      if (isGuest) {
-        await saveGuestFavouriteTeam(t);
-      } else if (profileId) {
-        const url = new URL("/api/football/favourite-team", getApiUrl());
-        const res = await fetch(url.toString(), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profile_id: profileId, team_id: t.id, team_data: t }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      }
-    } catch {
-      setFavTeam(prev);
-      Alert.alert(
-        "Could not save",
-        "We couldn't save your favourite team. Check your connection and try again.",
-      );
-    } finally {
-      setFavSaving(false);
-    }
+    await saveFavouriteTeam(t);
   };
 
   const showSearch = searchOpen || !favTeam;
@@ -346,6 +297,64 @@ function FavouriteTeamSection() {
                   )}
                 </Touchable>
               ))}
+            </View>
+          ) : null}
+
+          {globalEnabled ? (
+            <View style={styles.notifyBlock}>
+              <SectionHeading label="Match Notifications" />
+
+              <Touchable
+                style={[styles.toggleRow, !favTeam && styles.toggleRowDisabled]}
+                activeStyle={favTeam ? styles.toggleRowActive : {}}
+                onPress={() => {
+                  if (!favTeam || !remindersReady) return;
+                  setRemindersEnabled(!remindersEnabled);
+                }}
+              >
+                {(active) => (
+                  <>
+                    <Feather name="bell" size={18} color={Colors.dark.accent} />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <ThemedText
+                        style={[styles.toggleTitle, active && favTeam && { color: Colors.dark.accent }]}
+                      >
+                        Match Notifications
+                      </ThemedText>
+                      <ThemedText style={styles.toggleSub}>
+                        {!favTeam
+                          ? "Pick a favourite team above to switch this on"
+                          : remindersEnabled
+                            ? "On — you'll be reminded before kick off"
+                            : "Off — no match reminders"}
+                      </ThemedText>
+                    </View>
+                    <View
+                      style={[
+                        styles.switch,
+                        remindersEnabled && favTeam && styles.switchOn,
+                        !favTeam && styles.switchDisabled,
+                      ]}
+                    >
+                      <View style={[styles.knob, remindersEnabled && favTeam && styles.knobOn]} />
+                    </View>
+                  </>
+                )}
+              </Touchable>
+
+              <View style={styles.notice}>
+                <Feather name="info" size={16} color={Colors.dark.accent} style={{ marginTop: 1 }} />
+                <ThemedText style={styles.noticeText}>
+                  When this is on, a reminder pops up about 15 minutes before your favourite team kicks
+                  off — wherever you are in the app, even while you're watching something else. If the
+                  match is on a TV channel you have, tap{" "}
+                  <ThemedText style={styles.noticeStrong}>Watch Now</ThemedText> to jump straight to it.
+                  Not ready yet? Choose{" "}
+                  <ThemedText style={styles.noticeStrong}>Remind at kick off</ThemedText> and we'll nudge
+                  you again when the game starts. Reminders only cover games in our football fixtures
+                  list and appear while the app is open.
+                </ThemedText>
+              </View>
             </View>
           ) : null}
         </>
@@ -711,6 +720,22 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     lineHeight: 18,
     color: Colors.dark.text,
+  },
+  noticeStrong: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  notifyBlock: {
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  toggleRowDisabled: {
+    opacity: 0.6,
+  },
+  switchDisabled: {
+    backgroundColor: Colors.dark.border,
   },
   linesHint: {
     fontSize: 12,

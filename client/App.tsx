@@ -22,12 +22,14 @@ import { WatchHistoryProvider } from "@/contexts/WatchHistoryContext";
 import { WatchlistProvider } from "@/contexts/WatchlistContext";
 import { GroupsProvider } from "@/contexts/GroupsContext";
 import { FootballProvider } from "@/contexts/FootballContext";
+import { MatchReminderProvider } from "@/contexts/MatchReminderContext";
 import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import MessagePopup from "@/components/MessagePopup";
+import MatchReminderOverlay from "@/components/MatchReminderOverlay";
 import IntroOverlay from "@/components/IntroOverlay";
 import { Colors } from "@/constants/theme";
 
@@ -98,6 +100,7 @@ export default function App() {
                         <WatchlistProvider>
                         <GroupsProvider>
                         <FootballProvider>
+                        <MatchReminderProvider>
                         <MessageProvider>
                           <VpnProvider>
                           <KeyboardProvider>
@@ -106,9 +109,11 @@ export default function App() {
                             </NavigationContainer>
                             <StatusBar style="light" hidden={false} />
                             <MessagePopup />
+                            <MatchReminderOverlay />
                           </KeyboardProvider>
                           </VpnProvider>
                         </MessageProvider>
+                        </MatchReminderProvider>
                         </FootballProvider>
                         </GroupsProvider>
                         </WatchlistProvider>
