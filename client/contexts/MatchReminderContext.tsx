@@ -150,10 +150,24 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setFavLoading(false);
       }
 
-      // Reminder on/off is stored per profile (or per guest device).
-      if (profileKey) {
-        const on = await loadRemindersEnabled(profileKey);
+      // Reminder on/off follows the profile via the DB; guests are device-local.
+      if (isGuest) {
+        const on = await loadRemindersEnabled("guest");
         if (!cancelled) setRemindersEnabledState(on);
+      } else if (profileId) {
+        try {
+          const url = new URL("/api/football/match-reminders", getApiUrl());
+          url.searchParams.set("profile_id", profileId);
+          const res = await fetch(url.toString());
+          if (res.ok) {
+            const data = await res.json();
+            if (!cancelled) setRemindersEnabledState(!!data?.enabled);
+          } else if (!cancelled) {
+            setRemindersEnabledState(false);
+          }
+        } catch {
+          if (!cancelled) setRemindersEnabledState(false);
+        }
       } else if (!cancelled) {
         setRemindersEnabledState(false);
       }
@@ -198,9 +212,18 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
     (on: boolean) => {
       setRemindersEnabledState(on);
       if (!on) setActiveReminder(null);
-      if (profileKey) void saveRemindersEnabled(profileKey, on);
+      if (isGuest) {
+        void saveRemindersEnabled("guest", on);
+      } else if (profileId) {
+        const url = new URL("/api/football/match-reminders", getApiUrl());
+        void fetch(url.toString(), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile_id: profileId, enabled: on }),
+        }).catch(() => {});
+      }
     },
-    [profileKey],
+    [isGuest, profileId],
   );
 
   // ── Fetch upcoming fixtures + channel links while reminders are active ──

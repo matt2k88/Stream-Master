@@ -1215,6 +1215,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Match reminders on/off ─────────────────────────────────────────────────
+  // Per-profile Match Notifications preference, stored on
+  // profile_favourite_team.reminders_enabled (migration 019) so it follows the
+  // profile across devices. The per-fixture "already shown" dedupe state stays
+  // device-local on the client. The toggle is only usable once a favourite team
+  // is set, so the row always exists before this flag is written.
+
+  app.get("/api/football/match-reminders", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("profile_favourite_team")
+        .select("reminders_enabled")
+        .eq("profile_id", profile_id as string)
+        .maybeSingle();
+      if (error) {
+        // Until migration 019 runs the column is missing — degrade to "off".
+        console.error("[football/match-reminders] get error:", error.message);
+        return res.json({ enabled: false });
+      }
+      res.json({ enabled: data?.reminders_enabled ?? false });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch match reminders preference" });
+    }
+  });
+
+  app.put("/api/football/match-reminders", async (req, res) => {
+    const { profile_id, enabled } = req.body ?? {};
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    const on = !!enabled;
+    try {
+      const { error } = await supabase
+        .from("profile_favourite_team")
+        .update({ reminders_enabled: on, updated_at: new Date().toISOString() })
+        .eq("profile_id", profile_id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ enabled: on });
+    } catch {
+      res.status(500).json({ error: "Failed to save match reminders preference" });
+    }
+  });
+
   // Team search — proxies api-football /teams?search= (min 3 chars). Used by the
   // favourite-team picker. Returns { teams: [{ id, name, code, logo, country }] }.
   app.get("/api/football/teams", async (req, res) => {
