@@ -190,6 +190,34 @@ async function apiGet(path: string): Promise<any[] | null> {
   }
 }
 
+export interface TeamSearchResult {
+  id: number;
+  name: string;
+  code: string | null;
+  logo: string | null;
+  country: string | null;
+}
+
+// Search the api-football team database. api-football requires the search term
+// to be at least 3 characters, so callers should enforce that too. Returns null
+// when the upstream request fails (so routes can surface a 502), or a possibly
+// empty array of normalised teams on success.
+export async function searchTeams(query: string): Promise<TeamSearchResult[] | null> {
+  const q = (query ?? "").trim();
+  if (q.length < 3) return [];
+  const resp = await apiGet(`/teams?search=${encodeURIComponent(q)}`);
+  if (resp == null) return null;
+  return resp
+    .map((r: any) => ({
+      id: r?.team?.id,
+      name: r?.team?.name ?? null,
+      code: r?.team?.code ?? null,
+      logo: r?.team?.logo ?? null,
+      country: r?.team?.country ?? null,
+    }))
+    .filter((t: any): t is TeamSearchResult => typeof t.id === "number" && !!t.name);
+}
+
 function mapPlayers(arr: any[]): { name: string; number: number | null; pos: string | null }[] {
   return (Array.isArray(arr) ? arr : []).map((p: any) => ({
     name: p?.player?.name ?? "—",

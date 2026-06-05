@@ -628,8 +628,8 @@ export default function AccountInfoScreen() {
                   <View style={styles.tileGridItem}>
                     <ActionTile
                       icon="award"
-                      title="Football Scores"
-                      subtitle="Live tracker"
+                      title="Football"
+                      subtitle="Team & live tracker"
                       onPress={() => navigation.navigate("FootballSettings")}
                     />
                   </View>

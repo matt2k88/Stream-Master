@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
-import { CURATED_LEAGUE_IDS, fetchFixtureDetail } from "./football";
+import { CURATED_LEAGUE_IDS, fetchFixtureDetail, searchTeams } from "./football";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -1159,6 +1159,176 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ...data, visible_lines: visibleLines });
     } catch {
       res.status(500).json({ error: "Failed to save football prefs" });
+    }
+  });
+
+  // ── Favourite team ────────────────────────────────────────────────────────
+  // Per-profile favourite football team, stored in the MAIN db
+  // (profile_favourite_team). team_data is the api-football team object the
+  // picker chose, shaped { id, name, code, logo }.
+
+  app.get("/api/football/favourite-team", async (req, res) => {
+    const { profile_id } = req.query;
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("profile_favourite_team")
+        .select("team_id, team_data, updated_at")
+        .eq("profile_id", profile_id as string)
+        .maybeSingle();
+      if (error) {
+        // Until migration 018 runs the table is missing — degrade to "no team".
+        console.error("[football/favourite-team] get error:", error.message);
+        return res.json({ team: null });
+      }
+      res.json({ team: data?.team_data ?? null });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch favourite team" });
+    }
+  });
+
+  app.put("/api/football/favourite-team", async (req, res) => {
+    const { profile_id, team_id, team_data } = req.body ?? {};
+    if (!profile_id) return res.status(400).json({ error: "profile_id required" });
+    const teamIdNum = Number(team_id);
+    if (team_id == null || !Number.isFinite(teamIdNum) || !team_data || typeof team_data !== "object") {
+      return res.status(400).json({ error: "team_id (numeric) and team_data required" });
+    }
+    try {
+      const { data, error } = await supabase
+        .from("profile_favourite_team")
+        .upsert(
+          {
+            profile_id,
+            team_id: teamIdNum,
+            team_data,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "profile_id" },
+        )
+        .select("team_data")
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ team: data?.team_data ?? team_data });
+    } catch {
+      res.status(500).json({ error: "Failed to save favourite team" });
+    }
+  });
+
+  // Team search — proxies api-football /teams?search= (min 3 chars). Used by the
+  // favourite-team picker. Returns { teams: [{ id, name, code, logo, country }] }.
+  app.get("/api/football/teams", async (req, res) => {
+    const search = String(req.query.search ?? "").trim();
+    if (search.length < 3) {
+      return res.status(400).json({ error: "search must be at least 3 characters" });
+    }
+    try {
+      const teams = await searchTeams(search);
+      if (teams == null) {
+        return res.status(502).json({ error: "Team search is unavailable right now" });
+      }
+      res.json({ teams });
+    } catch {
+      res.status(500).json({ error: "Failed to search teams" });
+    }
+  });
+
+  // One-time bulk import: copy each account's existing favourite from the
+  // lifetime db (user_favorite_teams, keyed by iptv_username) onto every profile
+  // under that account_username in the MAIN db. Idempotent — profiles that
+  // already have a favourite are left untouched, so it is safe to re-run.
+  app.post("/api/football/favourite-team/import", async (req, res) => {
+    // Privileged one-off admin op (cross-db bulk write). Require the import
+    // secret unless triggered locally from the server host (dev convenience).
+    const secret = process.env.SESSION_SECRET;
+    const provided = req.get("x-import-secret");
+    const host = req.hostname || "";
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    if (!isLocal && (!secret || provided !== secret)) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+    const PAGE = 1000;
+    try {
+      // 1. Latest favourite per account from the lifetime db.
+      const favByUser = new Map<string, { team_id: number; team_data: any }>();
+      for (let page = 0; ; page++) {
+        const { data, error } = await lifetimeDb
+          .from("user_favorite_teams")
+          .select("iptv_username, team_id, team_data, updated_at")
+          .order("updated_at", { ascending: true })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) return res.status(500).json({ error: `lifetime read failed: ${error.message}` });
+        if (!data || data.length === 0) break;
+        for (const r of data as any[]) {
+          const u = r?.iptv_username;
+          if (!u || r?.team_id == null || !r?.team_data) continue;
+          // Ascending order means later rows win → keeps the most recent pick.
+          favByUser.set(u, { team_id: Number(r.team_id), team_data: r.team_data });
+        }
+        if (data.length < PAGE) break;
+      }
+
+      // 2. All profiles in the main db.
+      const profiles: { id: string; account_username: string }[] = [];
+      for (let page = 0; ; page++) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("id, account_username")
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) return res.status(500).json({ error: `profiles read failed: ${error.message}` });
+        if (!data || data.length === 0) break;
+        profiles.push(...(data as any[]));
+        if (data.length < PAGE) break;
+      }
+
+      // 3. Profiles that already have a favourite (skip them — idempotent).
+      const existing = new Set<string>();
+      for (let page = 0; ; page++) {
+        const { data, error } = await supabase
+          .from("profile_favourite_team")
+          .select("profile_id")
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) return res.status(500).json({ error: `favourite-team read failed (has migration 018 run?): ${error.message}` });
+        if (!data || data.length === 0) break;
+        for (const r of data as any[]) existing.add(r.profile_id);
+        if (data.length < PAGE) break;
+      }
+
+      // 4. Build the rows to insert.
+      const now = new Date().toISOString();
+      const rows = profiles
+        .filter((p) => !existing.has(p.id) && favByUser.has(p.account_username))
+        .map((p) => {
+          const fav = favByUser.get(p.account_username)!;
+          return {
+            profile_id: p.id,
+            team_id: fav.team_id,
+            team_data: fav.team_data,
+            created_at: now,
+            updated_at: now,
+          };
+        });
+
+      // 5. Insert in batches.
+      let imported = 0;
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500);
+        const { error } = await supabase
+          .from("profile_favourite_team")
+          .upsert(batch, { onConflict: "profile_id", ignoreDuplicates: true });
+        if (error) return res.status(500).json({ error: `import write failed: ${error.message}`, imported });
+        imported += batch.length;
+      }
+
+      res.json({
+        ok: true,
+        accountsWithFavourite: favByUser.size,
+        profilesTotal: profiles.length,
+        alreadySet: existing.size,
+        imported,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "Import failed" });
     }
   });
 

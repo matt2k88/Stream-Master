@@ -1,5 +1,6 @@
 - [YouTube audio extraction on server](youtube-audio-extraction.md) — yt-dlp needs Deno 2 + yt-dlp-ejs plugin to solve JS challenges; cookies bypass bot wall but Replit Secrets UI strips newlines.
 - [Guest profile guards](guest-profile.md) — every per-profile context must guard load AND all mutations against GUEST_PROFILE_ID, not just create/load.
+- [Cross-DB account/profile join](cross-db-account-join.md) — main `profiles.account_username` == lifetime `*.iptv_username`; account-level lifetime rows fan out to MANY profiles; make imports idempotent.
 - [Video player aspect switching](video-player-aspect-switching.md) — native video surfaces ignore live contentFit/resizeMode changes; remount via key={mode} (expo player persists; VLC needs resume-seek).
 - [Football kill-switch scope](football-killswitch-scope.md) — football_global.enabled is client-side only; never gate the server poller / Football Centre data on it.
 - [VLC live reconnect](vlc-live-reconnect.md) — live freeze is provider-side (no 3h timer in our code); recovery needs --http-reconnect + engine-aware stall gate + playToEnd→reconnect, all three.
