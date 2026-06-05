@@ -8,7 +8,7 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
-import { Alert, Platform } from "react-native";
+import { Alert, AppState, Platform } from "react-native";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useData } from "@/contexts/DataContext";
 import { useFootball } from "@/contexts/FootballContext";
@@ -110,6 +110,13 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
   const [remindersReady, setRemindersReady] = useState(false);
 
   const [fixtures, setFixtures] = useState<UpcomingFixture[]>([]);
+  // Team-direct fixtures are tagged with the team id they were fetched for so a
+  // stale-team set can never be treated as the current favourite's, no matter
+  // how render/effect timing interleaves on a team switch.
+  const [teamFixtures, setTeamFixtures] = useState<{
+    teamId: number | null;
+    rows: UpcomingFixture[];
+  }>({ teamId: null, rows: [] });
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
 
   const [activeReminder, setActiveReminder] = useState<ActiveReminder | null>(null);
@@ -229,19 +236,31 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
   // ── Fetch upcoming fixtures + channel links while reminders are active ──
   const remindersActive = remindersEnabled && globalEnabled && !!favouriteTeam;
 
+  const favTeamId = favouriteTeam?.id ?? null;
+
   useEffect(() => {
     if (!remindersActive) {
       setFixtures([]);
+      setTeamFixtures({ teamId: null, rows: [] });
       setChannels([]);
       return;
     }
     let cancelled = false;
+    // Re-tag to the current team with empty rows so a team switch can never
+    // momentarily fire a reminder for the old team.
+    setTeamFixtures({ teamId: favTeamId, rows: [] });
     const load = async () => {
       try {
-        const [fRes, cRes] = await Promise.all([
+        const reqs: Promise<Response>[] = [
           fetch(new URL("/api/football/centre/fixtures", getApiUrl()).toString()),
           fetch(new URL("/api/football/centre/channels", getApiUrl()).toString()),
-        ]);
+        ];
+        if (favTeamId != null) {
+          const tUrl = new URL("/api/football/team-fixtures", getApiUrl());
+          tUrl.searchParams.set("team_id", String(favTeamId));
+          reqs.push(fetch(tUrl.toString()));
+        }
+        const [fRes, cRes, tRes] = await Promise.all(reqs);
         if (fRes.ok) {
           const data = await fRes.json();
           if (!cancelled) setFixtures(Array.isArray(data) ? data : []);
@@ -250,31 +269,66 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
           const data = await cRes.json();
           if (!cancelled) setChannels(Array.isArray(data) ? data : []);
         }
+        // Always reconcile team fixtures (tagged with this team id) to the
+        // current response — empty rows on a missing/failed request so
+        // stale-team data can never trigger.
+        if (!cancelled) {
+          if (tRes && tRes.ok) {
+            const data = await tRes.json();
+            setTeamFixtures({ teamId: favTeamId, rows: Array.isArray(data) ? data : [] });
+          } else {
+            setTeamFixtures({ teamId: favTeamId, rows: [] });
+          }
+        }
       } catch {
-        // silent — non-critical
+        // Network blip — drop team fixtures so we never fire on stale data.
+        if (!cancelled) setTeamFixtures({ teamId: favTeamId, rows: [] });
       }
     };
     void load();
     const id = setInterval(load, FIXTURES_REFRESH_MS);
+    // Refresh fixtures immediately when the app returns to the foreground so a
+    // due match is caught right away rather than on the next polling cycle.
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") void load();
+    });
     return () => {
       cancelled = true;
       clearInterval(id);
+      sub.remove();
     };
-  }, [remindersActive]);
+  }, [remindersActive, favTeamId]);
 
-  // Fixtures involving the favourite team, sorted by kick off.
+  // Fixtures involving the favourite team, sorted by kick off. Team fixtures
+  // (fetched directly by team id) are always included — they are definitionally
+  // the favourite team's games and not limited to the curated leagues. Curated
+  // fixtures are added by name match so channel-mapped games aren't missed; the
+  // map dedupes any overlap by fixture id.
   const favFixtures = useMemo<UpcomingFixture[]>(() => {
     if (!favouriteTeam) return [];
+    const map = new Map<number, UpcomingFixture>();
+    // Only trust team-direct rows that were fetched for the CURRENT favourite.
+    if (teamFixtures.teamId === favTeamId) {
+      for (const f of teamFixtures.rows) {
+        if (f.kickoff != null) map.set(f.fixture_id, f);
+      }
+    }
     const fav = norm(favouriteTeam.name);
-    if (!fav) return [];
-    return fixtures
-      .filter(
-        (f) =>
+    if (fav) {
+      for (const f of fixtures) {
+        if (
           f.kickoff != null &&
-          (norm(f.home_team) === fav || norm(f.away_team) === fav),
-      )
-      .sort((a, b) => (a.kickoff ?? "").localeCompare(b.kickoff ?? ""));
-  }, [fixtures, favouriteTeam]);
+          !map.has(f.fixture_id) &&
+          (norm(f.home_team) === fav || norm(f.away_team) === fav)
+        ) {
+          map.set(f.fixture_id, f);
+        }
+      }
+    }
+    return [...map.values()].sort((a, b) =>
+      (a.kickoff ?? "").localeCompare(b.kickoff ?? ""),
+    );
+  }, [fixtures, teamFixtures, favouriteTeam, favTeamId]);
 
   // fixture_id → channels.
   const channelMap = useMemo(() => {
@@ -308,6 +362,8 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
   favFixturesRef.current = favFixtures;
   const activeRef = useRef(activeReminder);
   activeRef.current = activeReminder;
+  const remindersActiveRef = useRef(remindersActive);
+  remindersActiveRef.current = remindersActive;
 
   const persistState = useCallback(() => {
     const pk = profileKeyRef.current;
@@ -324,10 +380,11 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Engine: surface a single reminder when its time comes ──
-  useEffect(() => {
-    if (!remindersActive) return;
-
-    const tick = () => {
+  // tick reads only refs so it stays stable across renders; the interval,
+  // foreground-resume listener, and fixture-refresh effect all reuse it.
+  const tick = useCallback(() => {
+    if (!remindersActiveRef.current) return;
+    {
       if (activeRef.current) return; // only one overlay at a time
       const now = Date.now();
       for (const f of favFixturesRef.current) {
@@ -375,12 +432,30 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
           return;
         }
       }
-    };
+    }
+  }, [updateFixtureState]);
 
+  // Drive the engine: steady interval + an immediate check when the app returns
+  // to the foreground so a due match is surfaced promptly without drift.
+  useEffect(() => {
+    if (!remindersActive) return;
     tick(); // catch a game already inside its window on enable / app open
     const id = setInterval(tick, ENGINE_MS);
-    return () => clearInterval(id);
-  }, [remindersActive, updateFixtureState]);
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") tick();
+    });
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, [remindersActive, tick]);
+
+  // Re-check as soon as the fixture set changes (e.g. after a refresh) so a
+  // newly-loaded match already inside its window fires without waiting a tick.
+  useEffect(() => {
+    if (!remindersActive) return;
+    tick();
+  }, [favFixtures, remindersActive, tick]);
 
   const dismissReminder = useCallback(() => {
     setActiveReminder(null);

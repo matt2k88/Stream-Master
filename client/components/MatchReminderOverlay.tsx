@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, StyleSheet, Pressable, Dimensions } from "react-native";
+import { View, StyleSheet, Pressable, Dimensions, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -75,16 +75,26 @@ export default function MatchReminderOverlay() {
     return () => clearInterval(id);
   }, [activeReminder]);
 
-  if (!activeReminder) return null;
-
   const r = activeReminder;
   const width = Dimensions.get("window").width;
   const cardWidth = Math.min(460, width - Spacing.lg * 2);
-  const showRemindAtKickoff = r.kind === "prematch";
+  const showRemindAtKickoff = r?.kind === "prematch";
 
+  // Render inside a transparent, top-most Modal so the banner is guaranteed to
+  // paint over the native fullscreen video surface (and every other screen).
+  // A plain absolute View is not reliably above the video SurfaceView on
+  // Android / Fire TV.
   return (
-    <View pointerEvents="box-none" style={[styles.root, { paddingTop: insets.top + Spacing.sm }]}>
-      <View style={[styles.card, { width: cardWidth }]}>
+    <Modal
+      visible={!!r}
+      transparent
+      statusBarTranslucent
+      animationType="fade"
+      onRequestClose={dismissReminder}
+    >
+      <View pointerEvents="box-none" style={[styles.root, { paddingTop: insets.top + Spacing.sm }]}>
+        {r ? (
+        <View style={[styles.card, { width: cardWidth }]}>
         <View style={styles.headerRow}>
           <View style={styles.tag}>
             <Feather name="bell" size={12} color={Colors.dark.accent} />
@@ -161,8 +171,10 @@ export default function MatchReminderOverlay() {
             )}
           </FocusablePressable>
         </View>
+        </View>
+        ) : null}
       </View>
-    </View>
+    </Modal>
   );
 }
 

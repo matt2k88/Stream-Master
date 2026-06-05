@@ -218,6 +218,52 @@ export async function searchTeams(query: string): Promise<TeamSearchResult[] | n
     .filter((t: any): t is TeamSearchResult => typeof t.id === "number" && !!t.name);
 }
 
+export interface TeamFixtureRow {
+  fixture_id: number;
+  league_id: number | null;
+  league_name: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
+  kickoff: string | null;
+}
+
+const TEAM_FIXTURES_TTL_MS = 5 * 60 * 1000;
+const teamFixturesCache = new Map<number, { at: number; data: TeamFixtureRow[] }>();
+
+// Upcoming fixtures for ONE team, straight from api-football (NOT limited to the
+// curated leagues). Used by the match-reminder engine so reminders fire for any
+// of the favourite team's games. Cached for 5 min per team to spare the quota.
+// Returns [] when there's no key or on error so the caller degrades gracefully.
+export async function fetchTeamUpcomingFixtures(
+  teamId: number,
+  next = 10,
+): Promise<TeamFixtureRow[]> {
+  if (!process.env.API_FOOTBALL_KEY) return [];
+  const cached = teamFixturesCache.get(teamId);
+  if (cached && Date.now() - cached.at < TEAM_FIXTURES_TTL_MS) return cached.data;
+
+  const resp = await apiGet(`/fixtures?team=${teamId}&next=${next}`);
+  if (resp == null) return cached?.data ?? [];
+
+  const rows: TeamFixtureRow[] = resp
+    .map((f: any) => ({
+      fixture_id: f?.fixture?.id,
+      league_id: f?.league?.id ?? null,
+      league_name: f?.league?.name ?? null,
+      home_team: f?.teams?.home?.name ?? null,
+      away_team: f?.teams?.away?.name ?? null,
+      home_logo: f?.teams?.home?.logo ?? null,
+      away_logo: f?.teams?.away?.logo ?? null,
+      kickoff: f?.fixture?.date ?? null,
+    }))
+    .filter((f: any): f is TeamFixtureRow => typeof f.fixture_id === "number");
+
+  teamFixturesCache.set(teamId, { at: Date.now(), data: rows });
+  return rows;
+}
+
 function mapPlayers(arr: any[]): { name: string; number: number | null; pos: string | null }[] {
   return (Array.isArray(arr) ? arr : []).map((p: any) => ({
     name: p?.player?.name ?? "—",

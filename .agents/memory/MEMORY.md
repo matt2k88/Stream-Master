@@ -1,5 +1,6 @@
 - [YouTube audio extraction on server](youtube-audio-extraction.md) — yt-dlp needs Deno 2 + yt-dlp-ejs plugin to solve JS challenges; cookies bypass bot wall but Replit Secrets UI strips newlines.
 - [Guest profile guards](guest-profile.md) — every per-profile context must guard load AND all mutations against GUEST_PROFILE_ID, not just create/load.
+- [Overlay over native video](overlay-over-video.md) — wrap any overlay that must show over the fullscreen player in a transparent RN Modal; absolute Views get hidden behind the video SurfaceView on Fire TV/Android.
 - [Cross-DB account/profile join](cross-db-account-join.md) — main `profiles.account_username` == lifetime `*.iptv_username`; account-level lifetime rows fan out to MANY profiles; make imports idempotent.
 - [Video player aspect switching](video-player-aspect-switching.md) — native video surfaces ignore live contentFit/resizeMode changes; remount via key={mode} (expo player persists; VLC needs resume-seek).
 - [Football kill-switch scope](football-killswitch-scope.md) — football_global.enabled is client-side only; never gate the server poller / Football Centre data on it.

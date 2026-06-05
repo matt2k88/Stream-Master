@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
-import { CURATED_LEAGUE_IDS, fetchFixtureDetail, searchTeams } from "./football";
+import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
@@ -1433,6 +1433,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json([]);
       }
       res.json(data ?? []);
+    } catch {
+      res.json([]);
+    }
+  });
+
+  // Upcoming fixtures for a single team (?team_id=...), straight from
+  // api-football and NOT limited to the curated leagues. Powers the match
+  // reminder engine so reminders fire for ANY of the favourite team's games.
+  // Degrades gracefully to [] on bad input / no key / upstream error.
+  app.get("/api/football/team-fixtures", async (req, res) => {
+    try {
+      const teamId = Number(req.query.team_id);
+      if (!Number.isFinite(teamId) || teamId <= 0) return res.json([]);
+      const rows = await fetchTeamUpcomingFixtures(teamId);
+      res.json(rows);
     } catch {
       res.json([]);
     }
