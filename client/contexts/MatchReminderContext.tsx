@@ -569,12 +569,11 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
     return resolveStream(activeReminder.fixtureId) != null;
   }, [activeReminder, resolveStream]);
 
-  // ── Dev-only test reminder (countdown → fake Man Utd overlay) ──
+  // ── Test reminder (countdown → fake Man Utd overlay) ──
   const [testCountdown, setTestCountdown] = useState<number | null>(null);
   const testTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const triggerTestReminder = useCallback(() => {
-    if (!__DEV__) return; // dev-only affordance; never fires in production builds
     if (testTimerRef.current) return; // already counting down
     let n = TEST_COUNTDOWN_SEC;
     setTestCountdown(n);

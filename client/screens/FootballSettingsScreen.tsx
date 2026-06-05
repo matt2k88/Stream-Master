@@ -358,38 +358,36 @@ function FavouriteTeamSection() {
                 </ThemedText>
               </View>
 
-              {__DEV__ ? (
-                <View style={styles.testBlock}>
-                  <Touchable
-                    style={[styles.testBtn, testCountdown != null && styles.testBtnActive]}
-                    activeStyle={styles.testBtnFocused}
-                    onPress={() => {
-                      if (testCountdown == null) triggerTestReminder();
-                    }}
-                  >
-                    {(active) => (
-                      <>
-                        <Feather
-                          name={testCountdown != null ? "clock" : "play-circle"}
-                          size={16}
-                          color={Colors.dark.accent}
-                        />
-                        <ThemedText
-                          style={[styles.testBtnText, active && { color: Colors.dark.accent }]}
-                        >
-                          {testCountdown != null
-                            ? `Opening in ${testCountdown}s — go to a channel`
-                            : "Send test reminder (Man Utd)"}
-                        </ThemedText>
-                      </>
-                    )}
-                  </Touchable>
-                  <ThemedText style={styles.testHint}>
-                    Developer only. Fires a sample reminder after a short countdown so you can open a
-                    channel and check the popup appears over the player.
-                  </ThemedText>
-                </View>
-              ) : null}
+              <View style={styles.testBlock}>
+                <Touchable
+                  style={[styles.testBtn, testCountdown != null && styles.testBtnActive]}
+                  activeStyle={styles.testBtnFocused}
+                  onPress={() => {
+                    if (testCountdown == null) triggerTestReminder();
+                  }}
+                >
+                  {(active) => (
+                    <>
+                      <Feather
+                        name={testCountdown != null ? "clock" : "play-circle"}
+                        size={16}
+                        color={Colors.dark.accent}
+                      />
+                      <ThemedText
+                        style={[styles.testBtnText, active && { color: Colors.dark.accent }]}
+                      >
+                        {testCountdown != null
+                          ? `Opening in ${testCountdown}s — go to a channel`
+                          : "Send test reminder (Man Utd)"}
+                      </ThemedText>
+                    </>
+                  )}
+                </Touchable>
+                <ThemedText style={styles.testHint}>
+                  Fires a sample reminder after a short countdown so you can open a channel and check
+                  the popup appears over the player.
+                </ThemedText>
+              </View>
             </View>
           ) : null}
         </>
