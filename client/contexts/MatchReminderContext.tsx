@@ -25,6 +25,10 @@ import {
   saveRemindersEnabled,
   loadReminderState,
   saveReminderState,
+  loadTeamFixturesCache,
+  saveTeamFixturesCache,
+  loadCentreCache,
+  saveCentreCache,
   type ReminderStateMap,
   type FixtureReminderState,
 } from "@/lib/match-reminders-storage";
@@ -254,15 +258,13 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
     // Re-tag to the current team with empty rows so a team switch can never
     // momentarily fire a reminder for the old team.
     setTeamFixtures({ teamId: favTeamId, rows: [] });
-    // Mark stale on every (re)mount/team change so the forced load below always
-    // runs; if that forced load fails, the timestamp stays old and the next
-    // resume retries rather than being suppressed for a full window.
+    // Treat the schedule as stale until init() hydrates the on-device cache or a
+    // fetch succeeds, so any interval/resume that fires first will refetch.
     lastLoadAt.current = 0;
-    // force=true ignores the staleness window (used on mount and team switch);
-    // otherwise we only hit the network if the cached schedule is older than
-    // FIXTURES_STALE_MS, so a backgrounded app coming forward refetches at most
-    // ~once per window instead of every resume.
     const load = async (force = false) => {
+      // Skip the network if the schedule is still within the staleness window
+      // (unless forced). A backgrounded app coming forward thus refetches at
+      // most ~once per window instead of on every resume.
       if (!force && Date.now() - lastLoadAt.current < FIXTURES_STALE_MS) return;
       try {
         const reqs: Promise<Response>[] = [
@@ -275,38 +277,77 @@ export function MatchReminderProvider({ children }: { children: ReactNode }) {
           reqs.push(fetch(tUrl.toString()));
         }
         const [fRes, cRes, tRes] = await Promise.all(reqs);
+        let centreFixtures: UpcomingFixture[] | null = null;
+        let centreChannels: FixtureChannel[] | null = null;
         if (fRes.ok) {
           const data = await fRes.json();
-          if (!cancelled) setFixtures(Array.isArray(data) ? data : []);
+          centreFixtures = Array.isArray(data) ? data : [];
+          if (!cancelled) setFixtures(centreFixtures);
         }
         if (cRes.ok) {
           const data = await cRes.json();
-          if (!cancelled) setChannels(Array.isArray(data) ? data : []);
+          centreChannels = Array.isArray(data) ? data : [];
+          if (!cancelled) setChannels(centreChannels);
+        }
+        // Persist the global centre snapshot when both parts loaded (saved even
+        // if this effect was cancelled — it is global, not team-scoped).
+        if (centreFixtures && centreChannels) {
+          void saveCentreCache(centreFixtures, centreChannels);
         }
         // Always reconcile team fixtures (tagged with this team id) to the
         // current response — empty rows on a missing/failed request so
         // stale-team data can never trigger.
-        if (!cancelled) {
-          if (tRes && tRes.ok) {
-            const data = await tRes.json();
-            setTeamFixtures({ teamId: favTeamId, rows: Array.isArray(data) ? data : [] });
-          } else {
-            setTeamFixtures({ teamId: favTeamId, rows: [] });
-          }
+        const teamOk = !!tRes && tRes.ok;
+        if (tRes && tRes.ok) {
+          const data = await tRes.json();
+          const rows: UpcomingFixture[] = Array.isArray(data) ? data : [];
+          if (!cancelled) setTeamFixtures({ teamId: favTeamId, rows });
+          // Cache keyed by team id so a future launch (or switch back) hydrates
+          // instantly without a network call.
+          if (favTeamId != null) void saveTeamFixturesCache(favTeamId, rows);
+        } else if (!cancelled) {
+          setTeamFixtures({ teamId: favTeamId, rows: [] });
         }
-        // Only mark fresh when this effect is still current AND the
-        // reminder-critical team fixtures actually loaded; otherwise leave the
-        // timestamp stale so the next resume retries instead of waiting a window.
-        const teamOk = favTeamId == null || (!!tRes && tRes.ok);
-        if (!cancelled && teamOk) lastLoadAt.current = Date.now();
+        // Only mark fresh when this effect is still current AND every part of
+        // the snapshot loaded (team fixtures + both centre requests). A partial
+        // failure leaves the timestamp stale so the next resume/interval retries
+        // instead of being suppressed for a full window.
+        const centreOk = fRes.ok && cRes.ok;
+        const ok = (favTeamId == null || teamOk) && centreOk;
+        if (!cancelled && ok) lastLoadAt.current = Date.now();
       } catch {
         // Network blip — drop team fixtures so we never fire on stale data, and
         // leave lastLoadAt untouched so the next resume retries.
         if (!cancelled) setTeamFixtures({ teamId: favTeamId, rows: [] });
       }
     };
-    // Force a load on mount and whenever the favourite team changes.
-    void load(true);
+    // Hydrate instantly from the on-device cache so reminders can fire on launch
+    // (and offline) without waiting on the network, then fetch only if the
+    // cached snapshot is stale.
+    const init = async () => {
+      const [teamCache, centreCache] = await Promise.all([
+        favTeamId != null
+          ? loadTeamFixturesCache<UpcomingFixture>(favTeamId)
+          : Promise.resolve(null),
+        loadCentreCache<UpcomingFixture, FixtureChannel>(),
+      ]);
+      if (cancelled) return;
+      if (centreCache) {
+        setFixtures(centreCache.fixtures);
+        setChannels(centreCache.channels);
+      }
+      const teamHit = !!teamCache && teamCache.teamId === favTeamId;
+      if (teamHit) {
+        setTeamFixtures({ teamId: favTeamId, rows: teamCache!.rows });
+      }
+      // Only treat the snapshot as fresh (and so skip the cold-start fetch) when
+      // BOTH the team fixtures and the global centre data were cached; gate on
+      // the older of the two so a partial cache still triggers a refresh.
+      lastLoadAt.current =
+        teamHit && centreCache ? Math.min(teamCache!.ts, centreCache.ts) : 0;
+      void load();
+    };
+    void init();
     // Periodic check for the rare always-on (TV) case that never backgrounds;
     // gated by staleness so it only actually fetches once per window.
     const id = setInterval(() => void load(), FIXTURES_STALE_MS);
