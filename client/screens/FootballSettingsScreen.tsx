@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   StyleSheet,
   Pressable,
   ActivityIndicator,
   TextInput,
-  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -62,29 +61,33 @@ function Touchable({
   );
 }
 
-function SectionTitle({
+/** A grouped settings surface. Controls sit on a slightly lighter tier inside. */
+function Card({ children }: { children: React.ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+function CardHeader({
   icon,
-  label,
+  title,
+  subtitle,
 }: {
   icon: React.ReactNode;
-  label: string;
+  title: string;
+  subtitle: string;
 }) {
   return (
-    <View style={styles.sectionTitleRow}>
-      {icon}
-      <ThemedText style={styles.sectionTitleText}>{label}</ThemedText>
+    <View style={styles.cardHeader}>
+      <View style={styles.cardIcon}>{icon}</View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <ThemedText style={styles.cardTitle}>{title}</ThemedText>
+        <ThemedText style={styles.cardSubtitle}>{subtitle}</ThemedText>
+      </View>
     </View>
   );
 }
 
-function SectionHeading({ label }: { label: string }) {
-  return (
-    <View style={styles.sectionHeading}>
-      <View style={styles.sectionHeadingLine} />
-      <ThemedText style={styles.sectionHeadingText}>{label}</ThemedText>
-      <View style={styles.sectionHeadingLine} />
-    </View>
-  );
+function SubLabel({ label }: { label: string }) {
+  return <ThemedText style={styles.subLabel}>{label}</ThemedText>;
 }
 
 function TeamBadge({ logo, size = 40 }: { logo: string | null; size?: number }) {
@@ -176,16 +179,19 @@ function FavouriteTeamSection() {
   };
 
   const showSearch = searchOpen || !favTeam;
+  const notifyOn = remindersEnabled && !!favTeam;
 
   return (
-    <View style={{ gap: Spacing.md }}>
-      <SectionTitle
-        icon={<Feather name="star" size={16} color={Colors.dark.accent} />}
-        label="Favourite Team"
+    <Card>
+      <CardHeader
+        icon={<Feather name="star" size={18} color={Colors.dark.accent} />}
+        title="Favourite Team"
+        subtitle={
+          activeProfile
+            ? `Set the team for ${activeProfile.name}. Each profile has its own.`
+            : "Each profile has its own favourite team."
+        }
       />
-      <ThemedText style={styles.intro}>
-        Pick the team you support{activeProfile ? ` for ${activeProfile.name}` : ""}. Each profile has its own favourite.
-      </ThemedText>
 
       {favLoading ? (
         <View style={styles.favLoading}>
@@ -301,8 +307,8 @@ function FavouriteTeamSection() {
           ) : null}
 
           {globalEnabled ? (
-            <View style={styles.notifyBlock}>
-              <SectionHeading label="Match Notifications" />
+            <>
+              <View style={styles.cardDivider} />
 
               <Touchable
                 style={[styles.toggleRow, !favTeam && styles.toggleRowDisabled]}
@@ -319,11 +325,11 @@ function FavouriteTeamSection() {
                       <ThemedText
                         style={[styles.toggleTitle, active && favTeam && { color: Colors.dark.accent }]}
                       >
-                        Match Notifications
+                        Match Reminders
                       </ThemedText>
                       <ThemedText style={styles.toggleSub}>
                         {!favTeam
-                          ? "Pick a favourite team above to switch this on"
+                          ? "Pick a team above to switch this on"
                           : remindersEnabled
                             ? "On — you'll be reminded before kick off"
                             : "Off — no match reminders"}
@@ -332,114 +338,87 @@ function FavouriteTeamSection() {
                     <View
                       style={[
                         styles.switch,
-                        remindersEnabled && favTeam && styles.switchOn,
+                        notifyOn && styles.switchOn,
                         !favTeam && styles.switchDisabled,
                       ]}
                     >
-                      <View style={[styles.knob, remindersEnabled && favTeam && styles.knobOn]} />
+                      <View style={[styles.knob, notifyOn && styles.knobOn]} />
                     </View>
                   </>
                 )}
               </Touchable>
 
-              <View style={styles.notice}>
-                <Feather name="info" size={16} color={Colors.dark.accent} style={{ marginTop: 1 }} />
-                <ThemedText style={styles.noticeText}>
-                  When this is on, a reminder pops up about 15 minutes before your favourite team kicks
-                  off — wherever you are in the app, even while you're watching something else. If the
-                  match is on a TV channel you have, tap{" "}
-                  <ThemedText style={styles.noticeStrong}>Watch Now</ThemedText> to jump straight to it.
-                  Not ready yet? Choose{" "}
-                  <ThemedText style={styles.noticeStrong}>Remind at kick off</ThemedText> and we'll nudge
-                  you again when the game starts. Reminders only cover games in our football fixtures
-                  list and appear while the app is open.
-                </ThemedText>
-              </View>
-            </View>
+              {notifyOn ? (
+                <View style={styles.notice}>
+                  <Feather name="info" size={15} color={Colors.dark.accent} style={{ marginTop: 1 }} />
+                  <ThemedText style={styles.noticeText}>
+                    A reminder appears about 15 minutes before kick off, wherever you are in the app.
+                    Tap <ThemedText style={styles.noticeStrong}>Watch Now</ThemedText> to jump to the
+                    channel, or <ThemedText style={styles.noticeStrong}>Remind at kick off</ThemedText>{" "}
+                    for a nudge when the game starts.
+                  </ThemedText>
+                </View>
+              ) : null}
+            </>
           ) : null}
         </>
       )}
-    </View>
+    </Card>
   );
 }
 
-export default function FootballSettingsScreen() {
-  const insets = useSafeAreaInsets();
-  const navigation = useNavigation<NavigationProp>();
+function LiveScoresSection() {
   const { prefs, savePrefs } = useFootball();
-
-  const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
-  const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
 
   const selectLeague = (id: number | null) => {
     void savePrefs({ league_id: id });
   };
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <Touchable style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
-          {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
-        </Touchable>
-        <ThemedText style={styles.headerTitle}>Football</ThemedText>
-        <View style={styles.iconBtn} />
-      </View>
+    <Card>
+      <CardHeader
+        icon={<MaterialCommunityIcons name="soccer" size={20} color={Colors.dark.accent} />}
+        title="Live Scores Tracker"
+        subtitle="Show a floating live-scores panel on the TV player."
+      />
 
-      <View style={[styles.divider, { marginHorizontal: padH }]} />
-
-      <KeyboardAwareScrollViewCompat
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: padH, paddingBottom: insets.bottom + Spacing.xl, paddingTop: Spacing.md, gap: Spacing.lg }}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
+      <Touchable
+        style={styles.toggleRow}
+        activeStyle={styles.toggleRowActive}
+        onPress={() => savePrefs({ enabled: !prefs.enabled })}
       >
-        {/* ── Favourite Team section ── */}
-        <FavouriteTeamSection />
+        {(active) => (
+          <>
+            <MaterialCommunityIcons name="soccer" size={18} color={Colors.dark.accent} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText style={[styles.toggleTitle, active && { color: Colors.dark.accent }]}>
+                Live Scores Tracker
+              </ThemedText>
+              <ThemedText style={styles.toggleSub}>
+                {prefs.enabled ? "On — shows in the player" : "Off — hidden"}
+              </ThemedText>
+            </View>
+            <View style={[styles.switch, prefs.enabled && styles.switchOn]}>
+              <View style={[styles.knob, prefs.enabled && styles.knobOn]} />
+            </View>
+          </>
+        )}
+      </Touchable>
 
-        {/* ── Live Scores Tracker section ── */}
-        <View style={{ gap: Spacing.md }}>
-          <SectionTitle
-            icon={<MaterialCommunityIcons name="soccer" size={18} color={Colors.dark.accent} />}
-            label="Live Scores Tracker"
-          />
-
-          <ThemedText style={styles.intro}>
-            Show a floating live football tracker on the live TV player. Pick a competition and where it appears on screen.
-          </ThemedText>
-
-          {/* Broadcast-delay notice */}
+      {prefs.enabled ? (
+        <>
           <View style={styles.notice}>
-            <Feather name="alert-triangle" size={16} color={Colors.dark.accent} style={{ marginTop: 1 }} />
+            <Feather name="alert-triangle" size={15} color={Colors.dark.accent} style={{ marginTop: 1 }} />
             <ThemedText style={styles.noticeText}>
-              Scores update in real time and can be a little ahead of your TV stream, which is usually slightly delayed. This may reveal a goal before you see it on screen — leave the tracker off during a match if that would spoil it for you.
+              Scores update in real time and can run slightly ahead of your stream, so a goal may show
+              here before you see it. Leave this off during a match if that would spoil it.
             </ThemedText>
           </View>
 
-          {/* Enable toggle */}
-          <Touchable
-            style={styles.toggleRow}
-            activeStyle={styles.toggleRowActive}
-            onPress={() => savePrefs({ enabled: !prefs.enabled })}
-          >
-            {(active) => (
-              <>
-                <MaterialCommunityIcons name="soccer" size={18} color={Colors.dark.accent} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <ThemedText style={[styles.toggleTitle, active && { color: Colors.dark.accent }]}>
-                    Live Scores Tracker
-                  </ThemedText>
-                  <ThemedText style={styles.toggleSub}>
-                    {prefs.enabled ? "On — football button shows in the player" : "Off — button hidden"}
-                  </ThemedText>
-                </View>
-                <View style={[styles.switch, prefs.enabled && styles.switchOn]}>
-                  <View style={[styles.knob, prefs.enabled && styles.knobOn]} />
-                </View>
-              </>
-            )}
-          </Touchable>
+          <View style={styles.cardDivider} />
 
           {/* Corner picker */}
-          <SectionHeading label="Screen Corner" />
+          <SubLabel label="Screen Corner" />
           <View style={styles.cornerGrid}>
             {CORNERS.map((c) => {
               const selected = prefs.corner === c.key;
@@ -467,7 +446,7 @@ export default function FootballSettingsScreen() {
           </View>
 
           {/* Lines shown picker */}
-          <SectionHeading label="Scorelines Shown" />
+          <SubLabel label="Scorelines Shown" />
           <ThemedText style={styles.linesHint}>
             How many games show at once before the tracker scrolls through the rest.
           </ThemedText>
@@ -498,7 +477,7 @@ export default function FootballSettingsScreen() {
           </View>
 
           {/* League picker */}
-          <SectionHeading label="Competition" />
+          <SubLabel label="Competition" />
           <Touchable
             style={[styles.leagueRow, prefs.league_id == null && styles.leagueRowSelected]}
             activeStyle={styles.leagueRowActive}
@@ -544,7 +523,43 @@ export default function FootballSettingsScreen() {
               })}
             </View>
           ))}
-        </View>
+        </>
+      ) : null}
+    </Card>
+  );
+}
+
+export default function FootballSettingsScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NavigationProp>();
+
+  const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
+  const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
+
+  return (
+    <ThemedView style={styles.container}>
+      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <Touchable style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
+          {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
+        </Touchable>
+        <ThemedText style={styles.headerTitle}>Football</ThemedText>
+        <View style={styles.iconBtn} />
+      </View>
+
+      <View style={[styles.divider, { marginHorizontal: padH }]} />
+
+      <KeyboardAwareScrollViewCompat
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: padH,
+          paddingBottom: insets.bottom + Spacing.xl,
+          paddingTop: Spacing.lg,
+          gap: Spacing.lg,
+        }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
+      >
+        <FavouriteTeamSection />
+        <LiveScoresSection />
       </KeyboardAwareScrollViewCompat>
     </ThemedView>
   );
@@ -581,21 +596,54 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.dark.border,
   },
-  intro: {
-    fontSize: 13,
-    color: Colors.dark.textSecondary,
-    lineHeight: 18,
-  },
 
-  sectionTitleRow: {
+  // Grouped card
+  card: {
+    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
-  sectionTitleText: {
-    fontSize: 15,
+  cardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.dark.accentDim,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.35)",
+  },
+  cardTitle: {
+    fontSize: 16,
     fontWeight: "800",
-    color: Colors.dark.accent,
+    color: Colors.dark.text,
+  },
+  cardSubtitle: {
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: Colors.dark.textSecondary,
+    marginTop: 2,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: Colors.dark.border,
+    marginVertical: Spacing.xs,
+  },
+  subLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    color: Colors.dark.textSecondary,
+    textTransform: "uppercase",
+    marginTop: Spacing.xs,
   },
 
   // Favourite team
@@ -610,8 +658,8 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: "rgba(255,102,0,0.45)",
-    backgroundColor: "rgba(255,102,0,0.08)",
+    borderColor: "rgba(255,102,0,0.40)",
+    backgroundColor: Colors.dark.accent + "12",
   },
   favName: {
     fontSize: 15,
@@ -626,7 +674,7 @@ const styles = StyleSheet.create({
   badgeFallback: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.dark.backgroundSecondary,
+    backgroundColor: Colors.dark.backgroundTertiary,
     borderWidth: 1,
     borderColor: Colors.dark.border,
   },
@@ -636,7 +684,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   changeBtnActive: {
     borderColor: Colors.dark.accent,
@@ -656,7 +704,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   searchInput: {
     flex: 1,
@@ -672,7 +720,7 @@ const styles = StyleSheet.create({
   },
   searchError: {
     fontSize: 12,
-    color: "#ff6b6b",
+    color: Colors.dark.error,
     lineHeight: 16,
   },
   searchHint: {
@@ -689,7 +737,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   resultRowActive: {
     borderColor: Colors.dark.accent,
@@ -706,14 +754,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
+  // Notice / explanation
   notice: {
     flexDirection: "row",
     gap: Spacing.sm,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.accent + "0F",
     borderWidth: 1,
-    borderColor: "rgba(255,102,0,0.45)",
-    backgroundColor: "rgba(255,102,0,0.10)",
+    borderColor: "rgba(255,102,0,0.25)",
   },
   noticeText: {
     flex: 1,
@@ -727,63 +776,25 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: Colors.dark.accent,
   },
-  notifyBlock: {
-    gap: Spacing.md,
-    marginTop: Spacing.xs,
-  },
-  toggleRowDisabled: {
-    opacity: 0.6,
-  },
-  switchDisabled: {
-    backgroundColor: Colors.dark.border,
-  },
-  linesHint: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-    lineHeight: 16,
-    marginTop: -2,
-  },
-  linesRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  linesCell: {
-    flex: 1,
-  },
-  linesBtn: {
-    height: 44,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  linesBtnSelected: {
-    borderColor: Colors.dark.accent,
-    backgroundColor: Colors.dark.accent + "1A",
-  },
-  linesBtnActive: {
-    borderColor: Colors.dark.accent,
-  },
-  linesLabel: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.dark.text,
-  },
+
+  // Toggle row
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    borderColor: "transparent",
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   toggleRowActive: {
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.accent + "14",
+  },
+  toggleRowDisabled: {
+    opacity: 0.6,
   },
   toggleTitle: {
     fontSize: 14,
@@ -806,6 +817,9 @@ const styles = StyleSheet.create({
   switchOn: {
     backgroundColor: Colors.dark.accent,
   },
+  switchDisabled: {
+    backgroundColor: Colors.dark.border,
+  },
   knob: {
     width: 20,
     height: 20,
@@ -816,23 +830,41 @@ const styles = StyleSheet.create({
   knobOn: {
     alignSelf: "flex-end",
   },
-  sectionHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
-  sectionHeadingLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.dark.border,
-  },
-  sectionHeadingText: {
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
+
+  // Live scores pickers
+  linesHint: {
+    fontSize: 12,
     color: Colors.dark.textSecondary,
-    textTransform: "uppercase",
+    lineHeight: 16,
+    marginTop: -2,
+  },
+  linesRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  linesCell: {
+    flex: 1,
+  },
+  linesBtn: {
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "transparent",
+    backgroundColor: Colors.dark.backgroundTertiary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  linesBtnSelected: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "1A",
+  },
+  linesBtnActive: {
+    borderColor: Colors.dark.accent,
+  },
+  linesLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.dark.text,
   },
   cornerGrid: {
     flexDirection: "row",
@@ -847,8 +879,8 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    borderColor: "transparent",
+    backgroundColor: Colors.dark.backgroundTertiary,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
@@ -880,8 +912,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
+    borderColor: "transparent",
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   leagueRowSelected: {
     borderColor: Colors.dark.accent,
