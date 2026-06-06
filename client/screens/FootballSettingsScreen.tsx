@@ -5,6 +5,8 @@ import {
   Pressable,
   ActivityIndicator,
   TextInput,
+  Modal,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -32,6 +34,33 @@ const CORNERS: { key: FootballCorner; label: string }[] = [
   { key: "bottom-left", label: "Bottom Left" },
   { key: "bottom-right", label: "Bottom Right" },
 ];
+
+interface FixtureRow {
+  fixture_id: number;
+  league_name: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
+  kickoff: string | null;
+}
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// Format an ISO kickoff into the device's local date + time (manual, so it
+// doesn't depend on Intl being present on Fire OS / Hermes).
+function formatKickoff(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "Date TBC", time: "" };
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return { date: "Date TBC", time: "" };
+  const date = `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_NAMES[d.getMonth()]}`;
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return { date, time };
+}
 
 function Touchable({
   style,
@@ -108,6 +137,133 @@ function TeamBadge({ logo, size = 40 }: { logo: string | null; size?: number }) 
   );
 }
 
+function TeamFixturesModal({
+  visible,
+  team,
+  onClose,
+}: {
+  visible: boolean;
+  team: FavTeam | null;
+  onClose: () => void;
+}) {
+  const [rows, setRows] = useState<FixtureRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const teamId = team?.id ?? null;
+  const teamName = team?.name ?? "";
+
+  useEffect(() => {
+    if (!visible || teamId == null) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setRows([]);
+    (async () => {
+      try {
+        const url = new URL("/api/football/team-fixtures", getApiUrl());
+        url.searchParams.set("team_id", String(teamId));
+        const res = await fetch(url.toString());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) setRows(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setError("Couldn't load fixtures. Check your connection and try again.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, teamId]);
+
+  const favName = (team?.name ?? "").trim().toLowerCase();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText style={styles.modalTitle}>Upcoming Fixtures</ThemedText>
+              {teamName ? (
+                <ThemedText style={styles.modalSubtitle} numberOfLines={1}>
+                  {teamName}
+                </ThemedText>
+              ) : null}
+            </View>
+            <Touchable style={styles.modalClose} activeStyle={styles.modalCloseActive} onPress={onClose}>
+              {(active) => (
+                <Feather name="x" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />
+              )}
+            </Touchable>
+          </View>
+
+          {loading ? (
+            <View style={styles.modalState}>
+              <ActivityIndicator color={Colors.dark.accent} />
+            </View>
+          ) : error ? (
+            <View style={styles.modalState}>
+              <Feather name="wifi-off" size={22} color={Colors.dark.textSecondary} />
+              <ThemedText style={styles.modalStateText}>{error}</ThemedText>
+            </View>
+          ) : rows.length === 0 ? (
+            <View style={styles.modalState}>
+              <Feather name="calendar" size={22} color={Colors.dark.textSecondary} />
+              <ThemedText style={styles.modalStateText}>
+                No upcoming fixtures scheduled right now.
+              </ThemedText>
+            </View>
+          ) : (
+            <ScrollView
+              style={{ alignSelf: "stretch" }}
+              contentContainerStyle={{ gap: Spacing.sm, paddingBottom: Spacing.xs }}
+              showsVerticalScrollIndicator
+            >
+              {rows.map((f) => {
+                const { date, time } = formatKickoff(f.kickoff);
+                const homeFav = (f.home_team ?? "").trim().toLowerCase() === favName;
+                const awayFav = (f.away_team ?? "").trim().toLowerCase() === favName;
+                return (
+                  <View key={f.fixture_id} style={styles.fxRow}>
+                    <View style={styles.fxWhen}>
+                      <ThemedText style={styles.fxDate}>{date}</ThemedText>
+                      {time ? <ThemedText style={styles.fxTime}>{time}</ThemedText> : null}
+                    </View>
+                    <View style={styles.fxMatch}>
+                      <View style={styles.fxTeam}>
+                        <TeamBadge logo={f.home_logo} size={22} />
+                        <ThemedText
+                          style={[styles.fxTeamName, homeFav && styles.fxTeamNameFav]}
+                          numberOfLines={1}
+                        >
+                          {f.home_team ?? "?"}
+                        </ThemedText>
+                      </View>
+                      <ThemedText style={styles.fxVs}>v</ThemedText>
+                      <View style={[styles.fxTeam, { justifyContent: "flex-end" }]}>
+                        <ThemedText
+                          style={[styles.fxTeamName, styles.fxTeamNameRight, awayFav && styles.fxTeamNameFav]}
+                          numberOfLines={1}
+                        >
+                          {f.away_team ?? "?"}
+                        </ThemedText>
+                        <TeamBadge logo={f.away_logo} size={22} />
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function FavouriteTeamSection() {
   const { activeProfile } = useProfile();
   const {
@@ -122,6 +278,7 @@ function FavouriteTeamSection() {
   } = useMatchReminder();
 
   const [searchOpen, setSearchOpen] = useState(false);
+  const [fixturesOpen, setFixturesOpen] = useState(false);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FavTeam[]>([]);
@@ -132,6 +289,7 @@ function FavouriteTeamSection() {
   // changes. The favourite itself is loaded by MatchReminderContext.
   useEffect(() => {
     setSearchOpen(false);
+    setFixturesOpen(false);
     setQuery("");
     setResults([]);
   }, [activeProfile?.id]);
@@ -306,6 +464,29 @@ function FavouriteTeamSection() {
             </View>
           ) : null}
 
+          {favTeam && !showSearch ? (
+            <Touchable
+              style={styles.fixturesBtn}
+              activeStyle={styles.fixturesBtnActive}
+              onPress={() => setFixturesOpen(true)}
+            >
+              {(active) => (
+                <>
+                  <Feather
+                    name="calendar"
+                    size={16}
+                    color={active ? Colors.dark.accent : Colors.dark.text}
+                  />
+                  <ThemedText
+                    style={[styles.fixturesBtnText, active && { color: Colors.dark.accent }]}
+                  >
+                    Upcoming Fixtures
+                  </ThemedText>
+                </>
+              )}
+            </Touchable>
+          ) : null}
+
           {globalEnabled ? (
             <>
               <View style={styles.cardDivider} />
@@ -363,6 +544,12 @@ function FavouriteTeamSection() {
           ) : null}
         </>
       )}
+
+      <TeamFixturesModal
+        visible={fixturesOpen}
+        team={favTeam}
+        onClose={() => setFixturesOpen(false)}
+      />
     </Card>
   );
 }
@@ -694,6 +881,143 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: Colors.dark.text,
+  },
+  fixturesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundTertiary,
+  },
+  fixturesBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "1A",
+  },
+  fixturesBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+
+  // Upcoming fixtures modal
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 520,
+    maxHeight: "85%",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: Colors.dark.text,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: Colors.dark.accent,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundTertiary,
+  },
+  modalCloseActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent + "1A",
+  },
+  modalState: {
+    paddingVertical: Spacing.xl,
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  modalStateText: {
+    fontSize: 13,
+    color: Colors.dark.textSecondary,
+    textAlign: "center",
+  },
+  fxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundTertiary,
+  },
+  fxWhen: {
+    width: 72,
+  },
+  fxDate: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.dark.text,
+  },
+  fxTime: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: Colors.dark.accent,
+    marginTop: 2,
+  },
+  fxMatch: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    minWidth: 0,
+  },
+  fxTeam: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    minWidth: 0,
+  },
+  fxTeamName: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.dark.text,
+  },
+  fxTeamNameRight: {
+    textAlign: "right",
+  },
+  fxTeamNameFav: {
+    fontWeight: "800",
+    color: Colors.dark.accent,
+  },
+  fxVs: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.dark.textSecondary,
   },
   searchRow: {
     flexDirection: "row",
