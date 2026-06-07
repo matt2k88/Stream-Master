@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -22,8 +22,14 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { getApiUrl } from "@/lib/query-client";
 import { useData } from "@/contexts/DataContext";
 import { xtreamApi } from "@/lib/xtream-api";
-import { leagueRank } from "@/constants/football-leagues";
+import { leagueRank, FOOTBALL_LEAGUE_GROUPS } from "@/constants/football-leagues";
 import { useFootball, type FootballScore } from "@/contexts/FootballContext";
+import { useMatchReminder } from "@/contexts/MatchReminderContext";
+import { useProfile } from "@/contexts/ProfileContext";
+import {
+  loadHiddenLeagues,
+  saveHiddenLeagues,
+} from "@/lib/football-filter-storage";
 
 // Theme the web scrollbars (orange thumb on near-black track) so the modal and
 // other scroll areas match the app instead of showing the OS's generic grey bar.
@@ -70,6 +76,21 @@ interface FixtureChannel {
   fixture_id: number;
   channel_name: string;
   stream_id: string | null;
+}
+
+// Favourite-team fixtures come from /api/football/team-fixtures (next N games).
+// They span far further ahead than the curated 7-day Upcoming window and can be
+// in non-curated competitions, so channels are only shown where a mapping
+// happens to exist.
+interface TeamFixture {
+  fixture_id: number;
+  league_id: number | null;
+  league_name: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_logo: string | null;
+  away_logo: string | null;
+  kickoff: string | null;
 }
 
 const SCORES_POLL_MS = 30000;
@@ -267,6 +288,7 @@ function MatchCard({
   onChannelPress,
   onCardPress,
   cardWidth,
+  leagueLabel,
 }: {
   home: string;
   away: string;
@@ -281,9 +303,15 @@ function MatchCard({
   onChannelPress: (ch: FixtureChannel) => void;
   onCardPress?: () => void;
   cardWidth: number;
+  leagueLabel?: string;
 }) {
   const body = (active: boolean) => (
     <>
+      {leagueLabel ? (
+        <ThemedText style={styles.cardLeague} numberOfLines={1}>
+          {leagueLabel}
+        </ThemedText>
+      ) : null}
       <View style={styles.cardTop}>
         {statusLabel ? (
           <View
@@ -726,17 +754,121 @@ function GameDetailModal({
   );
 }
 
+function LeagueFilterModal({
+  visible,
+  hidden,
+  onToggle,
+  onShowAll,
+  onClose,
+}: {
+  visible: boolean;
+  hidden: Set<number>;
+  onToggle: (id: number) => void;
+  onShowAll: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.filterBackdrop}>
+        <View style={styles.filterCard}>
+          <View style={styles.filterHeader}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText style={styles.filterTitle}>Choose Leagues</ThemedText>
+              <ThemedText style={styles.filterSubtitle}>
+                Pick which competitions show in Live Now and Upcoming.
+              </ThemedText>
+            </View>
+            <Touchable style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={onClose}>
+              {(active) => (
+                <Feather name="x" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />
+              )}
+            </Touchable>
+          </View>
+
+          <Touchable
+            style={styles.showAllBtn}
+            activeStyle={styles.showAllBtnActive}
+            onPress={onShowAll}
+          >
+            {(active) => (
+              <>
+                <Feather
+                  name="check-circle"
+                  size={15}
+                  color={active ? Colors.dark.accent : Colors.dark.text}
+                />
+                <ThemedText
+                  style={[styles.showAllText, active && { color: Colors.dark.accent }]}
+                >
+                  Show all leagues
+                </ThemedText>
+              </>
+            )}
+          </Touchable>
+
+          <ScrollView
+            style={{ alignSelf: "stretch" }}
+            contentContainerStyle={{ gap: Spacing.md, paddingBottom: Spacing.sm }}
+            showsVerticalScrollIndicator
+          >
+            {FOOTBALL_LEAGUE_GROUPS.map((group) => (
+              <View key={group.group} style={{ gap: Spacing.xs }}>
+                <ThemedText style={styles.filterGroupLabel}>{group.group}</ThemedText>
+                {group.leagues.map((lg) => {
+                  const on = !hidden.has(lg.id);
+                  return (
+                    <Touchable
+                      key={lg.id}
+                      style={styles.filterRow}
+                      activeStyle={styles.filterRowActive}
+                      onPress={() => onToggle(lg.id)}
+                    >
+                      {(active) => (
+                        <>
+                          <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                            {on ? <Feather name="check" size={13} color="#000" /> : null}
+                          </View>
+                          <ThemedText
+                            style={[styles.filterRowText, active && { color: Colors.dark.accent }]}
+                            numberOfLines={1}
+                          >
+                            {lg.name}
+                          </ThemedText>
+                        </>
+                      )}
+                    </Touchable>
+                  );
+                })}
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function FootballCentreScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { liveStreams } = useData();
   const { prefs } = useFootball();
   const prefLeague = prefs.league_id;
+  const { favouriteTeam } = useMatchReminder();
+  const { activeProfile, isGuest } = useProfile();
+  const profileKey = isGuest ? "guest" : activeProfile?.id ?? null;
+  const favTeamId = favouriteTeam?.id ?? null;
+  const favTeamIdRef = useRef<number | null>(favTeamId);
+  favTeamIdRef.current = favTeamId;
 
-  const [tab, setTab] = useState<"live" | "upcoming">("live");
+  const [tab, setTab] = useState<"live" | "upcoming" | "myteam">("live");
   const [scores, setScores] = useState<FootballScore[]>([]);
   const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
+  const [teamFixtures, setTeamFixtures] = useState<TeamFixture[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [hiddenLeagues, setHiddenLeagues] = useState<Set<number>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [detailTarget, setDetailTarget] = useState<DetailTarget | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -820,6 +952,27 @@ export default function FootballCentreScreen() {
     }
   }, []);
 
+  const fetchTeamFixtures = useCallback(async () => {
+    // Always reset on a (re)fetch so a team switch or a failed request can never
+    // leave the prior team's fixtures on screen under the new team's header.
+    setTeamFixtures([]);
+    if (!favTeamId) return;
+    const requestedTeamId = favTeamId;
+    setTeamLoading(true);
+    try {
+      const url = new URL("/api/football/team-fixtures", getApiUrl());
+      url.searchParams.set("team_id", String(requestedTeamId));
+      const res = await fetch(url.toString());
+      // Guard against a stale response landing after the favourite team changed.
+      if (requestedTeamId !== favTeamIdRef.current) return;
+      setTeamFixtures(res.ok ? await res.json().then((d) => (Array.isArray(d) ? d : [])) : []);
+    } catch {
+      if (requestedTeamId === favTeamIdRef.current) setTeamFixtures([]);
+    } finally {
+      if (requestedTeamId === favTeamIdRef.current) setTeamLoading(false);
+    }
+  }, [favTeamId]);
+
   // Poll live scores every 30s while focused; fetch fixtures + channels once
   // on focus (fixtures are a once-a-day server cache, channels rarely change).
   useFocusEffect(
@@ -831,6 +984,7 @@ export default function FootballCentreScreen() {
           if (active) setLoading(false);
         },
       );
+      fetchTeamFixtures();
       const id = setInterval(() => {
         fetchScores();
         fetchChannels();
@@ -839,8 +993,41 @@ export default function FootballCentreScreen() {
         active = false;
         clearInterval(id);
       };
-    }, [fetchScores, fetchFixtures, fetchChannels]),
+    }, [fetchScores, fetchFixtures, fetchChannels, fetchTeamFixtures]),
   );
+
+  // Load the per-profile hidden-league filter once we know the profile.
+  useEffect(() => {
+    let active = true;
+    if (!profileKey) {
+      setHiddenLeagues(new Set());
+      return;
+    }
+    loadHiddenLeagues(profileKey).then((set) => {
+      if (active) setHiddenLeagues(set);
+    });
+    return () => {
+      active = false;
+    };
+  }, [profileKey]);
+
+  const toggleLeague = useCallback(
+    (id: number) => {
+      setHiddenLeagues((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        if (profileKey) saveHiddenLeagues(profileKey, next);
+        return next;
+      });
+    },
+    [profileKey],
+  );
+
+  const showAllLeagues = useCallback(() => {
+    setHiddenLeagues(new Set());
+    if (profileKey) saveHiddenLeagues(profileKey, new Set());
+  }, [profileKey]);
 
   // fixture_id -> channels[]
   const channelMap = useMemo(() => {
@@ -853,10 +1040,12 @@ export default function FootballCentreScreen() {
     return m;
   }, [channels]);
 
-  // Live scores grouped by league, English-first.
+  // Live scores grouped by league, English-first. Leagues the user has hidden
+  // via the filter are excluded.
   const scoreGroups = useMemo(() => {
     const m = new Map<number, { name: string; rows: FootballScore[] }>();
     for (const s of scores) {
+      if (hiddenLeagues.has(s.league_id)) continue;
       const key = s.league_id;
       const g = m.get(key) ?? { name: s.league_name ?? "Football", rows: [] };
       g.rows.push(s);
@@ -870,7 +1059,7 @@ export default function FootballCentreScreen() {
       ),
     }));
     return groups.sort((a, b) => rank(a.league_id) - rank(b.league_id));
-  }, [scores, rank]);
+  }, [scores, rank, hiddenLeagues]);
 
   // Any fixture currently in the live-scores cache is no longer "upcoming",
   // so exclude it from the Upcoming tab to avoid showing a game in both lists.
@@ -889,6 +1078,7 @@ export default function FootballCentreScreen() {
     const now = Date.now();
     const byDay = new Map<string, FootballFixture[]>();
     for (const f of fixtures) {
+      if (hiddenLeagues.has(f.league_id)) continue;
       if (liveIds.has(f.fixture_id)) continue;
       const ko = f.kickoff ? new Date(f.kickoff).getTime() : NaN;
       if (!isNaN(ko) && ko <= now) continue;
@@ -921,7 +1111,34 @@ export default function FootballCentreScreen() {
         return { date_key, groups };
       });
     return days;
-  }, [fixtures, rank, liveIds]);
+  }, [fixtures, rank, liveIds, hiddenLeagues]);
+
+  // Favourite-team fixtures grouped by day (chronological). One team means at
+  // most one game per league per day, so a flat day list is clearer than the
+  // league sub-grouping used for Live/Upcoming. Not affected by the league
+  // filter — this tab is the user's team across every competition.
+  const teamFixtureDays = useMemo(() => {
+    const now = Date.now();
+    const byDay = new Map<string, TeamFixture[]>();
+    for (const f of teamFixtures) {
+      const ko = f.kickoff ? new Date(f.kickoff).getTime() : NaN;
+      if (!isNaN(ko) && ko <= now - 3 * 60 * 60 * 1000) continue;
+      const dateKey = f.kickoff
+        ? new Date(f.kickoff).toISOString().slice(0, 10)
+        : "";
+      const arr = byDay.get(dateKey) ?? [];
+      arr.push(f);
+      byDay.set(dateKey, arr);
+    }
+    return Array.from(byDay.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date_key, list]) => ({
+        date_key,
+        rows: list.sort((a, b) =>
+          (a.kickoff ?? "").localeCompare(b.kickoff ?? ""),
+        ),
+      }));
+  }, [teamFixtures]);
 
   const handleChannelPress = useCallback(
     (ch: FixtureChannel) => {
@@ -999,7 +1216,32 @@ export default function FootballCentreScreen() {
           <MaterialCommunityIcons name="soccer" size={20} color={Colors.dark.accent} />
           <ThemedText style={styles.headerTitle}>Football Centre</ThemedText>
         </View>
-        <View style={styles.iconBtn} />
+        {tab === "myteam" ? (
+          <View style={styles.iconBtn} />
+        ) : (
+          <Touchable
+            style={styles.iconBtn}
+            activeStyle={styles.iconBtnActive}
+            onPress={() => setFilterOpen(true)}
+          >
+            {(active) => (
+              <>
+                <Feather
+                  name="sliders"
+                  size={20}
+                  color={
+                    hiddenLeagues.size > 0
+                      ? Colors.dark.accent
+                      : active
+                        ? Colors.dark.accent
+                        : Colors.dark.text
+                  }
+                />
+                {hiddenLeagues.size > 0 ? <View style={styles.filterDot} /> : null}
+              </>
+            )}
+          </Touchable>
+        )}
       </View>
 
       {/* Tab switch */}
@@ -1036,6 +1278,23 @@ export default function FootballCentreScreen() {
               ]}
             >
               Upcoming
+            </ThemedText>
+          )}
+        </Touchable>
+        <Touchable
+          style={[styles.tab, tab === "myteam" && styles.tabSelected]}
+          activeStyle={styles.tabActive}
+          onPress={() => setTab("myteam")}
+        >
+          {(active) => (
+            <ThemedText
+              style={[
+                styles.tabText,
+                (tab === "myteam" || active) && styles.tabTextSelected,
+              ]}
+              numberOfLines={1}
+            >
+              My Team
             </ThemedText>
           )}
         </Touchable>
@@ -1093,7 +1352,7 @@ export default function FootballCentreScreen() {
                     </CollapsibleLeague>
                   );
                 })
-            : (
+            : tab === "upcoming" ? (
               <>
                 <ChannelNotice />
                 {fixtureDays.length === 0
@@ -1137,9 +1396,95 @@ export default function FootballCentreScreen() {
                   </View>
                 ))}
               </>
+            ) : !favTeamId ? (
+              <View style={styles.emptyBox}>
+                <MaterialCommunityIcons
+                  name="account-star-outline"
+                  size={40}
+                  color={Colors.dark.textSecondary}
+                />
+                <ThemedText style={styles.emptyText}>
+                  No favourite team set yet
+                </ThemedText>
+                <Touchable
+                  style={styles.emptyCta}
+                  activeStyle={styles.emptyCtaActive}
+                  onPress={() => navigation.navigate("FootballSettings")}
+                >
+                  {(active) => (
+                    <ThemedText
+                      style={[
+                        styles.emptyCtaText,
+                        active && { color: Colors.dark.accent },
+                      ]}
+                    >
+                      Choose a team in Football settings
+                    </ThemedText>
+                  )}
+                </Touchable>
+              </View>
+            ) : teamLoading && teamFixtureDays.length === 0 ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator color={Colors.dark.accent} />
+              </View>
+            ) : teamFixtureDays.length === 0 ? (
+              renderEmpty(
+                `No upcoming fixtures for ${favouriteTeam?.name ?? "your team"}`,
+              )
+            ) : (
+              <>
+                {favouriteTeam ? (
+                  <View style={styles.teamHeader}>
+                    {favouriteTeam.logo ? (
+                      <Image
+                        source={{ uri: favouriteTeam.logo }}
+                        style={styles.teamHeaderLogo}
+                        contentFit="contain"
+                      />
+                    ) : null}
+                    <ThemedText style={styles.teamHeaderName} numberOfLines={1}>
+                      {favouriteTeam.name}
+                    </ThemedText>
+                  </View>
+                ) : null}
+                <ChannelNotice />
+                {teamFixtureDays.map((day) => (
+                  <View key={day.date_key} style={{ gap: Spacing.sm }}>
+                    <ThemedText style={styles.dayHeader}>
+                      {dayLabel(day.date_key)}
+                    </ThemedText>
+                    <View style={styles.cardGrid}>
+                      {day.rows.map((f) => (
+                        <MatchCard
+                          key={f.fixture_id}
+                          home={f.home_team ?? "?"}
+                          away={f.away_team ?? "?"}
+                          homeLogo={f.home_logo}
+                          awayLogo={f.away_logo}
+                          statusLabel={kickoffLabel(f.kickoff)}
+                          live={false}
+                          upcoming
+                          leagueLabel={f.league_name ?? undefined}
+                          channels={channelMap.get(f.fixture_id) ?? []}
+                          onChannelPress={handleChannelPress}
+                          cardWidth={cardWidth}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                ))}
+              </>
             )}
         </ScrollView>
       )}
+
+      <LeagueFilterModal
+        visible={filterOpen}
+        hidden={hiddenLeagues}
+        onToggle={toggleLeague}
+        onShowAll={showAllLeagues}
+        onClose={() => setFilterOpen(false)}
+      />
 
       <GameDetailModal
         target={detailTarget}
@@ -1246,6 +1591,153 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     fontSize: 14,
     fontWeight: "600",
+  },
+  emptyCta: {
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  emptyCtaActive: {
+    backgroundColor: Colors.dark.backgroundTertiary,
+    borderColor: Colors.dark.accent,
+  },
+  emptyCtaText: {
+    color: Colors.dark.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  teamHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingBottom: Spacing.xs,
+  },
+  teamHeaderLogo: {
+    width: 28,
+    height: 28,
+  },
+  teamHeaderName: {
+    flex: 1,
+    minWidth: 0,
+    color: Colors.dark.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  cardLeague: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: Spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  filterDot: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.dark.accent,
+  },
+  filterBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
+  },
+  filterCard: {
+    width: "100%",
+    maxWidth: 460,
+    maxHeight: "86%",
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: "#242424",
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  filterHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+  },
+  filterTitle: {
+    color: Colors.dark.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  filterSubtitle: {
+    color: Colors.dark.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  showAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    alignSelf: "flex-start",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.backgroundTertiary,
+    borderWidth: 1,
+    borderColor: "#242424",
+  },
+  showAllBtnActive: {
+    borderColor: Colors.dark.accent,
+  },
+  showAllText: {
+    color: Colors.dark.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  filterGroupLabel: {
+    color: Colors.dark.accent,
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginTop: Spacing.xs,
+  },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  filterRowActive: {
+    backgroundColor: Colors.dark.backgroundTertiary,
+    borderColor: Colors.dark.accent,
+  },
+  filterRowText: {
+    flex: 1,
+    minWidth: 0,
+    color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.dark.textSecondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxOn: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
   },
   leagueHeader: {
     flexDirection: "row",
