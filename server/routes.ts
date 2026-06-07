@@ -1433,6 +1433,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // One-off maintenance: trim already-stored over-the-limit watch history so
+  // every profile is brought within the same per-type caps enforced at save
+  // time (POST /api/recently-watched):
+  //   - Live TV → newest 20 rows.
+  //   - Movies  → newest 50 rows.
+  //   - Series  → newest 20 distinct series (grouped by series_id; removes ALL
+  //               episode rows of evicted series).
+  // Idempotent — re-running on an already-trimmed table deletes nothing.
+  app.post("/api/recently-watched/trim-over-cap", async (req, res) => {
+    // Privileged one-off admin op that bulk-deletes across ALL profiles, so
+    // authorization must be robust. Always require the secret. The only bypass
+    // is a genuine loopback connection (validated via the socket address, NOT
+    // the spoofable Host header) and only outside production, for dev runs.
+    const secret = process.env.SESSION_SECRET;
+    const provided = req.get("x-import-secret");
+    const remote = req.socket?.remoteAddress ?? "";
+    const isLoopback =
+      remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
+    const allowLocal = isLoopback && process.env.NODE_ENV !== "production";
+    if (!allowLocal && (!secret || provided !== secret)) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+    const PAGE = 1000;
+    try {
+      // 1. Pull every row (just the fields needed to rank + trim), paginated.
+      type Row = { id: string; profile_id: string; content_type: string; series_id: string | null; updated_at: string };
+      const rows: Row[] = [];
+      for (let page = 0; ; page++) {
+        const { data, error } = await supabase
+          .from("recently_watched")
+          .select("id, profile_id, content_type, series_id, updated_at")
+          .order("updated_at", { ascending: false })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) return res.status(500).json({ error: `recently_watched read failed: ${error.message}` });
+        if (!data || data.length === 0) break;
+        rows.push(...(data as Row[]));
+        if (data.length < PAGE) break;
+      }
+
+      // 2. Group by profile, then by content type (rows are already newest-first).
+      const byProfile = new Map<string, { live: Row[]; movie: Row[]; series: Row[] }>();
+      for (const r of rows) {
+        if (!r.profile_id) continue;
+        let g = byProfile.get(r.profile_id);
+        if (!g) {
+          g = { live: [], movie: [], series: [] };
+          byProfile.set(r.profile_id, g);
+        }
+        if (r.content_type === "live") g.live.push(r);
+        else if (r.content_type === "movie") g.movie.push(r);
+        else if (r.content_type === "series") g.series.push(r);
+      }
+
+      // 3. Determine the ids to delete, mirroring the save-time trim logic.
+      const toDelete: string[] = [];
+      for (const g of byProfile.values()) {
+        if (g.live.length > 20) {
+          for (const r of g.live.slice(20)) toDelete.push(r.id);
+        }
+        if (g.movie.length > 50) {
+          for (const r of g.movie.slice(50)) toDelete.push(r.id);
+        }
+        if (g.series.length > 0) {
+          // Rank distinct series by most-recent activity (rows newest-first, so
+          // the first sighting of a key is that series' most-recent activity).
+          const rank: string[] = [];
+          const seen = new Set<string>();
+          for (const r of g.series) {
+            const key = r.series_id != null ? String(r.series_id) : `__noid_${r.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            rank.push(key);
+          }
+          if (rank.length > 20) {
+            const keep = new Set(rank.slice(0, 20));
+            for (const r of g.series) {
+              const key = r.series_id != null ? String(r.series_id) : `__noid_${r.id}`;
+              if (!keep.has(key)) toDelete.push(r.id);
+            }
+          }
+        }
+      }
+
+      // 4. Delete in batches.
+      let removed = 0;
+      for (let i = 0; i < toDelete.length; i += 500) {
+        const batch = toDelete.slice(i, i + 500);
+        const { error } = await supabase.from("recently_watched").delete().in("id", batch);
+        if (error) return res.status(500).json({ error: `delete failed: ${error.message}`, removed });
+        removed += batch.length;
+      }
+
+      console.log(`[recently-watched] trim-over-cap removed ${removed} rows across ${byProfile.size} profiles (${rows.length} scanned)`);
+      res.json({
+        ok: true,
+        profilesScanned: byProfile.size,
+        rowsScanned: rows.length,
+        rowsRemoved: removed,
+      });
+    } catch (e: any) {
+      console.error("[recently-watched] trim-over-cap exception:", e?.message);
+      res.status(500).json({ error: e?.message ?? "Trim failed" });
+    }
+  });
+
   // Live scores cache (maintained by the background poller). Clients poll this
   // every ~30s instead of hitting api-football directly.
   app.get("/api/football/scores", async (req, res) => {
