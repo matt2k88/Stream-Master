@@ -70,6 +70,9 @@ import {
 } from "expo-video";
 
 export type PlayerEngine = "vlc" | "expo";
+// Mirrors HwDecodeMode in ProfileContext (kept local so this low-level lib
+// doesn't import from a context). "auto" omits the flag entirely.
+export type HwDecodeMode = "auto" | "on" | "off";
 
 const VLCPlayer: any =
   (VlcPkg as any).VLCPlayer ??
@@ -143,6 +146,22 @@ const DEFAULT_INIT_OPTIONS = [
   `--http-user-agent=${UA_VLC}`,
 ];
 
+// Build the libVLC init options for a given hardware-decoding mode.
+// "auto" → no avcodec-hw flag (libVLC default — the existing behaviour).
+// "on"   → --avcodec-hw=any  (force hardware acceleration).
+// "off"  → --avcodec-hw=none (force pure software decoding — fixes devices
+//          whose hardware decoder produces green/garbled frames, stutter,
+//          or no audio even though other VLC apps work).
+// The flag is baked into the source's initOptions, which libVLC only reads
+// when a media source is set/replaced — so changing the mode requires
+// reopening the stream (consumer screens capture the mode at mount).
+export function buildVlcInitOptions(hw: HwDecodeMode = "auto"): string[] {
+  const opts = [...DEFAULT_INIT_OPTIONS];
+  if (hw === "on") opts.push("--avcodec-hw=any");
+  else if (hw === "off") opts.push("--avcodec-hw=none");
+  return opts;
+}
+
 // ─── Player bridge ────────────────────────────────────────────────────────
 //
 // Carries the engine state and is the object handed back from
@@ -157,9 +176,12 @@ export class VideoPlayer {
   playing: boolean = false;
   duration: number = 0; // seconds
   // ── Internal state mirrored to <VLCPlayer> props ────────────────────────
+  /** @internal — VLC hardware-decoding mode, captured at creation. Baked
+   *  into every source's initOptions. Switching requires a fresh player. */
+  _hwDecode: HwDecodeMode = "auto";
   /** @internal */ _source: { uri: string; initOptions: string[] } = {
     uri: "",
-    initOptions: [...DEFAULT_INIT_OPTIONS],
+    initOptions: buildVlcInitOptions("auto"),
   };
   /** @internal */ _paused: boolean = true;
   /** @internal */ _muted: boolean = false;
@@ -269,7 +291,7 @@ export class VideoPlayer {
   replace(src: string | { uri: string; headers?: Record<string, string> }) {
     if (this._released) return;
     const uri = typeof src === "string" ? src : src?.uri ?? "";
-    this._source = { uri, initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this._source = { uri, initOptions: buildVlcInitOptions(this._hwDecode) };
     this._currentTime = 0;
     this.duration = 0;
     this.playing = false;
@@ -289,7 +311,7 @@ export class VideoPlayer {
   release() {
     this._released = true;
     this._paused = true;
-    this._source = { uri: "", initOptions: [...DEFAULT_INIT_OPTIONS] };
+    this._source = { uri: "", initOptions: buildVlcInitOptions(this._hwDecode) };
     this._pendingSeekFrac = null;
     this._pendingResumeSeconds = null;
     this._pendingResumeKick = false;
@@ -565,12 +587,16 @@ function msToSeconds(d: unknown): number {
 function useVlcPlayer(
   source: string,
   setup?: (player: VideoPlayer) => void,
+  hwDecode: HwDecodeMode = "auto",
 ): VideoPlayer {
   const ref = useRef<VideoPlayer | null>(null);
   if (!ref.current) {
     const p = new VideoPlayer();
+    // Capture the hardware-decoding mode once at creation so every source
+    // built for this player (initial + replace) bakes in the right flag.
+    p._hwDecode = hwDecode;
     if (source) {
-      p._source = { uri: source, initOptions: [...DEFAULT_INIT_OPTIONS] };
+      p._source = { uri: source, initOptions: buildVlcInitOptions(hwDecode) };
       p._paused = false;
     }
     try { setup?.(p); } catch {}
@@ -601,7 +627,7 @@ function useVlcPlayer(
 export function useVideoPlayer(
   source: string | { uri: string; headers?: Record<string, string> } | null,
   setup?: (player: any) => void,
-  opts?: { engine?: PlayerEngine },
+  opts?: { engine?: PlayerEngine; hwDecode?: HwDecodeMode },
 ): any {
   // Normalise to a bare URL for the VLC branch (which uses init options
   // for the UA) and to a {uri, headers} object for the expo branch.
@@ -628,8 +654,12 @@ export function useVideoPlayer(
         ? source
         : { uri: url, headers: { "User-Agent": UA_EXPO } })
     : (null as any);
+  // Capture the hardware-decode mode once per mount, same as the engine.
+  const hwDecodeRef = useRef<HwDecodeMode>(
+    opts?.hwDecode === "on" || opts?.hwDecode === "off" ? opts.hwDecode : "auto",
+  );
   const expoPlayer = useExpoVideoPlayer(expoSource, expoSetup as any);
-  const vlcPlayer  = useVlcPlayer(!useExpo ? url : "", vlcSetup as any);
+  const vlcPlayer  = useVlcPlayer(!useExpo ? url : "", vlcSetup as any, hwDecodeRef.current);
   return useExpo ? expoPlayer : vlcPlayer;
 }
 

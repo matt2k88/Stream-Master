@@ -64,7 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, pin, player_vod, player_live } = req.body;
+    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode } = req.body;
     try {
       // Build a partial update so callers (e.g. PlayerSettingsScreen)
       // can patch only the fields they care about.
@@ -84,6 +84,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: "player_live must be 'vlc' or 'expo'" });
         }
         patch.player_live = player_live;
+      }
+      if (player_hw_decode !== undefined) {
+        if (
+          player_hw_decode !== "auto" &&
+          player_hw_decode !== "on" &&
+          player_hw_decode !== "off"
+        ) {
+          return res
+            .status(400)
+            .json({ error: "player_hw_decode must be 'auto', 'on' or 'off'" });
+        }
+        patch.player_hw_decode = player_hw_decode;
       }
       const { data, error } = await supabase
         .from("profiles")

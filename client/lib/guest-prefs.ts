@@ -1,26 +1,35 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { PlayerEngine } from "@/contexts/ProfileContext";
+import type { PlayerEngine, HwDecodeMode } from "@/contexts/ProfileContext";
 
 /**
  * Device-local preferences for the Guest profile. A guest never persists
  * anything to the server (no DB row exists for it), so the few settings a
- * guest is allowed to change — currently the player engine per stream type —
- * are stored on the device instead.
+ * guest is allowed to change — currently the player engine per stream type
+ * and the VLC hardware-decoding mode — are stored on the device instead.
  */
 export interface GuestPlayerPrefs {
   player_vod: PlayerEngine;
   player_live: PlayerEngine;
+  player_hw_decode: HwDecodeMode;
 }
 
 const STORAGE_KEY = "ultracast.guest.player.v1";
 
-const DEFAULTS: GuestPlayerPrefs = { player_vod: "vlc", player_live: "vlc" };
+const DEFAULTS: GuestPlayerPrefs = {
+  player_vod: "vlc",
+  player_live: "vlc",
+  player_hw_decode: "auto",
+};
 
 function normalise(v: unknown): GuestPlayerPrefs {
   const obj = (v ?? {}) as Partial<GuestPlayerPrefs>;
   return {
     player_vod: obj.player_vod === "expo" ? "expo" : "vlc",
     player_live: obj.player_live === "expo" ? "expo" : "vlc",
+    player_hw_decode:
+      obj.player_hw_decode === "on" || obj.player_hw_decode === "off"
+        ? obj.player_hw_decode
+        : "auto",
   };
 }
 

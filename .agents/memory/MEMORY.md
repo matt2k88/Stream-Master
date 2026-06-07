@@ -6,3 +6,4 @@
 - [Video player aspect switching](video-player-aspect-switching.md) — native video surfaces ignore live contentFit/resizeMode changes; remount via key={mode} (expo player persists; VLC needs resume-seek).
 - [Football kill-switch scope](football-killswitch-scope.md) — football_global.enabled is client-side only; never gate the server poller / Football Centre data on it.
 - [VLC live reconnect](vlc-live-reconnect.md) — live freeze is provider-side (no 3h timer in our code); recovery needs --http-reconnect + engine-aware stall gate + playToEnd→reconnect, all three.
+- [VLC hardware-decode preference](vlc-hw-decode.md) — player_hw_decode auto/on/off; "auto" must OMIT --avcodec-hw on bridge path; raw Android VOD keeps mediacodec for auto/on, software only for off.

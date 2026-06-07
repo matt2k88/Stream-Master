@@ -6,6 +6,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -17,11 +18,21 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { useProfile, type PlayerEngine } from "@/contexts/ProfileContext";
+import {
+  useProfile,
+  getHwDecode,
+  type PlayerEngine,
+  type HwDecodeMode,
+} from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 import { saveGuestPlayerPrefs } from "@/lib/guest-prefs";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+// Side-by-side (50/50) engine cards kick in once the screen is wide enough
+// to comfortably show two columns — TVs and tablets in landscape. Phones and
+// narrow windows keep the stacked layout.
+const WIDE_BREAKPOINT = 700;
 
 function HoverBtn({
   style,
@@ -54,6 +65,52 @@ function HoverBtn({
   );
 }
 
+/** Generic radio-style option row used by both the engine and HW toggles. */
+function OptionRow({
+  selected,
+  label,
+  sub,
+  onPress,
+  disabled,
+}: {
+  selected: boolean;
+  label: string;
+  sub: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <HoverBtn
+      style={[styles.engineOpt, selected && styles.engineOptSelected]}
+      activeStyle={styles.engineOptHover}
+      onPress={() => !selected && onPress()}
+      disabled={disabled}
+    >
+      {(active) => (
+        <>
+          <View style={styles.engineRadio}>
+            {selected ? <View style={styles.engineRadioDot} /> : null}
+          </View>
+          <View style={{ flex: 1 }}>
+            <ThemedText
+              style={[
+                styles.engineLabel,
+                (selected || active) && { color: Colors.dark.accent },
+              ]}
+            >
+              {label}
+            </ThemedText>
+            <ThemedText style={styles.engineSub}>{sub}</ThemedText>
+          </View>
+          {selected ? (
+            <Feather name="check" size={16} color={Colors.dark.accent} />
+          ) : null}
+        </>
+      )}
+    </HoverBtn>
+  );
+}
+
 function EngineToggle({
   value,
   onChange,
@@ -63,44 +120,58 @@ function EngineToggle({
   onChange: (next: PlayerEngine) => void;
   disabled?: boolean;
 }) {
-  const opt = (engine: PlayerEngine, label: string, sub: string) => {
-    const selected = value === engine;
-    return (
-      <HoverBtn
-        key={engine}
-        style={[styles.engineOpt, selected && styles.engineOptSelected]}
-        activeStyle={styles.engineOptHover}
-        onPress={() => !selected && onChange(engine)}
-        disabled={disabled}
-      >
-        {(active) => (
-          <>
-            <View style={styles.engineRadio}>
-              {selected ? <View style={styles.engineRadioDot} /> : null}
-            </View>
-            <View style={{ flex: 1 }}>
-              <ThemedText
-                style={[
-                  styles.engineLabel,
-                  (selected || active) && { color: Colors.dark.accent },
-                ]}
-              >
-                {label}
-              </ThemedText>
-              <ThemedText style={styles.engineSub}>{sub}</ThemedText>
-            </View>
-            {selected ? (
-              <Feather name="check" size={16} color={Colors.dark.accent} />
-            ) : null}
-          </>
-        )}
-      </HoverBtn>
-    );
-  };
   return (
     <View style={styles.engineRow}>
-      {opt("vlc", "VLC", "Best codec coverage (AC3/EAC3, exotic TS)")}
-      {opt("expo", "Expo", "Native Media3 — smooth on some HLS streams")}
+      <OptionRow
+        selected={value === "vlc"}
+        label="VLC"
+        sub="Best codec coverage (AC3/EAC3, exotic TS)"
+        onPress={() => onChange("vlc")}
+        disabled={disabled}
+      />
+      <OptionRow
+        selected={value === "expo"}
+        label="Expo"
+        sub="Native Media3 — smooth on some HLS streams"
+        onPress={() => onChange("expo")}
+        disabled={disabled}
+      />
+    </View>
+  );
+}
+
+function HwDecodeToggle({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: HwDecodeMode;
+  onChange: (next: HwDecodeMode) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={styles.engineRow}>
+      <OptionRow
+        selected={value === "auto"}
+        label="Automatic"
+        sub="Recommended — let the app choose for this device"
+        onPress={() => onChange("auto")}
+        disabled={disabled}
+      />
+      <OptionRow
+        selected={value === "on"}
+        label="On"
+        sub="Use the device's video chip — smoother HD & 4K"
+        onPress={() => onChange("on")}
+        disabled={disabled}
+      />
+      <OptionRow
+        selected={value === "off"}
+        label="Off"
+        sub="Fixes a glitchy picture, freezing or no sound on some devices"
+        onPress={() => onChange("off")}
+        disabled={disabled}
+      />
     </View>
   );
 }
@@ -108,14 +179,17 @@ function EngineToggle({
 export default function PlayerSettingsScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const { width } = useWindowDimensions();
   const { activeProfile, isGuest, updateActiveProfile, refreshActiveProfile } = useProfile();
 
-  const [savingKey, setSavingKey] = useState<"player_vod" | "player_live" | null>(null);
+  const [savingKey, setSavingKey] = useState<
+    "player_vod" | "player_live" | "player_hw_decode" | null
+  >(null);
 
-  // Pull the latest player_vod / player_live every time this screen
-  // gains focus, so admin-side flips show up without needing to log
-  // out and back in. Skipped while a save is in flight to avoid the
-  // optimistic UI snapping back mid-edit.
+  // Pull the latest player prefs every time this screen gains focus, so
+  // admin-side flips show up without needing to log out and back in.
+  // Skipped while a save is in flight to avoid the optimistic UI snapping
+  // back mid-edit.
   useFocusEffect(
     useCallback(() => {
       if (savingKey) return;
@@ -125,10 +199,21 @@ export default function PlayerSettingsScreen() {
 
   const vod: PlayerEngine = activeProfile?.player_vod === "expo" ? "expo" : "vlc";
   const live: PlayerEngine = activeProfile?.player_live === "expo" ? "expo" : "vlc";
+  const hw: HwDecodeMode = getHwDecode(activeProfile);
 
-  const persist = async (key: "player_vod" | "player_live", next: PlayerEngine) => {
+  const isWide = width >= WIDE_BREAKPOINT;
+
+  const persist = async (
+    key: "player_vod" | "player_live" | "player_hw_decode",
+    next: PlayerEngine | HwDecodeMode,
+  ) => {
     if (!activeProfile) return;
-    const prev = activeProfile[key] === "expo" ? "expo" : "vlc";
+    const prev: PlayerEngine | HwDecodeMode =
+      key === "player_hw_decode"
+        ? getHwDecode(activeProfile)
+        : activeProfile[key] === "expo"
+          ? "expo"
+          : "vlc";
     if (prev === next) return;
     setSavingKey(key);
     // Optimistic update so the UI feels instant; revert on failure.
@@ -138,14 +223,16 @@ export default function PlayerSettingsScreen() {
     if (isGuest) {
       try {
         await saveGuestPlayerPrefs({
-          player_vod: key === "player_vod" ? next : vod,
-          player_live: key === "player_live" ? next : live,
+          player_vod: key === "player_vod" ? (next as PlayerEngine) : vod,
+          player_live: key === "player_live" ? (next as PlayerEngine) : live,
+          player_hw_decode:
+            key === "player_hw_decode" ? (next as HwDecodeMode) : hw,
         });
       } catch (e) {
         updateActiveProfile({ [key]: prev } as any);
         Alert.alert(
           "Could not save",
-          "We couldn't save your player choice on this device. Please try again.",
+          "We couldn't save your choice on this device. Please try again.",
         );
       } finally {
         setSavingKey(null);
@@ -165,7 +252,7 @@ export default function PlayerSettingsScreen() {
       updateActiveProfile({ [key]: prev } as any);
       Alert.alert(
         "Could not save",
-        "We couldn't save your player choice. Check your connection and try again.",
+        "We couldn't save your choice. Check your connection and try again.",
       );
     } finally {
       setSavingKey(null);
@@ -175,6 +262,58 @@ export default function PlayerSettingsScreen() {
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
+
+  const vodCard = (
+    <View style={[styles.card, isWide && styles.cardHalf]}>
+      <LinearGradient
+        colors={["rgba(255,102,0,0.10)", "rgba(255,102,0,0.02)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={styles.cardHeader}>
+        <Feather name="film" size={16} color={Colors.dark.accent} />
+        <ThemedText style={styles.cardTitle}>Movies &amp; Series</ThemedText>
+        {savingKey === "player_vod" ? (
+          <ActivityIndicator size="small" color={Colors.dark.accent} />
+        ) : null}
+      </View>
+      <ThemedText style={styles.cardSub}>
+        Used by Movies, Series and Catch Up.
+      </ThemedText>
+      <EngineToggle
+        value={vod}
+        onChange={(next) => persist("player_vod", next)}
+        disabled={savingKey !== null}
+      />
+    </View>
+  );
+
+  const liveCard = (
+    <View style={[styles.card, isWide && styles.cardHalf]}>
+      <LinearGradient
+        colors={["rgba(255,102,0,0.10)", "rgba(255,102,0,0.02)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      <View style={styles.cardHeader}>
+        <Feather name="tv" size={16} color={Colors.dark.accent} />
+        <ThemedText style={styles.cardTitle}>Live TV</ThemedText>
+        {savingKey === "player_live" ? (
+          <ActivityIndicator size="small" color={Colors.dark.accent} />
+        ) : null}
+      </View>
+      <ThemedText style={styles.cardSub}>
+        Used by Live TV channels and the live preview screen.
+      </ThemedText>
+      <EngineToggle
+        value={live}
+        onChange={(next) => persist("player_live", next)}
+        disabled={savingKey !== null}
+      />
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -247,32 +386,13 @@ export default function PlayerSettingsScreen() {
             </ThemedText>
           </View>
 
-          {/* VOD card */}
-          <View style={styles.card}>
-            <LinearGradient
-              colors={["rgba(255,102,0,0.10)", "rgba(255,102,0,0.02)"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <View style={styles.cardHeader}>
-              <Feather name="film" size={16} color={Colors.dark.accent} />
-              <ThemedText style={styles.cardTitle}>Movies &amp; Series</ThemedText>
-              {savingKey === "player_vod" ? (
-                <ActivityIndicator size="small" color={Colors.dark.accent} />
-              ) : null}
-            </View>
-            <ThemedText style={styles.cardSub}>
-              Used by Movies, Series and Catch Up.
-            </ThemedText>
-            <EngineToggle
-              value={vod}
-              onChange={(next) => persist("player_vod", next)}
-              disabled={savingKey !== null}
-            />
+          {/* Engine cards: side-by-side (50/50) on wide screens, stacked otherwise */}
+          <View style={isWide ? styles.cardRow : undefined}>
+            {vodCard}
+            {liveCard}
           </View>
 
-          {/* Live card */}
+          {/* Hardware decoding card — applies to both Live TV and VOD on VLC */}
           <View style={styles.card}>
             <LinearGradient
               colors={["rgba(255,102,0,0.10)", "rgba(255,102,0,0.02)"]}
@@ -281,18 +401,20 @@ export default function PlayerSettingsScreen() {
               end={{ x: 1, y: 1 }}
             />
             <View style={styles.cardHeader}>
-              <Feather name="tv" size={16} color={Colors.dark.accent} />
-              <ThemedText style={styles.cardTitle}>Live TV</ThemedText>
-              {savingKey === "player_live" ? (
+              <Feather name="cpu" size={16} color={Colors.dark.accent} />
+              <ThemedText style={styles.cardTitle}>Video Decoding</ThemedText>
+              {savingKey === "player_hw_decode" ? (
                 <ActivityIndicator size="small" color={Colors.dark.accent} />
               ) : null}
             </View>
             <ThemedText style={styles.cardSub}>
-              Used by Live TV channels and the live preview screen.
+              Only change this if video looks glitchy, freezes, or has no sound
+              on this device. Applies to both Live TV and Movies &amp; Series
+              when using the VLC player.
             </ThemedText>
-            <EngineToggle
-              value={live}
-              onChange={(next) => persist("player_live", next)}
+            <HwDecodeToggle
+              value={hw}
+              onChange={(next) => persist("player_hw_decode", next)}
               disabled={savingKey !== null}
             />
           </View>
@@ -302,7 +424,8 @@ export default function PlayerSettingsScreen() {
             <ThemedText style={styles.tipText}>
               VLC is the default and handles AC3/EAC3 audio plus most exotic
               IPTV streams. Switch to Expo if a specific stream stutters or
-              fails to start.
+              fails to start. If a device shows a broken or stuttering picture
+              on every channel, set Video Decoding to Off.
             </ThemedText>
           </View>
         </ScrollView>
@@ -363,6 +486,11 @@ const styles = StyleSheet.create({
     flex: 1, fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 18,
   },
 
+  cardRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    alignItems: "stretch",
+  },
   card: {
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md,
@@ -371,6 +499,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     overflow: "hidden",
   },
+  cardHalf: { flex: 1 },
   cardHeader: {
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
   },

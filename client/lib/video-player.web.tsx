@@ -19,10 +19,14 @@ import {
 export type { SubtitleTrack, AudioTrack, VideoPlayer } from "expo-video";
 export type PlayerEngine = "vlc" | "expo";
 
+export type HwDecodeMode = "auto" | "on" | "off";
+
 export function useVideoPlayer(
   source: any,
   setup?: (player: any) => void,
-  _opts?: { engine?: PlayerEngine },
+  // `engine` and `hwDecode` are accepted for API parity with the native
+  // bridge but ignored on web — there's only ever expo-video here.
+  _opts?: { engine?: PlayerEngine; hwDecode?: HwDecodeMode },
 ) {
   return useExpoVideoPlayer(source, setup as any);
 }

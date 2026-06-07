@@ -3,6 +3,16 @@ import { getApiUrl } from "@/lib/query-client";
 
 export type PlayerEngine = "vlc" | "expo";
 
+/**
+ * Per-profile hardware-decoding preference for the VLC engine.
+ *  • "auto" — let libVLC decide (the existing/default behaviour).
+ *  • "on"   — force hardware decoding (best for 4K/HDR on capable devices).
+ *  • "off"  — force software decoding (fixes green/garbled frames, stutter
+ *             or no-audio on devices whose hardware decoder is flaky).
+ * Only affects the VLC engine; the Expo engine ignores it.
+ */
+export type HwDecodeMode = "auto" | "on" | "off";
+
 export interface Profile {
   id: string;
   account_username: string;
@@ -16,6 +26,10 @@ export interface Profile {
   // server-side too).
   player_vod?: PlayerEngine;
   player_live?: PlayerEngine;
+  // Per-profile VLC hardware-decoding mode. Defaults to "auto" so existing
+  // users see no behaviour change until they opt in. Applies to both Live
+  // and VOD on the VLC engine; ignored by the Expo engine.
+  player_hw_decode?: HwDecodeMode;
 }
 
 /**
@@ -36,7 +50,7 @@ export function isGuestProfile(profile: Profile | null | undefined): boolean {
  */
 export function makeGuestProfile(
   accountUsername: string,
-  prefs?: { player_vod?: PlayerEngine; player_live?: PlayerEngine },
+  prefs?: { player_vod?: PlayerEngine; player_live?: PlayerEngine; player_hw_decode?: HwDecodeMode },
 ): Profile {
   return {
     id: GUEST_PROFILE_ID,
@@ -48,7 +62,13 @@ export function makeGuestProfile(
     created_at: new Date().toISOString(),
     player_vod: prefs?.player_vod === "expo" ? "expo" : "vlc",
     player_live: prefs?.player_live === "expo" ? "expo" : "vlc",
+    player_hw_decode: normaliseHwDecode(prefs?.player_hw_decode),
   };
+}
+
+/** Coerce any value into a valid HwDecodeMode, defaulting to "auto". */
+export function normaliseHwDecode(v: unknown): HwDecodeMode {
+  return v === "on" || v === "off" ? v : "auto";
 }
 
 interface ProfileContextType {
@@ -108,6 +128,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           pin: fresh.pin,
           player_vod: fresh.player_vod,
           player_live: fresh.player_live,
+          player_hw_decode: fresh.player_hw_decode,
         };
         setActiveProfileState((prev) => {
           if (!prev || prev.id !== current.id) return prev;
@@ -121,7 +142,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
             prev.avatar_color === patch.avatar_color &&
             prev.pin === patch.pin &&
             prev.player_vod === patch.player_vod &&
-            prev.player_live === patch.player_live;
+            prev.player_live === patch.player_live &&
+            prev.player_hw_decode === patch.player_hw_decode;
           return unchanged ? prev : { ...prev, ...patch };
         });
         return { ...current, ...patch };
@@ -161,4 +183,12 @@ export function getPlayerEngine(
   if (!profile) return "vlc";
   const v = isLive ? profile.player_live : profile.player_vod;
   return v === "expo" ? "expo" : "vlc";
+}
+
+/**
+ * Resolve the active VLC hardware-decoding mode for a profile. Defaults to
+ * "auto" if the profile is missing or the field hasn't been set yet.
+ */
+export function getHwDecode(profile: Profile | null): HwDecodeMode {
+  return normaliseHwDecode(profile?.player_hw_decode);
 }

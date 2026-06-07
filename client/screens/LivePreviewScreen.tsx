@@ -331,8 +331,16 @@ export default function LivePreviewScreen() {
     p.muted = false;
     p.play();
   });
+  // VLC hardware-decoding mode, captured at mount (same lifecycle as the
+  // engine choice above). Ignored by the Expo engine. Defaults to "auto".
+  const hwDecodeRef = useRef<"auto" | "on" | "off">(
+    activeProfile?.player_hw_decode === "on" || activeProfile?.player_hw_decode === "off"
+      ? activeProfile.player_hw_decode
+      : "auto",
+  );
   const player = useVideoPlayer(streamUrl, playerSetupRef.current, {
     engine: playerEngineRef.current,
+    hwDecode: hwDecodeRef.current,
   });
 
   // Track current stream URL so we can reload it on focus return

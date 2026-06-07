@@ -860,15 +860,33 @@ export default function VlcPlayerScreen() {
   // can never engage the panel's HDR pipeline → the "bland" look on UHD
   // channels. The chained fallback means any stream HW can't handle still
   // plays via SW — nothing should regress.
+  // Per-profile hardware-decoding mode, captured at mount. "auto" and "on"
+  // both keep the existing hardware (mediacodec) chain — critical for 4K/HDR.
+  // "off" forces pure software decoding so devices whose hardware decoder
+  // produces green/garbled frames, stutter, or no audio can still play.
+  const hwDecodeRef = useRef<"auto" | "on" | "off">(
+    activeProfile?.player_hw_decode === "on" || activeProfile?.player_hw_decode === "off"
+      ? activeProfile.player_hw_decode
+      : "auto",
+  );
   const source = useMemo(() => ({
     uri: streamUrl,
-    initOptions: [
-      "--http-reconnect",
-      "--network-caching=1500",
-      "--file-caching=1500",
-      "--codec=mediacodec_ndk,mediacodec,all",
-      "--avcodec-hw=mediacodec",
-    ],
+    initOptions:
+      hwDecodeRef.current === "off"
+        ? [
+            "--http-reconnect",
+            "--network-caching=1500",
+            "--file-caching=1500",
+            "--codec=all",
+            "--avcodec-hw=none",
+          ]
+        : [
+            "--http-reconnect",
+            "--network-caching=1500",
+            "--file-caching=1500",
+            "--codec=mediacodec_ndk,mediacodec,all",
+            "--avcodec-hw=mediacodec",
+          ],
   }), [streamUrl]);
 
   // ─── Render ──────────────────────────────────────────────────────────────
