@@ -519,8 +519,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(null);
       }
 
-      // Cap live entries at 20 per profile (movies/series remain uncapped).
-      // Older live rows beyond the newest 20 get trimmed on every insert.
+      // Per-profile caps. Each content type stays bounded; when the cap is
+      // reached, the least-recently-active entry/series is trimmed on insert.
+      // - Live TV  → newest 20 entries.
+      // - Movies   → newest 50 entries (one row per movie).
+      // - Series   → newest 20 distinct series titles (grouped by series_id;
+      //              a multi-episode show counts once, and trimming removes
+      //              ALL episode rows of the evicted series).
       if (content_type === "live") {
         try {
           const { data: liveRows } = await supabase
@@ -537,6 +542,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } catch (capErr: any) {
           console.error("[recently-watched] live cap trim failed:", capErr?.message);
+        }
+      } else if (content_type === "movie") {
+        try {
+          const { data: movieRows } = await supabase
+            .from("recently_watched")
+            .select("id")
+            .eq("profile_id", profile_id)
+            .eq("content_type", "movie")
+            .order("updated_at", { ascending: false });
+          if (movieRows && movieRows.length > 50) {
+            const toDelete = movieRows.slice(50).map((r: any) => r.id);
+            if (toDelete.length > 0) {
+              await supabase.from("recently_watched").delete().in("id", toDelete);
+            }
+          }
+        } catch (capErr: any) {
+          console.error("[recently-watched] movie cap trim failed:", capErr?.message);
+        }
+      } else if (content_type === "series") {
+        try {
+          const { data: seriesRows } = await supabase
+            .from("recently_watched")
+            .select("id, series_id, updated_at")
+            .eq("profile_id", profile_id)
+            .eq("content_type", "series")
+            .order("updated_at", { ascending: false });
+          if (seriesRows && seriesRows.length > 0) {
+            // Rank distinct series by most-recent activity. Rows are already
+            // ordered newest-first, so the first time we see a series key it is
+            // that series' most-recent activity.
+            const rank: string[] = [];
+            const seenSeries = new Set<string>();
+            for (const row of seriesRows) {
+              const key = row.series_id != null ? String(row.series_id) : `__noid_${row.id}`;
+              if (seenSeries.has(key)) continue;
+              seenSeries.add(key);
+              rank.push(key);
+            }
+            if (rank.length > 20) {
+              const keep = new Set(rank.slice(0, 20));
+              const toDelete = seriesRows
+                .filter((r: any) => {
+                  const key = r.series_id != null ? String(r.series_id) : `__noid_${r.id}`;
+                  return !keep.has(key);
+                })
+                .map((r: any) => r.id);
+              if (toDelete.length > 0) {
+                await supabase.from("recently_watched").delete().in("id", toDelete);
+              }
+            }
+          }
+        } catch (capErr: any) {
+          console.error("[recently-watched] series cap trim failed:", capErr?.message);
         }
       }
 
