@@ -53,3 +53,7 @@ args = "npm run all:dev"
 waitForPort = 8081
 ensurePreviewReachable = "/status"
 
+[postMerge]
+path = "post-merge.sh"
+timeoutMs = 120000
+
