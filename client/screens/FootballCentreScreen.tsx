@@ -165,12 +165,13 @@ function Touchable({
 }: {
   style: any;
   activeStyle: any;
-  onPress: () => void;
+  onPress?: () => void;
   children: React.ReactNode | ((active: boolean) => React.ReactNode);
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const active = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const active = focused || pressed || hovered;
   return (
     <Pressable
       style={[style, active && activeStyle]}
@@ -179,6 +180,8 @@ function Touchable({
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
     >
       {typeof children === "function" ? children(active) : children}
     </Pressable>
@@ -374,17 +377,13 @@ function MatchCard({
 
   return (
     <View style={[styles.gameCard, { width: cardWidth }]}>
-      {onCardPress ? (
-        <Touchable
-          style={styles.cardPressable}
-          activeStyle={styles.cardPressableActive}
-          onPress={onCardPress}
-        >
-          {body}
-        </Touchable>
-      ) : (
-        <View style={styles.cardPressable}>{body(false)}</View>
-      )}
+      <Touchable
+        style={styles.cardPressable}
+        activeStyle={styles.cardPressableActive}
+        onPress={onCardPress}
+      >
+        {body}
+      </Touchable>
 
       <ChannelBadges channels={channels} onPress={onChannelPress} />
     </View>
@@ -759,12 +758,14 @@ function LeagueFilterModal({
   hidden,
   onToggle,
   onShowAll,
+  onClearAll,
   onClose,
 }: {
   visible: boolean;
   hidden: Set<number>;
   onToggle: (id: number) => void;
   onShowAll: () => void;
+  onClearAll: () => void;
   onClose: () => void;
 }) {
   return (
@@ -785,26 +786,48 @@ function LeagueFilterModal({
             </Touchable>
           </View>
 
-          <Touchable
-            style={styles.showAllBtn}
-            activeStyle={styles.showAllBtnActive}
-            onPress={onShowAll}
-          >
-            {(active) => (
-              <>
-                <Feather
-                  name="check-circle"
-                  size={15}
-                  color={active ? Colors.dark.accent : Colors.dark.text}
-                />
-                <ThemedText
-                  style={[styles.showAllText, active && { color: Colors.dark.accent }]}
-                >
-                  Show all leagues
-                </ThemedText>
-              </>
-            )}
-          </Touchable>
+          <View style={styles.filterActions}>
+            <Touchable
+              style={styles.showAllBtn}
+              activeStyle={styles.showAllBtnActive}
+              onPress={onShowAll}
+            >
+              {(active) => (
+                <>
+                  <Feather
+                    name="check-circle"
+                    size={15}
+                    color={active ? Colors.dark.accent : Colors.dark.text}
+                  />
+                  <ThemedText
+                    style={[styles.showAllText, active && { color: Colors.dark.accent }]}
+                  >
+                    Show all leagues
+                  </ThemedText>
+                </>
+              )}
+            </Touchable>
+            <Touchable
+              style={styles.showAllBtn}
+              activeStyle={styles.showAllBtnActive}
+              onPress={onClearAll}
+            >
+              {(active) => (
+                <>
+                  <Feather
+                    name="x-circle"
+                    size={15}
+                    color={active ? Colors.dark.accent : Colors.dark.text}
+                  />
+                  <ThemedText
+                    style={[styles.showAllText, active && { color: Colors.dark.accent }]}
+                  >
+                    Clear all leagues
+                  </ThemedText>
+                </>
+              )}
+            </Touchable>
+          </View>
 
           <ScrollView
             style={{ alignSelf: "stretch" }}
@@ -1027,6 +1050,15 @@ export default function FootballCentreScreen() {
   const showAllLeagues = useCallback(() => {
     setHiddenLeagues(new Set());
     if (profileKey) saveHiddenLeagues(profileKey, new Set());
+  }, [profileKey]);
+
+  const clearAllLeagues = useCallback(() => {
+    const all = new Set<number>();
+    for (const group of FOOTBALL_LEAGUE_GROUPS) {
+      for (const lg of group.leagues) all.add(lg.id);
+    }
+    setHiddenLeagues(all);
+    if (profileKey) saveHiddenLeagues(profileKey, all);
   }, [profileKey]);
 
   // fixture_id -> channels[]
@@ -1483,6 +1515,7 @@ export default function FootballCentreScreen() {
         hidden={hiddenLeagues}
         onToggle={toggleLeague}
         onShowAll={showAllLeagues}
+        onClearAll={clearAllLeagues}
         onClose={() => setFilterOpen(false)}
       />
 
@@ -1677,11 +1710,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  filterActions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
   showAllBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: Spacing.sm,
-    alignSelf: "flex-start",
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
