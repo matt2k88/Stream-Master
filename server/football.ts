@@ -18,6 +18,16 @@ const IDLE_INTERVAL_MS = 5 * 60 * 1000;
 const FIXTURES_DAYS_AHEAD = 7;
 const FIXTURES_REFRESH_MS = 24 * 60 * 60 * 1000;
 
+// Major tournaments whose ENTIRE fixture list should be pulled regardless of
+// the rolling FIXTURES_DAYS_AHEAD window above. A single
+// /fixtures?league=&season= request returns every game (group stage → final),
+// so all matches show in the Football Centre even though they run for weeks
+// beyond the normal 7-day window. Past games are removed by purgePastFixtures.
+// Each league id MUST also be present in CURATED_LEAGUE_IDS to be displayed.
+const FULL_SEASON_COMPETITIONS: { league: number; season: number }[] = [
+  { league: 1, season: 2026 }, // FIFA World Cup 2026
+];
+
 // A fixture is only purged once its kickoff is at least this far in the past, so
 // a still-in-progress match (which can run ~2h, plus stoppages/extra time) is
 // never deleted mid-game — important because deleting the row cascades to its
@@ -376,6 +386,43 @@ async function fetchFixturesForDate(date: string): Promise<any[]> {
   }
 }
 
+// Fetch the ENTIRE fixture list for one league+season (one api-football
+// request). Used for major tournaments (e.g. the World Cup) so every game is
+// cached regardless of the rolling day window. Returns [] on error.
+async function fetchFullSeasonFixtures(
+  league: number,
+  season: number,
+): Promise<any[]> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return [];
+  try {
+    const r = await fetch(
+      `${API_BASE}/fixtures?league=${league}&season=${season}`,
+      { headers: { "x-apisports-key": key } },
+    );
+    if (!r.ok) {
+      console.error(
+        `[football] season fixtures fetch failed (league ${league}/${season}): ${r.status}`,
+      );
+      return [];
+    }
+    const json = await r.json();
+    if (Array.isArray(json?.errors) && json.errors.length) {
+      console.error(
+        "[football] season fixtures api errors:",
+        JSON.stringify(json.errors),
+      );
+    }
+    return Array.isArray(json?.response) ? json.response : [];
+  } catch (e: any) {
+    console.error(
+      `[football] season fixtures exception (league ${league}/${season}):`,
+      e?.message,
+    );
+    return [];
+  }
+}
+
 // Once-per-day: pull the next FIXTURES_DAYS_AHEAD days of fixtures for the
 // curated leagues into the football_fixtures cache. Throttled by a 24h
 // timestamp. NOT gated by the kill-switch — the Football Centre's upcoming
@@ -385,33 +432,74 @@ async function fetchFixturesForDate(date: string): Promise<any[]> {
 // are removed promptly rather than only once a day.
 async function refreshUpcomingFixtures(): Promise<void> {
   const nowIso = new Date().toISOString();
-  const rows: UpcomingRow[] = [];
-  for (let i = 0; i < FIXTURES_DAYS_AHEAD; i++) {
-    const d = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
-    const dk = dateKey(d);
-    const fixtures = await fetchFixturesForDate(dk);
-    for (const f of fixtures) {
-      const leagueId = f?.league?.id;
-      if (leagueId == null || !CURATED_SET.has(leagueId)) continue;
-      const fixtureId = f?.fixture?.id;
-      if (fixtureId == null) continue;
-      const ts = f?.fixture?.timestamp;
-      rows.push({
-        fixture_id: fixtureId,
-        league_id: leagueId,
-        league_name: f?.league?.name ?? null,
-        league_country: f?.league?.country ?? null,
-        home_team: f?.teams?.home?.name ?? null,
-        away_team: f?.teams?.away?.name ?? null,
-        home_logo: f?.teams?.home?.logo ?? null,
-        away_logo: f?.teams?.away?.logo ?? null,
-        kickoff: ts ? new Date(ts * 1000).toISOString() : null,
-        date_key: dk,
-        status_short: f?.fixture?.status?.short ?? null,
-        updated_at: nowIso,
-      });
+  // Keyed by fixture_id so the rolling-day scan and the full-season tournament
+  // pull below can never produce two rows for the same fixture — Postgres
+  // rejects an upsert whose payload hits the same conflict key twice.
+  const byId = new Map<number, UpcomingRow>();
+
+  const addFixture = (f: any) => {
+    const leagueId = f?.league?.id;
+    if (leagueId == null || !CURATED_SET.has(leagueId)) return;
+    const fixtureId = f?.fixture?.id;
+    if (fixtureId == null) return;
+    // Prefer the unix timestamp, fall back to the ISO `date` string. A
+    // full-season pull can include TBD/unscheduled knockout rounds with no
+    // real kickoff — we must NOT invent date_key=today for those, or they'd
+    // pin to the top of "Upcoming" forever and never get purged. Skip them
+    // until the provider assigns a real date.
+    const ts = f?.fixture?.timestamp;
+    let kickoff: Date | null = null;
+    if (ts) kickoff = new Date(ts * 1000);
+    else if (f?.fixture?.date) {
+      const d = new Date(f.fixture.date);
+      if (!Number.isNaN(d.getTime())) kickoff = d;
+    }
+    if (!kickoff) return;
+    byId.set(fixtureId, {
+      fixture_id: fixtureId,
+      league_id: leagueId,
+      league_name: f?.league?.name ?? null,
+      league_country: f?.league?.country ?? null,
+      home_team: f?.teams?.home?.name ?? null,
+      away_team: f?.teams?.away?.name ?? null,
+      home_logo: f?.teams?.home?.logo ?? null,
+      away_logo: f?.teams?.away?.logo ?? null,
+      kickoff: kickoff.toISOString(),
+      // Derive date_key from the real kickoff so full-season fixtures (fetched
+      // without a date param) still get the YYYY-MM-DD the upcoming query
+      // filters on.
+      date_key: dateKey(kickoff),
+      status_short: f?.fixture?.status?.short ?? null,
+      updated_at: nowIso,
+    });
+  };
+
+  // Guard against silent misconfiguration: a full-season league that isn't
+  // curated would be dropped by the CURATED_SET gate above, yielding zero rows
+  // with no obvious cause.
+  for (const { league } of FULL_SEASON_COMPETITIONS) {
+    if (!CURATED_SET.has(league)) {
+      console.warn(
+        `[football] FULL_SEASON_COMPETITIONS league ${league} is not in CURATED_LEAGUE_IDS — its fixtures will be dropped`,
+      );
     }
   }
+
+  // 1. Rolling window: the next FIXTURES_DAYS_AHEAD days, one request per day.
+  for (let i = 0; i < FIXTURES_DAYS_AHEAD; i++) {
+    const d = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
+    const fixtures = await fetchFixturesForDate(dateKey(d));
+    for (const f of fixtures) addFixture(f);
+  }
+
+  // 2. Full-season tournaments (e.g. World Cup): every game in one request, so
+  // the whole bracket shows even though it runs well beyond the day window.
+  for (const { league, season } of FULL_SEASON_COMPETITIONS) {
+    const fixtures = await fetchFullSeasonFixtures(league, season);
+    for (const f of fixtures) addFixture(f);
+  }
+
+  const rows = Array.from(byId.values());
 
   if (rows.length) {
     const { error } = await supabase
@@ -426,7 +514,10 @@ async function refreshUpcomingFixtures(): Promise<void> {
     }
   }
 
-  console.log(`[football] upcoming fixtures refreshed: ${rows.length} curated fixtures`);
+  console.log(
+    `[football] upcoming fixtures refreshed: ${rows.length} fixtures ` +
+      `(next ${FIXTURES_DAYS_AHEAD}d + ${FULL_SEASON_COMPETITIONS.length} full-season tournament(s))`,
+  );
 }
 
 // Delete fixtures whose kickoff is well in the past. Cheap single indexed

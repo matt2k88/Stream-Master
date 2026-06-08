@@ -2,6 +2,7 @@
 - [Guest profile guards](guest-profile.md) — every per-profile context must guard load AND all mutations against GUEST_PROFILE_ID, not just create/load.
 - [Overlay over native video](overlay-over-video.md) — wrap any overlay that must show over the fullscreen player in a transparent RN Modal; absolute Views get hidden behind the video SurfaceView on Fire TV/Android.
 - [Match fixture caching](match-fixture-caching.md) — favourite-team fixtures are team data (cache by team_id, NEVER per-profile/DB); next=10 + local countdown means refresh ~12h not poll; mark fresh only on full success.
+- [Football Centre fixture window](football-centre-fixture-window.md) — Upcoming = rolling N-day scan + full-season tournament pull (World Cup); dedupe by fixture_id, skip undated fixtures, never invent date_key=today.
 - [Cross-DB account/profile join](cross-db-account-join.md) — main `profiles.account_username` == lifetime `*.iptv_username`; account-level lifetime rows fan out to MANY profiles; make imports idempotent.
 - [Video player aspect switching](video-player-aspect-switching.md) — native video surfaces ignore live contentFit/resizeMode changes; remount via key={mode} (expo player persists; VLC needs resume-seek).
 - [Football kill-switch scope](football-killswitch-scope.md) — football_global.enabled is client-side only; never gate the server poller / Football Centre data on it.
