@@ -166,7 +166,13 @@ export default function SideMenuDrawer() {
   };
 
   return (
-    <Modal visible={mounted} transparent animationType="none" onRequestClose={close}>
+    <Modal
+      visible={mounted}
+      transparent
+      animationType="none"
+      onRequestClose={close}
+      supportedOrientations={["portrait", "landscape", "landscape-left", "landscape-right"]}
+    >
       <View style={styles.root}>
         <Animated.View style={[styles.backdrop, { opacity: fade }]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
