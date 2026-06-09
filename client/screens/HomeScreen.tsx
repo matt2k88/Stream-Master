@@ -1812,7 +1812,8 @@ const styles = StyleSheet.create({
   gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: Spacing.sm },
   // flexGrow/Shrink 0 + flexBasis override the qaCard `flex:1` (which sets
   // flexBasis:0 and would otherwise squash all 6 cards onto a single row).
-  gridCard: { flexGrow: 0, flexShrink: 0, flexBasis: "31.8%", width: "31.8%" },
+  // 48.5% basis = 2 cards per row, so 6 cards form a 3-row x 2-col grid.
+  gridCard: { flexGrow: 0, flexShrink: 0, flexBasis: "48.5%", width: "48.5%" },
 
   // Continue Watching / Recently Watched container
   watchCard: { width: "100%" },
