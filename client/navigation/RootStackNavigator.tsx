@@ -7,6 +7,7 @@ import { useData } from "@/contexts/DataContext";
 import { Profile } from "@/contexts/ProfileContext";
 import { Colors } from "@/constants/theme";
 import { SyncScreen } from "@/components/SyncScreen";
+import PortraitBottomNav from "@/components/PortraitBottomNav";
 
 import LoginScreen from "@/screens/LoginScreen";
 import HomeScreen from "@/screens/HomeScreen";
@@ -87,6 +88,8 @@ export default function RootStackNavigator() {
 
   return (
     <>
+      <View style={styles.appColumn}>
+        <View style={styles.navArea}>
       <Stack.Navigator
         screenOptions={{ ...screenOptions, headerShown: false, animation: "fade" }}
       >
@@ -144,6 +147,9 @@ export default function RootStackNavigator() {
           </>
         )}
       </Stack.Navigator>
+        </View>
+        {isAuthenticated ? <PortraitBottomNav /> : null}
+      </View>
 
       {isSyncing ? <SyncScreen progress={syncProgress} /> : null}
     </>
@@ -152,4 +158,6 @@ export default function RootStackNavigator() {
 
 const styles = StyleSheet.create({
   blank: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
+  appColumn: { flex: 1 },
+  navArea: { flex: 1 },
 });

@@ -147,7 +147,7 @@ function SidebarItem({
 
 // ── Quick-action card (advert row + grid) ─────────────────────────────────
 function QuickActionCard({
-  icon, mciIcon, title, subtitle, onPress, loading = false, preferFocus, style,
+  icon, mciIcon, title, subtitle, onPress, loading = false, preferFocus, style, compact = false,
 }: {
   icon?: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -157,6 +157,7 @@ function QuickActionCard({
   loading?: boolean;
   preferFocus?: boolean;
   style?: any;
+  compact?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -189,19 +190,23 @@ function QuickActionCard({
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
       />
-      <View style={[styles.qaIconWrap, isActive && { backgroundColor: accent.accentDim }]}>
+      <View style={[styles.qaIconWrap, compact && styles.qaIconWrapCompact, isActive && { backgroundColor: accent.accentDim }]}>
         {loading ? (
           <ActivityIndicator color={accent.accent} />
         ) : mciIcon ? (
-          <MaterialCommunityIcons name={mciIcon} size={26} color={iconColor} />
+          <MaterialCommunityIcons name={mciIcon} size={compact ? 22 : 24} color={iconColor} />
         ) : (
-          <Feather name={icon ?? "circle"} size={24} color={iconColor} />
+          <Feather name={icon ?? "circle"} size={compact ? 20 : 22} color={iconColor} />
         )}
       </View>
-      <ThemedText style={[styles.qaTitle, isActive && { color: accent.accent }]} numberOfLines={1}>
-        {loading ? "Loading…" : title}
-      </ThemedText>
-      <ThemedText style={styles.qaSubtitle} numberOfLines={1}>{subtitle}</ThemedText>
+      <View style={styles.qaTextCol}>
+        <ThemedText style={[styles.qaTitle, isActive && { color: accent.accent }]} numberOfLines={compact ? 2 : 1}>
+          {loading ? "Loading…" : title}
+        </ThemedText>
+        {compact ? null : (
+          <ThemedText style={styles.qaSubtitle} numberOfLines={1}>{subtitle}</ThemedText>
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -215,50 +220,6 @@ function LabelledAction({ label, children }: { label?: string; children: React.R
         <ThemedText style={styles.actionCaption} numberOfLines={1}>{label}</ThemedText>
       ) : null}
     </View>
-  );
-}
-
-// ── Bottom-nav item (portrait / mobile) ───────────────────────────────────
-function BottomNavItem({
-  icon, mciIcon, label, active = false, onPress, loading = false,
-}: {
-  icon?: keyof typeof Feather.glyphMap;
-  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
-  label: string;
-  active?: boolean;
-  onPress: () => void;
-  loading?: boolean;
-}) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const accent = useAccent();
-  const highlight = focused || pressed || hovered || active;
-  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
-
-  return (
-    <Pressable
-      onPress={loading ? undefined : onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={[styles.bottomNavItem, highlight && styles.bottomNavItemActive]}
-    >
-      {loading ? (
-        <ActivityIndicator size="small" color={accent.accent} />
-      ) : mciIcon ? (
-        <MaterialCommunityIcons name={mciIcon} size={22} color={tint} />
-      ) : (
-        <Feather name={icon ?? "circle"} size={20} color={tint} />
-      )}
-      <ThemedText style={[styles.bottomNavLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
-        {label}
-      </ThemedText>
-      <View style={[styles.bottomNavActiveDot, active && { backgroundColor: accent.accent }]} />
-    </Pressable>
   );
 }
 
@@ -317,7 +278,7 @@ function ProfileDropdownRow({
   );
 }
 
-function ProfileButton() {
+function ProfileButton({ compact = false }: { compact?: boolean }) {
   const { activeProfile, setActiveProfile } = useProfile();
   const navigation = useNavigation<NavigationProp>();
   const { userInfo } = useAuth();
@@ -378,7 +339,12 @@ function ProfileButton() {
     <>
       <Pressable
         ref={btnRef}
-        style={[styles.profileBtn, isActive && styles.profileBtnActive, { borderColor: activeProfile.avatar_color + "66" }]}
+        style={[
+          styles.profileBtn,
+          compact && styles.profileBtnCompact,
+          isActive && styles.profileBtnActive,
+          { borderColor: activeProfile.avatar_color + "66" },
+        ]}
         onPress={openDropdown}
         onPressIn={() => setPressed(true)}
         onPressOut={() => setPressed(false)}
@@ -390,10 +356,14 @@ function ProfileButton() {
         <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
           <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
         </View>
-        <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
-          {activeProfile.name}
-        </ThemedText>
-        <Feather name={open ? "chevron-up" : "chevron-down"} size={12} color={activeProfile.avatar_color + "99"} />
+        {compact ? null : (
+          <>
+            <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
+              {activeProfile.name}
+            </ThemedText>
+            <Feather name={open ? "chevron-up" : "chevron-down"} size={12} color={activeProfile.avatar_color + "99"} />
+          </>
+        )}
       </Pressable>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
@@ -974,7 +944,7 @@ export default function HomeScreen() {
       icon: "tv",
       filter: (e) => e.content_type === "live",
       emptyText: "No live channels watched yet",
-      maxItems: 2,
+      maxItems: 12,
     },
     {
       label: "Continue Watching",
@@ -989,7 +959,7 @@ export default function HomeScreen() {
         (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
         (e.content_type === "series" && e.series_id != null),
       emptyText: "Nothing in progress",
-      maxItems: 2,
+      maxItems: 12,
     },
   ], []);
 
@@ -1144,19 +1114,16 @@ export default function HomeScreen() {
               <SidebarItem
                 label="Live TV"
                 mciIcon="television-classic"
-                count={liveStreams.length}
                 onPress={() => goToContent("live", "Live TV")}
               />
               <SidebarItem
                 label="Movies"
                 mciIcon="movie-open-outline"
-                count={vodStreams.length}
                 onPress={() => goToContent("movies", "Movies")}
               />
               <SidebarItem
                 label="Series"
                 mciIcon="play-box-multiple-outline"
-                count={seriesList.length}
                 onPress={() => goToContent("series", "Series")}
               />
               <SidebarItem label="Catch Up" icon="clock" onPress={() => goToScreen("catchup", "CatchUp")} />
@@ -1282,9 +1249,11 @@ export default function HomeScreen() {
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+              <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+              <VpnButton />
               <UpdateAvailableButton />
               <MessagesButton onPress={() => navigation.navigate("Messages")} />
-              <ProfileButton />
+              <ProfileButton compact />
             </View>
           </View>
 
@@ -1303,6 +1272,7 @@ export default function HomeScreen() {
 
             <View style={styles.gridWrap}>
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="Live TV"
                 subtitle={`${formatCount(liveStreams.length)} Channels`}
@@ -1311,6 +1281,7 @@ export default function HomeScreen() {
                 loading={navigatingTo === "live"}
               />
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="Movies"
                 subtitle={`${formatCount(vodStreams.length)} Movies`}
@@ -1319,6 +1290,7 @@ export default function HomeScreen() {
                 loading={navigatingTo === "movies"}
               />
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="Series"
                 subtitle={`${formatCount(seriesList.length)} Series`}
@@ -1327,6 +1299,7 @@ export default function HomeScreen() {
                 loading={navigatingTo === "series"}
               />
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="Catch Up"
                 subtitle="Never miss a show"
@@ -1335,6 +1308,7 @@ export default function HomeScreen() {
                 loading={navigatingTo === "catchup"}
               />
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="TV Guide"
                 subtitle="What's on now"
@@ -1343,6 +1317,7 @@ export default function HomeScreen() {
                 loading={navigatingTo === "tvguide"}
               />
               <QuickActionCard
+                compact
                 style={styles.gridCard}
                 title="Football Centre"
                 subtitle="Live Matches & More"
@@ -1353,30 +1328,6 @@ export default function HomeScreen() {
 
             {watchRows}
           </ScrollView>
-
-          {/* Fixed bottom navigation */}
-          <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, Spacing.xs) }]}>
-            <BottomNavItem label="Home" icon="home" active onPress={() => {}} />
-            <BottomNavItem
-              label="Live TV"
-              mciIcon="television-classic"
-              onPress={() => goToContent("live", "Live TV")}
-              loading={navigatingTo === "live"}
-            />
-            <BottomNavItem
-              label="Movies"
-              mciIcon="movie-open-outline"
-              onPress={() => goToContent("movies", "Movies")}
-              loading={navigatingTo === "movies"}
-            />
-            <BottomNavItem
-              label="Series"
-              mciIcon="play-box-multiple-outline"
-              onPress={() => goToContent("series", "Series")}
-              loading={navigatingTo === "series"}
-            />
-            <BottomNavItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
-          </View>
         </View>
       )}
       <ExitConfirmModal
@@ -1632,6 +1583,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, maxWidth: 130,
   },
+  profileBtnCompact: { paddingHorizontal: Spacing.xs, paddingVertical: Spacing.xs },
   profileBtnActive: { backgroundColor: Colors.dark.backgroundSecondary },
   profileBtnAvatar: {
     width: 26, height: 26, borderRadius: 13,
@@ -1803,14 +1755,16 @@ const styles = StyleSheet.create({
   // ── Quick-action card ─────────────────────────────────────────────────────
   qaCard: {
     flex: 1,
-    minHeight: 118,
+    minHeight: 64,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "rgba(20,12,6,0.85)",
     borderRadius: BorderRadius.lg,
     borderWidth: 1.5,
     borderColor: "rgba(255,102,0,0.3)",
-    padding: Spacing.md,
-    justifyContent: "center",
-    gap: 6,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    gap: Spacing.sm,
     overflow: "hidden",
   },
   qaCardActive: {
@@ -1819,12 +1773,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 1, shadowRadius: 16, elevation: 12,
   },
   qaIconWrap: {
-    width: 46, height: 46, borderRadius: BorderRadius.full,
+    width: 40, height: 40, borderRadius: BorderRadius.full,
     backgroundColor: "rgba(255,102,0,0.1)",
     justifyContent: "center", alignItems: "center",
+    flexShrink: 0,
   },
-  qaTitle: { fontSize: 15, fontWeight: "800", color: "#fff", letterSpacing: 0.3 },
-  qaSubtitle: { fontSize: 11, fontWeight: "500", color: Colors.dark.textSecondary },
+  qaIconWrapCompact: { width: 34, height: 34 },
+  qaTextCol: { flex: 1, minWidth: 0, gap: 2 },
+  qaTitle: { fontSize: 14, fontWeight: "800", color: "#fff", letterSpacing: 0.3 },
+  qaSubtitle: { fontSize: 10, fontWeight: "500", color: Colors.dark.textSecondary },
 
   // ── Portrait ──────────────────────────────────────────────────────────────
   portraitRoot: { flex: 1 },
@@ -1837,21 +1794,7 @@ const styles = StyleSheet.create({
   portraitScroll: { flex: 1 },
   portraitScrollInner: { gap: Spacing.md, paddingTop: Spacing.sm },
   gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: Spacing.sm },
-  gridCard: { width: "48.5%" },
-
-  // ── Bottom nav (portrait) ─────────────────────────────────────────────────
-  bottomNav: {
-    flexDirection: "row",
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundDefault,
-    paddingTop: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-  },
-  bottomNavItem: { flex: 1, alignItems: "center", gap: 3, paddingVertical: Spacing.xs, borderRadius: BorderRadius.md },
-  bottomNavItemActive: { backgroundColor: "rgba(255,255,255,0.06)" },
-  bottomNavLabel: { fontSize: 10, fontWeight: "600", color: Colors.dark.textSecondary },
-  bottomNavActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "transparent" },
+  gridCard: { width: "31.8%" },
 
   // Continue Watching / Recently Watched container
   watchCard: { width: "100%" },

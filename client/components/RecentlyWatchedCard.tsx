@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Pressable, Image } from "react-native";
+import { View, StyleSheet, Pressable, Image, ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -231,17 +231,15 @@ function WatchSection({
           <ThemedText style={styles.emptyText}>{cfg.emptyText ?? "Nothing yet"}</ThemedText>
         </View>
       ) : (
-        <View style={styles.itemsList}>
-          {items.map((item, index) => (
-            <React.Fragment key={item.id}>
-              {index > 0 ? <View style={styles.separator} /> : null}
-              <RecentlyWatchedRow item={item} onPress={() => onPress?.(item)} />
-            </React.Fragment>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.itemsList}
+        >
+          {items.map((item) => (
+            <RecentlyWatchedRow key={item.id} item={item} onPress={() => onPress?.(item)} />
           ))}
-          {items.length === 1 && (max ?? 0) > 1 ? (
-            <View style={[styles.separator, { opacity: 0 }]} />
-          ) : null}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -304,20 +302,15 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
           <ThemedText style={styles.emptyText}>Start watching something</ThemedText>
         </View>
       ) : (
-        <View style={styles.itemsList}>
-          {(displayItems ?? []).map((item, index) => (
-            <React.Fragment key={item.id}>
-              {index > 0 ? <View style={styles.separator} /> : null}
-              <RecentlyWatchedRow
-                item={item}
-                onPress={() => onPress?.(item)}
-              />
-            </React.Fragment>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.itemsList}
+        >
+          {(displayItems ?? []).map((item) => (
+            <RecentlyWatchedRow key={item.id} item={item} onPress={() => onPress?.(item)} />
           ))}
-          {displayItems && displayItems.length === 1 ? (
-            <View style={[styles.separator, { opacity: 0 }]} />
-          ) : null}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -453,14 +446,11 @@ const styles = StyleSheet.create({
   itemsList: {
     flexDirection: "row",
     gap: Spacing.sm,
-  },
-  separator: {
-    width: 1,
-    backgroundColor: Colors.dark.border,
+    paddingRight: Spacing.xs,
   },
 
   row: {
-    flex: 1,
+    width: 210,
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
@@ -468,7 +458,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 4,
     overflow: "hidden",
-    minWidth: 0,
   },
 
   thumbWrap: {
