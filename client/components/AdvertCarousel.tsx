@@ -43,13 +43,14 @@ export default function AdvertCarousel({
           const res = await fetch(new URL("/api/adverts", base).toString());
           if (res.ok && !cancelled) {
             const data: Advert[] = await res.json();
-            // Untagged ads (null orientation) show in both; tagged ones only in
-            // their orientation. Fall back to all ads if none match (so the
-            // banner is never empty before the user uploads orientation art).
+            // Strict per-orientation separation: untagged ads (null orientation)
+            // show in both, tagged ads show ONLY in their orientation. No
+            // cross-orientation fallback — if none match, the carousel shows the
+            // "Coming Soon" placeholder rather than the wrong-orientation art.
             const matched = orientation
               ? data.filter((a) => !a.orientation || a.orientation === orientation)
               : data;
-            setAdverts(matched.length ? matched : data);
+            setAdverts(matched);
             setIndex(0);
           }
         } catch {
