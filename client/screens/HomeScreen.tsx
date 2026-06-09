@@ -1236,10 +1236,11 @@ export default function HomeScreen() {
                   loading={navigatingTo === "catchup"}
                 />
                 <QuickActionCard
-                  title="Football Centre"
-                  subtitle="Live Matches & More"
-                  mciIcon="soccer"
-                  onPress={() => navigation.navigate("FootballCentre")}
+                  title="TV Guide"
+                  subtitle="What's on now"
+                  icon="calendar"
+                  onPress={() => goToScreen("tvguide", "TvGuide")}
+                  loading={navigatingTo === "tvguide"}
                 />
               </View>
 
