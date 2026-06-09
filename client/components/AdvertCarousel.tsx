@@ -63,21 +63,34 @@ export default function AdvertCarousel({
     }, [])
   );
 
+  // Fade OUT then change the index. The fade IN is handled by the effect below
+  // — starting it here (synchronously, before React re-renders the new image)
+  // is what caused the previous advert to flash back in during the fade-in.
   const advance = useCallback(() => {
     if (adverts.length <= 1) return;
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
-    }).start(() => {
-      setIndex((prev) => (prev + 1) % adverts.length);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+    }).start(({ finished }) => {
+      if (finished) setIndex((prev) => (prev + 1) % adverts.length);
     });
   }, [adverts.length, fadeAnim]);
+
+  // Fade the new advert IN only after React has committed it to screen, so the
+  // image being faded in is always the new one (never a flash of the old one).
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [index, fadeAnim]);
 
   useEffect(() => {
     if (adverts.length > 1) {
@@ -88,10 +101,11 @@ export default function AdvertCarousel({
 
   const goTo = (i: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
-    Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
-      setIndex(i);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    });
+    if (i !== index) {
+      Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => {
+        if (finished) setIndex(i);
+      });
+    }
     if (adverts.length > 1) {
       timerRef.current = setInterval(advance, CYCLE_MS);
     }
