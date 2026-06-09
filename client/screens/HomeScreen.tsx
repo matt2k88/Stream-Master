@@ -200,7 +200,10 @@ function QuickActionCard({
         )}
       </View>
       <View style={styles.qaTextCol}>
-        <ThemedText style={[styles.qaTitle, isActive && { color: accent.accent }]} numberOfLines={compact ? 2 : 1}>
+        <ThemedText
+          style={[styles.qaTitle, compact && styles.qaTitleCompact, isActive && { color: accent.accent }]}
+          numberOfLines={2}
+        >
           {loading ? "Loading…" : title}
         </ThemedText>
         {compact ? null : (
@@ -366,7 +369,13 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
         )}
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        supportedOrientations={["portrait", "landscape"]}
+        onRequestClose={() => setOpen(false)}
+      >
         <Pressable style={styles.profileDropdownBackdrop} onPress={() => setOpen(false)}>
           <Pressable
             style={[styles.profileDropdown, anchor ? { top: anchor.top, right: anchor.right } : { top: 64, right: Spacing.md }]}
@@ -1209,7 +1218,7 @@ export default function HomeScreen() {
                   loading={navigatingTo === "movies"}
                 />
                 <QuickActionCard
-                  title="TV Shows"
+                  title="Series"
                   subtitle={`${formatCount(seriesList.length)} Series`}
                   mciIcon="play-box-multiple-outline"
                   onPress={() => goToContent("series", "Series")}
@@ -1755,7 +1764,7 @@ const styles = StyleSheet.create({
   // ── Quick-action card ─────────────────────────────────────────────────────
   qaCard: {
     flex: 1,
-    minHeight: 64,
+    minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(20,12,6,0.85)",
@@ -1763,8 +1772,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "rgba(255,102,0,0.3)",
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xs,
+    gap: Spacing.xs,
     overflow: "hidden",
   },
   qaCardActive: {
@@ -1773,14 +1782,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 1, shadowRadius: 16, elevation: 12,
   },
   qaIconWrap: {
-    width: 40, height: 40, borderRadius: BorderRadius.full,
+    width: 36, height: 36, borderRadius: BorderRadius.full,
     backgroundColor: "rgba(255,102,0,0.1)",
     justifyContent: "center", alignItems: "center",
     flexShrink: 0,
   },
-  qaIconWrapCompact: { width: 34, height: 34 },
-  qaTextCol: { flex: 1, minWidth: 0, gap: 2 },
-  qaTitle: { fontSize: 14, fontWeight: "800", color: "#fff", letterSpacing: 0.3 },
+  qaIconWrapCompact: { width: 32, height: 32 },
+  qaTextCol: { flex: 1, minWidth: 0, gap: 1 },
+  qaTitle: { fontSize: 13, fontWeight: "800", color: "#fff", letterSpacing: 0.2, lineHeight: 16 },
+  qaTitleCompact: { fontSize: 12, lineHeight: 15 },
   qaSubtitle: { fontSize: 10, fontWeight: "500", color: Colors.dark.textSecondary },
 
   // ── Portrait ──────────────────────────────────────────────────────────────
