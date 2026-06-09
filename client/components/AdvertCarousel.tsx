@@ -122,7 +122,7 @@ export default function AdvertCarousel({
         <Image
           source={{ uri: current.image_url }}
           style={styles.image}
-          contentFit="cover"
+          contentFit={orientation === "landscape" ? "contain" : "cover"}
           transition={0}
         />
         {current.name ? (
