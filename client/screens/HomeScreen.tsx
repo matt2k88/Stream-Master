@@ -1192,10 +1192,14 @@ export default function HomeScreen() {
 
             <ScrollView
               style={styles.contentScroll}
-              contentContainerStyle={styles.contentScrollInner}
+              contentContainerStyle={styles.contentBody}
               showsVerticalScrollIndicator={false}
             >
-              {/* Advert banner */}
+              {/* Advert banner — grows to fill remaining height; pushes the
+                  quick actions + watch rows down to the bottom on large screens
+                  and shrinks (to minHeight) on smaller ones. contentContainer
+                  flexGrow:1 lets short landscape viewports scroll instead of
+                  clipping. */}
               <View style={styles.advertBannerLandscape}>
                 <AdvertCarousel style={StyleSheet.absoluteFill} />
               </View>
@@ -1239,7 +1243,7 @@ export default function HomeScreen() {
                 />
               </View>
 
-              {/* Continue Watching + Recently Watched */}
+              {/* Continue Watching + Recently Watched — pinned to the bottom */}
               {watchRows}
             </ScrollView>
           </View>
@@ -1748,10 +1752,12 @@ const styles = StyleSheet.create({
   topDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
   contentScroll: { flex: 1 },
-  contentScrollInner: { gap: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.lg },
+  contentBody: { flexGrow: 1, gap: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.lg },
 
   advertBannerLandscape: {
-    width: "100%", height: 150,
+    width: "100%",
+    flex: 1,
+    minHeight: 130,
     borderRadius: BorderRadius.md, overflow: "hidden",
   },
   advertBannerPortrait: {
@@ -1804,7 +1810,9 @@ const styles = StyleSheet.create({
   portraitScroll: { flex: 1 },
   portraitScrollInner: { gap: Spacing.md, paddingTop: Spacing.sm },
   gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: Spacing.sm },
-  gridCard: { width: "31.8%" },
+  // flexGrow/Shrink 0 + flexBasis override the qaCard `flex:1` (which sets
+  // flexBasis:0 and would otherwise squash all 6 cards onto a single row).
+  gridCard: { flexGrow: 0, flexShrink: 0, flexBasis: "31.8%", width: "31.8%" },
 
   // Continue Watching / Recently Watched container
   watchCard: { width: "100%" },
