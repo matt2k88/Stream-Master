@@ -1756,7 +1756,8 @@ const styles = StyleSheet.create({
 
   advertBannerLandscape: {
     width: "100%",
-    aspectRatio: 16 / 5,
+    flex: 1,
+    minHeight: 130,
     borderRadius: BorderRadius.md, overflow: "hidden",
   },
   advertBannerPortrait: {
