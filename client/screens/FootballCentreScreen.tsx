@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -1231,6 +1232,7 @@ export default function FootballCentreScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <Touchable
           style={styles.iconBtn}
           activeStyle={styles.iconBtnActive}

@@ -1,6 +1,7 @@
 import React, {
   useState, useRef, useCallback, useEffect, useMemo,
 } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View, StyleSheet, FlatList, Pressable, Animated,
   PanResponder, useWindowDimensions, Platform, ActivityIndicator,
@@ -528,6 +529,7 @@ export default function TvGuideScreen() {
     <ThemedView style={[styles.container, { paddingTop: padT }]}>
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <View style={[styles.topBar, { paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <TopBarBtn onPress={() => navigation.goBack()}>
           <Feather name="arrow-left" size={18} color={Colors.dark.accent} />
         </TopBarBtn>

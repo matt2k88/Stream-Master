@@ -1167,7 +1167,7 @@ export default function HomeScreen() {
                 <LabelledAction label="Refresh">
                   <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
                 </LabelledAction>
-                <LabelledAction label="Sports">
+                <LabelledAction label="Football">
                   <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
                 </LabelledAction>
                 <LabelledAction label="VPN">

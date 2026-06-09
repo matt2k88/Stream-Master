@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -1811,6 +1812,7 @@ export default function ContentListScreen() {
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <BackBtn onPress={() => navigation.goBack()} />
         <View style={styles.headerTitleRow}>
           {isFavouritesView ? (

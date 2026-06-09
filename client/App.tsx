@@ -31,6 +31,8 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import MessagePopup from "@/components/MessagePopup";
 import MatchReminderOverlay from "@/components/MatchReminderOverlay";
 import IntroOverlay from "@/components/IntroOverlay";
+import SideMenuDrawer from "@/components/SideMenuDrawer";
+import { SideMenuProvider } from "@/contexts/SideMenuContext";
 import { Colors } from "@/constants/theme";
 
 export default function App() {
@@ -104,12 +106,15 @@ export default function App() {
                         <MessageProvider>
                           <VpnProvider>
                           <KeyboardProvider>
-                            <NavigationContainer ref={navigationRef}>
-                              <RootStackNavigator />
-                            </NavigationContainer>
-                            <StatusBar style="light" hidden={false} />
-                            <MessagePopup />
-                            <MatchReminderOverlay />
+                            <SideMenuProvider>
+                              <NavigationContainer ref={navigationRef}>
+                                <RootStackNavigator />
+                              </NavigationContainer>
+                              <StatusBar style="light" hidden={false} />
+                              <MessagePopup />
+                              <MatchReminderOverlay />
+                              <SideMenuDrawer />
+                            </SideMenuProvider>
                           </KeyboardProvider>
                           </VpnProvider>
                         </MessageProvider>

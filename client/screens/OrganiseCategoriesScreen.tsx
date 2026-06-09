@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -316,6 +317,7 @@ export default function OrganiseCategoriesScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+          <SideMenuButton />
           <BackBtn onPress={() => navigation.goBack()} />
           <View style={{ flex: 1 }}>
             <ThemedText style={styles.headerTitle} numberOfLines={1}>{title}</ThemedText>
@@ -335,6 +337,7 @@ export default function OrganiseCategoriesScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <BackBtn onPress={() => navigation.goBack()} />
         <View style={{ flex: 1 }}>
           <ThemedText style={styles.headerTitle} numberOfLines={1}>{title}</ThemedText>

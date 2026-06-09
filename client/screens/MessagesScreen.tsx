@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -77,6 +78,7 @@ export default function MessagesScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <Pressable
           style={[styles.iconBtn, backActive && styles.iconBtnActive]}
           onPress={() => navigation.goBack()}

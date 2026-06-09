@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -726,6 +727,7 @@ export default function FootballSettingsScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <Touchable style={styles.iconBtn} activeStyle={styles.iconBtnActive} onPress={() => navigation.goBack()}>
           {(active) => <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />}
         </Touchable>

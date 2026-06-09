@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import { View, StyleSheet, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -97,6 +98,7 @@ export default function OrganiseTypePickerScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle}>Organise Categories</ThemedText>
         <View style={{ width: 40 }} />

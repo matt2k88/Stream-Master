@@ -25,6 +25,7 @@
 //   ✗ (red)     = clearly below recommended
 //
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -649,6 +650,7 @@ export default function SpeedTestScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <HoverBtn
           style={styles.iconBtn}
           activeStyle={styles.iconBtnActive}

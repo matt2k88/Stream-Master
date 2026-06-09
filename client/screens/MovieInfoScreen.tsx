@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -343,6 +344,7 @@ export default function MovieInfoScreen() {
   // ── Render ───────────────────────────────────────────────────────────────
   const Header = (
     <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+      <SideMenuButton />
       <HeaderBtn icon="arrow-left" onPress={() => navigation.goBack()} />
       <ThemedText style={styles.headerTitle} numberOfLines={1}>
         {title}

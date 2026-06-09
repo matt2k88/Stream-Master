@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -325,6 +326,7 @@ export default function ReferralsScreen() {
     <ThemedView style={styles.root}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: padTop, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <HoverBtn
           style={styles.iconBtn}
           activeStyle={styles.iconBtnActive}

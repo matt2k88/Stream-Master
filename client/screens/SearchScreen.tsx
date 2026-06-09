@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import { Keyboard } from "react-native";
 import {
   View,
@@ -273,6 +274,7 @@ export default function SearchScreen() {
     <ThemedView style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <Pressable
           style={[styles.backBtn, backActive && styles.backBtnActive]}
           onPress={() => navigation.goBack()}

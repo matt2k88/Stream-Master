@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View, StyleSheet, FlatList, Pressable, ActivityIndicator,
   ScrollView, useWindowDimensions,
@@ -311,6 +312,7 @@ export default function CatchUpScreen() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padT, paddingLeft: padH, paddingRight: padH }]}>
+        <SideMenuButton />
         <Pressable
           style={({ focused, pressed }) => [styles.backBtn, (focused || pressed) && styles.backBtnActive]}
           onPress={handleBack}

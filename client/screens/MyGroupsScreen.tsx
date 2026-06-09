@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -355,6 +356,7 @@ export default function MyGroupsScreen() {
     return (
       <ThemedView style={styles.container}>
         <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, paddingHorizontal: padH }]}>
+          <SideMenuButton />
           <HeaderBtn icon="arrow-left" label="Back" iconOnly onPress={() => navigation.goBack()} />
           <View style={styles.headerTitleWrap}>
             <Feather name="folder" size={16} color={Colors.dark.accent} />
@@ -375,6 +377,7 @@ export default function MyGroupsScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + Spacing.sm, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <HeaderBtn icon="arrow-left" label="Back" iconOnly onPress={() => navigation.goBack()} />
         <View style={styles.headerTitleWrap}>
           <Feather name="folder" size={16} color={Colors.dark.accent} />

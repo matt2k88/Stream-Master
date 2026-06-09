@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -316,6 +317,7 @@ export default function SeriesDetailScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={styles.headerTitle} numberOfLines={1}>{seriesName}</ThemedText>
         <WatchlistBtn active={inWatchlist} onPress={handleToggleWatchlist} />

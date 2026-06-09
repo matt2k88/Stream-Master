@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
   StyleSheet,
@@ -724,6 +725,7 @@ export default function ContentRequestsScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
+        <SideMenuButton />
         <BackBtn onPress={() => navigation.goBack()} />
         <ThemedText style={[styles.headerTitle, { fontSize: scaleFont(18) }]} numberOfLines={1}>
           Content Requests
