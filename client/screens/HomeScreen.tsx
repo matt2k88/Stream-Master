@@ -19,9 +19,7 @@ import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
-import { useUISettings } from "@/contexts/UISettingsContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
-import type { ThemeIconKey } from "@/constants/themes";
 import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
@@ -81,119 +79,182 @@ function ExpiryBanner({
   );
 }
 
-interface NavButtonProps {
-  hideCount?: boolean;
-  title: string;
-  icon: keyof typeof Feather.glyphMap;
-  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
-  /** Theme icon slot — when the active theme provides a themed image
-   *  for this slot, it replaces the vector glyph. */
-  iconKey?: ThemeIconKey;
-  onPress: () => void;
-  style?: any;
-  iconSize?: number;
-  textSize?: number;
-  compact?: boolean;
-  loading?: boolean;
-  count?: number;
-  countLabel?: string;
-}
-
 function formatCount(n: number) {
   return n.toLocaleString("en-US");
 }
 
-function NavButton({
-  title, icon, mciIcon, iconKey, onPress, style, iconSize = 30, textSize = 16,
-  compact = false, loading = false, count, countLabel, hideCount = false,
-}: NavButtonProps) {
+// ── Sidebar item (landscape / TV) ─────────────────────────────────────────
+function SidebarItem({
+  icon, mciIcon, label, active = false, count, isNew = false, onPress, preferFocus,
+}: {
+  icon?: keyof typeof Feather.glyphMap;
+  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  active?: boolean;
+  count?: number;
+  isNew?: boolean;
+  onPress: () => void;
+  preferFocus?: boolean;
+}) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed || loading;
-  const { scaleFont } = useUISettings();
-  const { getIcon } = useAppTheme();
-  // Only scale the label — leaving icon size untouched preserves the carefully
-  // tuned 2x2 button grid layout in landscape (Live TV / Movies / Series / TV Guide).
-  const scaledTextSize = scaleFont(textSize);
-  const showCount = typeof count === "number" && !hideCount;
+  const [hovered, setHovered] = useState(false);
   const accent = useAccent();
-  const iconColor = isActive ? accent.hover : accent.accent;
-  // Themed icon images intentionally disabled — keep the original vector
-  // glyphs and let them re-tint via the theme accent instead.
-  void iconKey; void getIcon;
+  const highlight = focused || pressed || hovered || active;
+  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
 
   return (
     <Pressable
+      hasTVPreferredFocus={preferFocus}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={[
-        styles.navButton,
-        compact && styles.navButtonCompact,
-        { borderColor: accent.withAlpha(accent.accent, compact ? 0.25 : 0.35) },
-        isActive && styles.navButtonActive,
-        isActive && { borderColor: accent.accent, shadowColor: accent.accent },
-        style,
+        styles.sidebarItem,
+        highlight && {
+          backgroundColor: accent.withAlpha(accent.accent, active ? 0.16 : 0.1),
+          borderColor: accent.accent,
+        },
       ]}
+    >
+      {active ? <View style={[styles.sidebarActiveBar, { backgroundColor: accent.accent }]} /> : null}
+      <View style={styles.sidebarIconWrap}>
+        {mciIcon ? (
+          <MaterialCommunityIcons name={mciIcon} size={20} color={tint} />
+        ) : (
+          <Feather name={icon ?? "circle"} size={18} color={tint} />
+        )}
+      </View>
+      <ThemedText style={[styles.sidebarLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
+        {label}
+      </ThemedText>
+      {isNew ? (
+        <View style={[styles.newBadge, { backgroundColor: accent.accent }]}>
+          <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
+        </View>
+      ) : typeof count === "number" ? (
+        <View style={[styles.sidebarCount, { borderColor: accent.withAlpha(accent.accent, 0.4) }]}>
+          <ThemedText style={[styles.sidebarCountText, { color: tint }]}>{formatCount(count)}</ThemedText>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+// ── Quick-action card (advert row + grid) ─────────────────────────────────
+function QuickActionCard({
+  icon, mciIcon, title, subtitle, onPress, loading = false, preferFocus, style,
+}: {
+  icon?: keyof typeof Feather.glyphMap;
+  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  loading?: boolean;
+  preferFocus?: boolean;
+  style?: any;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const accent = useAccent();
+  const isActive = focused || pressed || hovered || loading;
+  const iconColor = isActive ? accent.hover : accent.accent;
+
+  return (
+    <Pressable
+      hasTVPreferredFocus={preferFocus}
       onPress={loading ? undefined : onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[
+        styles.qaCard,
+        { borderColor: accent.withAlpha(accent.accent, 0.3) },
+        isActive && styles.qaCardActive,
+        isActive && { borderColor: accent.accent, shadowColor: accent.accent },
+        style,
+      ]}
     >
-      {/* Always-on subtle gradient sheen — stronger when focused */}
       <LinearGradient
         colors={isActive ? accent.gradStrong : accent.gradSoft}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.9, y: 1 }}
       />
-      <View style={[styles.iconWrap, compact && styles.iconWrapCompact, isActive && styles.iconWrapActive]}>
+      <View style={[styles.qaIconWrap, isActive && { backgroundColor: accent.accentDim }]}>
         {loading ? (
-          <ActivityIndicator size={Math.max(18, iconSize - 4)} color={accent.accent} />
+          <ActivityIndicator color={accent.accent} />
         ) : mciIcon ? (
-          <MaterialCommunityIcons name={mciIcon} size={iconSize} color={iconColor} />
+          <MaterialCommunityIcons name={mciIcon} size={26} color={iconColor} />
         ) : (
-          <Feather name={icon} size={iconSize} color={iconColor} />
+          <Feather name={icon ?? "circle"} size={24} color={iconColor} />
         )}
       </View>
-      <ThemedText
-        style={[
-          styles.navButtonText,
-          { fontSize: scaledTextSize },
-          isActive && styles.navButtonTextActive,
-          isActive && { color: accent.accent, textShadowColor: accent.accent, textShadowRadius: 8 },
-        ]}
-        numberOfLines={1}
-      >
+      <ThemedText style={[styles.qaTitle, isActive && { color: accent.accent }]} numberOfLines={1}>
         {loading ? "Loading…" : title}
       </ThemedText>
-      {showCount ? (
-        <View
-          style={[
-            styles.countChip,
-            {
-              borderColor: accent.withAlpha(accent.accent, 0.55),
-              backgroundColor: accent.withAlpha(accent.accent, 0.08),
-            },
-            isActive && styles.countChipActive,
-            isActive && { borderColor: accent.hover, backgroundColor: accent.accent },
-          ]}
-        >
-          <ThemedText
-            style={[
-              styles.countChipNumber,
-              { color: accent.accent },
-              isActive && styles.countChipNumberActive,
-            ]}
-          >
-            {formatCount(count!)}
-          </ThemedText>
-          {countLabel ? (
-            <ThemedText style={[styles.countChipLabel, isActive && styles.countChipLabelActive]} numberOfLines={1}>
-              {countLabel}
-            </ThemedText>
-          ) : null}
-        </View>
+      <ThemedText style={styles.qaSubtitle} numberOfLines={1}>{subtitle}</ThemedText>
+    </Pressable>
+  );
+}
+
+// ── Top-bar action with a caption underneath ──────────────────────────────
+function LabelledAction({ label, children }: { label?: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.labelledAction}>
+      {children}
+      {label ? (
+        <ThemedText style={styles.actionCaption} numberOfLines={1}>{label}</ThemedText>
       ) : null}
-      {isActive ? <View style={[styles.activeIndicator, { backgroundColor: accent.accent, shadowColor: accent.accent }]} /> : null}
+    </View>
+  );
+}
+
+// ── Bottom-nav item (portrait / mobile) ───────────────────────────────────
+function BottomNavItem({
+  icon, mciIcon, label, active = false, onPress, loading = false,
+}: {
+  icon?: keyof typeof Feather.glyphMap;
+  mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
+  label: string;
+  active?: boolean;
+  onPress: () => void;
+  loading?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const accent = useAccent();
+  const highlight = focused || pressed || active;
+  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
+
+  return (
+    <Pressable
+      onPress={loading ? undefined : onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={styles.bottomNavItem}
+    >
+      {loading ? (
+        <ActivityIndicator size="small" color={accent.accent} />
+      ) : mciIcon ? (
+        <MaterialCommunityIcons name={mciIcon} size={22} color={tint} />
+      ) : (
+        <Feather name={icon ?? "circle"} size={20} color={tint} />
+      )}
+      <ThemedText style={[styles.bottomNavLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
+        {label}
+      </ThemedText>
+      <View style={[styles.bottomNavActiveDot, active && { backgroundColor: accent.accent }]} />
     </Pressable>
   );
 }
@@ -743,14 +804,8 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  // On phones (portrait or landscape) the count chips crowd the LIVE TV /
-  // MOVIES / SERIES tiles and squash the labels — only tablets, TVs and
-  // desktops have enough width to show them comfortably. Threshold is the
-  // shorter side of the viewport so we don't get confused by orientation.
-  const minSide = Math.min(width, height);
-  const isSmallLandscape = minSide < 500;
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
-  const { refreshActiveProfile, isGuest } = useProfile();
+  const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme } = useAppTheme();
 
@@ -1017,256 +1072,291 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const watchRows = isGuest ? (
+    <View style={[styles.watchCard, styles.guestPromptCard]}>
+      <GuestPrompt
+        variant="compact"
+        icon="clock"
+        title="No Watch History"
+        message="Create a profile to keep your watch history and continue watching."
+        onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+      />
+    </View>
+  ) : (
+    <RecentlyWatchedCard
+      style={styles.watchCard}
+      refreshKey={recentRefreshKey}
+      maxItems={2}
+      sections={watchSections}
+      onPress={handleRecentPress}
+    />
+  );
+
   return (
     <ThemedView style={styles.container}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
-        <View style={styles.headerBrand}>
-          <Image
-            source={require("../../assets/images/icon.png")}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
-          {isLandscape ? (
-            <View>
-              <ThemedText style={styles.appName}>Ultra Cast</ThemedText>
-              <ThemedText style={[styles.appVersion, { color: themeAccent.accent }]}>v3</ThemedText>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.headerActions}>
-          <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-          <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-          {/* Football Centre stays reachable regardless of the kill-switch —
-              the switch only hides the in-player GOAL tracker overlay, not the
-              dedicated Centre (whose scores keep updating server-side). */}
-          <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
-
-          <VpnButton />
-          {/* Profile pill is large; hide on portrait where the header
-              is cramped — users can still switch profile via the
-              Profile option in Account Info. */}
-          {isLandscape ? <ProfileButton /> : null}
-          <UpdateAvailableButton />
-          <MessagesButton onPress={() => navigation.navigate("Messages")} />
-          <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
-        </View>
-      </View>
-
-      <View style={[styles.headerDivider, { marginHorizontal: padH }]} />
-
-      {/* ── Expiry warning ──────────────────────────────────────────────────── */}
-      {/* Subtle one-line banner that only appears when the user's subscription
-          is within EXPIRY_WARNING_DAYS (7) of expiring or has expired. Lifetime
-          accounts never see this. Tapping opens Account Info. */}
-      <ExpiryBanner status={expiryStatus} onPress={handleRenewalReopen} />
-
-      {/* ── Announcement Ticker ─────────────────────────────────────────────── */}
-      <AnnouncementTicker />
-
-      {/* ── Body ───────────────────────────────────────────────────────────── */}
       {isLandscape ? (
-        // ── Landscape / TV layout ──────────────────────────────────────────
-        // Left 50%: Live TV (top, large) + Movies | Series (bottom, equal)
-        // Right 50%: Advert carousel (fills top) + Search All (bottom)
-        <View style={[styles.bodyLandscape, { paddingHorizontal: padH, paddingBottom: padB }]}>
+        // ── Landscape / TV layout: persistent sidebar + content column ───────
+        <View style={styles.landscapeRoot}>
+          {/* ── Sidebar ───────────────────────────────────────────────────── */}
+          <View
+            style={[
+              styles.sidebar,
+              { paddingTop: padT, paddingBottom: padB, paddingLeft: Math.max(insets.left, Spacing.sm) },
+            ]}
+          >
+            <View style={styles.sidebarBrand}>
+              <Image
+                source={require("../../assets/images/icon.png")}
+                style={styles.sidebarLogo}
+                resizeMode="contain"
+              />
+              <View>
+                <ThemedText style={styles.appName}>Ultra Cast</ThemedText>
+                <ThemedText style={[styles.appVersion, { color: themeAccent.accent }]}>v3</ThemedText>
+              </View>
+            </View>
 
-          {/* LEFT PANEL — two sub-columns */}
-          <View style={styles.leftPanel}>
-            {/* Sub-column A: Live TV | Catch Up | TV Guide */}
-            <View style={styles.colA}>
-              <NavButton
-                title="LIVE TV"
-                count={liveStreams.length}
-                countLabel="CHANNELS"
-                hideCount={isSmallLandscape}
-                icon="tv"
+            <ScrollView
+              style={styles.sidebarScroll}
+              contentContainerStyle={styles.sidebarScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <SidebarItem label="Home" icon="home" active onPress={() => {}} />
+              <SidebarItem
+                label="Live TV"
                 mciIcon="television-classic"
-                iconKey="liveTv"
+                count={liveStreams.length}
                 onPress={() => goToContent("live", "Live TV")}
-                loading={navigatingTo === "live"}
-                style={styles.colATop}
-                iconSize={42}
-                textSize={18}
               />
-              <NavButton
-                title="Catch Up"
-                icon="clock"
-                iconKey="catchUp"
-                onPress={() => goToScreen("catchup", "CatchUp")}
-                loading={navigatingTo === "catchup"}
-                style={styles.catchUpBtn}
-                iconSize={16}
-                textSize={12}
-                compact
-              />
-              <NavButton
-                title="TV Guide"
-                icon="calendar"
-                iconKey="tvGuide"
-                onPress={() => goToScreen("tvguide", "TvGuide")}
-                loading={navigatingTo === "tvguide"}
-                style={styles.colABot}
-                iconSize={22}
-                textSize={13}
-                compact
-              />
-            </View>
-            {/* Sub-column B: Movies | Series stacked 50/50 */}
-            <View style={styles.colB}>
-              <NavButton
-                title="MOVIES"
-                count={vodStreams.length}
-                countLabel="MOVIES"
-                hideCount={isSmallLandscape}
-                icon="film"
+              <SidebarItem
+                label="Movies"
                 mciIcon="movie-open-outline"
-                iconKey="movies"
+                count={vodStreams.length}
                 onPress={() => goToContent("movies", "Movies")}
-                loading={navigatingTo === "movies"}
-                style={styles.colBBtn}
-                iconSize={38}
-                textSize={17}
               />
-              <NavButton
-                title="SERIES"
-                count={seriesList.length}
-                countLabel="SERIES"
-                hideCount={isSmallLandscape}
-                icon="grid"
+              <SidebarItem
+                label="Series"
                 mciIcon="play-box-multiple-outline"
-                iconKey="series"
+                count={seriesList.length}
                 onPress={() => goToContent("series", "Series")}
-                loading={navigatingTo === "series"}
-                style={styles.colBBtn}
-                iconSize={38}
-                textSize={17}
               />
-            </View>
+              <SidebarItem label="Catch Up" icon="clock" onPress={() => goToScreen("catchup", "CatchUp")} />
+              <SidebarItem label="TV Guide" icon="calendar" onPress={() => goToScreen("tvguide", "TvGuide")} />
+
+              <View style={styles.sidebarDivider} />
+
+              <SidebarItem label="Search" icon="search" onPress={() => navigation.navigate("Search")} />
+              {/* Football Centre stays reachable regardless of the kill-switch —
+                  the switch only hides the in-player GOAL tracker overlay, not the
+                  dedicated Centre (whose scores keep updating server-side). */}
+              <SidebarItem label="Football Centre" mciIcon="soccer" isNew onPress={() => navigation.navigate("FootballCentre")} />
+              <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
+            </ScrollView>
           </View>
 
-          {/* RIGHT PANEL */}
-          <View style={styles.rightPanel}>
-            {/* Advert carousel */}
-            <AdvertCarousel style={styles.carouselFill} />
-            {/* Recently Watched (live) + Continue Watching (movies/series) */}
-            {isGuest ? (
-              <View style={[styles.recentlyWatched, styles.guestPromptCard]}>
-                <GuestPrompt
-                  variant="compact"
+          {/* ── Content column ────────────────────────────────────────────── */}
+          <View style={[styles.contentArea, { paddingTop: padT, paddingRight: padH, paddingBottom: padB }]}>
+            {/* Top bar: greeting + labelled action icons + profile dropdown */}
+            <View style={styles.topBar}>
+              <View style={styles.greetingWrap}>
+                <ThemedText style={styles.greetingHello}>Welcome back,</ThemedText>
+                <ThemedText style={[styles.greetingName, { color: themeAccent.accent }]} numberOfLines={1}>
+                  {activeProfile?.name ?? "Guest"}
+                </ThemedText>
+              </View>
+
+              <View style={styles.topBarActions}>
+                <LabelledAction label="Search">
+                  <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
+                </LabelledAction>
+                <LabelledAction label="Refresh">
+                  <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+                </LabelledAction>
+                <LabelledAction label="Sports">
+                  <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+                </LabelledAction>
+                <LabelledAction label="VPN">
+                  <VpnButton />
+                </LabelledAction>
+                {/* Conditional update alert — renders nothing unless a newer
+                    build exists, so it carries no caption. */}
+                <UpdateAvailableButton />
+                <LabelledAction label="Alerts">
+                  <MessagesButton onPress={() => navigation.navigate("Messages")} />
+                </LabelledAction>
+                <LabelledAction label="Settings">
+                  <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
+                </LabelledAction>
+                <ProfileButton />
+              </View>
+            </View>
+
+            <View style={styles.topDivider} />
+            <ExpiryBanner status={expiryStatus} onPress={handleRenewalReopen} />
+            <AnnouncementTicker />
+
+            <ScrollView
+              style={styles.contentScroll}
+              contentContainerStyle={styles.contentScrollInner}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Advert banner */}
+              <View style={styles.advertBannerLandscape}>
+                <AdvertCarousel style={StyleSheet.absoluteFill} />
+              </View>
+
+              {/* Quick-action cards */}
+              <View style={styles.quickRow}>
+                <QuickActionCard
+                  title="Live TV"
+                  subtitle={`${formatCount(liveStreams.length)} Channels`}
+                  mciIcon="television-classic"
+                  onPress={() => goToContent("live", "Live TV")}
+                  loading={navigatingTo === "live"}
+                  preferFocus
+                />
+                <QuickActionCard
+                  title="Movies"
+                  subtitle={`${formatCount(vodStreams.length)} Movies`}
+                  mciIcon="movie-open-outline"
+                  onPress={() => goToContent("movies", "Movies")}
+                  loading={navigatingTo === "movies"}
+                />
+                <QuickActionCard
+                  title="TV Shows"
+                  subtitle={`${formatCount(seriesList.length)} Series`}
+                  mciIcon="play-box-multiple-outline"
+                  onPress={() => goToContent("series", "Series")}
+                  loading={navigatingTo === "series"}
+                />
+                <QuickActionCard
+                  title="Catch Up"
+                  subtitle="Never miss a show"
                   icon="clock"
-                  title="No Watch History"
-                  message="Create a profile to keep your watch history and continue watching."
-                  onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+                  onPress={() => goToScreen("catchup", "CatchUp")}
+                  loading={navigatingTo === "catchup"}
+                />
+                <QuickActionCard
+                  title="Football Centre"
+                  subtitle="Live Matches & More"
+                  mciIcon="soccer"
+                  onPress={() => navigation.navigate("FootballCentre")}
                 />
               </View>
-            ) : (
-              <RecentlyWatchedCard
-                style={styles.recentlyWatched}
-                refreshKey={recentRefreshKey}
-                maxItems={2}
-                sections={watchSections}
-                onPress={handleRecentPress}
-              />
-            )}
+
+              {/* Continue Watching + Recently Watched */}
+              {watchRows}
+            </ScrollView>
           </View>
         </View>
       ) : (
-        // ── Portrait / Mobile layout ────────────────────────────────────────
-        <View style={[styles.bodyPortrait, { paddingHorizontal: padH, paddingBottom: padB }]}>
-          {/* Portrait top: Live TV full-width */}
-          <NavButton
-            title="LIVE TV"
-            count={liveStreams.length}
-            countLabel="CHANNELS"
-            icon="tv"
-            mciIcon="television-classic"
-            iconKey="liveTv"
-            onPress={() => goToContent("live", "Live TV")}
-            loading={navigatingTo === "live"}
-            style={styles.portraitTopFull}
-            iconSize={32}
-            textSize={16}
-            hideCount
-          />
-          {/* Portrait mid row: Movies + Series */}
-          <View style={styles.portraitSubRowMain}>
-            <NavButton
-              title="MOVIES"
-              count={vodStreams.length}
-              countLabel="MOVIES"
-              icon="film"
-              mciIcon="movie-open-outline"
-              iconKey="movies"
-              onPress={() => goToContent("movies", "Movies")}
-              loading={navigatingTo === "movies"}
-              style={styles.portraitSubBtnMain}
-              iconSize={28}
-              textSize={14}
-              hideCount
-            />
-            <NavButton
-              title="SERIES"
-              count={seriesList.length}
-              countLabel="SERIES"
-              icon="grid"
-              mciIcon="play-box-multiple-outline"
-              iconKey="series"
-              onPress={() => goToContent("series", "Series")}
-              loading={navigatingTo === "series"}
-              style={styles.portraitSubBtnMain}
-              iconSize={28}
-              textSize={14}
-              hideCount
-            />
-          </View>
-          {/* Portrait small row: Catch Up + TV Guide */}
-          <View style={styles.portraitSubRow}>
-            <NavButton
-              title="Catch Up"
-              icon="clock"
-              iconKey="catchUp"
-              onPress={() => goToScreen("catchup", "CatchUp")}
-              loading={navigatingTo === "catchup"}
-              style={styles.portraitSubBtn}
-              iconSize={16}
-              textSize={11}
-              compact
-            />
-            <NavButton
-              title="TV Guide"
-              icon="calendar"
-              iconKey="tvGuide"
-              onPress={() => goToScreen("tvguide", "TvGuide")}
-              loading={navigatingTo === "tvguide"}
-              style={styles.portraitSubBtn}
-              iconSize={16}
-              textSize={11}
-              compact
-            />
-          </View>
-          {isGuest ? (
-            <View style={[styles.portraitRecent, styles.guestPromptCard]}>
-              <GuestPrompt
-                variant="compact"
-                icon="clock"
-                title="No Watch History"
-                message="Create a profile to keep your watch history and continue watching."
-                onCreateProfile={() => navigation.navigate("ProfilePicker", { fromHome: true })}
+        // ── Portrait / Mobile layout: compact top bar + grid + bottom nav ────
+        <View style={styles.portraitRoot}>
+          <View style={[styles.portraitTopBar, { paddingTop: padT, paddingHorizontal: padH }]}>
+            <View style={styles.headerBrand}>
+              <Image
+                source={require("../../assets/images/icon.png")}
+                style={styles.headerLogo}
+                resizeMode="contain"
               />
             </View>
-          ) : (
-            <RecentlyWatchedCard
-              style={styles.portraitRecent}
-              refreshKey={recentRefreshKey}
-              maxItems={2}
-              sections={watchSections}
-              onPress={handleRecentPress}
+            <View style={styles.portraitActions}>
+              <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
+              <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+              <UpdateAvailableButton />
+              <MessagesButton onPress={() => navigation.navigate("Messages")} />
+              <ProfileButton />
+            </View>
+          </View>
+
+          <View style={[styles.portraitDivider, { marginHorizontal: padH }]} />
+          <ExpiryBanner status={expiryStatus} onPress={handleRenewalReopen} />
+          <AnnouncementTicker />
+
+          <ScrollView
+            style={styles.portraitScroll}
+            contentContainerStyle={[styles.portraitScrollInner, { paddingHorizontal: padH, paddingBottom: padB }]}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.advertBannerPortrait}>
+              <AdvertCarousel style={StyleSheet.absoluteFill} />
+            </View>
+
+            <View style={styles.gridWrap}>
+              <QuickActionCard
+                style={styles.gridCard}
+                title="Live TV"
+                subtitle={`${formatCount(liveStreams.length)} Channels`}
+                mciIcon="television-classic"
+                onPress={() => goToContent("live", "Live TV")}
+                loading={navigatingTo === "live"}
+              />
+              <QuickActionCard
+                style={styles.gridCard}
+                title="Movies"
+                subtitle={`${formatCount(vodStreams.length)} Movies`}
+                mciIcon="movie-open-outline"
+                onPress={() => goToContent("movies", "Movies")}
+                loading={navigatingTo === "movies"}
+              />
+              <QuickActionCard
+                style={styles.gridCard}
+                title="Series"
+                subtitle={`${formatCount(seriesList.length)} Series`}
+                mciIcon="play-box-multiple-outline"
+                onPress={() => goToContent("series", "Series")}
+                loading={navigatingTo === "series"}
+              />
+              <QuickActionCard
+                style={styles.gridCard}
+                title="Catch Up"
+                subtitle="Never miss a show"
+                icon="clock"
+                onPress={() => goToScreen("catchup", "CatchUp")}
+                loading={navigatingTo === "catchup"}
+              />
+              <QuickActionCard
+                style={styles.gridCard}
+                title="TV Guide"
+                subtitle="What's on now"
+                icon="calendar"
+                onPress={() => goToScreen("tvguide", "TvGuide")}
+                loading={navigatingTo === "tvguide"}
+              />
+              <QuickActionCard
+                style={styles.gridCard}
+                title="Football Centre"
+                subtitle="Live Matches & More"
+                mciIcon="soccer"
+                onPress={() => navigation.navigate("FootballCentre")}
+              />
+            </View>
+
+            {watchRows}
+          </ScrollView>
+
+          {/* Fixed bottom navigation */}
+          <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, Spacing.xs) }]}>
+            <BottomNavItem label="Home" icon="home" active onPress={() => {}} />
+            <BottomNavItem
+              label="Live TV"
+              mciIcon="television-classic"
+              onPress={() => goToContent("live", "Live TV")}
+              loading={navigatingTo === "live"}
             />
-          )}
-          <View style={styles.portraitCarousel}>
-            <AdvertCarousel style={StyleSheet.absoluteFill} />
+            <BottomNavItem
+              label="Movies"
+              mciIcon="movie-open-outline"
+              onPress={() => goToContent("movies", "Movies")}
+              loading={navigatingTo === "movies"}
+            />
+            <BottomNavItem
+              label="Series"
+              mciIcon="play-box-multiple-outline"
+              onPress={() => goToContent("series", "Series")}
+              loading={navigatingTo === "series"}
+            />
+            <BottomNavItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
           </View>
         </View>
       )}
@@ -1444,16 +1534,11 @@ const styles = StyleSheet.create({
 
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  // ── Header ──────────────────────────────────────────────────────────────
-  header: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between", paddingBottom: Spacing.md,
-  },
+  // ── Brand ───────────────────────────────────────────────────────────────
   headerBrand: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   headerLogo: { width: 36, height: 36 },
   appName: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, letterSpacing: 0.5 },
   appVersion: { fontSize: 11, color: Colors.dark.accent, fontWeight: "600", letterSpacing: 1 },
-  headerActions: { flexDirection: "row", gap: Spacing.sm, alignItems: "center" },
   headerBtn: {
     width: 38, height: 38, borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundDefault,
@@ -1625,57 +1710,128 @@ const styles = StyleSheet.create({
     color: Colors.dark.accent,
   },
 
-  // ── Landscape body ───────────────────────────────────────────────────────
-  bodyLandscape: {
+  // ── Landscape: sidebar + content column ───────────────────────────────────
+  landscapeRoot: { flex: 1, flexDirection: "row" },
+
+  sidebar: {
+    width: 200,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRightWidth: 1,
+    borderRightColor: Colors.dark.border,
+    paddingHorizontal: Spacing.sm,
+  },
+  sidebarBrand: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm, paddingBottom: Spacing.md,
+  },
+  sidebarLogo: { width: 34, height: 34 },
+  sidebarScroll: { flex: 1 },
+  sidebarScrollContent: { gap: Spacing.xs, paddingBottom: Spacing.lg },
+  sidebarItem: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
+    overflow: "hidden",
+  },
+  sidebarActiveBar: { position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2 },
+  sidebarIconWrap: { width: 24, alignItems: "center" },
+  sidebarLabel: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.dark.text },
+  sidebarCount: {
+    paddingHorizontal: 6, paddingVertical: 1,
+    borderRadius: BorderRadius.full, borderWidth: 1,
+  },
+  sidebarCountText: { fontSize: 10, fontWeight: "700" },
+  sidebarDivider: {
+    height: 1, backgroundColor: Colors.dark.border,
+    marginVertical: Spacing.sm, marginHorizontal: Spacing.sm,
+  },
+  newBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs },
+  newBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
+
+  contentArea: { flex: 1, paddingLeft: Spacing.lg },
+  topBar: {
+    flexDirection: "row", alignItems: "flex-start",
+    justifyContent: "space-between", paddingBottom: Spacing.md,
+  },
+  greetingWrap: { justifyContent: "center", flexShrink: 1, paddingTop: Spacing.xs },
+  greetingHello: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "500" },
+  greetingName: { fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
+  topBarActions: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.md },
+  labelledAction: { alignItems: "center", gap: 4 },
+  actionCaption: {
+    fontSize: 9, fontWeight: "600", color: Colors.dark.textSecondary,
+    letterSpacing: 0.4, textTransform: "uppercase",
+  },
+  topDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
+
+  contentScroll: { flex: 1 },
+  contentScrollInner: { gap: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.lg },
+
+  advertBannerLandscape: {
+    width: "100%", height: 150,
+    borderRadius: BorderRadius.md, overflow: "hidden",
+  },
+  advertBannerPortrait: {
+    width: "100%", aspectRatio: 16 / 9,
+    borderRadius: BorderRadius.md, overflow: "hidden",
+  },
+
+  quickRow: { flexDirection: "row", gap: Spacing.sm },
+
+  // ── Quick-action card ─────────────────────────────────────────────────────
+  qaCard: {
     flex: 1,
+    minHeight: 118,
+    backgroundColor: "rgba(20,12,6,0.85)",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.3)",
+    padding: Spacing.md,
+    justifyContent: "center",
+    gap: 6,
+    overflow: "hidden",
+  },
+  qaCardActive: {
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1, shadowRadius: 16, elevation: 12,
+  },
+  qaIconWrap: {
+    width: 46, height: 46, borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(255,102,0,0.1)",
+    justifyContent: "center", alignItems: "center",
+  },
+  qaTitle: { fontSize: 15, fontWeight: "800", color: "#fff", letterSpacing: 0.3 },
+  qaSubtitle: { fontSize: 11, fontWeight: "500", color: Colors.dark.textSecondary },
+
+  // ── Portrait ──────────────────────────────────────────────────────────────
+  portraitRoot: { flex: 1 },
+  portraitTopBar: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", paddingBottom: Spacing.sm,
+  },
+  portraitActions: { flexDirection: "row", gap: Spacing.sm, alignItems: "center" },
+  portraitDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
+  portraitScroll: { flex: 1 },
+  portraitScrollInner: { gap: Spacing.md, paddingTop: Spacing.sm },
+  gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: Spacing.sm },
+  gridCard: { width: "48.5%" },
+
+  // ── Bottom nav (portrait) ─────────────────────────────────────────────────
+  bottomNav: {
     flexDirection: "row",
-    gap: Spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundDefault,
     paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
   },
+  bottomNavItem: { flex: 1, alignItems: "center", gap: 3, paddingVertical: Spacing.xs },
+  bottomNavLabel: { fontSize: 10, fontWeight: "600", color: Colors.dark.textSecondary },
+  bottomNavActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "transparent" },
 
-  // Left panel — 50%, two sub-columns
-  leftPanel: {
-    flex: 1,
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
-  // Sub-column A: Live TV | Catch Up | TV Guide
-  colA: {
-    flex: 1,
-    flexDirection: "column",
-    gap: Spacing.sm,
-  },
-  colATop: { flex: 2, minHeight: 0 },
-  catchUpBtn: { flex: 1, minHeight: 0 },
-  colABot: { flex: 1, minHeight: 0 },
-  // Sub-column B: Movies | Series 50/50
-  colB: {
-    flex: 1,
-    flexDirection: "column",
-    gap: Spacing.sm,
-  },
-  colBBtn: { flex: 1, minHeight: 0 },
-
-  // Right panel — 50%
-  rightPanel: {
-    flex: 1,
-    flexDirection: "column",
-    gap: Spacing.sm,
-  },
-  // Carousel — grows to fill all available space, pushing search+recent to bottom
-  carouselFill: {
-    flex: 1,
-    width: "100%",
-    minHeight: 0,
-  },
-
-  // Recently Watched — content-height only, no flex growth
-  recentlyWatched: {
-    flexShrink: 0,
-  },
-  portraitRecent: {
-    width: "100%",
-  },
+  // Continue Watching / Recently Watched container
+  watchCard: { width: "100%" },
   guestPromptCard: {
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md,
@@ -1683,99 +1839,5 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     overflow: "hidden",
     justifyContent: "center",
-  },
-
-  // ── Portrait body ────────────────────────────────────────────────────────
-  bodyPortrait: { flex: 1, flexDirection: "column", gap: Spacing.sm, paddingTop: Spacing.sm },
-  portraitTopFull: { height: 130, width: "100%", padding: Spacing.md },
-  portraitSubRow: { height: 56, flexDirection: "row", gap: Spacing.sm },
-  portraitSubBtn: { flex: 1 },
-  portraitSubRowMain: { flexDirection: "row", gap: Spacing.sm },
-  portraitSubBtnMain: { flex: 1, height: 110, padding: Spacing.md },
-  portraitCarousel: { width: "100%", aspectRatio: 16 / 9, minHeight: 0 },
-
-  // ── Nav buttons (base) ──────────────────────────────────────────────────
-  navButton: {
-    backgroundColor: "rgba(20,12,6,0.85)",
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,102,0,0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: Spacing.lg,
-    gap: 6,
-    overflow: "hidden",
-  },
-  navButtonCompact: {
-    padding: Spacing.sm,
-    gap: 4,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: "rgba(255,102,0,0.25)",
-  },
-  navButtonActive: {
-    borderColor: Colors.dark.accent,
-    borderWidth: 2,
-    shadowColor: "#FF6600",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 20,
-    elevation: 14,
-  },
-  iconWrap: {
-    width: 60, height: 60, borderRadius: BorderRadius.full,
-    backgroundColor: "transparent",
-    justifyContent: "center", alignItems: "center",
-  },
-  iconWrapCompact: { width: 32, height: 32 },
-  iconWrapActive: {},
-  navButtonText: {
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-  },
-  navButtonTextActive: { color: "#fff" },
-  countChip: {
-    marginTop: 6,
-    minWidth: 92,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,102,0,0.55)",
-    backgroundColor: "rgba(255,102,0,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  countChipActive: {
-    borderColor: "#FFB266",
-    backgroundColor: Colors.dark.accent,
-  },
-  countChipNumber: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: Colors.dark.accent,
-    letterSpacing: 0.5,
-    lineHeight: 22,
-  },
-  countChipNumberActive: {
-    color: "#fff",
-  },
-  countChipLabel: {
-    fontSize: 9,
-    fontWeight: "700",
-    color: Colors.dark.textSecondary,
-    letterSpacing: 1.4,
-    marginTop: -1,
-  },
-  countChipLabelActive: {
-    color: "rgba(255,255,255,0.92)",
-  },
-
-  activeIndicator: {
-    position: "absolute", bottom: 0, left: "20%", right: "20%",
-    height: 2, backgroundColor: Colors.dark.accent, borderRadius: 1,
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 6,
   },
 });
