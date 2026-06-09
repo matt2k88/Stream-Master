@@ -231,8 +231,9 @@ function BottomNavItem({
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const accent = useAccent();
-  const highlight = focused || pressed || active;
+  const highlight = focused || pressed || hovered || active;
   const tint = highlight ? accent.accent : Colors.dark.textSecondary;
 
   return (
@@ -242,7 +243,9 @@ function BottomNavItem({
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={styles.bottomNavItem}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.bottomNavItem, highlight && styles.bottomNavItemActive]}
     >
       {loading ? (
         <ActivityIndicator size="small" color={accent.accent} />
@@ -276,6 +279,8 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
     >
       <Feather name="search" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
     </Pressable>
@@ -379,6 +384,8 @@ function ProfileButton() {
         onPressOut={() => setPressed(false)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onHoverIn={() => setFocused(true)}
+        onHoverOut={() => setFocused(false)}
       >
         <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
           <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
@@ -463,6 +470,8 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
       disabled={refreshing}
     >
       <Feather name="refresh-cw" size={16} color={refreshing || isActive ? accent.accent : Colors.dark.textSecondary} />
@@ -487,6 +496,8 @@ function FootballCentreButton({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
     >
       <MaterialCommunityIcons name="soccer" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
     </Pressable>
@@ -510,6 +521,8 @@ function AccountButton({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
     >
       <Feather name="settings" size={18} color={accent.accent} />
     </Pressable>
@@ -591,6 +604,8 @@ function VpnButton() {
         onPressOut={() => setPressed(false)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onHoverIn={() => setFocused(true)}
+        onHoverOut={() => setFocused(false)}
       >
         {isLoading ? (
           <ActivityIndicator size="small" color={isEnabled ? "#22C55E" : Colors.dark.textSecondary} />
@@ -756,6 +771,8 @@ function UpdateAvailableButton() {
         onPressOut={() => setPressed(false)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onHoverIn={() => setFocused(true)}
+        onHoverOut={() => setFocused(false)}
       >
         <Feather name="download" size={18} color={accent.accent} />
         <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
@@ -786,6 +803,8 @@ function MessagesButton({ onPress }: { onPress: () => void }) {
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
     >
       <Feather name="bell" size={18} color={hasUnread ? accent.accent : Colors.dark.textSecondary} />
       {hasUnread ? (
@@ -1417,7 +1436,8 @@ function ExitDialogBtn({
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
   const isPrimary = variant === "primary";
   return (
     <Pressable
@@ -1425,6 +1445,8 @@ function ExitDialogBtn({
       onPress={onPress}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       style={[
@@ -1826,7 +1848,8 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     paddingHorizontal: Spacing.sm,
   },
-  bottomNavItem: { flex: 1, alignItems: "center", gap: 3, paddingVertical: Spacing.xs },
+  bottomNavItem: { flex: 1, alignItems: "center", gap: 3, paddingVertical: Spacing.xs, borderRadius: BorderRadius.md },
+  bottomNavItemActive: { backgroundColor: "rgba(255,255,255,0.06)" },
   bottomNavLabel: { fontSize: 10, fontWeight: "600", color: Colors.dark.textSecondary },
   bottomNavActiveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "transparent" },
 
