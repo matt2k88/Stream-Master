@@ -1096,6 +1096,7 @@ export default function LivePreviewScreen() {
                 pointerEvents="none"
               />
               <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
+                <SideMenuButton transparent />
                 <Pressable
                   style={[styles.headerBtn, backActive && styles.headerBtnActive]}
                   onPress={exitFullscreen}
