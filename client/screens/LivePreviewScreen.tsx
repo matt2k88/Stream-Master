@@ -33,6 +33,7 @@ import { useGroups } from "@/contexts/GroupsContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useFootball } from "@/contexts/FootballContext";
 import { FootballScoreTracker } from "@/components/FootballScoreTracker";
+import SideMenuButton from "@/components/SideMenuButton";
 import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import type { LiveStream } from "@/lib/xtream-api";
 
@@ -848,6 +849,7 @@ export default function LivePreviewScreen() {
       {/* Header */}
       {!isFullscreen && (
       <View style={[styles.header, { paddingTop: padT, paddingLeft: padL, paddingRight: Spacing.md }]}>
+        <SideMenuButton />
         <Pressable
           style={[styles.headerBtn, backActive && styles.headerBtnActive]}
           onPress={() => navigation.goBack()}

@@ -13,7 +13,14 @@ import { useSideMenu } from "@/contexts/SideMenuContext";
  * Placed immediately BEFORE each screen's back button so it sits to the LEFT
  * of it, giving quick access to the menu from any page without going Home.
  */
-export default function SideMenuButton({ style }: { style?: any }) {
+export default function SideMenuButton({
+  style,
+  transparent,
+}: {
+  style?: any;
+  /** Open the drawer translucently so video behind it stays visible. */
+  transparent?: boolean;
+}) {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
   const accent = useAccent();
@@ -27,7 +34,7 @@ export default function SideMenuButton({ style }: { style?: any }) {
 
   return (
     <Pressable
-      onPress={open}
+      onPress={() => open(transparent ? { transparent: true } : undefined)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       onFocus={() => setFocused(true)}

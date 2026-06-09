@@ -53,6 +53,7 @@ import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useSideMenu } from "@/contexts/SideMenuContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -102,6 +103,7 @@ export default function VlcPlayerScreen() {
   const { activeProfile } = useProfile();
   const { upsertLocal, getByStreamId } = useWatchHistory();
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { open: openSideMenu } = useSideMenu();
 
   // ─── Player state ────────────────────────────────────────────────────────
   const vlcRef = useRef<any>(null);
@@ -958,6 +960,11 @@ export default function VlcPlayerScreen() {
 
         {/* Top bar */}
         <View style={styles.topBar}>
+          <CtrlBtn
+            icon="menu"
+            onPress={() => { openSideMenu({ transparent: true }); showAndReset(); }}
+            onFocus={showAndReset}
+          />
           <CtrlBtn icon="arrow-left" onPress={handleBack} onFocus={showAndReset} />
           <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
           <CtrlBtn icon="flag" onPress={() => { setShowReport(true); showAndReset(); }} onFocus={showAndReset} />

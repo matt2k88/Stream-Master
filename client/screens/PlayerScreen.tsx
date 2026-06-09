@@ -36,6 +36,7 @@ import { saveRecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
+import { useSideMenu } from "@/contexts/SideMenuContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 // Lazy-require VlcPlayerScreen ONLY on Android — react-native-vlc-media-player
@@ -449,6 +450,7 @@ function LegacyPlayerScreen() {
   const audioRestoredRef = useRef(false);
   const textRestoredRef = useRef(false);
   const { isFavourite, toggleFavourite } = useFavourites();
+  const { open: openSideMenu } = useSideMenu();
   const savedRef = useRef(false);
 
   const toastAnim = useRef(new Animated.Value(0)).current;
@@ -1665,6 +1667,11 @@ function LegacyPlayerScreen() {
 
         {/* Top bar */}
         <View style={styles.topBar}>
+          <CtrlBtn
+            icon="menu"
+            onPress={() => { openSideMenu({ transparent: true }); showAndReset(); }}
+            onFocus={showAndReset}
+          />
           <CtrlBtn icon="arrow-left" onPress={handleBack} onFocus={showAndReset} />
           <ThemedText style={styles.titleText} numberOfLines={1}>{title}</ThemedText>
           {/* Report content button — red flag */}

@@ -90,7 +90,7 @@ export default function SideMenuDrawer() {
   const insets = useSafeAreaInsets();
   const accent = useAccent();
   const { liveCategories } = useData();
-  const { isOpen, close } = useSideMenu();
+  const { isOpen, transparent, close } = useSideMenu();
 
   // Keep the Modal mounted long enough to play the slide-out animation.
   const [mounted, setMounted] = useState(false);
@@ -174,7 +174,14 @@ export default function SideMenuDrawer() {
       supportedOrientations={["portrait", "landscape", "landscape-left", "landscape-right"]}
     >
       <View style={styles.root}>
-        <Animated.View style={[styles.backdrop, { opacity: fade }]}>
+        <Animated.View
+          style={[
+            styles.backdrop,
+            { opacity: fade },
+            // Over the video player we dim less so the content stays visible.
+            transparent && { backgroundColor: "rgba(0,0,0,0.2)" },
+          ]}
+        >
           <Pressable style={StyleSheet.absoluteFill} onPress={close} />
         </Animated.View>
 
@@ -188,6 +195,9 @@ export default function SideMenuDrawer() {
               paddingLeft: Math.max(insets.left, Spacing.sm) + Spacing.xs,
               transform: [{ translateX: slide }],
             },
+            // Slightly translucent panel when opened over the player so the
+            // viewer can still see what's playing behind the menu.
+            transparent && { backgroundColor: "rgba(8,8,8,0.82)" },
           ]}
         >
           <View style={styles.brand}>
