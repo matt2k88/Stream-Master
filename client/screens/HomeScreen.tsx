@@ -1337,6 +1337,22 @@ export default function HomeScreen() {
                 mciIcon="soccer"
                 onPress={() => navigation.navigate("FootballCentre")}
               />
+              <QuickActionCard
+                compact
+                style={styles.gridCard}
+                title="Search"
+                subtitle="Find anything"
+                icon="search"
+                onPress={() => navigation.navigate("Search")}
+              />
+              <QuickActionCard
+                compact
+                style={styles.gridCard}
+                title="Settings"
+                subtitle="Account & app"
+                icon="settings"
+                onPress={() => navigation.navigate("AccountInfo")}
+              />
             </View>
 
             {watchRows}
