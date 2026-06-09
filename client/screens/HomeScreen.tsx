@@ -1201,7 +1201,7 @@ export default function HomeScreen() {
                   flexGrow:1 lets short landscape viewports scroll instead of
                   clipping. */}
               <View style={styles.advertBannerLandscape}>
-                <AdvertCarousel style={StyleSheet.absoluteFill} />
+                <AdvertCarousel orientation="landscape" style={StyleSheet.absoluteFill} />
               </View>
 
               {/* Quick-action cards */}
@@ -1280,7 +1280,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.advertBannerPortrait}>
-              <AdvertCarousel style={StyleSheet.absoluteFill} />
+              <AdvertCarousel orientation="portrait" style={StyleSheet.absoluteFill} />
             </View>
 
             <View style={styles.gridWrap}>
@@ -1756,8 +1756,7 @@ const styles = StyleSheet.create({
 
   advertBannerLandscape: {
     width: "100%",
-    flex: 1,
-    minHeight: 130,
+    aspectRatio: 16 / 5,
     borderRadius: BorderRadius.md, overflow: "hidden",
   },
   advertBannerPortrait: {

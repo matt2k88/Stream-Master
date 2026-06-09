@@ -16,11 +16,18 @@ interface Advert {
   id: string;
   name: string;
   image_url: string;
+  orientation?: string | null;
 }
 
 const CYCLE_MS = 5000;
 
-export default function AdvertCarousel({ style }: { style?: any }) {
+export default function AdvertCarousel({
+  style,
+  orientation,
+}: {
+  style?: any;
+  orientation?: "landscape" | "portrait";
+}) {
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -35,8 +42,15 @@ export default function AdvertCarousel({ style }: { style?: any }) {
           const base = getApiUrl();
           const res = await fetch(new URL("/api/adverts", base).toString());
           if (res.ok && !cancelled) {
-            const data = await res.json();
-            setAdverts(data);
+            const data: Advert[] = await res.json();
+            // Untagged ads (null orientation) show in both; tagged ones only in
+            // their orientation. Fall back to all ads if none match (so the
+            // banner is never empty before the user uploads orientation art).
+            const matched = orientation
+              ? data.filter((a) => !a.orientation || a.orientation === orientation)
+              : data;
+            setAdverts(matched.length ? matched : data);
+            setIndex(0);
           }
         } catch {
           // silently fail — shows placeholder
@@ -107,7 +121,7 @@ export default function AdvertCarousel({ style }: { style?: any }) {
         <Image
           source={{ uri: current.image_url }}
           style={styles.image}
-          contentFit="contain"
+          contentFit="cover"
           transition={0}
         />
         {current.name ? (
