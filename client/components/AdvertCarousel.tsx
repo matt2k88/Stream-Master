@@ -19,7 +19,8 @@ interface Advert {
   orientation?: string | null;
 }
 
-const CYCLE_MS = 5000;
+const CYCLE_MS = 8000;
+const FADE_MS = 300;
 
 export default function AdvertCarousel({
   style,
@@ -31,9 +32,128 @@ export default function AdvertCarousel({
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  // Remaining ms saved when hover starts (to resume from correct position)
+  const remainingRef = useRef(CYCLE_MS);
+  // Refs to avoid stale closures inside callbacks
+  const advertsLenRef = useRef(0);
+  const indexRef = useRef(0);
+  const isActiveRef = useRef(false);
+  const firstRender = useRef(true);
+
+  const isActive = focused || hovered;
+
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+  useEffect(() => { advertsLenRef.current = adverts.length; }, [adverts.length]);
+  useEffect(() => { indexRef.current = index; }, [index]);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  const stopProg = useCallback(() => {
+    if (progAnimRef.current) { progAnimRef.current.stop(); progAnimRef.current = null; }
+  }, []);
+
+  // Start a fresh cycle from 0 (new advert shown).
+  const scheduleNext = useCallback((duration: number = CYCLE_MS) => {
+    clearTimer();
+    stopProg();
+    progressAnim.setValue(0);
+    progAnimRef.current = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration,
+      useNativeDriver: false,
+    });
+    progAnimRef.current.start();
+    remainingRef.current = duration;
+    timerRef.current = setTimeout(() => {
+      if (advertsLenRef.current > 1 && !isActiveRef.current) doAdvance();
+    }, duration);
+  }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resume from the saved progress position (after hover ends).
+  const resumeNext = useCallback((duration: number) => {
+    clearTimer();
+    stopProg();
+    // Don't reset progressAnim — continue from where it froze
+    progAnimRef.current = Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: Math.max(200, duration),
+      useNativeDriver: false,
+    });
+    progAnimRef.current.start();
+    timerRef.current = setTimeout(() => {
+      if (advertsLenRef.current > 1 && !isActiveRef.current) doAdvance();
+    }, Math.max(200, duration));
+  }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fade out → setIndex. Fade in + scheduleNext handled by useEffect([index]).
+  const doAdvance = useCallback(() => {
+    const count = advertsLenRef.current;
+    if (count <= 1) return;
+    clearTimer();
+    stopProg();
+    Animated.timing(fadeAnim, { toValue: 0, duration: FADE_MS, useNativeDriver: true })
+      .start(({ finished }) => {
+        if (finished) setIndex((prev) => (prev + 1) % count);
+      });
+  }, [fadeAnim, clearTimer, stopProg]);
+
+  // ── Fade IN after index commits, then schedule next cycle ─────────────────
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    const anim = Animated.timing(fadeAnim, { toValue: 1, duration: FADE_MS, useNativeDriver: true });
+    anim.start(({ finished }) => {
+      if (finished && advertsLenRef.current > 1 && !isActiveRef.current) {
+        scheduleNext(CYCLE_MS);
+      }
+    });
+  }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Start cycling when adverts load ──────────────────────────────────────
+  useEffect(() => {
+    if (adverts.length > 1) {
+      scheduleNext(CYCLE_MS);
+      return () => { clearTimer(); stopProg(); };
+    }
+  }, [adverts.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pause / resume on hover or D-pad focus ────────────────────────────────
+  useEffect(() => {
+    if (isActive) {
+      // Pause: clear timer, freeze progress, save remaining time
+      clearTimer();
+      progressAnim.stopAnimation((value) => {
+        stopProg();
+        remainingRef.current = Math.max(500, (1 - value) * CYCLE_MS);
+      });
+    } else {
+      // Resume from frozen position
+      if (advertsLenRef.current > 1) resumeNext(remainingRef.current);
+    }
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Dot navigation ────────────────────────────────────────────────────────
+  const goTo = (i: number) => {
+    if (i === indexRef.current) return;
+    clearTimer();
+    stopProg();
+    Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true })
+      .start(({ finished }) => {
+        if (finished) setIndex(i);
+      });
+  };
+
+  // ── Fetch adverts ─────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -43,10 +163,6 @@ export default function AdvertCarousel({
           const res = await fetch(new URL("/api/adverts", base).toString());
           if (res.ok && !cancelled) {
             const data: Advert[] = await res.json();
-            // Strict per-orientation separation: untagged ads (null orientation)
-            // show in both, tagged ads show ONLY in their orientation. No
-            // cross-orientation fallback — if none match, the carousel shows the
-            // "Coming Soon" placeholder rather than the wrong-orientation art.
             const matched = orientation
               ? data.filter((a) => !a.orientation || a.orientation === orientation)
               : data;
@@ -63,57 +179,10 @@ export default function AdvertCarousel({
     }, [])
   );
 
-  // Fade OUT then change the index. The fade IN is handled by the effect below
-  // — starting it here (synchronously, before React re-renders the new image)
-  // is what caused the previous advert to flash back in during the fade-in.
-  const advance = useCallback(() => {
-    if (adverts.length <= 1) return;
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) setIndex((prev) => (prev + 1) % adverts.length);
-    });
-  }, [adverts.length, fadeAnim]);
-
-  // Fade the new advert IN only after React has committed it to screen, so the
-  // image being faded in is always the new one (never a flash of the old one).
-  const firstRender = useRef(true);
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      return;
-    }
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [index, fadeAnim]);
-
-  useEffect(() => {
-    if (adverts.length > 1) {
-      timerRef.current = setInterval(advance, CYCLE_MS);
-      return () => { if (timerRef.current) clearInterval(timerRef.current); };
-    }
-  }, [adverts.length, advance]);
-
-  const goTo = (i: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (i !== index) {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(({ finished }) => {
-        if (finished) setIndex(i);
-      });
-    }
-    if (adverts.length > 1) {
-      timerRef.current = setInterval(advance, CYCLE_MS);
-    }
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.container, style, styles.placeholder]}>
+      <View style={[styles.wrapper, style, styles.placeholder]}>
         <Feather name="image" size={28} color="rgba(255,102,0,0.15)" />
       </View>
     );
@@ -121,7 +190,7 @@ export default function AdvertCarousel({
 
   if (adverts.length === 0) {
     return (
-      <View style={[styles.container, style, styles.placeholder]}>
+      <View style={[styles.wrapper, style, styles.placeholder]}>
         <Feather name="zap" size={22} color="rgba(255,102,0,0.2)" />
         <ThemedText style={styles.placeholderText}>Coming Soon</ThemedText>
       </View>
@@ -131,26 +200,38 @@ export default function AdvertCarousel({
   const current = adverts[index];
 
   return (
-    <View style={[styles.container, style]}>
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
-        <Image
-          source={{ uri: current.image_url }}
-          style={styles.image}
-          contentFit={orientation === "landscape" ? "contain" : "cover"}
-          transition={0}
-        />
-        {current.name ? (
-          <View style={styles.label}>
-            <ThemedText style={styles.labelText} numberOfLines={1}>
-              {current.name}
-            </ThemedText>
-          </View>
-        ) : null}
-      </Animated.View>
+    <Pressable
+      focusable
+      style={[styles.wrapper, style, isActive && styles.wrapperActive]}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+    >
+      {/* Image layer — clipped to border radius */}
+      <View style={styles.imageClip}>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
+          <Image
+            source={{ uri: current.image_url }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit={orientation === "landscape" ? "contain" : "cover"}
+            transition={0}
+          />
+        </Animated.View>
+      </View>
+
+      {/* Advert name label */}
+      {current.name ? (
+        <View style={styles.label} pointerEvents="none">
+          <ThemedText style={styles.labelText} numberOfLines={1}>
+            {current.name}
+          </ThemedText>
+        </View>
+      ) : null}
 
       {/* Dot indicators */}
       {adverts.length > 1 ? (
-        <View style={styles.dots}>
+        <View style={styles.dots} pointerEvents="box-none">
           {adverts.map((_, i) => (
             <Pressable key={i} onPress={() => goTo(i)} hitSlop={6}>
               <View style={[styles.dot, i === index && styles.dotActive]} />
@@ -158,17 +239,48 @@ export default function AdvertCarousel({
           ))}
         </View>
       ) : null}
-    </View>
+
+      {/* Progress bar — subtle, shows time remaining on current advert */}
+      {adverts.length > 1 ? (
+        <View style={styles.progressTrack} pointerEvents="none">
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ["0%", "100%"],
+                }),
+              },
+            ]}
+          />
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  // Outer wrapper: holds border + glow. No overflow:hidden so shadow isn't clipped.
+  wrapper: {
     borderRadius: BorderRadius.md,
-    overflow: "hidden",
-    backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1,
     borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundDefault,
+  },
+  wrapperActive: {
+    borderColor: Colors.dark.accent,
+    shadowColor: Colors.dark.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 14,
+    elevation: 18,
+  },
+  // Inner clip: clips image to border radius.
+  imageClip: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
   },
   placeholder: {
     justifyContent: "center",
@@ -183,12 +295,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     textTransform: "uppercase",
   },
-  image: {
-    ...StyleSheet.absoluteFillObject,
-  },
   label: {
     position: "absolute",
-    bottom: Spacing.sm,
+    bottom: Spacing.lg,
     left: Spacing.md,
     right: Spacing.md,
   },
@@ -199,7 +308,7 @@ const styles = StyleSheet.create({
   },
   dots: {
     position: "absolute",
-    bottom: Spacing.sm,
+    bottom: 10,
     left: 0,
     right: 0,
     flexDirection: "row",
@@ -219,5 +328,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 4,
     width: 14,
+  },
+  progressTrack: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderBottomLeftRadius: BorderRadius.md,
+    borderBottomRightRadius: BorderRadius.md,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%" as any,
+    backgroundColor: Colors.dark.accent,
+    opacity: 0.65,
   },
 });
