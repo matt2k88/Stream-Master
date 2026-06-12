@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions } from "react-native";
+import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions, findNodeHandle } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -235,6 +235,11 @@ function ContinueWatchingCard({
   const [infoFocused, setInfoFocused] = useState(false);
   const [infoHovered, setInfoHovered] = useState(false);
 
+  const resumeRef = useRef<View>(null);
+  const infoRef = useRef<View>(null);
+  const [resumeTag, setResumeTag] = useState<number | undefined>();
+  const [infoTag, setInfoTag] = useState<number | undefined>();
+
   const accent = useAccent();
 
   // Card is "active" as long as ANY part of it holds focus/hover
@@ -294,6 +299,7 @@ function ContinueWatchingCard({
         onBlur={() => setOuterFocused(false)}
         onHoverIn={() => setOuterHovered(true)}
         onHoverOut={() => setOuterHovered(false)}
+        nextFocusDown={resumeTag}
       >
         {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
         <View style={[styles.cwThumbRow, { height: cardH }]}>
@@ -360,6 +366,7 @@ function ContinueWatchingCard({
           <Animated.View style={[styles.cwPanel, { opacity: panelOpacity }]}>
             {/* Resume button */}
             <Pressable
+              ref={resumeRef}
               focusable
               style={[
                 styles.cwPanelBtn,
@@ -372,6 +379,9 @@ function ContinueWatchingCard({
               onBlur={() => setResumeFocused(false)}
               onHoverIn={() => setResumeHovered(true)}
               onHoverOut={() => setResumeHovered(false)}
+              onLayout={() => { const t = findNodeHandle(resumeRef.current); if (t) setResumeTag(t); }}
+              nextFocusDown={infoTag}
+              nextFocusUp={undefined}
             >
               <View style={[styles.cwPanelBtnIcon, (resumeFocused || resumeHovered) && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
                 <Feather name="play" size={13} color="#fff" />
@@ -382,6 +392,7 @@ function ContinueWatchingCard({
             {/* Info button */}
             {onInfoPress ? (
               <Pressable
+                ref={infoRef}
                 focusable
                 style={[
                   styles.cwPanelBtn,
@@ -394,6 +405,8 @@ function ContinueWatchingCard({
                 onBlur={() => setInfoFocused(false)}
                 onHoverIn={() => setInfoHovered(true)}
                 onHoverOut={() => setInfoHovered(false)}
+                onLayout={() => { const t = findNodeHandle(infoRef.current); if (t) setInfoTag(t); }}
+                nextFocusUp={resumeTag}
               >
                 <View style={[styles.cwPanelBtnIcon, (infoFocused || infoHovered) && { backgroundColor: accent.withAlpha(accent.accent, 0.15) }]}>
                   <Feather name="info" size={13} color={infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary} />
