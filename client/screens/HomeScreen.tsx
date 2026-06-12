@@ -1239,45 +1239,47 @@ export default function HomeScreen() {
                 <AdvertCarousel orientation="landscape" />
               </View>
 
-              {/* Quick-action cards */}
-              <View style={styles.quickRow}>
-                <QuickActionCard
-                  title="Live TV"
-                  subtitle={`${formatCount(liveStreams.length)} Channels`}
-                  mciIcon="television-classic"
-                  onPress={() => goToContent("live", "Live TV")}
-                  loading={navigatingTo === "live"}
-                  preferFocus
-                />
-                <QuickActionCard
-                  title="Movies"
-                  subtitle={`${formatCount(vodStreams.length)} Movies`}
-                  mciIcon="movie-open-outline"
-                  onPress={() => goToContent("movies", "Movies")}
-                  loading={navigatingTo === "movies"}
-                />
-                <QuickActionCard
-                  title="Series"
-                  subtitle={`${formatCount(seriesList.length)} Series`}
-                  mciIcon="play-box-multiple-outline"
-                  onPress={() => goToContent("series", "Series")}
-                  loading={navigatingTo === "series"}
-                />
-                <QuickActionCard
-                  title="Catch Up"
-                  subtitle="Never miss a show"
-                  icon="clock"
-                  onPress={() => goToScreen("catchup", "CatchUp")}
-                  loading={navigatingTo === "catchup"}
-                />
-                <QuickActionCard
-                  title="TV Guide"
-                  subtitle="What's on now"
-                  icon="calendar"
-                  onPress={() => goToScreen("tvguide", "TvGuide")}
-                  loading={navigatingTo === "tvguide"}
-                />
-              </View>
+              {/* Quick-action cards — portrait/mobile only; sidebar covers nav in landscape */}
+              {!isLandscape ? (
+                <View style={styles.quickRow}>
+                  <QuickActionCard
+                    title="Live TV"
+                    subtitle={`${formatCount(liveStreams.length)} Channels`}
+                    mciIcon="television-classic"
+                    onPress={() => goToContent("live", "Live TV")}
+                    loading={navigatingTo === "live"}
+                    preferFocus
+                  />
+                  <QuickActionCard
+                    title="Movies"
+                    subtitle={`${formatCount(vodStreams.length)} Movies`}
+                    mciIcon="movie-open-outline"
+                    onPress={() => goToContent("movies", "Movies")}
+                    loading={navigatingTo === "movies"}
+                  />
+                  <QuickActionCard
+                    title="Series"
+                    subtitle={`${formatCount(seriesList.length)} Series`}
+                    mciIcon="play-box-multiple-outline"
+                    onPress={() => goToContent("series", "Series")}
+                    loading={navigatingTo === "series"}
+                  />
+                  <QuickActionCard
+                    title="Catch Up"
+                    subtitle="Never miss a show"
+                    icon="clock"
+                    onPress={() => goToScreen("catchup", "CatchUp")}
+                    loading={navigatingTo === "catchup"}
+                  />
+                  <QuickActionCard
+                    title="TV Guide"
+                    subtitle="What's on now"
+                    icon="calendar"
+                    onPress={() => goToScreen("tvguide", "TvGuide")}
+                    loading={navigatingTo === "tvguide"}
+                  />
+                </View>
+              ) : null}
 
               {/* Continue Watching + Recently Watched — pinned to the bottom */}
               {watchRows}
