@@ -67,6 +67,9 @@ interface Props {
   maxItems?: number;
   onLayout?: (e: any) => void;
   sections?: WatchSectionConfig[];
+  /** Native node handle of the focusable element directly above this card
+   *  (e.g. the advert carousel) so D-pad UP from the top row goes up, not left. */
+  aboveTag?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -227,6 +230,7 @@ function ContinueWatchingCard({
   cardW,
   cardH,
   expandedW,
+  aboveTag,
 }: {
   item: RecentlyWatched;
   onPress: () => void;
@@ -235,6 +239,7 @@ function ContinueWatchingCard({
   cardW: number;
   cardH: number;
   expandedW: number;
+  aboveTag?: number;
 }) {
   const [outerFocused, setOuterFocused] = useState(false);
   const [outerHovered, setOuterHovered] = useState(false);
@@ -312,6 +317,7 @@ function ContinueWatchingCard({
         onHoverOut={() => setOuterHovered(false)}
         onLayout={() => { const t = safeNodeHandle(outerRef.current); if (t) setOuterTag(t); }}
         nextFocusDown={resumeTag}
+        nextFocusUp={aboveTag}
       >
         {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
         <View style={[styles.cwThumbRow, { height: cardH }]}>
@@ -468,6 +474,7 @@ function WatchSection({
   defaultMax,
   isLoading,
   accentColor,
+  aboveTag,
 }: {
   cfg: WatchSectionConfig;
   entries: RecentlyWatched[];
@@ -477,6 +484,7 @@ function WatchSection({
   defaultMax?: number;
   isLoading: boolean;
   accentColor: string;
+  aboveTag?: number;
 }) {
   const scale = useThumbnailScale();
   const cardW = Math.round(BASE_CW_W * scale);
@@ -525,6 +533,7 @@ function WatchSection({
                 cardW={cardW}
                 cardH={cardH}
                 expandedW={expandedW}
+                aboveTag={aboveTag}
               />
             ) : (
               <RecentlyWatchedRow
@@ -544,7 +553,7 @@ function WatchSection({
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function RecentlyWatchedCard({ style, onPress, onResumePress, onInfoPress, refreshKey, maxItems, onLayout, sections }: Props) {
+export default function RecentlyWatchedCard({ style, onPress, onResumePress, onInfoPress, refreshKey, maxItems, onLayout, sections, aboveTag }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
   const accent = useAccent();
 
@@ -570,6 +579,7 @@ export default function RecentlyWatchedCard({ style, onPress, onResumePress, onI
               defaultMax={maxItems}
               isLoading={isLoading}
               accentColor={accent.accent}
+              aboveTag={i === 0 ? aboveTag : undefined}
             />
           </React.Fragment>
         ))}

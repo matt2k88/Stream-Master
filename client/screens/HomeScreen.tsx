@@ -858,6 +858,9 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [recentRefreshKey, setRecentRefreshKey] = useState(0);
   const [exitConfirmVisible, setExitConfirmVisible] = useState(false);
+  // Native node handle of the advert carousel, so D-pad UP from the top
+  // Continue Watching row lands on the carousel above (not the card to the left).
+  const [carouselTag, setCarouselTag] = useState<number | undefined>();
 
   // ── Renewal notice (auto-popup once per expiry cycle) ──────────────────
   const { userInfo } = useAuth();
@@ -1140,6 +1143,7 @@ export default function HomeScreen() {
       onPress={handleRecentPress}
       onResumePress={handleResumePress}
       onInfoPress={handleInfoPress}
+      aboveTag={carouselTag}
     />
   );
 
@@ -1265,7 +1269,7 @@ export default function HomeScreen() {
                   flexGrow:1 lets short landscape viewports scroll instead of
                   clipping. */}
               <View style={styles.advertBannerLandscape}>
-                <AdvertCarousel orientation="landscape" />
+                <AdvertCarousel orientation="landscape" onFocusTag={(t) => setCarouselTag(t ?? undefined)} />
               </View>
 
               {/* Quick-action cards — portrait/mobile only; sidebar covers nav in landscape */}

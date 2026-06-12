@@ -4,6 +4,8 @@ import {
   StyleSheet,
   Pressable,
   Animated,
+  Platform,
+  findNodeHandle,
 } from "react-native";
 import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
@@ -48,9 +50,11 @@ const CATEGORY_LABEL: Record<string, string> = {
 export default function AdvertCarousel({
   style,
   orientation,
+  onFocusTag,
 }: {
   style?: any;
   orientation?: "landscape" | "portrait";
+  onFocusTag?: (tag: number | null) => void;
 }) {
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [index, setIndex] = useState(0);
@@ -58,6 +62,7 @@ export default function AdvertCarousel({
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
 
+  const focusRef = useRef<View>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
@@ -213,6 +218,7 @@ export default function AdvertCarousel({
   return (
     <View style={styles.outerWrap}>
       <Pressable
+        ref={focusRef}
         focusable
         style={[
           styles.wrapper,
@@ -224,6 +230,10 @@ export default function AdvertCarousel({
         onBlur={() => setFocused(false)}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
+        onLayout={() => {
+          if (!onFocusTag || Platform.OS === "web") return;
+          onFocusTag(findNodeHandle(focusRef.current));
+        }}
       >
         {/* Image — absoluteFill so the category badge doesn't steal any height */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
