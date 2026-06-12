@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, StyleSheet, Pressable, Image, ScrollView, Animated } from "react-native";
+import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -91,9 +91,13 @@ function formatEpisodeLabel(item: RecentlyWatched): string | null {
 function RecentlyWatchedRow({
   item,
   onPress,
+  cardW,
+  thumbH,
 }: {
   item: RecentlyWatched;
   onPress: () => void;
+  cardW: number;
+  thumbH: number;
 }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -104,6 +108,7 @@ function RecentlyWatchedRow({
     <Pressable
       style={[
         styles.row,
+        { width: cardW },
         isActive && { borderColor: accent.withAlpha(accent.accent, 0.55) },
       ]}
       onPress={onPress}
@@ -113,13 +118,23 @@ function RecentlyWatchedRow({
       onBlur={() => setFocused(false)}
     >
       {/* Thumbnail fills top of card */}
-      <View style={styles.thumbWrap}>
+      <View style={[styles.thumbWrap, { height: thumbH }]}>
         {item.thumbnail_url ? (
-          <Image
-            source={{ uri: item.thumbnail_url }}
-            style={styles.thumb}
-            resizeMode="cover"
-          />
+          <>
+            {/* Blurred fill — eliminates black bars */}
+            <Image
+              source={{ uri: item.thumbnail_url }}
+              style={styles.thumb}
+              resizeMode="cover"
+              blurRadius={18}
+            />
+            {/* Main image — full, uncropped */}
+            <Image
+              source={{ uri: item.thumbnail_url }}
+              style={[styles.thumb, StyleSheet.absoluteFillObject]}
+              resizeMode="contain"
+            />
+          </>
         ) : (
           <View style={styles.thumbFallback}>
             <Feather
@@ -181,20 +196,37 @@ function RecentlyWatchedRow({
 
 // ── Continue Watching card (expandable on hover — buttons slide in on right) ─
 
-const CW_CARD_W = 148;           // slightly narrower, fits portrait posters better
-const CW_CARD_EXPANDED_W = 310;
-const CW_CARD_H = 118;           // full card height (no info strip below — text overlaid)
-const CW_THUMB_H = CW_CARD_H;   // alias kept for panel height
-const CW_PANEL_W = CW_CARD_EXPANDED_W - CW_CARD_W;
+// Base (maximum) card dimensions — scaled down on small screens
+const BASE_CW_W = 148;
+const BASE_CW_EXP_W = 310;
+const BASE_CW_H = 118;
+const BASE_RW_THUMB_H = 62;
+
+// Estimated non-card overhead (topBar + advert + quickRow + padding + section labels/divider)
+const LAYOUT_OVERHEAD = 340;
+// Total card height that must fit (CW + RW thumb + RW info + labels)
+const CARDS_TOTAL_H = BASE_CW_H + BASE_RW_THUMB_H + 70;
+
+function useThumbnailScale(): number {
+  const { height } = useWindowDimensions();
+  const available = height - LAYOUT_OVERHEAD;
+  return Math.min(1.0, Math.max(0.6, available / CARDS_TOTAL_H));
+}
 
 function ContinueWatchingCard({
   item,
   onPress,
   onInfoPress,
+  cardW,
+  cardH,
+  expandedW,
 }: {
   item: RecentlyWatched;
   onPress: () => void;
   onInfoPress?: () => void;
+  cardW: number;
+  cardH: number;
+  expandedW: number;
 }) {
   const [outerFocused, setOuterFocused] = useState(false);
   const [outerHovered, setOuterHovered] = useState(false);
@@ -211,13 +243,22 @@ function ContinueWatchingCard({
     resumeFocused || resumeHovered ||
     infoFocused || infoHovered;
 
-  const cardWidth = useRef(new Animated.Value(CW_CARD_W)).current;
+  const cardWidth = useRef(new Animated.Value(cardW)).current;
   const panelOpacity = useRef(new Animated.Value(0)).current;
+
+  // Sync collapsed width if scale changes (e.g. orientation change)
+  const prevCardW = useRef(cardW);
+  useEffect(() => {
+    if (prevCardW.current !== cardW && !isActive) {
+      cardWidth.setValue(cardW);
+      prevCardW.current = cardW;
+    }
+  }, [cardW, isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(cardWidth, {
-        toValue: isActive ? CW_CARD_EXPANDED_W : CW_CARD_W,
+        toValue: isActive ? expandedW : cardW,
         duration: 180,
         useNativeDriver: false,
       }),
@@ -227,7 +268,7 @@ function ContinueWatchingCard({
         useNativeDriver: false,
       }),
     ]).start();
-  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActive, cardW, expandedW]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const remaining = formatRemaining(item.current_time, item.duration);
   const episodeLabel = formatEpisodeLabel(item);
@@ -254,17 +295,27 @@ function ContinueWatchingCard({
         onHoverIn={() => setOuterHovered(true)}
         onHoverOut={() => setOuterHovered(false)}
       >
-        {/* ── Row: full-bleed thumbnail (left) + slide-in action panel (right) ── */}
-        <View style={styles.cwThumbRow}>
+        {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
+        <View style={[styles.cwThumbRow, { height: cardH }]}>
 
-          {/* ── Left: full-bleed image column ── */}
-          <View style={styles.cwThumbArea}>
+          {/* ── Left: image column ── */}
+          <View style={[styles.cwThumbArea, { width: cardW, height: cardH }]}>
             {item.thumbnail_url ? (
-              <Image
-                source={{ uri: item.thumbnail_url }}
-                style={StyleSheet.absoluteFillObject}
-                resizeMode="cover"
-              />
+              <>
+                {/* Blurred fill — eliminates black bars around contained image */}
+                <Image
+                  source={{ uri: item.thumbnail_url }}
+                  style={StyleSheet.absoluteFillObject}
+                  resizeMode="cover"
+                  blurRadius={18}
+                />
+                {/* Main image — always shows complete, never cropped */}
+                <Image
+                  source={{ uri: item.thumbnail_url }}
+                  style={StyleSheet.absoluteFillObject}
+                  resizeMode="contain"
+                />
+              </>
             ) : (
               <View style={styles.cwThumbFallback}>
                 <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={26} color={Colors.dark.textSecondary} />
@@ -400,6 +451,12 @@ function WatchSection({
   isLoading: boolean;
   accentColor: string;
 }) {
+  const scale = useThumbnailScale();
+  const cardW = Math.round(BASE_CW_W * scale);
+  const cardH = Math.round(BASE_CW_H * scale);
+  const expandedW = Math.round(BASE_CW_EXP_W * scale);
+  const thumbH = Math.round(BASE_RW_THUMB_H * scale);
+
   const filtered = dedupe(entries.filter(cfg.filter));
   const max = cfg.maxItems ?? defaultMax;
   const items = max ? filtered.slice(0, max) : filtered;
@@ -437,9 +494,18 @@ function WatchSection({
                 item={item}
                 onPress={() => onPress?.(item)}
                 onInfoPress={onInfoPress ? () => onInfoPress(item) : undefined}
+                cardW={cardW}
+                cardH={cardH}
+                expandedW={expandedW}
               />
             ) : (
-              <RecentlyWatchedRow key={item.id} item={item} onPress={() => onPress?.(item)} />
+              <RecentlyWatchedRow
+                key={item.id}
+                item={item}
+                onPress={() => onPress?.(item)}
+                cardW={cardW}
+                thumbH={thumbH}
+              />
             )
           )}
         </ScrollView>
@@ -660,7 +726,7 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
   },
   row: {
-    width: CW_CARD_W,
+    // width supplied via inline style (responsive)
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -669,7 +735,7 @@ const styles = StyleSheet.create({
   },
   thumbWrap: {
     width: "100%",
-    height: 62,
+    // height supplied via inline style (responsive)
     backgroundColor: Colors.dark.backgroundSecondary,
     overflow: "hidden",
   },
@@ -760,7 +826,7 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
   },
   cwCard: {
-    // width is controlled by Animated.Value (CW_CARD_W → CW_CARD_EXPANDED_W)
+    // width is controlled by Animated.Value (cardW → expandedW, responsive)
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -770,14 +836,13 @@ const styles = StyleSheet.create({
   cwCardPressable: {
     flex: 1,
   },
-  // Top row: thumbnail on left, action panel slides in on right
+  // Top row: thumbnail on left, action panel slides in on right (height via inline)
   cwThumbRow: {
     flexDirection: "row",
-    height: CW_THUMB_H,
+    // height supplied via inline style (responsive)
   },
   cwThumbArea: {
-    width: CW_CARD_W,
-    height: CW_CARD_H,
+    // width + height supplied via inline style (responsive)
     backgroundColor: Colors.dark.backgroundSecondary,
     flexShrink: 0,
     overflow: "hidden",

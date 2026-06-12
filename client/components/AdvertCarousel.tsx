@@ -234,7 +234,7 @@ export default function AdvertCarousel({
             <Image
               source={{ uri: current.image_url }}
               style={StyleSheet.absoluteFillObject}
-              contentFit={orientation === "landscape" ? "contain" : "cover"}
+              contentFit="cover"
               transition={0}
             />
           </Animated.View>
