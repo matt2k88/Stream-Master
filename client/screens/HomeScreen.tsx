@@ -1803,7 +1803,7 @@ const styles = StyleSheet.create({
 
   advertBannerLandscape: {
     width: "100%",
-    height: 150,
+    aspectRatio: 1920 / 400,
   },
   advertBannerPortrait: {
     width: "100%",

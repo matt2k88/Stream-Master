@@ -219,7 +219,17 @@ export default function AdvertCarousel({
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
     >
-      {/* Category badge — above the image */}
+      {/* Image — fills the entire wrapper so category badge + dots don't steal height */}
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
+        <Image
+          source={{ uri: current.image_url }}
+          style={StyleSheet.absoluteFillObject}
+          contentFit="cover"
+          transition={0}
+        />
+      </Animated.View>
+
+      {/* Category badge — absolute top-left overlay */}
       {current.category ? (
         <View style={styles.categoryRow}>
           <Feather name={catIcon} size={10} color={Colors.dark.accent} />
@@ -227,38 +237,24 @@ export default function AdvertCarousel({
         </View>
       ) : null}
 
-      {/* Image area — fills remaining vertical space */}
-      <View style={styles.imageArea}>
-        <View style={styles.imageClip}>
-          <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
-            <Image
-              source={{ uri: current.image_url }}
-              style={StyleSheet.absoluteFillObject}
-              contentFit="cover"
-              transition={0}
-            />
-          </Animated.View>
+      {/* Progress bar — absolute bottom overlay */}
+      {adverts.length > 1 ? (
+        <View style={styles.progressTrack} pointerEvents="none">
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ["0%", "100%"],
+                }),
+              },
+            ]}
+          />
         </View>
+      ) : null}
 
-        {/* Progress bar — inside image at bottom */}
-        {adverts.length > 1 ? (
-          <View style={styles.progressTrack} pointerEvents="none">
-            <Animated.View
-              style={[
-                styles.progressBar,
-                {
-                  width: progressAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0%", "100%"],
-                  }),
-                },
-              ]}
-            />
-          </View>
-        ) : null}
-      </View>
-
-      {/* Dot indicators — below the image */}
+      {/* Dot indicators — absolute bottom overlay */}
       {adverts.length > 1 ? (
         <View style={styles.dotsRow} pointerEvents="box-none">
           {adverts.map((_, i) => (
@@ -290,6 +286,9 @@ const styles = StyleSheet.create({
     elevation: 18,
   },
   categoryRow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
@@ -324,6 +323,10 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   dotsRow: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
