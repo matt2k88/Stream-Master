@@ -214,7 +214,12 @@ export default function AdvertCarousel({
     <View style={styles.outerWrap}>
       <Pressable
         focusable
-        style={[styles.wrapper, style, isActive && styles.wrapperActive]}
+        style={[
+          styles.wrapper,
+          { aspectRatio: orientation === "portrait" ? 1920 / 1080 : 1920 / 400 },
+          style,
+          isActive && styles.wrapperActive,
+        ]}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onHoverIn={() => setHovered(true)}
@@ -276,7 +281,7 @@ const styles = StyleSheet.create({
   },
   wrapper: {
     width: "100%",
-    aspectRatio: 1920 / 400,
+    // aspectRatio set inline — orientation-dependent (landscape 4.8:1, portrait 16:9)
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -293,15 +298,19 @@ const styles = StyleSheet.create({
   },
   categoryRow: {
     position: "absolute",
-    top: 8,
-    left: 8,
+    bottom: 0,
+    left: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(0,0,0,0.62)",
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderTopRightRadius: BorderRadius.md,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderTopLeftRadius: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingBottom: 7,
   },
   categoryText: {
     fontSize: 10,

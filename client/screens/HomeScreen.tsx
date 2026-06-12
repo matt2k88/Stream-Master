@@ -1806,7 +1806,6 @@ const styles = StyleSheet.create({
   },
   advertBannerPortrait: {
     width: "100%",
-    aspectRatio: 16 / 9,
   },
 
   quickRow: { flexDirection: "row", gap: Spacing.sm },
