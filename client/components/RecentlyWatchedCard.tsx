@@ -266,14 +266,30 @@ function ContinueWatchingCard({
       >
         {/* ── Top row: thumbnail + slide-in action panel ── */}
         <View style={styles.cwThumbRow}>
-          {/* Thumbnail — fixed width, contain so full image is visible */}
+          {/* Thumbnail — fixed width.
+              Movies are portrait posters in a landscape container → use
+              contain to show the full image, with a blurred copy behind to
+              fill the dead space instead of plain black bars.
+              Series are landscape episode screenshots → cover is fine
+              (user confirmed L/R crop is acceptable). */}
           <View style={styles.cwThumbArea}>
             {item.thumbnail_url ? (
-              <Image
-                source={{ uri: item.thumbnail_url }}
-                style={styles.cwThumb}
-                resizeMode="contain"
-              />
+              <>
+                {item.content_type === "movie" ? (
+                  /* Blurred bg fill — makes black bars match the poster palette */
+                  <Image
+                    source={{ uri: item.thumbnail_url }}
+                    style={[StyleSheet.absoluteFillObject, styles.cwThumbBlurBg]}
+                    resizeMode="cover"
+                    blurRadius={14}
+                  />
+                ) : null}
+                <Image
+                  source={{ uri: item.thumbnail_url }}
+                  style={styles.cwThumb}
+                  resizeMode={item.content_type === "series" ? "cover" : "contain"}
+                />
+              </>
             ) : (
               <View style={styles.cwThumbFallback}>
                 <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={26} color={Colors.dark.textSecondary} />
@@ -784,6 +800,9 @@ const styles = StyleSheet.create({
   cwThumb: {
     width: "100%",
     height: "100%",
+  },
+  cwThumbBlurBg: {
+    opacity: 0.45,
   },
   cwThumbFallback: {
     flex: 1,
