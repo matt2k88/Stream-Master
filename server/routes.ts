@@ -64,7 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode } = req.body;
+    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode, private_viewing } = req.body;
     try {
       // Build a partial update so callers (e.g. PlayerSettingsScreen)
       // can patch only the fields they care about.
@@ -96,6 +96,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .json({ error: "player_hw_decode must be 'auto', 'on' or 'off'" });
         }
         patch.player_hw_decode = player_hw_decode;
+      }
+      if (private_viewing !== undefined) {
+        patch.private_viewing = !!private_viewing;
       }
       const { data, error } = await supabase
         .from("profiles")
@@ -502,6 +505,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ error: "profile_id, content_type, and name required" });
     }
     try {
+      // Server-side Private Viewing guard — skip insert silently.
+      const { data: pvRow } = await supabase
+        .from("profiles")
+        .select("private_viewing")
+        .eq("id", profile_id)
+        .single();
+      if (pvRow?.private_viewing) return res.json(null);
+
       const now = new Date().toISOString();
       const entry: Record<string, any> = {
         profile_id,

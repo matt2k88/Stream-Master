@@ -30,6 +30,9 @@ export interface Profile {
   // users see no behaviour change until they opt in. Applies to both Live
   // and VOD on the VLC engine; ignored by the Expo engine.
   player_hw_decode?: HwDecodeMode;
+  // When true, no watch history is saved to recently_watched — enforced
+  // both client-side (upsertLocal no-ops) and server-side (POST skips insert).
+  private_viewing?: boolean;
 }
 
 /**

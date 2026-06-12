@@ -11,6 +11,7 @@ import {
   BackHandler,
   Platform,
   Modal,
+  Switch,
 } from "react-native";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -299,7 +300,7 @@ export default function AccountInfoScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
-  const { activeProfile, clearProfile, isGuest } = useProfile();
+  const { activeProfile, clearProfile, isGuest, updateActiveProfile } = useProfile();
   const { textSize, toggleTextSize } = useUISettings();
   const { globalEnabled: footballGlobalEnabled } = useFootball();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -317,6 +318,7 @@ export default function AccountInfoScreen() {
   const [notesTab, setNotesTab] = useState<NotesTab>("whatsnew");
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
   const [supportVisible, setSupportVisible] = useState(false);
+  const [privacySaving, setPrivacySaving] = useState(false);
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
@@ -598,6 +600,37 @@ export default function AccountInfoScreen() {
             </View>
           ) : null;
 
+          const togglePrivateViewing = async (newValue?: boolean) => {
+            if (!activeProfile || isGuest) return;
+            const next = newValue !== undefined ? newValue : !activeProfile.private_viewing;
+            const doSave = async () => {
+              setPrivacySaving(true);
+              try {
+                const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
+                const res = await fetch(url.toString(), {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ private_viewing: next }),
+                });
+                if (res.ok) updateActiveProfile({ private_viewing: next });
+              } catch { /* silent */ } finally {
+                setPrivacySaving(false);
+              }
+            };
+            if (next) {
+              Alert.alert(
+                "Private Viewing",
+                "While Private Viewing is on, your watch history won't be tracked for Live TV, Movies or Series — and your Continue Watching list won't update.\n\nDisable Private Viewing whenever you want to resume tracking your watch history.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Enable", onPress: doSave },
+                ],
+              );
+            } else {
+              await doSave();
+            }
+          };
+
           const settingsSection = (
             <View style={{ gap: Spacing.sm }}>
               <SectionHeading label="Settings" />
@@ -645,6 +678,35 @@ export default function AccountInfoScreen() {
                   />
                 </View>
               </View>
+              {!isGuest ? (
+                <Pressable
+                  style={styles.privacyRow}
+                  onPress={() => { void togglePrivateViewing(); }}
+                  accessible={true}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: !!activeProfile?.private_viewing }}
+                >
+                  <View style={[styles.actionTileIcon, { backgroundColor: "rgba(255,102,0,0.12)", borderColor: "rgba(255,102,0,0.3)" }]}>
+                    <Feather name="eye-off" size={16} color={Colors.dark.accent} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <ThemedText style={styles.actionTileTitle}>Private Viewing</ThemedText>
+                    <ThemedText style={styles.actionTileSub}>
+                      {activeProfile?.private_viewing ? "Watch history paused" : "History tracked — tap to go private"}
+                    </ThemedText>
+                  </View>
+                  {privacySaving ? (
+                    <ActivityIndicator size="small" color={Colors.dark.accent} />
+                  ) : (
+                    <Switch
+                      value={!!activeProfile?.private_viewing}
+                      onValueChange={(v) => { void togglePrivateViewing(v); }}
+                      trackColor={{ false: Colors.dark.border, true: Colors.dark.accent }}
+                      thumbColor="#fff"
+                    />
+                  )}
+                </Pressable>
+              ) : null}
             </View>
           );
 
@@ -1528,6 +1590,15 @@ const styles = StyleSheet.create({
   sectionHeadingText: {
     fontSize: 10, fontWeight: "800", color: Colors.dark.accent,
     letterSpacing: 2, textTransform: "uppercase",
+  },
+
+  // Private Viewing toggle row — full-width, below the tile grid
+  privacyRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm + 2,
+    minHeight: 50,
   },
 
   // Reusable ActionTile (used in Profile / Settings / App grids)

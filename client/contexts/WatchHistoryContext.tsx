@@ -102,6 +102,8 @@ export function WatchHistoryProvider({ children }: { children: React.ReactNode }
   const upsertLocal = useCallback((entry: RecentlyWatched) => {
     // Guest never accumulates history, even in memory.
     if (profileId === GUEST_PROFILE_ID) return;
+    // Private Viewing: suppress local state update so CW list stays clean.
+    if (activeProfile?.private_viewing) return;
     setEntries((prev) => {
       const sid = entry.stream_id != null ? String(entry.stream_id) : null;
       const without = sid
