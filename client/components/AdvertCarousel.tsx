@@ -211,52 +211,54 @@ export default function AdvertCarousel({
   const catLabel = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
 
   return (
-    <Pressable
-      focusable
-      style={[styles.wrapper, style, isActive && styles.wrapperActive]}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-    >
-      {/* Image — fills the entire wrapper so category badge + dots don't steal height */}
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
-        <Image
-          source={{ uri: current.image_url }}
-          style={StyleSheet.absoluteFillObject}
-          contentFit="cover"
-          transition={0}
-        />
-      </Animated.View>
-
-      {/* Category badge — absolute top-left overlay */}
-      {current.category ? (
-        <View style={styles.categoryRow}>
-          <Feather name={catIcon} size={10} color={Colors.dark.accent} />
-          <ThemedText style={styles.categoryText}>{catLabel}</ThemedText>
-        </View>
-      ) : null}
-
-      {/* Progress bar — absolute bottom overlay */}
-      {adverts.length > 1 ? (
-        <View style={styles.progressTrack} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.progressBar,
-              {
-                width: progressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0%", "100%"],
-                }),
-              },
-            ]}
+    <View style={styles.outerWrap}>
+      <Pressable
+        focusable
+        style={[styles.wrapper, style, isActive && styles.wrapperActive]}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+      >
+        {/* Image — absoluteFill so the category badge doesn't steal any height */}
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
+          <Image
+            source={{ uri: current.image_url }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+            transition={0}
           />
-        </View>
-      ) : null}
+        </Animated.View>
 
-      {/* Dot indicators — absolute bottom overlay */}
+        {/* Category badge — top-left corner pill */}
+        {current.category ? (
+          <View style={styles.categoryRow}>
+            <Feather name={catIcon} size={10} color={Colors.dark.accent} />
+            <ThemedText style={styles.categoryText}>{catLabel}</ThemedText>
+          </View>
+        ) : null}
+
+        {/* Progress bar — absolute bottom */}
+        {adverts.length > 1 ? (
+          <View style={styles.progressTrack} pointerEvents="none">
+            <Animated.View
+              style={[
+                styles.progressBar,
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0%", "100%"],
+                  }),
+                },
+              ]}
+            />
+          </View>
+        ) : null}
+      </Pressable>
+
+      {/* Dot indicators — below the image, outside the pressable */}
       {adverts.length > 1 ? (
-        <View style={styles.dotsRow} pointerEvents="box-none">
+        <View style={styles.dotsRow}>
           {adverts.map((_, i) => (
             <Pressable key={i} onPress={() => goTo(i)} hitSlop={8}>
               <View style={[styles.dot, i === index && styles.dotActive]} />
@@ -264,13 +266,17 @@ export default function AdvertCarousel({
           ))}
         </View>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerWrap: {
+    width: "100%",
+  },
   wrapper: {
-    flex: 1,
+    width: "100%",
+    aspectRatio: 1920 / 400,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
@@ -287,13 +293,15 @@ const styles = StyleSheet.create({
   },
   categoryRow: {
     position: "absolute",
-    top: 0,
-    left: 0,
+    top: 8,
+    left: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 7,
+    backgroundColor: "rgba(0,0,0,0.62)",
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
   categoryText: {
     fontSize: 10,
@@ -323,15 +331,12 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   dotsRow: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 5,
-    paddingVertical: 8,
+    paddingTop: 5,
+    paddingBottom: 2,
   },
   dot: {
     width: 6,
