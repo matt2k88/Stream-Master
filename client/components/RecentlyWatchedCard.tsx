@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, StyleSheet, Pressable, Image, ScrollView } from "react-native";
+import React, { useState, useRef, useEffect } from "react";
+import { View, StyleSheet, Pressable, Image, ScrollView, Animated } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -190,7 +190,12 @@ function RecentlyWatchedRow({
   );
 }
 
-// ── Continue Watching card (bigger, vertical, for movies/series) ───────────
+// ── Continue Watching card (expandable on hover — buttons slide in on right) ─
+
+const CW_CARD_W = 158;
+const CW_CARD_EXPANDED_W = 300;
+const CW_THUMB_H = 95;
+const CW_PANEL_W = CW_CARD_EXPANDED_W - CW_CARD_W;
 
 function ContinueWatchingCard({
   item,
@@ -201,10 +206,38 @@ function ContinueWatchingCard({
   onPress: () => void;
   onInfoPress?: () => void;
 }) {
-  const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
+  const [outerFocused, setOuterFocused] = useState(false);
+  const [outerHovered, setOuterHovered] = useState(false);
+  const [resumeFocused, setResumeFocused] = useState(false);
+  const [resumeHovered, setResumeHovered] = useState(false);
+  const [infoFocused, setInfoFocused] = useState(false);
+  const [infoHovered, setInfoHovered] = useState(false);
+
   const accent = useAccent();
+
+  // Card is "active" as long as ANY part of it holds focus/hover
+  const isActive =
+    outerFocused || outerHovered ||
+    resumeFocused || resumeHovered ||
+    infoFocused || infoHovered;
+
+  const cardWidth = useRef(new Animated.Value(CW_CARD_W)).current;
+  const panelOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(cardWidth, {
+        toValue: isActive ? CW_CARD_EXPANDED_W : CW_CARD_W,
+        duration: 180,
+        useNativeDriver: false,
+      }),
+      Animated.timing(panelOpacity, {
+        toValue: isActive ? 1 : 0,
+        duration: isActive ? 200 : 120,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const remaining = formatRemaining(item.current_time, item.duration);
   const episodeLabel = formatEpisodeLabel(item);
@@ -212,75 +245,118 @@ function ContinueWatchingCard({
     item.duration && item.duration > 0
       ? Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))
       : 0;
-
   const metaParts = [episodeLabel, remaining].filter(Boolean);
 
   return (
-    <Pressable
+    <Animated.View
       style={[
         styles.cwCard,
-        isActive && { borderColor: accent.withAlpha(accent.accent, 0.55) },
+        { width: cardWidth },
+        isActive && { borderColor: accent.withAlpha(accent.accent, 0.6) },
       ]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
     >
-      {/* Thumbnail area */}
-      <View style={styles.cwThumbWrap}>
-        {item.thumbnail_url ? (
-          <Image source={{ uri: item.thumbnail_url }} style={styles.cwThumb} resizeMode="cover" />
-        ) : (
-          <View style={styles.cwThumbFallback}>
-            <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={24} color={Colors.dark.textSecondary} />
-          </View>
-        )}
+      {/* Main press target — tapping the card resumes */}
+      <Pressable
+        style={styles.cwCardPressable}
+        onPress={onPress}
+        onFocus={() => setOuterFocused(true)}
+        onBlur={() => setOuterFocused(false)}
+        onHoverIn={() => setOuterHovered(true)}
+        onHoverOut={() => setOuterHovered(false)}
+      >
+        {/* ── Top row: thumbnail + slide-in action panel ── */}
+        <View style={styles.cwThumbRow}>
+          {/* Thumbnail — fixed width, contain so full image is visible */}
+          <View style={styles.cwThumbArea}>
+            {item.thumbnail_url ? (
+              <Image
+                source={{ uri: item.thumbnail_url }}
+                style={styles.cwThumb}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={styles.cwThumbFallback}>
+                <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={26} color={Colors.dark.textSecondary} />
+              </View>
+            )}
 
-        {/* Type badge */}
-        <View style={styles.cwTypeBadge}>
-          <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={8} color={accent.accent} />
-          <ThemedText style={[styles.cwTypeText, { color: accent.accent }]}>
-            {TYPE_LABEL[item.content_type] ?? item.content_type}
-          </ThemedText>
-        </View>
+            {/* Type badge */}
+            <View style={styles.cwTypeBadge}>
+              <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={8} color={accent.accent} />
+              <ThemedText style={[styles.cwTypeText, { color: accent.accent }]}>
+                {TYPE_LABEL[item.content_type] ?? item.content_type}
+              </ThemedText>
+            </View>
 
-        {/* Progress bar */}
-        {progressPct > 0 ? (
-          <View style={styles.cwProgressTrack}>
-            <View style={[styles.cwProgressFill, { backgroundColor: accent.accent, width: `${progressPct}%` as any }]} />
-          </View>
-        ) : null}
-
-        {/* Hover / focus overlay with action buttons */}
-        {isActive ? (
-          <View style={[StyleSheet.absoluteFill, styles.cwOverlay]}>
-            <Pressable
-              style={[styles.cwResumeBtn, { backgroundColor: accent.accent }]}
-              onPress={onPress}
-            >
-              <Feather name="play" size={10} color="#fff" />
-              <ThemedText style={styles.cwResumeBtnText}>Resume</ThemedText>
-            </Pressable>
-            {onInfoPress ? (
-              <Pressable style={styles.cwInfoBtn} onPress={onInfoPress}>
-                <Feather name="info" size={13} color="#fff" />
-              </Pressable>
+            {/* Progress bar */}
+            {progressPct > 0 ? (
+              <View style={styles.cwProgressTrack}>
+                <View style={[styles.cwProgressFill, { backgroundColor: accent.accent, width: `${progressPct}%` as any }]} />
+              </View>
             ) : null}
           </View>
-        ) : null}
-      </View>
 
-      {/* Text below thumbnail */}
-      <View style={styles.cwInfo}>
-        <ThemedText style={styles.cwTitle} numberOfLines={2}>{item.name}</ThemedText>
-        {metaParts.length > 0 ? (
-          <ThemedText style={styles.cwMeta} numberOfLines={1}>
-            {metaParts.join("  \u00B7  ")}
-          </ThemedText>
-        ) : null}
-      </View>
-    </Pressable>
+          {/* Action panel — slides in on the right */}
+          <Animated.View style={[styles.cwPanel, { opacity: panelOpacity }]}>
+            {/* Resume button */}
+            <Pressable
+              focusable
+              style={[
+                styles.cwPanelBtn,
+                styles.cwPanelResumeBtn,
+                { backgroundColor: accent.accent },
+                (resumeFocused || resumeHovered) && styles.cwPanelBtnActive,
+              ]}
+              onPress={onPress}
+              onFocus={() => setResumeFocused(true)}
+              onBlur={() => setResumeFocused(false)}
+              onHoverIn={() => setResumeHovered(true)}
+              onHoverOut={() => setResumeHovered(false)}
+            >
+              <View style={[styles.cwPanelBtnIcon, (resumeFocused || resumeHovered) && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
+                <Feather name="play" size={13} color="#fff" />
+              </View>
+              <ThemedText style={styles.cwPanelBtnLabel}>Resume</ThemedText>
+            </Pressable>
+
+            {/* Info button */}
+            {onInfoPress ? (
+              <Pressable
+                focusable
+                style={[
+                  styles.cwPanelBtn,
+                  styles.cwPanelInfoBtn,
+                  (infoFocused || infoHovered) && styles.cwPanelBtnActive,
+                  (infoFocused || infoHovered) && { borderColor: accent.accent },
+                ]}
+                onPress={onInfoPress}
+                onFocus={() => setInfoFocused(true)}
+                onBlur={() => setInfoFocused(false)}
+                onHoverIn={() => setInfoHovered(true)}
+                onHoverOut={() => setInfoHovered(false)}
+              >
+                <View style={[styles.cwPanelBtnIcon, (infoFocused || infoHovered) && { backgroundColor: accent.withAlpha(accent.accent, 0.15) }]}>
+                  <Feather name="info" size={13} color={infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary} />
+                </View>
+                <ThemedText style={[styles.cwPanelBtnLabel, { color: infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary }]}>
+                  Details
+                </ThemedText>
+              </Pressable>
+            ) : null}
+          </Animated.View>
+        </View>
+
+        {/* ── Bottom: title + meta ── */}
+        <View style={styles.cwInfo}>
+          <ThemedText style={styles.cwTitle} numberOfLines={1}>{item.name}</ThemedText>
+          {metaParts.length > 0 ? (
+            <ThemedText style={styles.cwMeta} numberOfLines={1}>
+              {metaParts.join("  ·  ")}
+            </ThemedText>
+          ) : null}
+        </View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -676,7 +752,7 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
 
-  // Continue Watching card styles (movies/series - vertical card)
+  // Continue Watching card styles
   cwItemsList: {
     flexDirection: "row",
     gap: Spacing.sm,
@@ -684,17 +760,26 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
   },
   cwCard: {
-    width: 150,
+    // width is controlled by Animated.Value (CW_CARD_W → CW_CARD_EXPANDED_W)
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundDefault,
     overflow: "hidden",
   },
-  cwThumbWrap: {
-    width: "100%",
-    height: 92,
-    backgroundColor: Colors.dark.backgroundSecondary,
+  cwCardPressable: {
+    flex: 1,
+  },
+  // Top row: thumbnail on left, action panel slides in on right
+  cwThumbRow: {
+    flexDirection: "row",
+    height: CW_THUMB_H,
+  },
+  cwThumbArea: {
+    width: CW_CARD_W,
+    height: CW_THUMB_H,
+    backgroundColor: "#000",
+    flexShrink: 0,
   },
   cwThumb: {
     width: "100%",
@@ -704,6 +789,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: Colors.dark.backgroundSecondary,
   },
   cwTypeBadge: {
     position: "absolute",
@@ -712,7 +798,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-    backgroundColor: "rgba(0,0,0,0.72)",
+    backgroundColor: "rgba(0,0,0,0.78)",
     borderRadius: 3,
     paddingHorizontal: 4,
     paddingVertical: 2,
@@ -727,47 +813,72 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     left: 0,
-    right: 0,
+    right: CW_CARD_W,   // only under the thumbnail column
+    width: CW_CARD_W,
     height: 3,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
   cwProgressFill: {
     height: "100%",
   },
-  cwOverlay: {
-    backgroundColor: "rgba(0,0,0,0.62)",
+
+  // Action panel — slides in to the right of the thumbnail
+  cwPanel: {
+    flex: 1,
+    flexDirection: "column",
     justifyContent: "center",
-    alignItems: "center",
-    flexDirection: "row",
+    alignItems: "stretch",
     gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundSecondary,
   },
-  cwResumeBtn: {
+  cwPanelBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.full,
-  },
-  cwResumeBtnText: {
-    color: "#fff",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  cwInfoBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    gap: Spacing.xs,
+    borderRadius: BorderRadius.sm,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 6,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  cwPanelResumeBtn: {
+    // background colour set inline via accent
+  },
+  cwPanelInfoBtn: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  cwPanelBtnActive: {
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  cwPanelBtnIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.12)",
     justifyContent: "center",
     alignItems: "center",
+    flexShrink: 0,
   },
+  cwPanelBtnLabel: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+    flex: 1,
+  },
+
+  // Info strip below the thumbnail
   cwInfo: {
-    padding: Spacing.xs,
-    paddingTop: 6,
+    paddingHorizontal: Spacing.xs,
+    paddingTop: 5,
+    paddingBottom: 6,
     gap: 2,
+    width: CW_CARD_W,    // constrained to thumbnail width
   },
   cwTitle: {
     color: Colors.dark.text,

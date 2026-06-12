@@ -204,14 +204,20 @@ function QuickActionCard({
       <View style={styles.qaTextCol}>
         <ThemedText
           style={[styles.qaTitle, compact && styles.qaTitleCompact, isActive && { color: accent.accent }]}
-          numberOfLines={2}
+          numberOfLines={1}
         >
           {loading ? "Loading…" : title}
         </ThemedText>
         {compact ? null : (
-          <ThemedText style={styles.qaSubtitle} numberOfLines={1}>{subtitle}</ThemedText>
+          <ThemedText style={[styles.qaSubtitle, isActive && { color: accent.withAlpha(accent.accent, 0.85) }]} numberOfLines={1}>{subtitle}</ThemedText>
         )}
       </View>
+      <Feather
+        name="chevron-right"
+        size={14}
+        color={isActive ? accent.accent : Colors.dark.textSecondary}
+        style={{ flexShrink: 0, opacity: isActive ? 1 : 0.5 }}
+      />
     </Pressable>
   );
 }
@@ -953,27 +959,21 @@ export default function HomeScreen() {
   // movies/series (continue watching), shown inside one shared card box.
   const watchSections: WatchSectionConfig[] = useMemo(() => [
     {
-      label: "Recently Watched",
-      icon: "tv",
-      filter: (e) => e.content_type === "live",
-      emptyText: "No live channels watched yet",
-      maxItems: 12,
-    },
-    {
       label: "Continue Watching",
       icon: "play-circle",
-      // Movies disappear when finished. Series stay forever once started —
-      // even fully-watched ones — so weekly-release shows aren't lost. The
-      // dedupe in RecentlyWatchedCard collapses series entries by series_id
-      // so we still only ever see one row per series (the latest episode).
-      // Series-wide badging (WATCHED / NEW EPISODES) is applied at render
-      // time using getSeriesProgress on the row.
       filter: (e) =>
         (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
         (e.content_type === "series" && e.series_id != null),
       emptyText: "Nothing in progress",
       maxItems: 12,
       variant: "continue-watching" as const,
+    },
+    {
+      label: "Recently Watched",
+      icon: "tv",
+      filter: (e) => e.content_type === "live",
+      emptyText: "No live channels watched yet",
+      maxItems: 12,
     },
   ], []);
 
@@ -1816,34 +1816,34 @@ const styles = StyleSheet.create({
   // ── Quick-action card ─────────────────────────────────────────────────────
   qaCard: {
     flex: 1,
-    minHeight: 60,
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: Colors.dark.backgroundSecondary,
     borderRadius: BorderRadius.lg,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.dark.border,
     paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xs,
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    gap: Spacing.sm,
     overflow: "hidden",
   },
   qaCardActive: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1, shadowRadius: 16, elevation: 12,
   },
   qaIconWrap: {
-    width: 36, height: 36, borderRadius: BorderRadius.full,
-    backgroundColor: "rgba(255,102,0,0.1)",
+    width: 40, height: 40, borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(255,102,0,0.12)",
     justifyContent: "center", alignItems: "center",
     flexShrink: 0,
   },
-  qaIconWrapCompact: { width: 32, height: 32 },
-  qaTextCol: { flex: 1, minWidth: 0, gap: 1 },
-  qaTitle: { fontSize: 13, fontWeight: "800", color: "#fff", letterSpacing: 0.2, lineHeight: 16 },
+  qaIconWrapCompact: { width: 34, height: 34, borderRadius: BorderRadius.sm },
+  qaTextCol: { flex: 1, minWidth: 0, gap: 2 },
+  qaTitle: { fontSize: 14, fontWeight: "800", color: "#fff", letterSpacing: 0.1, lineHeight: 17 },
   qaTitleCompact: { fontSize: 12, lineHeight: 15 },
-  qaSubtitle: { fontSize: 10, fontWeight: "500", color: Colors.dark.textSecondary },
+  qaSubtitle: { fontSize: 11, fontWeight: "500", color: Colors.dark.textSecondary, lineHeight: 14 },
 
   // ── Portrait ──────────────────────────────────────────────────────────────
   portraitRoot: { flex: 1 },
