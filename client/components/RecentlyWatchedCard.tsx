@@ -104,7 +104,7 @@ function RecentlyWatchedRow({
     <Pressable
       style={[
         styles.row,
-        isActive && { backgroundColor: accent.withAlpha(accent.accent, 0.08) },
+        isActive && { borderColor: accent.withAlpha(accent.accent, 0.55) },
       ]}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
@@ -112,15 +112,7 @@ function RecentlyWatchedRow({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      {isActive ? (
-        <LinearGradient
-          colors={[accent.withAlpha(accent.accent, 0.12), accent.withAlpha(accent.accent, 0.04)]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
-      ) : null}
-
+      {/* Thumbnail fills top of card */}
       <View style={styles.thumbWrap}>
         {item.thumbnail_url ? (
           <Image
@@ -137,32 +129,41 @@ function RecentlyWatchedRow({
             />
           </View>
         )}
+
+        {/* Active tint overlay */}
+        {isActive ? (
+          <LinearGradient
+            colors={[accent.withAlpha(accent.accent, 0.18), "transparent"]}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : null}
+
+        {/* LIVE badge */}
         {item.content_type === "live" ? (
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
             <ThemedText style={styles.liveText}>LIVE</ThemedText>
           </View>
         ) : null}
+
+        {/* Progress bar */}
         {item.content_type !== "live" && item.duration && item.duration > 0 && !item.is_completed ? (
           <View style={styles.progressTrack}>
             <View
               style={[
                 styles.progressFill,
                 { backgroundColor: accent.accent },
-                { width: `${Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))}%` },
+                { width: `${Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))}%` as any },
               ]}
             />
           </View>
         ) : null}
       </View>
 
+      {/* Info strip below thumbnail */}
       <View style={styles.infoCol}>
         <View style={[styles.typePill, { backgroundColor: accent.accentDim }]}>
-          <Feather
-            name={TYPE_ICON[item.content_type] ?? "play"}
-            size={9}
-            color={accent.accent}
-          />
+          <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={9} color={accent.accent} />
           <ThemedText style={[styles.typeText, { color: accent.accent }]}>
             {TYPE_LABEL[item.content_type] ?? item.content_type}
           </ThemedText>
@@ -172,19 +173,7 @@ function RecentlyWatchedRow({
         </ThemedText>
       </View>
 
-      <View
-        style={[
-          styles.playIcon,
-          isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
-        ]}
-      >
-        <Feather
-          name="play"
-          size={12}
-          color={isActive ? accent.accent : Colors.dark.textSecondary}
-        />
-      </View>
-
+      {/* Left accent bar when active */}
       {isActive ? <View style={[styles.activeBar, { backgroundColor: accent.accent }]} /> : null}
     </Pressable>
   );
@@ -192,9 +181,10 @@ function RecentlyWatchedRow({
 
 // ── Continue Watching card (expandable on hover — buttons slide in on right) ─
 
-const CW_CARD_W = 158;
-const CW_CARD_EXPANDED_W = 300;
-const CW_THUMB_H = 95;
+const CW_CARD_W = 148;           // slightly narrower, fits portrait posters better
+const CW_CARD_EXPANDED_W = 310;
+const CW_CARD_H = 188;           // full card height (no info strip below — text overlaid)
+const CW_THUMB_H = CW_CARD_H;   // alias kept for panel height
 const CW_PANEL_W = CW_CARD_EXPANDED_W - CW_CARD_W;
 
 function ContinueWatchingCard({
@@ -264,39 +254,32 @@ function ContinueWatchingCard({
         onHoverIn={() => setOuterHovered(true)}
         onHoverOut={() => setOuterHovered(false)}
       >
-        {/* ── Top row: thumbnail + slide-in action panel ── */}
+        {/* ── Row: full-bleed thumbnail (left) + slide-in action panel (right) ── */}
         <View style={styles.cwThumbRow}>
-          {/* Thumbnail — fixed width.
-              Movies are portrait posters in a landscape container → use
-              contain to show the full image, with a blurred copy behind to
-              fill the dead space instead of plain black bars.
-              Series are landscape episode screenshots → cover is fine
-              (user confirmed L/R crop is acceptable). */}
+
+          {/* ── Left: full-bleed image column ── */}
           <View style={styles.cwThumbArea}>
             {item.thumbnail_url ? (
-              <>
-                {item.content_type === "movie" ? (
-                  /* Blurred bg fill — makes black bars match the poster palette */
-                  <Image
-                    source={{ uri: item.thumbnail_url }}
-                    style={[StyleSheet.absoluteFillObject, styles.cwThumbBlurBg]}
-                    resizeMode="cover"
-                    blurRadius={14}
-                  />
-                ) : null}
-                <Image
-                  source={{ uri: item.thumbnail_url }}
-                  style={styles.cwThumb}
-                  resizeMode={item.content_type === "series" ? "cover" : "contain"}
-                />
-              </>
+              <Image
+                source={{ uri: item.thumbnail_url }}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+              />
             ) : (
               <View style={styles.cwThumbFallback}>
                 <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={26} color={Colors.dark.textSecondary} />
               </View>
             )}
 
-            {/* Type badge */}
+            {/* Gradient: transparent at top → black at bottom so text is readable */}
+            <LinearGradient
+              colors={["transparent", "transparent", "rgba(0,0,0,0.82)", "#000"]}
+              locations={[0, 0.42, 0.72, 1.0]}
+              style={StyleSheet.absoluteFillObject}
+              pointerEvents="none"
+            />
+
+            {/* Type badge — top-left */}
             <View style={styles.cwTypeBadge}>
               <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={8} color={accent.accent} />
               <ThemedText style={[styles.cwTypeText, { color: accent.accent }]}>
@@ -304,7 +287,17 @@ function ContinueWatchingCard({
               </ThemedText>
             </View>
 
-            {/* Progress bar */}
+            {/* Title + meta — overlaid on gradient at the bottom */}
+            <View style={[styles.cwInfo, progressPct > 0 && styles.cwInfoWithProgress]}>
+              <ThemedText style={styles.cwTitle} numberOfLines={2}>{item.name}</ThemedText>
+              {metaParts.length > 0 ? (
+                <ThemedText style={styles.cwMeta} numberOfLines={1}>
+                  {metaParts.join("  ·  ")}
+                </ThemedText>
+              ) : null}
+            </View>
+
+            {/* Progress bar — absolute bottom */}
             {progressPct > 0 ? (
               <View style={styles.cwProgressTrack}>
                 <View style={[styles.cwProgressFill, { backgroundColor: accent.accent, width: `${progressPct}%` as any }]} />
@@ -312,7 +305,7 @@ function ContinueWatchingCard({
             ) : null}
           </View>
 
-          {/* Action panel — slides in on the right */}
+          {/* ── Right: action panel slides in on hover/focus ── */}
           <Animated.View style={[styles.cwPanel, { opacity: panelOpacity }]}>
             {/* Resume button */}
             <Pressable
@@ -360,16 +353,6 @@ function ContinueWatchingCard({
               </Pressable>
             ) : null}
           </Animated.View>
-        </View>
-
-        {/* ── Bottom: title + meta ── */}
-        <View style={styles.cwInfo}>
-          <ThemedText style={styles.cwTitle} numberOfLines={1}>{item.name}</ThemedText>
-          {metaParts.length > 0 ? (
-            <ThemedText style={styles.cwMeta} numberOfLines={1}>
-              {metaParts.join("  ·  ")}
-            </ThemedText>
-          ) : null}
         </View>
       </Pressable>
     </Animated.View>
@@ -667,29 +650,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Recently Watched row styles (live TV - compact horizontal)
+  // Recently Watched row styles (live TV - vertical cards, same width as CW cards)
   itemsList: {
     flexDirection: "row",
     gap: Spacing.sm,
     paddingRight: Spacing.xs,
+    paddingBottom: 2,
   },
   row: {
-    width: 210,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
+    width: CW_CARD_W,
     borderRadius: BorderRadius.sm,
-    paddingVertical: 4,
-    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundDefault,
     overflow: "hidden",
   },
   thumbWrap: {
-    width: 52,
-    height: 34,
-    borderRadius: BorderRadius.sm,
-    overflow: "hidden",
+    width: "100%",
+    height: 84,
     backgroundColor: Colors.dark.backgroundSecondary,
-    flexShrink: 0,
+    overflow: "hidden",
   },
   thumb: {
     width: "100%",
@@ -702,18 +682,18 @@ const styles = StyleSheet.create({
   },
   liveBadge: {
     position: "absolute",
-    bottom: 2,
-    left: 2,
+    bottom: 4,
+    left: 4,
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
-    backgroundColor: "rgba(220,30,30,0.85)",
+    backgroundColor: "rgba(200,20,20,0.88)",
     borderRadius: 3,
-    paddingHorizontal: 3,
-    paddingVertical: 1,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
-  liveDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: "#fff" },
-  liveText: { color: "#fff", fontSize: 7, fontWeight: "800", letterSpacing: 0.4 },
+  liveDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#fff" },
+  liveText: { color: "#fff", fontSize: 7, fontWeight: "800", letterSpacing: 0.5 },
   progressTrack: {
     position: "absolute",
     left: 0, right: 0, bottom: 0,
@@ -724,7 +704,9 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   infoCol: {
-    flex: 1,
+    paddingHorizontal: Spacing.xs,
+    paddingTop: 5,
+    paddingBottom: 6,
     gap: 2,
   },
   typePill: {
@@ -793,16 +775,10 @@ const styles = StyleSheet.create({
   },
   cwThumbArea: {
     width: CW_CARD_W,
-    height: CW_THUMB_H,
-    backgroundColor: "#000",
+    height: CW_CARD_H,
+    backgroundColor: Colors.dark.backgroundSecondary,
     flexShrink: 0,
-  },
-  cwThumb: {
-    width: "100%",
-    height: "100%",
-  },
-  cwThumbBlurBg: {
-    opacity: 0.45,
+    overflow: "hidden",
   },
   cwThumbFallback: {
     flex: 1,
@@ -832,8 +808,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     left: 0,
-    right: CW_CARD_W,   // only under the thumbnail column
-    width: CW_CARD_W,
+    right: 0,
     height: 3,
     backgroundColor: "rgba(255,255,255,0.15)",
   },
@@ -891,22 +866,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Info strip below the thumbnail
+  // Title + meta — absolute overlay at the bottom of the image
   cwInfo: {
-    paddingHorizontal: Spacing.xs,
-    paddingTop: 5,
-    paddingBottom: 6,
+    position: "absolute",
+    bottom: 6,
+    left: 6,
+    right: 6,
     gap: 2,
-    width: CW_CARD_W,    // constrained to thumbnail width
+  },
+  cwInfoWithProgress: {
+    bottom: 10,   // lift above the 3px progress bar + a little breathing room
   },
   cwTitle: {
-    color: Colors.dark.text,
+    color: "#fff",
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
     lineHeight: 14,
   },
   cwMeta: {
-    color: Colors.dark.textSecondary,
+    color: "rgba(255,255,255,0.65)",
     fontSize: 9,
     fontWeight: "500",
     lineHeight: 13,
