@@ -95,7 +95,9 @@ function SeekBar({
   const isCapturedRef = useRef(isCaptured);
   useEffect(() => { isCapturedRef.current = isCaptured; }, [isCaptured]);
   useEffect(() => {
-    if (pressableRef.current) {
+    // findNodeHandle throws on react-native-web; the tag is only used for
+    // native Android-TV directional focus, so skip it on web.
+    if (pressableRef.current && Platform.OS !== "web") {
       const tag = findNodeHandle(pressableRef.current);
       if (tag) setSelfTag(tag);
     }

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions, findNodeHandle } from "react-native";
+import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions, findNodeHandle, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -8,6 +8,11 @@ import { getApiUrl } from "@/lib/query-client";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import { useAccent } from "@/contexts/ThemeContext";
+
+// findNodeHandle throws on react-native-web; only meaningful for native
+// TV-remote focus, so skip it on web.
+const safeNodeHandle = (node: any): number | null =>
+  Platform.OS === "web" ? null : findNodeHandle(node);
 
 export interface RecentlyWatched {
   id: string;
@@ -305,7 +310,7 @@ function ContinueWatchingCard({
         onBlur={() => setOuterFocused(false)}
         onHoverIn={() => setOuterHovered(true)}
         onHoverOut={() => setOuterHovered(false)}
-        onLayout={() => { const t = findNodeHandle(outerRef.current); if (t) setOuterTag(t); }}
+        onLayout={() => { const t = safeNodeHandle(outerRef.current); if (t) setOuterTag(t); }}
         nextFocusDown={resumeTag}
       >
         {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
@@ -386,7 +391,7 @@ function ContinueWatchingCard({
               onBlur={() => setResumeFocused(false)}
               onHoverIn={() => setResumeHovered(true)}
               onHoverOut={() => setResumeHovered(false)}
-              onLayout={() => { const t = findNodeHandle(resumeRef.current); if (t) setResumeTag(t); }}
+              onLayout={() => { const t = safeNodeHandle(resumeRef.current); if (t) setResumeTag(t); }}
               nextFocusDown={infoTag}
               nextFocusUp={outerTag}
             >
@@ -412,7 +417,7 @@ function ContinueWatchingCard({
                 onBlur={() => setInfoFocused(false)}
                 onHoverIn={() => setInfoHovered(true)}
                 onHoverOut={() => setInfoHovered(false)}
-                onLayout={() => { const t = findNodeHandle(infoRef.current); if (t) setInfoTag(t); }}
+                onLayout={() => { const t = safeNodeHandle(infoRef.current); if (t) setInfoTag(t); }}
                 nextFocusUp={resumeTag ?? outerTag}
               >
                 <View style={[styles.cwPanelBtnIcon, (infoFocused || infoHovered) && { backgroundColor: accent.withAlpha(accent.accent, 0.15) }]}>
