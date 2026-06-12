@@ -456,6 +456,37 @@ export default function AccountInfoScreen() {
     : s?.toLowerCase() === "expired" ? Colors.dark.error
     : Colors.dark.textSecondary;
 
+  const togglePrivateViewing = async (newValue?: boolean) => {
+    if (!activeProfile || isGuest) return;
+    const next = newValue !== undefined ? newValue : !activeProfile.private_viewing;
+    const doSave = async () => {
+      setPrivacySaving(true);
+      try {
+        const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
+        const res = await fetch(url.toString(), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ private_viewing: next }),
+        });
+        if (res.ok) updateActiveProfile({ private_viewing: next });
+      } catch { /* silent */ } finally {
+        setPrivacySaving(false);
+      }
+    };
+    if (next) {
+      Alert.alert(
+        "Private Viewing",
+        "While Private Viewing is on, your watch history won't be tracked for Live TV, Movies or Series — and your Continue Watching list won't update.\n\nDisable Private Viewing whenever you want to resume tracking your watch history.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Enable", onPress: doSave },
+        ],
+      );
+    } else {
+      await doSave();
+    }
+  };
+
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
@@ -597,39 +628,37 @@ export default function AccountInfoScreen() {
                   />
                 </View>
               </View>
+              {!isGuest ? (
+                <Pressable
+                  style={styles.privacyRow}
+                  onPress={() => { void togglePrivateViewing(); }}
+                  accessible={true}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: !!activeProfile?.private_viewing }}
+                >
+                  <View style={[styles.actionTileIcon, { backgroundColor: "rgba(255,102,0,0.12)", borderColor: "rgba(255,102,0,0.3)" }]}>
+                    <Feather name="eye-off" size={16} color={Colors.dark.accent} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <ThemedText style={styles.actionTileTitle}>Private Viewing</ThemedText>
+                    <ThemedText style={styles.actionTileSub}>
+                      {activeProfile?.private_viewing ? "Watch history paused" : "History tracked — tap to go private"}
+                    </ThemedText>
+                  </View>
+                  {privacySaving ? (
+                    <ActivityIndicator size="small" color={Colors.dark.accent} />
+                  ) : (
+                    <Switch
+                      value={!!activeProfile?.private_viewing}
+                      onValueChange={(v) => { void togglePrivateViewing(v); }}
+                      trackColor={{ false: Colors.dark.border, true: Colors.dark.accent }}
+                      thumbColor="#fff"
+                    />
+                  )}
+                </Pressable>
+              ) : null}
             </View>
           ) : null;
-
-          const togglePrivateViewing = async (newValue?: boolean) => {
-            if (!activeProfile || isGuest) return;
-            const next = newValue !== undefined ? newValue : !activeProfile.private_viewing;
-            const doSave = async () => {
-              setPrivacySaving(true);
-              try {
-                const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
-                const res = await fetch(url.toString(), {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ private_viewing: next }),
-                });
-                if (res.ok) updateActiveProfile({ private_viewing: next });
-              } catch { /* silent */ } finally {
-                setPrivacySaving(false);
-              }
-            };
-            if (next) {
-              Alert.alert(
-                "Private Viewing",
-                "While Private Viewing is on, your watch history won't be tracked for Live TV, Movies or Series — and your Continue Watching list won't update.\n\nDisable Private Viewing whenever you want to resume tracking your watch history.",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Enable", onPress: doSave },
-                ],
-              );
-            } else {
-              await doSave();
-            }
-          };
 
           const settingsSection = (
             <View style={{ gap: Spacing.sm }}>
@@ -678,35 +707,6 @@ export default function AccountInfoScreen() {
                   />
                 </View>
               </View>
-              {!isGuest ? (
-                <Pressable
-                  style={styles.privacyRow}
-                  onPress={() => { void togglePrivateViewing(); }}
-                  accessible={true}
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: !!activeProfile?.private_viewing }}
-                >
-                  <View style={[styles.actionTileIcon, { backgroundColor: "rgba(255,102,0,0.12)", borderColor: "rgba(255,102,0,0.3)" }]}>
-                    <Feather name="eye-off" size={16} color={Colors.dark.accent} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ThemedText style={styles.actionTileTitle}>Private Viewing</ThemedText>
-                    <ThemedText style={styles.actionTileSub}>
-                      {activeProfile?.private_viewing ? "Watch history paused" : "History tracked — tap to go private"}
-                    </ThemedText>
-                  </View>
-                  {privacySaving ? (
-                    <ActivityIndicator size="small" color={Colors.dark.accent} />
-                  ) : (
-                    <Switch
-                      value={!!activeProfile?.private_viewing}
-                      onValueChange={(v) => { void togglePrivateViewing(v); }}
-                      trackColor={{ false: Colors.dark.border, true: Colors.dark.accent }}
-                      thumbColor="#fff"
-                    />
-                  )}
-                </Pressable>
-              ) : null}
             </View>
           );
 
