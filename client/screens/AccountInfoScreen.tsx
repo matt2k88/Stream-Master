@@ -78,12 +78,14 @@ function HoverBtn({
   activeStyle,
   onPress,
   disabled,
+  hasTVPreferredFocus,
   children,
 }: {
   style: any;
   activeStyle: any;
   onPress: () => void;
   disabled?: boolean;
+  hasTVPreferredFocus?: boolean;
   children: React.ReactNode | ((isActive: boolean) => React.ReactNode);
 }) {
   const [focused, setFocused] = useState(false);
@@ -98,6 +100,7 @@ function HoverBtn({
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       disabled={disabled}
+      hasTVPreferredFocus={hasTVPreferredFocus}
     >
       {typeof children === "function" ? children(isActive) : children}
     </Pressable>
@@ -1065,6 +1068,7 @@ export default function AccountInfoScreen() {
                 style={styles.privacyModalConfirm}
                 activeStyle={styles.privacyModalConfirmActive}
                 onPress={() => { void confirmEnablePrivateViewing(); }}
+                hasTVPreferredFocus={privacyConfirmVisible}
               >
                 {() => <ThemedText style={styles.privacyModalConfirmText}>Enable</ThemedText>}
               </HoverBtn>
