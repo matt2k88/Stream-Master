@@ -318,6 +318,7 @@ export default function AccountInfoScreen() {
   const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
   const [supportVisible, setSupportVisible] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
+  const [privacyConfirmVisible, setPrivacyConfirmVisible] = useState(false);
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
@@ -455,9 +456,8 @@ export default function AccountInfoScreen() {
     : s?.toLowerCase() === "expired" ? Colors.dark.error
     : Colors.dark.textSecondary;
 
-  const togglePrivateViewing = async (newValue?: boolean) => {
+  const savePrivateViewing = async (next: boolean) => {
     if (!activeProfile || isGuest) return;
-    const next = newValue !== undefined ? newValue : !activeProfile.private_viewing;
     const notifyError = () => {
       const msg = "Couldn't update Private Viewing. Please try again.";
       if (Platform.OS === "web") {
@@ -466,42 +466,40 @@ export default function AccountInfoScreen() {
         Alert.alert("Private Viewing", msg);
       }
     };
-    const doSave = async () => {
-      setPrivacySaving(true);
-      try {
-        const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
-        const res = await fetch(url.toString(), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ private_viewing: next }),
-        });
-        if (res.ok) {
-          updateActiveProfile({ private_viewing: next });
-        } else {
-          notifyError();
-        }
-      } catch {
-        notifyError();
-      } finally {
-        setPrivacySaving(false);
-      }
-    };
-    if (next) {
-      const title = "Private Viewing";
-      const message =
-        "While Private Viewing is on, your watch history won't be tracked for Live TV, Movies or Series — and your Continue Watching list won't update.\n\nDisable Private Viewing whenever you want to resume tracking your watch history.";
-      if (Platform.OS === "web") {
-        const ok = typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`);
-        if (ok) await doSave();
+    setPrivacySaving(true);
+    try {
+      const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ private_viewing: next }),
+      });
+      if (res.ok) {
+        updateActiveProfile({ private_viewing: next });
       } else {
-        Alert.alert(title, message, [
-          { text: "Cancel", style: "cancel" },
-          { text: "Enable", onPress: doSave },
-        ]);
+        notifyError();
       }
-    } else {
-      await doSave();
+    } catch {
+      notifyError();
+    } finally {
+      setPrivacySaving(false);
     }
+  };
+
+  const togglePrivateViewing = (newValue?: boolean) => {
+    if (!activeProfile || isGuest) return;
+    const next = newValue !== undefined ? newValue : !activeProfile.private_viewing;
+    if (next) {
+      // Enabling: confirm via in-app modal (not a system dialog).
+      setPrivacyConfirmVisible(true);
+    } else {
+      void savePrivateViewing(false);
+    }
+  };
+
+  const confirmEnablePrivateViewing = async () => {
+    setPrivacyConfirmVisible(false);
+    await savePrivateViewing(true);
   };
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
@@ -650,9 +648,9 @@ export default function AccountInfoScreen() {
                       icon={activeProfile?.private_viewing ? "eye-off" : "eye"}
                       title="Private Viewing"
                       subtitle={activeProfile?.private_viewing ? "On — history paused" : "Off — tap to enable"}
-                      tint={activeProfile?.private_viewing ? Colors.dark.accent : Colors.dark.textSecondary}
+                      tint={activeProfile?.private_viewing ? Colors.dark.success : Colors.dark.textSecondary}
                       busy={privacySaving}
-                      onPress={() => { void togglePrivateViewing(); }}
+                      onPress={() => togglePrivateViewing()}
                     />
                   </View>
                 ) : null}
@@ -1026,6 +1024,54 @@ export default function AccountInfoScreen() {
           </HoverBtn>
         </View>
       )}
+
+      {/* Private Viewing confirm modal — in-app (not a system dialog) */}
+      <Modal
+        visible={privacyConfirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPrivacyConfirmVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setPrivacyConfirmVisible(false)}>
+          <Pressable style={styles.privacyModal} onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(0,230,118,0.12)", "rgba(0,230,118,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <View style={styles.privacyModalHeader}>
+              <View style={[styles.actionTileIcon, { borderColor: Colors.dark.success + "55", backgroundColor: Colors.dark.success + "14" }]}>
+                <Feather name="eye-off" size={18} color={Colors.dark.success} />
+              </View>
+              <ThemedText style={styles.privacyModalTitle}>Enable Private Viewing?</ThemedText>
+            </View>
+            <ThemedText style={styles.privacyModalBody}>
+              While Private Viewing is on, your watch history won't be tracked for Live TV, Movies or Series — and your Continue Watching list won't update.
+            </ThemedText>
+            <ThemedText style={styles.privacyModalBody}>
+              Turn it off whenever you want to resume tracking your watch history.
+            </ThemedText>
+            <View style={styles.privacyModalActions}>
+              <HoverBtn
+                style={styles.privacyModalCancel}
+                activeStyle={styles.privacyModalCancelActive}
+                onPress={() => setPrivacyConfirmVisible(false)}
+              >
+                {() => <ThemedText style={styles.privacyModalCancelText}>Cancel</ThemedText>}
+              </HoverBtn>
+              <HoverBtn
+                style={styles.privacyModalConfirm}
+                activeStyle={styles.privacyModalConfirmActive}
+                onPress={() => { void confirmEnablePrivateViewing(); }}
+              >
+                {() => <ThemedText style={styles.privacyModalConfirmText}>Enable</ThemedText>}
+              </HoverBtn>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Support modal — contact details + helpful links */}
       <Modal
@@ -1749,6 +1795,53 @@ const styles = StyleSheet.create({
     flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
     justifyContent: "center", alignItems: "center",
     padding: Spacing.lg,
+  },
+  privacyModal: {
+    width: "100%", maxWidth: 460,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(0,230,118,0.4)",
+    overflow: "hidden", padding: Spacing.lg, gap: Spacing.sm,
+    shadowColor: "#00E676",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 18, elevation: 14,
+  },
+  privacyModalHeader: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  privacyModalTitle: {
+    flex: 1, fontSize: 18, fontWeight: "800", color: Colors.dark.text,
+  },
+  privacyModalBody: {
+    fontSize: 14, lineHeight: 20, color: Colors.dark.textSecondary,
+  },
+  privacyModalActions: {
+    flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md,
+  },
+  privacyModalCancel: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  privacyModalCancelActive: {
+    borderColor: Colors.dark.textSecondary,
+  },
+  privacyModalCancelText: {
+    fontSize: 15, fontWeight: "700", color: Colors.dark.text,
+  },
+  privacyModalConfirm: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingVertical: Spacing.sm + 2, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.dark.success,
+    backgroundColor: Colors.dark.success + "1A",
+  },
+  privacyModalConfirmActive: {
+    backgroundColor: Colors.dark.success + "33",
+  },
+  privacyModalConfirmText: {
+    fontSize: 15, fontWeight: "800", color: Colors.dark.success,
   },
   notesModal: {
     width: "100%", maxWidth: 640, maxHeight: "90%",
