@@ -1799,12 +1799,11 @@ const styles = StyleSheet.create({
   topDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
   contentScroll: { flex: 1 },
-  contentBody: { flexGrow: 1, gap: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.lg },
+  contentBody: { flexGrow: 1, gap: 6, paddingTop: 4, paddingBottom: Spacing.sm },
 
   advertBannerLandscape: {
     width: "100%",
-    flex: 1,
-    minHeight: 150,
+    height: 150,
   },
   advertBannerPortrait: {
     width: "100%",

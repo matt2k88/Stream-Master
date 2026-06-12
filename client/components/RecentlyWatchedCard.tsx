@@ -183,7 +183,7 @@ function RecentlyWatchedRow({
 
 const CW_CARD_W = 148;           // slightly narrower, fits portrait posters better
 const CW_CARD_EXPANDED_W = 310;
-const CW_CARD_H = 188;           // full card height (no info strip below — text overlaid)
+const CW_CARD_H = 118;           // full card height (no info strip below — text overlaid)
 const CW_THUMB_H = CW_CARD_H;   // alias kept for panel height
 const CW_PANEL_W = CW_CARD_EXPANDED_W - CW_CARD_W;
 
@@ -600,17 +600,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.border,
     overflow: "hidden",
-    padding: Spacing.sm,
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    paddingTop: 6,
+    paddingBottom: 6,
+    gap: 4,
   },
 
   sectionWrap: {
-    gap: Spacing.xs,
+    gap: 3,
   },
   sectionDivider: {
     height: 1,
     backgroundColor: Colors.dark.border,
-    marginVertical: Spacing.xs,
+    marginVertical: 3,
     opacity: 0.6,
   },
   labelRow: {
@@ -667,7 +669,7 @@ const styles = StyleSheet.create({
   },
   thumbWrap: {
     width: "100%",
-    height: 84,
+    height: 62,
     backgroundColor: Colors.dark.backgroundSecondary,
     overflow: "hidden",
   },
