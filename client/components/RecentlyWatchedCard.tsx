@@ -50,21 +50,43 @@ export interface WatchSectionConfig {
   filter: (e: RecentlyWatched) => boolean;
   emptyText?: string;
   maxItems?: number;
+  variant?: "recently-watched" | "continue-watching";
 }
 
 interface Props {
   style?: any;
   onPress?: (item: RecentlyWatched) => void;
+  onInfoPress?: (item: RecentlyWatched) => void;
   refreshKey?: number;
   maxItems?: number;
   onLayout?: (e: any) => void;
-  /**
-   * When provided, render N labelled sections inside one card box.
-   * Each section has its own header + filtered items.
-   * When omitted, falls back to legacy single-section "Previously Watched".
-   */
   sections?: WatchSectionConfig[];
 }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function formatRemaining(current: number | null | undefined, duration: number | null | undefined): string | null {
+  if (!duration || duration <= 0) return null;
+  const cur = current ?? 0;
+  const rem = Math.max(0, duration - cur);
+  const totalMins = Math.floor(rem / 60);
+  if (totalMins <= 0) return null;
+  if (totalMins < 60) return `${totalMins}m left`;
+  const hrs = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  return mins > 0 ? `${hrs}h ${mins}m left` : `${hrs}h left`;
+}
+
+function formatEpisodeLabel(item: RecentlyWatched): string | null {
+  if (item.content_type !== "series") return null;
+  if (!item.season_num && !item.episode_num) return null;
+  const parts: string[] = [];
+  if (item.season_num) parts.push(`S${item.season_num}`);
+  if (item.episode_num) parts.push(`E${item.episode_num}`);
+  return parts.join(" ");
+}
+
+// ── Recently Watched row (compact, for live TV) ────────────────────────────
 
 function RecentlyWatchedRow({
   item,
@@ -168,11 +190,103 @@ function RecentlyWatchedRow({
   );
 }
 
+// ── Continue Watching card (bigger, vertical, for movies/series) ───────────
+
+function ContinueWatchingCard({
+  item,
+  onPress,
+  onInfoPress,
+}: {
+  item: RecentlyWatched;
+  onPress: () => void;
+  onInfoPress?: () => void;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+
+  const remaining = formatRemaining(item.current_time, item.duration);
+  const episodeLabel = formatEpisodeLabel(item);
+  const progressPct =
+    item.duration && item.duration > 0
+      ? Math.max(2, Math.min(100, ((item.current_time ?? 0) / item.duration) * 100))
+      : 0;
+
+  const metaParts = [episodeLabel, remaining].filter(Boolean);
+
+  return (
+    <Pressable
+      style={[
+        styles.cwCard,
+        isActive && { borderColor: accent.withAlpha(accent.accent, 0.55) },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {/* Thumbnail area */}
+      <View style={styles.cwThumbWrap}>
+        {item.thumbnail_url ? (
+          <Image source={{ uri: item.thumbnail_url }} style={styles.cwThumb} resizeMode="cover" />
+        ) : (
+          <View style={styles.cwThumbFallback}>
+            <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={24} color={Colors.dark.textSecondary} />
+          </View>
+        )}
+
+        {/* Type badge */}
+        <View style={styles.cwTypeBadge}>
+          <Feather name={TYPE_ICON[item.content_type] ?? "play"} size={8} color={accent.accent} />
+          <ThemedText style={[styles.cwTypeText, { color: accent.accent }]}>
+            {TYPE_LABEL[item.content_type] ?? item.content_type}
+          </ThemedText>
+        </View>
+
+        {/* Progress bar */}
+        {progressPct > 0 ? (
+          <View style={styles.cwProgressTrack}>
+            <View style={[styles.cwProgressFill, { backgroundColor: accent.accent, width: `${progressPct}%` as any }]} />
+          </View>
+        ) : null}
+
+        {/* Hover / focus overlay with action buttons */}
+        {isActive ? (
+          <View style={[StyleSheet.absoluteFill, styles.cwOverlay]}>
+            <Pressable
+              style={[styles.cwResumeBtn, { backgroundColor: accent.accent }]}
+              onPress={onPress}
+            >
+              <Feather name="play" size={10} color="#fff" />
+              <ThemedText style={styles.cwResumeBtnText}>Resume</ThemedText>
+            </Pressable>
+            {onInfoPress ? (
+              <Pressable style={styles.cwInfoBtn} onPress={onInfoPress}>
+                <Feather name="info" size={13} color="#fff" />
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {/* Text below thumbnail */}
+      <View style={styles.cwInfo}>
+        <ThemedText style={styles.cwTitle} numberOfLines={2}>{item.name}</ThemedText>
+        {metaParts.length > 0 ? (
+          <ThemedText style={styles.cwMeta} numberOfLines={1}>
+            {metaParts.join("  \u00B7  ")}
+          </ThemedText>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+// ── Deduplication ──────────────────────────────────────────────────────────
+
 function dedupe(entries: RecentlyWatched[]): RecentlyWatched[] {
-  // For series rows we collapse by series_id (so a user watching multiple
-  // episodes of the same series only shows up once — the latest entry
-  // wins because the input is newest-first). Movies and live channels
-  // continue to dedupe by stream_id as before.
   const seenStream = new Set<string>();
   const seenSeries = new Set<string>();
   const out: RecentlyWatched[] = [];
@@ -192,10 +306,13 @@ function dedupe(entries: RecentlyWatched[]): RecentlyWatched[] {
   return out;
 }
 
+// ── Section renderer ───────────────────────────────────────────────────────
+
 function WatchSection({
   cfg,
   entries,
   onPress,
+  onInfoPress,
   defaultMax,
   isLoading,
   accentColor,
@@ -203,6 +320,7 @@ function WatchSection({
   cfg: WatchSectionConfig;
   entries: RecentlyWatched[];
   onPress?: (item: RecentlyWatched) => void;
+  onInfoPress?: (item: RecentlyWatched) => void;
   defaultMax?: number;
   isLoading: boolean;
   accentColor: string;
@@ -211,6 +329,7 @@ function WatchSection({
   const max = cfg.maxItems ?? defaultMax;
   const items = max ? filtered.slice(0, max) : filtered;
   const isEmpty = items.length === 0;
+  const isContinue = cfg.variant === "continue-watching";
 
   return (
     <View style={styles.sectionWrap}>
@@ -234,22 +353,32 @@ function WatchSection({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.itemsList}
+          contentContainerStyle={isContinue ? styles.cwItemsList : styles.itemsList}
         >
-          {items.map((item) => (
-            <RecentlyWatchedRow key={item.id} item={item} onPress={() => onPress?.(item)} />
-          ))}
+          {items.map((item) =>
+            isContinue ? (
+              <ContinueWatchingCard
+                key={item.id}
+                item={item}
+                onPress={() => onPress?.(item)}
+                onInfoPress={onInfoPress ? () => onInfoPress(item) : undefined}
+              />
+            ) : (
+              <RecentlyWatchedRow key={item.id} item={item} onPress={() => onPress?.(item)} />
+            )
+          )}
         </ScrollView>
       )}
     </View>
   );
 }
 
-export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxItems, onLayout, sections }: Props) {
+// ── Main component ─────────────────────────────────────────────────────────
+
+export default function RecentlyWatchedCard({ style, onPress, onInfoPress, refreshKey, maxItems, onLayout, sections }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
   const accent = useAccent();
 
-  // Trigger refetch when external `refreshKey` changes (HomeScreen focus)
   React.useEffect(() => {
     refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,7 +386,6 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
 
   const isLoading = isCtxLoading && entries.length === 0;
 
-  // Multi-section mode
   if (sections && sections.length > 0) {
     return (
       <View style={[styles.card, style]} onLayout={onLayout}>
@@ -268,6 +396,7 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
               cfg={cfg}
               entries={entries}
               onPress={onPress}
+              onInfoPress={onInfoPress}
               defaultMax={maxItems}
               isLoading={isLoading}
               accentColor={accent.accent}
@@ -316,6 +445,8 @@ export default function RecentlyWatchedCard({ style, onPress, refreshKey, maxIte
   );
 }
 
+// ── Async helpers (unchanged) ──────────────────────────────────────────────
+
 export async function saveRecentlyWatched(params: {
   profileId: string;
   contentType: "live" | "movie" | "series";
@@ -336,7 +467,6 @@ export async function saveRecentlyWatched(params: {
   seriesFinalSeason?: number;
   seriesFinalEpisode?: number;
 }): Promise<RecentlyWatched | null> {
-  // Guest keeps no watch history — never persist.
   if (params.profileId === GUEST_PROFILE_ID) return null;
   try {
     const url = new URL("/api/recently-watched", getApiUrl());
@@ -385,6 +515,8 @@ export async function fetchResumeFor(profileId: string, streamId: string): Promi
     return null;
   }
 }
+
+// ── Styles ─────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   card: {
@@ -443,12 +575,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
+  // Recently Watched row styles (live TV - compact horizontal)
   itemsList: {
     flexDirection: "row",
     gap: Spacing.sm,
     paddingRight: Spacing.xs,
   },
-
   row: {
     width: 210,
     flexDirection: "row",
@@ -459,7 +591,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     overflow: "hidden",
   },
-
   thumbWrap: {
     width: 52,
     height: 34,
@@ -500,7 +631,6 @@ const styles = StyleSheet.create({
   progressFill: {
     height: "100%",
   },
-
   infoCol: {
     flex: 1,
     gap: 2,
@@ -526,7 +656,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 14,
   },
-
   playIcon: {
     width: 24,
     height: 24,
@@ -538,7 +667,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexShrink: 0,
   },
-
   activeBar: {
     position: "absolute",
     bottom: 0,
@@ -546,5 +674,111 @@ const styles = StyleSheet.create({
     right: 0,
     height: 1.5,
     borderRadius: 1,
+  },
+
+  // Continue Watching card styles (movies/series - vertical card)
+  cwItemsList: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    paddingRight: Spacing.xs,
+    paddingBottom: 2,
+  },
+  cwCard: {
+    width: 150,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.backgroundDefault,
+    overflow: "hidden",
+  },
+  cwThumbWrap: {
+    width: "100%",
+    height: 92,
+    backgroundColor: Colors.dark.backgroundSecondary,
+  },
+  cwThumb: {
+    width: "100%",
+    height: "100%",
+  },
+  cwThumbFallback: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cwTypeBadge: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    borderRadius: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  cwTypeText: {
+    fontSize: 7,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  cwProgressTrack: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  cwProgressFill: {
+    height: "100%",
+  },
+  cwOverlay: {
+    backgroundColor: "rgba(0,0,0,0.62)",
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.xs,
+  },
+  cwResumeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+  },
+  cwResumeBtnText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  cwInfoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cwInfo: {
+    padding: Spacing.xs,
+    paddingTop: 6,
+    gap: 2,
+  },
+  cwTitle: {
+    color: Colors.dark.text,
+    fontSize: 11,
+    fontWeight: "600",
+    lineHeight: 14,
+  },
+  cwMeta: {
+    color: Colors.dark.textSecondary,
+    fontSize: 9,
+    fontWeight: "500",
+    lineHeight: 13,
   },
 });

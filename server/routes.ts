@@ -246,13 +246,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Adverts ───────────────────────────────────────────────────────────────
   app.get("/api/adverts", async (req, res) => {
     try {
+      // Full select including orientation (021) and category (022)
       let { data, error } = await supabase
         .from("adverts")
-        .select("id, name, image_url, orientation, created_at")
+        .select("id, name, image_url, orientation, category, created_at")
         .order("created_at");
-      // Until migration 021 runs the `orientation` column does not exist
-      // (Postgres undefined_column = 42703) — retry without it so adverts keep
-      // working (all ads then show in both orientations).
+      // Migration 022 not yet run — retry without category
+      if (error && (error.code === "42703" || /category/i.test(error.message))) {
+        ({ data, error } = (await supabase
+          .from("adverts")
+          .select("id, name, image_url, orientation, created_at")
+          .order("created_at")) as any);
+      }
+      // Migration 021 not yet run — retry without orientation either
       if (error && (error.code === "42703" || /orientation/i.test(error.message))) {
         ({ data, error } = (await supabase
           .from("adverts")

@@ -116,8 +116,8 @@ function SidebarItem({
       style={[
         styles.sidebarItem,
         highlight && {
-          backgroundColor: accent.withAlpha(accent.accent, active ? 0.16 : 0.1),
-          borderColor: accent.accent,
+          backgroundColor: accent.withAlpha(accent.accent, active ? 0.08 : 0.06),
+          borderColor: accent.withAlpha(accent.accent, active ? 0.45 : 0.35),
         },
       ]}
     >
@@ -164,7 +164,7 @@ function QuickActionCard({
   const [hovered, setHovered] = useState(false);
   const accent = useAccent();
   const isActive = focused || pressed || hovered || loading;
-  const iconColor = isActive ? accent.hover : accent.accent;
+  const iconColor = isActive ? accent.hover : Colors.dark.textSecondary;
 
   return (
     <Pressable
@@ -178,18 +178,20 @@ function QuickActionCard({
       onHoverOut={() => setHovered(false)}
       style={[
         styles.qaCard,
-        { borderColor: accent.withAlpha(accent.accent, 0.3) },
+        { borderColor: Colors.dark.border },
         isActive && styles.qaCardActive,
         isActive && { borderColor: accent.accent, shadowColor: accent.accent },
         style,
       ]}
     >
-      <LinearGradient
-        colors={isActive ? accent.gradStrong : accent.gradSoft}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-      />
+      {isActive ? (
+        <LinearGradient
+          colors={accent.gradStrong}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+        />
+      ) : null}
       <View style={[styles.qaIconWrap, compact && styles.qaIconWrapCompact, isActive && { backgroundColor: accent.accentDim }]}>
         {loading ? (
           <ActivityIndicator color={accent.accent} />
@@ -736,27 +738,29 @@ function UpdateAvailableButton() {
   };
 
   return (
-    <>
+    <View style={styles.btnGroup}>
       {apkInstaller.modal}
-      <Pressable
-        style={[
-          styles.headerBtn,
-          styles.headerBtnAlert,
-          { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
-          isActive && { borderColor: accent.accent },
-        ]}
-        onPress={onPress}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onHoverIn={() => setFocused(true)}
-        onHoverOut={() => setFocused(false)}
-      >
-        <Feather name="download" size={18} color={accent.accent} />
-        <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
-      </Pressable>
-    </>
+      <LabelledAction label="Update">
+        <Pressable
+          style={[
+            styles.headerBtn,
+            styles.headerBtnAlert,
+            { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
+            isActive && { borderColor: accent.accent },
+          ]}
+          onPress={onPress}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onHoverIn={() => setFocused(true)}
+          onHoverOut={() => setFocused(false)}
+        >
+          <Feather name="download" size={18} color={accent.accent} />
+          <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
+        </Pressable>
+      </LabelledAction>
+    </View>
   );
 }
 
@@ -969,6 +973,7 @@ export default function HomeScreen() {
         (e.content_type === "series" && e.series_id != null),
       emptyText: "Nothing in progress",
       maxItems: 12,
+      variant: "continue-watching" as const,
     },
   ], []);
 
@@ -1070,6 +1075,24 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleInfoPress = useCallback((item: RecentlyWatched) => {
+    if (item.content_type === "movie" && item.stream_id) {
+      navigation.navigate("MovieInfo", {
+        streamId: Number(item.stream_id),
+        name: item.name,
+        streamIcon: item.thumbnail_url ?? undefined,
+      });
+      return;
+    }
+    if (item.content_type === "series" && item.series_id) {
+      navigation.navigate("SeriesDetail", {
+        seriesId: Number(item.series_id),
+        seriesName: item.name,
+        cover: item.thumbnail_url ?? "",
+      });
+    }
+  }, [navigation]);
+
   const watchRows = isGuest ? (
     <View style={[styles.watchCard, styles.guestPromptCard]}>
       <GuestPrompt
@@ -1087,6 +1110,7 @@ export default function HomeScreen() {
       maxItems={2}
       sections={watchSections}
       onPress={handleRecentPress}
+      onInfoPress={handleInfoPress}
     />
   );
 
@@ -1161,28 +1185,39 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.topBarActions}>
-                <LabelledAction label="Search">
-                  <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-                </LabelledAction>
-                <LabelledAction label="Refresh">
-                  <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-                </LabelledAction>
-                <LabelledAction label="Football">
-                  <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
-                </LabelledAction>
-                <LabelledAction label="VPN">
-                  <VpnButton />
-                </LabelledAction>
-                {/* Conditional update alert — renders nothing unless a newer
-                    build exists, so it carries no caption. */}
+                {/* Update group — only rendered when a newer build is available */}
                 <UpdateAvailableButton />
-                <LabelledAction label="Alerts">
-                  <MessagesButton onPress={() => navigation.navigate("Messages")} />
-                </LabelledAction>
-                <LabelledAction label="Settings">
-                  <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
-                </LabelledAction>
-                <ProfileButton />
+
+                {/* Browse group */}
+                <View style={styles.btnGroup}>
+                  <LabelledAction label="Search">
+                    <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
+                  </LabelledAction>
+                  <LabelledAction label="Refresh">
+                    <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+                  </LabelledAction>
+                </View>
+
+                {/* Services group */}
+                <View style={styles.btnGroup}>
+                  <LabelledAction label="Football">
+                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+                  </LabelledAction>
+                  <LabelledAction label="VPN">
+                    <VpnButton />
+                  </LabelledAction>
+                  <LabelledAction label="Alerts">
+                    <MessagesButton onPress={() => navigation.navigate("Messages")} />
+                  </LabelledAction>
+                </View>
+
+                {/* Account group */}
+                <View style={styles.btnGroup}>
+                  <LabelledAction label="Settings">
+                    <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
+                  </LabelledAction>
+                  <ProfileButton />
+                </View>
               </View>
             </View>
 
@@ -1201,7 +1236,7 @@ export default function HomeScreen() {
                   flexGrow:1 lets short landscape viewports scroll instead of
                   clipping. */}
               <View style={styles.advertBannerLandscape}>
-                <AdvertCarousel orientation="landscape" style={StyleSheet.absoluteFill} />
+                <AdvertCarousel orientation="landscape" />
               </View>
 
               {/* Quick-action cards */}
@@ -1281,7 +1316,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.advertBannerPortrait}>
-              <AdvertCarousel orientation="portrait" style={StyleSheet.absoluteFill} />
+              <AdvertCarousel orientation="portrait" />
             </View>
 
             <View style={styles.gridWrap}>
@@ -1744,7 +1779,18 @@ const styles = StyleSheet.create({
   greetingWrap: { justifyContent: "center", flexShrink: 1, paddingTop: Spacing.xs },
   greetingHello: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "500" },
   greetingName: { fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
-  topBarActions: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.md },
+  topBarActions: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm },
+  btnGroup: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
   labelledAction: { alignItems: "center", gap: 4 },
   actionCaption: {
     fontSize: 9, fontWeight: "600", color: Colors.dark.textSecondary,
@@ -1758,12 +1804,11 @@ const styles = StyleSheet.create({
   advertBannerLandscape: {
     width: "100%",
     flex: 1,
-    minHeight: 130,
-    borderRadius: BorderRadius.md, overflow: "hidden",
+    minHeight: 150,
   },
   advertBannerPortrait: {
-    width: "100%", aspectRatio: 16 / 9,
-    borderRadius: BorderRadius.md, overflow: "hidden",
+    width: "100%",
+    aspectRatio: 16 / 9,
   },
 
   quickRow: { flexDirection: "row", gap: Spacing.sm },
@@ -1774,10 +1819,10 @@ const styles = StyleSheet.create({
     minHeight: 60,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(20,12,6,0.85)",
+    backgroundColor: Colors.dark.backgroundSecondary,
     borderRadius: BorderRadius.lg,
     borderWidth: 1.5,
-    borderColor: "rgba(255,102,0,0.3)",
+    borderColor: Colors.dark.border,
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.xs,
     gap: Spacing.xs,

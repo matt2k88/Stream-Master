@@ -17,10 +17,33 @@ interface Advert {
   name: string;
   image_url: string;
   orientation?: string | null;
+  category?: string | null;
 }
 
 const CYCLE_MS = 8000;
 const FADE_MS = 300;
+
+const CATEGORY_ICON: Record<string, keyof typeof Feather.glyphMap> = {
+  featured_event: "star",
+  featured_movie: "film",
+  featured_series: "grid",
+  upcoming_event: "calendar",
+  new_release: "zap",
+  coming_soon: "clock",
+  exclusive: "award",
+  featured_advert: "trending-up",
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  featured_event: "FEATURED EVENT",
+  featured_movie: "FEATURED MOVIE",
+  featured_series: "FEATURED SERIES",
+  upcoming_event: "UPCOMING EVENT",
+  new_release: "NEW RELEASE",
+  coming_soon: "COMING SOON",
+  exclusive: "EXCLUSIVE",
+  featured_advert: "FEATURED ADVERT",
+};
 
 export default function AdvertCarousel({
   style,
@@ -40,9 +63,7 @@ export default function AdvertCarousel({
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progAnimRef = useRef<Animated.CompositeAnimation | null>(null);
-  // Remaining ms saved when hover starts (to resume from correct position)
   const remainingRef = useRef(CYCLE_MS);
-  // Refs to avoid stale closures inside callbacks
   const advertsLenRef = useRef(0);
   const indexRef = useRef(0);
   const isActiveRef = useRef(false);
@@ -54,7 +75,6 @@ export default function AdvertCarousel({
   useEffect(() => { advertsLenRef.current = adverts.length; }, [adverts.length]);
   useEffect(() => { indexRef.current = index; }, [index]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
   const clearTimer = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
   }, []);
@@ -63,7 +83,6 @@ export default function AdvertCarousel({
     if (progAnimRef.current) { progAnimRef.current.stop(); progAnimRef.current = null; }
   }, []);
 
-  // Start a fresh cycle from 0 (new advert shown).
   const scheduleNext = useCallback((duration: number = CYCLE_MS) => {
     clearTimer();
     stopProg();
@@ -80,11 +99,9 @@ export default function AdvertCarousel({
     }, duration);
   }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resume from the saved progress position (after hover ends).
   const resumeNext = useCallback((duration: number) => {
     clearTimer();
     stopProg();
-    // Don't reset progressAnim — continue from where it froze
     progAnimRef.current = Animated.timing(progressAnim, {
       toValue: 1,
       duration: Math.max(200, duration),
@@ -96,7 +113,6 @@ export default function AdvertCarousel({
     }, Math.max(200, duration));
   }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fade out → setIndex. Fade in + scheduleNext handled by useEffect([index]).
   const doAdvance = useCallback(() => {
     const count = advertsLenRef.current;
     if (count <= 1) return;
@@ -108,7 +124,6 @@ export default function AdvertCarousel({
       });
   }, [fadeAnim, clearTimer, stopProg]);
 
-  // ── Fade IN after index commits, then schedule next cycle ─────────────────
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
     const anim = Animated.timing(fadeAnim, { toValue: 1, duration: FADE_MS, useNativeDriver: true });
@@ -119,7 +134,6 @@ export default function AdvertCarousel({
     });
   }, [index]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Start cycling when adverts load ──────────────────────────────────────
   useEffect(() => {
     if (adverts.length > 1) {
       scheduleNext(CYCLE_MS);
@@ -127,22 +141,18 @@ export default function AdvertCarousel({
     }
   }, [adverts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Pause / resume on hover or D-pad focus ────────────────────────────────
   useEffect(() => {
     if (isActive) {
-      // Pause: clear timer, freeze progress, save remaining time
       clearTimer();
       progressAnim.stopAnimation((value) => {
         stopProg();
         remainingRef.current = Math.max(500, (1 - value) * CYCLE_MS);
       });
     } else {
-      // Resume from frozen position
       if (advertsLenRef.current > 1) resumeNext(remainingRef.current);
     }
   }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Dot navigation ────────────────────────────────────────────────────────
   const goTo = (i: number) => {
     if (i === indexRef.current) return;
     clearTimer();
@@ -153,7 +163,6 @@ export default function AdvertCarousel({
       });
   };
 
-  // ── Fetch adverts ─────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -179,7 +188,6 @@ export default function AdvertCarousel({
     }, [])
   );
 
-  // ── Render ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[styles.wrapper, style, styles.placeholder]}>
@@ -198,6 +206,9 @@ export default function AdvertCarousel({
   }
 
   const current = adverts[index];
+  const catKey = current.category ?? "";
+  const catIcon = (CATEGORY_ICON[catKey] ?? "star") as keyof typeof Feather.glyphMap;
+  const catLabel = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
 
   return (
     <Pressable
@@ -208,52 +219,53 @@ export default function AdvertCarousel({
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
     >
-      {/* Image layer — clipped to border radius */}
-      <View style={styles.imageClip}>
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
-          <Image
-            source={{ uri: current.image_url }}
-            style={StyleSheet.absoluteFillObject}
-            contentFit={orientation === "landscape" ? "contain" : "cover"}
-            transition={0}
-          />
-        </Animated.View>
-      </View>
-
-      {/* Advert name label */}
-      {current.name ? (
-        <View style={styles.label} pointerEvents="none">
-          <ThemedText style={styles.labelText} numberOfLines={1}>
-            {current.name}
-          </ThemedText>
+      {/* Category badge — above the image */}
+      {current.category ? (
+        <View style={styles.categoryRow}>
+          <Feather name={catIcon} size={10} color={Colors.dark.accent} />
+          <ThemedText style={styles.categoryText}>{catLabel}</ThemedText>
         </View>
       ) : null}
 
-      {/* Dot indicators */}
+      {/* Image area — fills remaining vertical space */}
+      <View style={styles.imageArea}>
+        <View style={styles.imageClip}>
+          <Animated.View style={[StyleSheet.absoluteFill, { opacity: fadeAnim }]}>
+            <Image
+              source={{ uri: current.image_url }}
+              style={StyleSheet.absoluteFillObject}
+              contentFit={orientation === "landscape" ? "contain" : "cover"}
+              transition={0}
+            />
+          </Animated.View>
+        </View>
+
+        {/* Progress bar — inside image at bottom */}
+        {adverts.length > 1 ? (
+          <View style={styles.progressTrack} pointerEvents="none">
+            <Animated.View
+              style={[
+                styles.progressBar,
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0%", "100%"],
+                  }),
+                },
+              ]}
+            />
+          </View>
+        ) : null}
+      </View>
+
+      {/* Dot indicators — below the image */}
       {adverts.length > 1 ? (
-        <View style={styles.dots} pointerEvents="box-none">
+        <View style={styles.dotsRow} pointerEvents="box-none">
           {adverts.map((_, i) => (
-            <Pressable key={i} onPress={() => goTo(i)} hitSlop={6}>
+            <Pressable key={i} onPress={() => goTo(i)} hitSlop={8}>
               <View style={[styles.dot, i === index && styles.dotActive]} />
             </Pressable>
           ))}
-        </View>
-      ) : null}
-
-      {/* Progress bar — subtle, shows time remaining on current advert */}
-      {adverts.length > 1 ? (
-        <View style={styles.progressTrack} pointerEvents="none">
-          <Animated.View
-            style={[
-              styles.progressBar,
-              {
-                width: progressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0%", "100%"],
-                }),
-              },
-            ]}
-          />
         </View>
       ) : null}
     </Pressable>
@@ -261,12 +273,13 @@ export default function AdvertCarousel({
 }
 
 const styles = StyleSheet.create({
-  // Outer wrapper: holds border + glow. No overflow:hidden so shadow isn't clipped.
   wrapper: {
+    flex: 1,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundDefault,
+    overflow: "hidden",
   },
   wrapperActive: {
     borderColor: Colors.dark.accent,
@@ -276,44 +289,46 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 18,
   },
-  // Inner clip: clips image to border radius.
-  imageClip: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: BorderRadius.md,
-    overflow: "hidden",
-  },
-  placeholder: {
-    justifyContent: "center",
+  categoryRow: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
-    borderStyle: "dashed",
+    gap: 5,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 7,
   },
-  placeholderText: {
-    color: "rgba(255,102,0,0.3)",
-    fontSize: 12,
-    fontWeight: "600",
+  categoryText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: Colors.dark.accent,
     letterSpacing: 1,
     textTransform: "uppercase",
   },
-  label: {
-    position: "absolute",
-    bottom: Spacing.lg,
-    left: Spacing.md,
-    right: Spacing.md,
+  imageArea: {
+    flex: 1,
   },
-  labelText: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 11,
-    fontWeight: "600",
+  imageClip: {
+    ...StyleSheet.absoluteFillObject,
   },
-  dots: {
+  progressTrack: {
     position: "absolute",
-    bottom: 10,
+    bottom: 0,
     left: 0,
     right: 0,
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%" as any,
+    backgroundColor: Colors.dark.accent,
+    opacity: 0.65,
+  },
+  dotsRow: {
     flexDirection: "row",
     justifyContent: "center",
+    alignItems: "center",
     gap: 5,
+    paddingVertical: 8,
   },
   dot: {
     width: 6,
@@ -329,20 +344,17 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     width: 14,
   },
-  progressTrack: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderBottomLeftRadius: BorderRadius.md,
-    borderBottomRightRadius: BorderRadius.md,
-    overflow: "hidden",
+  placeholder: {
+    justifyContent: "center",
+    alignItems: "center",
+    gap: Spacing.xs,
+    borderStyle: "dashed",
   },
-  progressBar: {
-    height: "100%" as any,
-    backgroundColor: Colors.dark.accent,
-    opacity: 0.65,
+  placeholderText: {
+    color: "rgba(255,102,0,0.3)",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
 });
