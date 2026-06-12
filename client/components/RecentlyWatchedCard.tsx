@@ -238,8 +238,10 @@ function ContinueWatchingCard({
   const [infoFocused, setInfoFocused] = useState(false);
   const [infoHovered, setInfoHovered] = useState(false);
 
+  const outerRef = useRef<View>(null);
   const resumeRef = useRef<View>(null);
   const infoRef = useRef<View>(null);
+  const [outerTag, setOuterTag] = useState<number | undefined>();
   const [resumeTag, setResumeTag] = useState<number | undefined>();
   const [infoTag, setInfoTag] = useState<number | undefined>();
 
@@ -296,12 +298,14 @@ function ContinueWatchingCard({
     >
       {/* Main press target — tapping the card resumes */}
       <Pressable
+        ref={outerRef}
         style={styles.cwCardPressable}
         onPress={onPress}
         onFocus={() => setOuterFocused(true)}
         onBlur={() => setOuterFocused(false)}
         onHoverIn={() => setOuterHovered(true)}
         onHoverOut={() => setOuterHovered(false)}
+        onLayout={() => { const t = findNodeHandle(outerRef.current); if (t) setOuterTag(t); }}
         nextFocusDown={resumeTag}
       >
         {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
@@ -384,7 +388,7 @@ function ContinueWatchingCard({
               onHoverOut={() => setResumeHovered(false)}
               onLayout={() => { const t = findNodeHandle(resumeRef.current); if (t) setResumeTag(t); }}
               nextFocusDown={infoTag}
-              nextFocusUp={undefined}
+              nextFocusUp={outerTag}
             >
               <View style={[styles.cwPanelBtnIcon, (resumeFocused || resumeHovered) && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
                 <Feather name="play" size={13} color="#fff" />
@@ -409,7 +413,7 @@ function ContinueWatchingCard({
                 onHoverIn={() => setInfoHovered(true)}
                 onHoverOut={() => setInfoHovered(false)}
                 onLayout={() => { const t = findNodeHandle(infoRef.current); if (t) setInfoTag(t); }}
-                nextFocusUp={resumeTag}
+                nextFocusUp={resumeTag ?? outerTag}
               >
                 <View style={[styles.cwPanelBtnIcon, (infoFocused || infoHovered) && { backgroundColor: accent.withAlpha(accent.accent, 0.15) }]}>
                   <Feather name="info" size={13} color={infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary} />
