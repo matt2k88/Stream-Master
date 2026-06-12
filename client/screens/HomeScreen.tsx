@@ -1075,6 +1075,34 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleResumePress = useCallback((item: RecentlyWatched) => {
+    if (item.content_type === "live") {
+      if (!item.stream_url) return;
+      navigation.navigate("LivePreview", {
+        streamId: Number(item.stream_id) || 0,
+        name: item.name,
+        streamUrl: item.stream_url,
+        thumbnail: item.thumbnail_url ?? undefined,
+        streamIcon: item.thumbnail_url ?? undefined,
+        categoryId: "recently",
+      });
+      return;
+    }
+    if (item.content_type === "movie" && item.stream_url) {
+      navigation.navigate("Player", {
+        streamUrl: item.stream_url,
+        title: item.name,
+        type: "vod",
+        thumbnail: item.thumbnail_url ?? undefined,
+        streamId: item.stream_id ?? undefined,
+        resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
+      });
+      return;
+    }
+    // Series — same as card press (already goes to Player directly)
+    handleRecentPress(item);
+  }, [navigation, handleRecentPress]);
+
   const handleInfoPress = useCallback((item: RecentlyWatched) => {
     if (item.content_type === "movie" && item.stream_id) {
       navigation.navigate("MovieInfo", {
@@ -1110,6 +1138,7 @@ export default function HomeScreen() {
       maxItems={2}
       sections={watchSections}
       onPress={handleRecentPress}
+      onResumePress={handleResumePress}
       onInfoPress={handleInfoPress}
     />
   );

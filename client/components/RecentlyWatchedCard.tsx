@@ -56,6 +56,7 @@ export interface WatchSectionConfig {
 interface Props {
   style?: any;
   onPress?: (item: RecentlyWatched) => void;
+  onResumePress?: (item: RecentlyWatched) => void;
   onInfoPress?: (item: RecentlyWatched) => void;
   refreshKey?: number;
   maxItems?: number;
@@ -216,6 +217,7 @@ function useThumbnailScale(): number {
 function ContinueWatchingCard({
   item,
   onPress,
+  onResumePress,
   onInfoPress,
   cardW,
   cardH,
@@ -223,6 +225,7 @@ function ContinueWatchingCard({
 }: {
   item: RecentlyWatched;
   onPress: () => void;
+  onResumePress?: () => void;
   onInfoPress?: () => void;
   cardW: number;
   cardH: number;
@@ -374,7 +377,7 @@ function ContinueWatchingCard({
                 { backgroundColor: accent.accent },
                 (resumeFocused || resumeHovered) && styles.cwPanelBtnActive,
               ]}
-              onPress={onPress}
+              onPress={onResumePress ?? onPress}
               onFocus={() => setResumeFocused(true)}
               onBlur={() => setResumeFocused(false)}
               onHoverIn={() => setResumeHovered(true)}
@@ -451,6 +454,7 @@ function WatchSection({
   cfg,
   entries,
   onPress,
+  onResumePress,
   onInfoPress,
   defaultMax,
   isLoading,
@@ -459,6 +463,7 @@ function WatchSection({
   cfg: WatchSectionConfig;
   entries: RecentlyWatched[];
   onPress?: (item: RecentlyWatched) => void;
+  onResumePress?: (item: RecentlyWatched) => void;
   onInfoPress?: (item: RecentlyWatched) => void;
   defaultMax?: number;
   isLoading: boolean;
@@ -506,6 +511,7 @@ function WatchSection({
                 key={item.id}
                 item={item}
                 onPress={() => onPress?.(item)}
+                onResumePress={onResumePress ? () => onResumePress(item) : undefined}
                 onInfoPress={onInfoPress ? () => onInfoPress(item) : undefined}
                 cardW={cardW}
                 cardH={cardH}
@@ -529,7 +535,7 @@ function WatchSection({
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function RecentlyWatchedCard({ style, onPress, onInfoPress, refreshKey, maxItems, onLayout, sections }: Props) {
+export default function RecentlyWatchedCard({ style, onPress, onResumePress, onInfoPress, refreshKey, maxItems, onLayout, sections }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
   const accent = useAccent();
 
@@ -550,6 +556,7 @@ export default function RecentlyWatchedCard({ style, onPress, onInfoPress, refre
               cfg={cfg}
               entries={entries}
               onPress={onPress}
+              onResumePress={onResumePress}
               onInfoPress={onInfoPress}
               defaultMax={maxItems}
               isLoading={isLoading}
