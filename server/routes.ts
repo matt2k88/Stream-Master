@@ -3,6 +3,22 @@ import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
 
+// ── Server-side in-memory cache ───────────────────────────────────────────────
+// Reduces Supabase egress for high-frequency polling endpoints.
+// Works for ALL app versions — no client update required.
+interface CacheEntry { data: any; expiresAt: number; }
+const _cache = new Map<string, CacheEntry>();
+function cacheGet(key: string): any | null {
+  const e = _cache.get(key);
+  if (!e || Date.now() > e.expiresAt) { _cache.delete(key); return null; }
+  return e.data;
+}
+function cacheSet(key: string, data: any, ttlMs: number): void {
+  _cache.set(key, { data, expiresAt: Date.now() + ttlMs });
+}
+function cacheDel(key: string): void { _cache.delete(key); }
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Servers ──────────────────────────────────────────────────────────────
@@ -278,12 +294,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Messages ──────────────────────────────────────────────────────────────
   app.get("/api/messages", async (req, res) => {
     const { username } = req.query;
+    const cacheKey = `messages:${username ?? "__all__"}`;
+    const cached = cacheGet(cacheKey);
+    if (cached !== null) return res.json(cached);
     try {
       let q = supabase.from("messages").select("*").order("created_at", { ascending: false });
       if (username) q = q.eq("username", username as string);
       const { data, error } = await q;
       if (error) return res.status(500).json({ error: error.message });
-      res.json(data ?? []);
+      const payload = data ?? [];
+      cacheSet(cacheKey, payload, 2 * 60_000);
+      res.json(payload);
     } catch {
       res.status(500).json({ error: "Failed to fetch messages" });
     }
@@ -751,6 +772,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/vpn/status", async (req, res) => {
     const { username } = req.query;
     if (!username) return res.status(400).json({ error: "username required" });
+    const cacheKey = `vpn:${username}`;
+    const cached = cacheGet(cacheKey);
+    if (cached !== null) return res.json(cached);
     try {
       const { data, error } = await lifetimeDb
         .from("vpn_subscriptions")
@@ -762,13 +786,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[vpn/status] error:", error.message);
         return res.json({ subscribed: false, isEnabled: false });
       }
-      if (!data) return res.json({ subscribed: false, isEnabled: false });
-      res.json({
-        subscribed: true,
-        isEnabled: !!data.is_enabled,
-        planType: data.plan_type ?? null,
-        expiryDate: data.expiry_date ?? null,
-      });
+      const payload = !data
+        ? { subscribed: false, isEnabled: false }
+        : {
+            subscribed: true,
+            isEnabled: !!data.is_enabled,
+            planType: data.plan_type ?? null,
+            expiryDate: data.expiry_date ?? null,
+          };
+      cacheSet(cacheKey, payload, 60_000);
+      res.json(payload);
     } catch (e: any) {
       console.error("[vpn/status] exception:", e?.message);
       res.json({ subscribed: false, isEnabled: false });
@@ -792,6 +819,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: error.message });
       }
       if (!data) return res.status(404).json({ error: "No VPN subscription for that username" });
+      cacheDel(`vpn:${username}`);
       res.json({ success: true, isEnabled: !!data.is_enabled });
     } catch (e: any) {
       console.error("[vpn/toggle] exception:", e?.message);
