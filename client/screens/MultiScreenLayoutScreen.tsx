@@ -10,7 +10,7 @@
 // Each preview card shows numbered slots so the user knows which panel is
 // which, and new PiP / main-heavy variants are included.
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -18,7 +18,8 @@ import {
   ScrollView,
   useWindowDimensions,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -29,23 +30,26 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 
 export type MultiLayout =
-  | "2h" | "2v" | "2-main"
-  | "3-2t1b" | "3-1t2b" | "3-big"
-  | "4" | "4-big";
+  | "2h" | "2v" | "2-main" | "2-adaptive"
+  | "3-2t1b" | "3-1t2b" | "3-big" | "3-adaptive"
+  | "4" | "4-big" | "4-adaptive";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 type Option = { key: MultiLayout; label: string; subtitle: string; screens: number };
 
 const ALL_OPTIONS: Option[] = [
-  { key: "2h",     label: "2 Screens", subtitle: "Side by side",    screens: 2 },
-  { key: "2v",     label: "2 Screens", subtitle: "Stacked",         screens: 2 },
-  { key: "2-main", label: "2 Screens", subtitle: "Main + side",     screens: 2 },
-  { key: "3-2t1b", label: "3 Screens", subtitle: "2 top · 1 bottom", screens: 3 },
-  { key: "3-1t2b", label: "3 Screens", subtitle: "1 top · 2 bottom", screens: 3 },
-  { key: "3-big",  label: "3 Screens", subtitle: "Main + 2 small",  screens: 3 },
-  { key: "4",      label: "4 Screens", subtitle: "2 × 2 grid",      screens: 4 },
-  { key: "4-big",  label: "4 Screens", subtitle: "Main + 3 small",  screens: 4 },
+  { key: "2h",         label: "2 Screens", subtitle: "Side by side",      screens: 2 },
+  { key: "2v",         label: "2 Screens", subtitle: "Stacked",           screens: 2 },
+  { key: "2-main",     label: "2 Screens", subtitle: "Main + side",       screens: 2 },
+  { key: "2-adaptive", label: "2 Screens", subtitle: "Adaptive focus",    screens: 2 },
+  { key: "3-2t1b",     label: "3 Screens", subtitle: "2 top · 1 bottom",  screens: 3 },
+  { key: "3-1t2b",     label: "3 Screens", subtitle: "1 top · 2 bottom",  screens: 3 },
+  { key: "3-big",      label: "3 Screens", subtitle: "Main + 2 small",    screens: 3 },
+  { key: "3-adaptive", label: "3 Screens", subtitle: "Adaptive focus",    screens: 3 },
+  { key: "4",          label: "4 Screens", subtitle: "2 × 2 grid",        screens: 4 },
+  { key: "4-big",      label: "4 Screens", subtitle: "Main + 3 small",    screens: 4 },
+  { key: "4-adaptive", label: "4 Screens", subtitle: "Adaptive focus",    screens: 4 },
 ];
 
 export default function MultiScreenLayoutScreen() {
@@ -53,6 +57,15 @@ export default function MultiScreenLayoutScreen() {
   const insets = useSafeAreaInsets();
   const { userInfo } = useAuth();
   const { width: winW, height: winH } = useWindowDimensions();
+
+  // Force landscape when this screen gains focus (belt-and-suspenders on top
+  // of the navigator's orientation:"landscape" option, which handles the
+  // initial push but may not fire on devices that start in portrait).
+  useFocusEffect(
+    useCallback(() => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    }, []),
+  );
 
   const maxConn = Number(userInfo?.user_info?.max_connections);
   const showMaxConn = Number.isFinite(maxConn) && maxConn > 0;
@@ -262,6 +275,42 @@ export function LayoutPreview({ layout }: { layout: MultiLayout }) {
         </View>
       );
     case "4-big":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <View style={previewStyles.colSmall}>
+              <NC n={2} />
+              <NC n={3} />
+              <NC n={4} />
+            </View>
+          </View>
+        </View>
+      );
+
+    // ── Adaptive (same visual as their base; subtitle differentiates them) ─
+    case "2-adaptive":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <NC n={2} />
+          </View>
+        </View>
+      );
+    case "3-adaptive":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <View style={previewStyles.colSmall}>
+              <NC n={2} />
+              <NC n={3} />
+            </View>
+          </View>
+        </View>
+      );
+    case "4-adaptive":
       return (
         <View style={previewStyles.root}>
           <View style={previewStyles.row}>

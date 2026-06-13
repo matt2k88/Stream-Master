@@ -20,6 +20,11 @@ import {
   StatusBar,
   ActivityIndicator,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -40,11 +45,14 @@ const SLOT_COUNT: Record<MultiLayout, number> = {
   "2h": 2,
   "2v": 2,
   "2-main": 2,
+  "2-adaptive": 2,
   "3-2t1b": 3,
   "3-1t2b": 3,
   "3-big": 3,
+  "3-adaptive": 3,
   "4": 4,
   "4-big": 4,
+  "4-adaptive": 4,
 };
 
 export default function MultiScreenScreen() {
@@ -243,8 +251,113 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
           </View>
         </View>
       );
+    case "2-adaptive":
+    case "3-adaptive":
+    case "4-adaptive":
+      return (
+        <AdaptiveGrid
+          layout={layout}
+          slots={slots}
+          focusedSlot={focusedSlot}
+          onFocusSlot={onFocusSlot}
+          onAddSlot={onAddSlot}
+          onClearSlot={onClearSlot}
+          initialFocusSlot={initialFocusSlot}
+          registerSlotRef={registerSlotRef}
+        />
+      );
   }
 }
+
+// ─── Adaptive grid: focused slot animates to fill more space ────────────────
+const A_BIG = 1.8;
+const A_SMALL = 1.0;
+const A_DUR = 300;
+
+function AdaptiveGrid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot, initialFocusSlot, registerSlotRef }: {
+  layout: "2-adaptive" | "3-adaptive" | "4-adaptive";
+  slots: (any | null)[];
+  focusedSlot: number;
+  onFocusSlot: (i: number) => void;
+  onAddSlot: (i: number) => void;
+  onClearSlot: (i: number) => void;
+  initialFocusSlot: number;
+  registerSlotRef: (i: number, ref: any) => void;
+}) {
+  // Horizontal: left column (slot 0) vs right column (slots 1+)
+  const leftH  = useSharedValue(A_BIG);
+  const rightH = useSharedValue(A_SMALL);
+  // Vertical: up to 3 slots in the right column
+  const vF0 = useSharedValue(A_BIG);
+  const vF1 = useSharedValue(A_SMALL);
+  const vF2 = useSharedValue(A_SMALL);
+
+  useEffect(() => {
+    const onLeft = focusedSlot === 0;
+    leftH.value  = withTiming(onLeft ? A_BIG : A_SMALL, { duration: A_DUR });
+    rightH.value = withTiming(onLeft ? A_SMALL : A_BIG, { duration: A_DUR });
+    const ri = focusedSlot - 1; // index within the right column
+    vF0.value = withTiming(ri === 0 ? A_BIG : A_SMALL, { duration: A_DUR });
+    vF1.value = withTiming(ri === 1 ? A_BIG : A_SMALL, { duration: A_DUR });
+    vF2.value = withTiming(ri === 2 ? A_BIG : A_SMALL, { duration: A_DUR });
+  }, [focusedSlot]);
+
+  const leftHStyle  = useAnimatedStyle(() => ({ flex: leftH.value }));
+  const rightHStyle = useAnimatedStyle(() => ({ flex: rightH.value }));
+  const vStyle0 = useAnimatedStyle(() => ({ flex: vF0.value }));
+  const vStyle1 = useAnimatedStyle(() => ({ flex: vF1.value }));
+  const vStyle2 = useAnimatedStyle(() => ({ flex: vF2.value }));
+
+  const s = (i: number) => (
+    <Slot
+      key={i}
+      index={i}
+      stream={slots[i]}
+      focused={focusedSlot === i}
+      onFocus={() => onFocusSlot(i)}
+      onAdd={() => onAddSlot(i)}
+      onClear={() => onClearSlot(i)}
+      isInitialPreferred={i === initialFocusSlot}
+      registerRef={(r) => registerSlotRef(i, r)}
+    />
+  );
+
+  if (layout === "2-adaptive") {
+    return (
+      <View style={gridStyles.row}>
+        <Animated.View style={leftHStyle}>{s(0)}</Animated.View>
+        <Animated.View style={rightHStyle}>{s(1)}</Animated.View>
+      </View>
+    );
+  }
+
+  if (layout === "3-adaptive") {
+    return (
+      <View style={gridStyles.row}>
+        <Animated.View style={leftHStyle}>{s(0)}</Animated.View>
+        <Animated.View style={[adaptiveStyles.col, rightHStyle]}>
+          <Animated.View style={vStyle0}>{s(1)}</Animated.View>
+          <Animated.View style={vStyle1}>{s(2)}</Animated.View>
+        </Animated.View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={gridStyles.row}>
+      <Animated.View style={leftHStyle}>{s(0)}</Animated.View>
+      <Animated.View style={[adaptiveStyles.col, rightHStyle]}>
+        <Animated.View style={vStyle0}>{s(1)}</Animated.View>
+        <Animated.View style={vStyle1}>{s(2)}</Animated.View>
+        <Animated.View style={vStyle2}>{s(3)}</Animated.View>
+      </Animated.View>
+    </View>
+  );
+}
+
+const adaptiveStyles = StyleSheet.create({
+  col: { flexDirection: "column", gap: SLOT_GAP },
+});
 
 // ─── Slot: empty (Add) or video player ─────────────────────────────────────
 function Slot({ index, stream, focused, onFocus, onAdd, onClear, isInitialPreferred, registerRef }: {
