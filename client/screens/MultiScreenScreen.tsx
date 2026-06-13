@@ -356,7 +356,7 @@ function AdaptiveGrid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onCl
 }
 
 const adaptiveStyles = StyleSheet.create({
-  col: { flexDirection: "column", gap: SLOT_GAP },
+  col: { flexDirection: "column", gap: 6 },
 });
 
 // ─── Slot: empty (Add) or video player ─────────────────────────────────────
