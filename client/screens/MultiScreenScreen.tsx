@@ -39,9 +39,12 @@ type Route = RouteProp<RootStackParamList, "MultiScreen">;
 const SLOT_COUNT: Record<MultiLayout, number> = {
   "2h": 2,
   "2v": 2,
+  "2-main": 2,
   "3-2t1b": 3,
   "3-1t2b": 3,
+  "3-big": 3,
   "4": 4,
+  "4-big": 4,
 };
 
 export default function MultiScreenScreen() {
@@ -191,6 +194,13 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
       return <View style={gridStyles.row}>{slot(0)}{slot(1)}</View>;
     case "2v":
       return <View style={gridStyles.col}>{slot(0)}{slot(1)}</View>;
+    case "2-main":
+      return (
+        <View style={gridStyles.row}>
+          <View style={gridStyles.mainWrap}>{slot(0)}</View>
+          <View style={gridStyles.sideWrap}>{slot(1)}</View>
+        </View>
+      );
     case "3-2t1b":
       return (
         <View style={gridStyles.col}>
@@ -205,11 +215,32 @@ function Grid({ layout, slots, focusedSlot, onFocusSlot, onAddSlot, onClearSlot,
           <View style={gridStyles.row}>{slot(1)}{slot(2)}</View>
         </View>
       );
+    case "3-big":
+      return (
+        <View style={gridStyles.row}>
+          <View style={gridStyles.mainWrap}>{slot(0)}</View>
+          <View style={[gridStyles.sideWrap, gridStyles.col]}>
+            {slot(1)}
+            {slot(2)}
+          </View>
+        </View>
+      );
     case "4":
       return (
         <View style={gridStyles.col}>
           <View style={gridStyles.row}>{slot(0)}{slot(1)}</View>
           <View style={gridStyles.row}>{slot(2)}{slot(3)}</View>
+        </View>
+      );
+    case "4-big":
+      return (
+        <View style={gridStyles.row}>
+          <View style={gridStyles.mainWrap}>{slot(0)}</View>
+          <View style={[gridStyles.sideWrap, gridStyles.col]}>
+            {slot(1)}
+            {slot(2)}
+            {slot(3)}
+          </View>
         </View>
       );
   }
@@ -435,6 +466,8 @@ const SLOT_GAP = 6;
 const gridStyles = StyleSheet.create({
   row: { flex: 1, flexDirection: "row", gap: SLOT_GAP },
   col: { flex: 1, flexDirection: "column", gap: SLOT_GAP },
+  mainWrap: { flex: 1.8, gap: SLOT_GAP },
+  sideWrap: { flex: 1, gap: SLOT_GAP },
 
   slot: {
     flex: 1,

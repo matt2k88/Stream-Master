@@ -1,20 +1,21 @@
 // Multi Screen — layout picker.
 //
-// First step in the Multi Screen flow. Shows a one-line notice that each
-// open stream consumes a connection on the IPTV provider, then lets the
-// user pick one of the supported layouts: 2 (horizontal / vertical),
-// 3 (2-top-1-bottom / 1-top-2-bottom), 4 (2x2 grid).
+// Shows only the layouts compatible with the user's connection count.
+// maxConn === 1 → "not available" message.
+// maxConn === 2 → 2-screen layouts only.
+// maxConn === 3 → 2 + 3-screen layouts.
+// maxConn >= 4  → all layouts.
+// unknown       → all layouts shown (can't confirm; provider will reject).
 //
-// Each option renders a small visual preview built from real flex-box
-// rectangles so what the user sees on this screen is exactly what they
-// get on the next one. Picking an option pushes MultiScreen with the
-// chosen layout key.
+// Each preview card shows numbered slots so the user knows which panel is
+// which, and new PiP / main-heavy variants are included.
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
   Pressable,
+  ScrollView,
   useWindowDimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
@@ -27,18 +28,24 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { useAuth } from "@/contexts/AuthContext";
 
-export type MultiLayout = "2h" | "2v" | "3-2t1b" | "3-1t2b" | "4";
+export type MultiLayout =
+  | "2h" | "2v" | "2-main"
+  | "3-2t1b" | "3-1t2b" | "3-big"
+  | "4" | "4-big";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-type Option = { key: MultiLayout; label: string; subtitle: string };
+type Option = { key: MultiLayout; label: string; subtitle: string; screens: number };
 
-const OPTIONS: Option[] = [
-  { key: "2h",     label: "2 Screens",  subtitle: "Side by side" },
-  { key: "2v",     label: "2 Screens",  subtitle: "Stacked" },
-  { key: "3-2t1b", label: "3 Screens",  subtitle: "2 top · 1 bottom" },
-  { key: "3-1t2b", label: "3 Screens",  subtitle: "1 top · 2 bottom" },
-  { key: "4",      label: "4 Screens",  subtitle: "2 × 2 grid" },
+const ALL_OPTIONS: Option[] = [
+  { key: "2h",     label: "2 Screens", subtitle: "Side by side",    screens: 2 },
+  { key: "2v",     label: "2 Screens", subtitle: "Stacked",         screens: 2 },
+  { key: "2-main", label: "2 Screens", subtitle: "Main + side",     screens: 2 },
+  { key: "3-2t1b", label: "3 Screens", subtitle: "2 top · 1 bottom", screens: 3 },
+  { key: "3-1t2b", label: "3 Screens", subtitle: "1 top · 2 bottom", screens: 3 },
+  { key: "3-big",  label: "3 Screens", subtitle: "Main + 2 small",  screens: 3 },
+  { key: "4",      label: "4 Screens", subtitle: "2 × 2 grid",      screens: 4 },
+  { key: "4-big",  label: "4 Screens", subtitle: "Main + 3 small",  screens: 4 },
 ];
 
 export default function MultiScreenLayoutScreen() {
@@ -46,35 +53,39 @@ export default function MultiScreenLayoutScreen() {
   const insets = useSafeAreaInsets();
   const { userInfo } = useAuth();
   const { width: winW, height: winH } = useWindowDimensions();
-  // Xtream returns max_connections as a string ("5"). Coerce safely; show
-  // nothing if the API didn't return it for this account.
+
   const maxConn = Number(userInfo?.user_info?.max_connections);
   const showMaxConn = Number.isFinite(maxConn) && maxConn > 0;
 
-  // ── Responsive 2-row grid sizing ─────────────────────────────────────────
-  // We want 5 layouts laid out as 3 on top + 2 on bottom and fitted entirely
-  // inside the viewport (no horizontal scrolling). Card width is derived
-  // from the window width minus side padding and inter-card gap; height is
-  // derived from the leftover vertical space after header + notice.
+  // Filter layouts to only those the user's connection count supports
+  const visibleOptions = useMemo<Option[]>(() => {
+    if (!showMaxConn || maxConn >= 5) return ALL_OPTIONS;
+    if (maxConn <= 1) return [];
+    return ALL_OPTIONS.filter((o) => o.screens <= maxConn);
+  }, [showMaxConn, maxConn]);
+
+  const noMultiScreen = showMaxConn && maxConn <= 1;
+
+  // Responsive grid: 4 cols when we have 7+ options, 3 cols otherwise
   const sidePad = Math.max(insets.left, Spacing.xl);
-  const cols = 3;
+  const cols = visibleOptions.length >= 7 ? 4 : 3;
   const colGap = Spacing.lg;
   const cardW = Math.max(
-    140,
+    120,
     Math.floor((winW - sidePad * 2 - colGap * (cols - 1)) / cols),
   );
-  // Reserve ~ header (60) + notice (60) + paddings + bottom inset for two rows
-  const reserved = 60 + 60 + Spacing.xl * 2 + insets.top + insets.bottom;
+  const reserved = 60 + 60 + Spacing.xl * 2 + insets.top + insets.bottom + Spacing.lg;
+  const rows = Math.ceil(visibleOptions.length / cols);
   const rowGap = Spacing.md;
   const cardH = Math.max(
-    130,
-    Math.floor((winH - reserved - rowGap) / 2),
+    120,
+    Math.floor((winH - reserved - rowGap * (rows - 1)) / rows),
   );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + Spacing.lg }]}>
       {/* Header */}
-      <View style={[styles.headerRow, { paddingHorizontal: Math.max(insets.left, Spacing.xl) }]}>
+      <View style={[styles.headerRow, { paddingHorizontal: sidePad }]}>
         <BackBtn onPress={() => navigation.goBack()} />
         <View style={{ flex: 1 }}>
           <ThemedText style={styles.title}>Multi Screen</ThemedText>
@@ -83,7 +94,7 @@ export default function MultiScreenLayoutScreen() {
       </View>
 
       {/* Notice */}
-      <View style={[styles.noticeWrap, { marginHorizontal: Math.max(insets.left, Spacing.xl) }]}>
+      <View style={[styles.noticeWrap, { marginHorizontal: sidePad }]}>
         <LinearGradient
           colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
           style={StyleSheet.absoluteFill}
@@ -94,7 +105,6 @@ export default function MultiScreenLayoutScreen() {
         <ThemedText style={styles.noticeText}>
           Multi Screen requires more than one connection — each individual screen uses one connection on your Ultra Cast account.
         </ThemedText>
-
         {showMaxConn ? (
           <View style={styles.connBadge}>
             <Feather name="users" size={13} color={Colors.dark.accent} />
@@ -106,31 +116,49 @@ export default function MultiScreenLayoutScreen() {
         ) : null}
       </View>
 
-      {/* Options — 2-row grid that fits the viewport (no scrolling). */}
-      <View style={[styles.optionsGrid, { paddingHorizontal: sidePad, gap: rowGap }]}>
-        {OPTIONS.map((opt, idx) => (
-          <LayoutCard
-            key={opt.key}
-            opt={opt}
-            width={cardW}
-            height={cardH}
-            preferFocus={idx === 0}
-            onPress={() => navigation.navigate("MultiScreen", { layout: opt.key })}
-          />
-        ))}
-      </View>
+      {/* Body */}
+      {noMultiScreen ? (
+        <View style={styles.noMultiWrap}>
+          <View style={styles.noMultiIcon}>
+            <Feather name="monitor" size={38} color="rgba(255,102,0,0.4)" />
+          </View>
+          <ThemedText style={styles.noMultiTitle}>Multi Screen Unavailable</ThemedText>
+          <ThemedText style={styles.noMultiText}>
+            Multi Screen requires more than one connection. As your account is a single connection, there are no multi screen layouts available.
+          </ThemedText>
+        </View>
+      ) : (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[styles.optionsGrid, { paddingHorizontal: sidePad, gap: rowGap }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {visibleOptions.map((opt, idx) => (
+            <LayoutCard
+              key={opt.key}
+              opt={opt}
+              width={cardW}
+              height={cardH}
+              preferFocus={idx === 0}
+              onPress={() => navigation.navigate("MultiScreen", { layout: opt.key })}
+            />
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
 
 // ─── Layout preview card ────────────────────────────────────────────────────
-function LayoutCard({ opt, onPress, preferFocus, width, height }: { opt: Option; onPress: () => void; preferFocus?: boolean; width: number; height: number }) {
+function LayoutCard({
+  opt, onPress, preferFocus, width, height,
+}: {
+  opt: Option; onPress: () => void; preferFocus?: boolean; width: number; height: number;
+}) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const hot = focused || pressed || hovered;
-  // Inside the card: title + subtitle ≈ 50px, vertical padding ≈ 24, so
-  // give the preview the remaining height (clamped to a sensible range).
   const previewH = Math.max(60, Math.min(height - 80, 180));
   const previewW = Math.min(width - Spacing.md * 2, previewH * 1.6);
   return (
@@ -154,28 +182,50 @@ function LayoutCard({ opt, onPress, preferFocus, width, height }: { opt: Option;
   );
 }
 
+// ─── Numbered cell inside a preview ────────────────────────────────────────
+function NC({ n, main }: { n: number; main?: boolean }) {
+  return (
+    <View style={[previewStyles.cell, main ? previewStyles.cellMain : null]}>
+      <ThemedText style={[previewStyles.cellNum, main ? previewStyles.cellNumMain : null]}>
+        {n}
+      </ThemedText>
+    </View>
+  );
+}
+
 // ─── Mini preview of a layout — used both here and on the actual grid ──────
 export function LayoutPreview({ layout }: { layout: MultiLayout }) {
-  const cell = <View style={previewStyles.cell} />;
   switch (layout) {
+    // ── 2-screen ─────────────────────────────────────────────────────────
     case "2h":
       return (
         <View style={previewStyles.root}>
-          <View style={previewStyles.row}>{cell}{cell}</View>
+          <View style={previewStyles.row}><NC n={1} /><NC n={2} /></View>
         </View>
       );
     case "2v":
       return (
         <View style={previewStyles.root}>
-          <View style={previewStyles.col}>{cell}{cell}</View>
+          <View style={previewStyles.col}><NC n={1} /><NC n={2} /></View>
         </View>
       );
+    case "2-main":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <NC n={2} />
+          </View>
+        </View>
+      );
+
+    // ── 3-screen ─────────────────────────────────────────────────────────
     case "3-2t1b":
       return (
         <View style={previewStyles.root}>
           <View style={previewStyles.col}>
-            <View style={previewStyles.row}>{cell}{cell}</View>
-            <View style={previewStyles.row}>{cell}</View>
+            <View style={previewStyles.row}><NC n={1} /><NC n={2} /></View>
+            <View style={previewStyles.row}><NC n={3} /></View>
           </View>
         </View>
       );
@@ -183,17 +233,44 @@ export function LayoutPreview({ layout }: { layout: MultiLayout }) {
       return (
         <View style={previewStyles.root}>
           <View style={previewStyles.col}>
-            <View style={previewStyles.row}>{cell}</View>
-            <View style={previewStyles.row}>{cell}{cell}</View>
+            <View style={previewStyles.row}><NC n={1} /></View>
+            <View style={previewStyles.row}><NC n={2} /><NC n={3} /></View>
           </View>
         </View>
       );
+    case "3-big":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <View style={previewStyles.colSmall}>
+              <NC n={2} />
+              <NC n={3} />
+            </View>
+          </View>
+        </View>
+      );
+
+    // ── 4-screen ─────────────────────────────────────────────────────────
     case "4":
       return (
         <View style={previewStyles.root}>
           <View style={previewStyles.col}>
-            <View style={previewStyles.row}>{cell}{cell}</View>
-            <View style={previewStyles.row}>{cell}{cell}</View>
+            <View style={previewStyles.row}><NC n={1} /><NC n={2} /></View>
+            <View style={previewStyles.row}><NC n={3} /><NC n={4} /></View>
+          </View>
+        </View>
+      );
+    case "4-big":
+      return (
+        <View style={previewStyles.root}>
+          <View style={previewStyles.row}>
+            <NC n={1} main />
+            <View style={previewStyles.colSmall}>
+              <NC n={2} />
+              <NC n={3} />
+              <NC n={4} />
+            </View>
           </View>
         </View>
       );
@@ -259,13 +336,14 @@ const styles = StyleSheet.create({
   connBadgeValue: { color: Colors.dark.accent, fontSize: 16, fontWeight: "800", lineHeight: 18 },
 
   optionsGrid: {
-    flex: 1,
     flexDirection: "row",
     flexWrap: "wrap",
     alignContent: "flex-start",
     columnGap: Spacing.lg,
     paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.xl,
   },
+
   card: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.md,
@@ -292,17 +370,53 @@ const styles = StyleSheet.create({
   cardTitle: { color: Colors.dark.text, fontSize: 14, fontWeight: "700" },
   cardTitleActive: { color: Colors.dark.accent },
   cardSubtitle: { color: Colors.dark.textSecondary, fontSize: 11 },
+
+  noMultiWrap: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingHorizontal: Spacing["3xl"], gap: Spacing.lg,
+  },
+  noMultiIcon: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: "rgba(255,102,0,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.25)",
+    alignItems: "center", justifyContent: "center",
+  },
+  noMultiTitle: { color: Colors.dark.text, fontSize: 18, fontWeight: "800", textAlign: "center" },
+  noMultiText: {
+    color: Colors.dark.textSecondary, fontSize: 13, lineHeight: 20,
+    textAlign: "center", maxWidth: 480,
+  },
 });
 
 const previewStyles = StyleSheet.create({
   root: { flex: 1 },
   row: { flex: 1, flexDirection: "row", gap: 4 },
   col: { flex: 1, flexDirection: "column", gap: 4 },
+  colSmall: { flex: 1, flexDirection: "column", gap: 4 },
+
   cell: {
     flex: 1,
-    backgroundColor: "rgba(255,102,0,0.35)",
+    backgroundColor: "rgba(255,102,0,0.32)",
     borderWidth: 1,
-    borderColor: "rgba(255,102,0,0.6)",
+    borderColor: "rgba(255,102,0,0.58)",
     borderRadius: 3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cellMain: {
+    flex: 1.8,
+    backgroundColor: "rgba(255,102,0,0.50)",
+    borderColor: "rgba(255,102,0,0.85)",
+  },
+
+  cellNum: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 9,
+    fontWeight: "800",
+    lineHeight: 11,
+  },
+  cellNumMain: {
+    color: "rgba(255,255,255,0.95)",
+    fontSize: 11,
   },
 });
