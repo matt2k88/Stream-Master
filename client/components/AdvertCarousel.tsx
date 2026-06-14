@@ -23,7 +23,7 @@ interface Advert {
 }
 
 const CYCLE_MS = 8000;
-const FADE_MS  = 280;
+const FADE_MS  = 300;
 
 const CATEGORY_ICON: Record<string, keyof typeof Feather.glyphMap> = {
   featured_event:  "star",
@@ -47,6 +47,13 @@ const CATEGORY_LABEL: Record<string, string> = {
   featured_advert: "FEATURED ADVERT",
 };
 
+// expo-image handles the crossfade natively at the GPU/decode level.
+// When the `source` prop changes it holds the previous pixels until the new
+// image is fully decoded, then dissolves between them — zero JS timing
+// involvement, so the "flash of previous advert" that occurs with JS-driven
+// Animated.Value opacity cannot happen here.
+const IMAGE_TRANSITION = { duration: FADE_MS, effect: "cross-dissolve" } as const;
+
 export default function AdvertCarousel({
   style,
   orientation,
@@ -58,30 +65,19 @@ export default function AdvertCarousel({
 }) {
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [currIdx, setCurrIdx] = useState(0);
-  const [prevIdx, setPrevIdx] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const focusRef = useRef<View>(null);
-
-  // Two independent opacity values — one per image layer.
-  // currOpacity: starts at 0, fades to 1 once the image loads.
-  // prevOpacity: starts at 1, fades to 0 simultaneously with currOpacity fading in.
-  // After the crossfade completes prevIdx is set to null so the layer is unmounted;
-  // it can never flash back because it no longer exists in the tree.
-  const currOpacity  = useRef(new Animated.Value(0)).current;
-  const prevOpacity  = useRef(new Animated.Value(0)).current;
+  const focusRef     = useRef<View>(null);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const timerRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const progAnimRef     = useRef<Animated.CompositeAnimation | null>(null);
-  const remainingRef    = useRef(CYCLE_MS);
-  const isActiveRef     = useRef(false);
-  const currIdxRef      = useRef(0);
-  const advertsLenRef   = useRef(0);
-  // True while a crossfade is in flight so we choose the right handleCurrLoad path.
-  const isTransitionRef = useRef(false);
+  const timerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progAnimRef   = useRef<Animated.CompositeAnimation | null>(null);
+  const remainingRef  = useRef(CYCLE_MS);
+  const isActiveRef   = useRef(false);
+  const currIdxRef    = useRef(0);
+  const advertsLenRef = useRef(0);
 
   const isActive = focused || hovered;
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
@@ -96,8 +92,6 @@ export default function AdvertCarousel({
     if (progAnimRef.current) { progAnimRef.current.stop(); progAnimRef.current = null; }
   }, []);
 
-  // Start (or restart) the full CYCLE_MS progress + auto-advance timer.
-  // Only called AFTER the incoming image has finished loading.
   const startCycle = useCallback((duration = CYCLE_MS) => {
     clearTimer();
     stopProg();
@@ -112,7 +106,6 @@ export default function AdvertCarousel({
     }, duration);
   }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line
 
-  // Resume with whatever time was left when the user paused.
   const resumeCycle = useCallback((duration: number) => {
     clearTimer();
     stopProg();
@@ -126,65 +119,30 @@ export default function AdvertCarousel({
     }, d);
   }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line
 
-  // Fired by the Image's onLoad (and onError as fallback) for the CURRENT slot.
-  // • If a transition is in flight: crossfade prev out / curr in simultaneously.
-  // • Otherwise (initial load or single image): simply fade curr in.
-  // Timer never starts before this fires.
-  const handleCurrLoad = useCallback(() => {
-    if (isTransitionRef.current) {
-      Animated.parallel([
-        Animated.timing(currOpacity, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
-        Animated.timing(prevOpacity, { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
-      ]).start(({ finished }) => {
-        if (finished) {
-          isTransitionRef.current = false;
-          setPrevIdx(null);          // unmount old layer — can never flash back
-          prevOpacity.setValue(0);   // reset for next transition
-          if (advertsLenRef.current > 1 && !isActiveRef.current) startCycle();
-        }
-      });
-    } else {
-      // Initial image load: no prev layer, just reveal.
-      Animated.timing(currOpacity, { toValue: 1, duration: FADE_MS, useNativeDriver: true })
-        .start(({ finished }) => {
-          if (finished && advertsLenRef.current > 1 && !isActiveRef.current) startCycle();
-        });
-    }
-  }, [currOpacity, prevOpacity, startCycle]); // eslint-disable-line
+  // expo-image fires onLoad once the new image is fully decoded and the native
+  // transition has begun. Start the next cycle timer from here so the progress
+  // bar only moves once the image is actually visible.
+  const handleLoad = useCallback(() => {
+    if (advertsLenRef.current > 1 && !isActiveRef.current) startCycle();
+  }, [startCycle]); // eslint-disable-line
 
   const doAdvance = useCallback(() => {
     const count = advertsLenRef.current;
     if (count <= 1) return;
     clearTimer();
     stopProg();
-
-    const nextIdx = (currIdxRef.current + 1) % count;
-
-    // Set up layers BEFORE state update so values are ready when the new
-    // Image component mounts and begins loading.
-    isTransitionRef.current = true;
-    prevOpacity.setValue(1); // old image layer — fully visible
-    currOpacity.setValue(0); // new image layer — hidden until loaded
-
-    setPrevIdx(currIdxRef.current);
-    setCurrIdx(nextIdx);
-    // handleCurrLoad on the new currIdx Image will drive the rest.
-  }, [clearTimer, stopProg, prevOpacity, currOpacity]);
+    // Changing source triggers expo-image's native cross-dissolve.
+    // The previous image pixels are held until the new decode completes.
+    setCurrIdx((prev) => (prev + 1) % count);
+  }, [clearTimer, stopProg]);
 
   const goTo = useCallback((i: number) => {
     if (i === currIdxRef.current) return;
     clearTimer();
     stopProg();
-
-    isTransitionRef.current = true;
-    prevOpacity.setValue(1);
-    currOpacity.setValue(0);
-
-    setPrevIdx(currIdxRef.current);
     setCurrIdx(i);
-  }, [clearTimer, stopProg, prevOpacity, currOpacity]);
+  }, [clearTimer, stopProg]);
 
-  // Pause / resume when the user focuses or hovers.
   useEffect(() => {
     if (isActive) {
       clearTimer();
@@ -193,11 +151,7 @@ export default function AdvertCarousel({
         remainingRef.current = Math.max(500, (1 - value) * CYCLE_MS);
       });
     } else {
-      // Only resume if no crossfade is already in flight (handleCurrLoad starts
-      // the timer itself once the transition completes).
-      if (advertsLenRef.current > 1 && !isTransitionRef.current) {
-        resumeCycle(remainingRef.current);
-      }
+      if (advertsLenRef.current > 1) resumeCycle(remainingRef.current);
     }
   }, [isActive]); // eslint-disable-line
 
@@ -213,11 +167,6 @@ export default function AdvertCarousel({
             const matched = orientation
               ? data.filter((a) => !a.orientation || a.orientation === orientation)
               : data;
-            // Reset animation state for a clean first-load fade-in.
-            currOpacity.setValue(0);
-            prevOpacity.setValue(0);
-            isTransitionRef.current = false;
-            setPrevIdx(null);
             setCurrIdx(0);
             setAdverts(matched);
           }
@@ -252,7 +201,7 @@ export default function AdvertCarousel({
     );
   }
 
-  const current = adverts[currIdx];
+  const current  = adverts[currIdx];
   const catKey   = current.category ?? "";
   const catIcon  = (CATEGORY_ICON[catKey] ?? "star") as keyof typeof Feather.glyphMap;
   const catLabel = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
@@ -277,35 +226,15 @@ export default function AdvertCarousel({
           onFocusTag(findNodeHandle(focusRef.current));
         }}
       >
-        {/* ── Layer 1: outgoing image (fades out during crossfade, then unmounted) ── */}
-        {prevIdx !== null ? (
-          <Animated.View
-            style={[StyleSheet.absoluteFill, { opacity: prevOpacity }]}
-            pointerEvents="none"
-          >
-            <Image
-              source={{ uri: adverts[prevIdx].image_url }}
-              style={StyleSheet.absoluteFillObject}
-              contentFit="cover"
-              transition={0}
-            />
-          </Animated.View>
-        ) : null}
-
-        {/* ── Layer 2: incoming / current image (hidden until loaded, then fades in) ── */}
-        <Animated.View
-          style={[StyleSheet.absoluteFill, { opacity: currOpacity }]}
-          pointerEvents="none"
-        >
-          <Image
-            source={{ uri: current.image_url }}
-            style={StyleSheet.absoluteFillObject}
-            contentFit="cover"
-            transition={0}
-            onLoad={handleCurrLoad}
-            onError={handleCurrLoad}
-          />
-        </Animated.View>
+        {/* Single image layer — expo-image owns the crossfade natively */}
+        <Image
+          source={{ uri: current.image_url }}
+          style={StyleSheet.absoluteFillObject}
+          contentFit="cover"
+          transition={IMAGE_TRANSITION}
+          onLoad={handleLoad}
+          onError={handleLoad}
+        />
 
         {/* Category badge */}
         {current.category ? (
@@ -323,7 +252,7 @@ export default function AdvertCarousel({
                 styles.progressBar,
                 {
                   width: progressAnim.interpolate({
-                    inputRange: [0, 1],
+                    inputRange:  [0, 1],
                     outputRange: ["0%", "100%"],
                   }),
                 },
