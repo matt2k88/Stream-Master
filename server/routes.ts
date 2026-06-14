@@ -80,7 +80,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode, private_viewing } = req.body;
+    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode, player_buffer_ms, private_viewing } = req.body;
     try {
       // Build a partial update so callers (e.g. PlayerSettingsScreen)
       // can patch only the fields they care about.
@@ -112,6 +112,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .json({ error: "player_hw_decode must be 'auto', 'on' or 'off'" });
         }
         patch.player_hw_decode = player_hw_decode;
+      }
+      if (player_buffer_ms !== undefined) {
+        const bms = Number(player_buffer_ms);
+        if (!Number.isInteger(bms) || bms < 1000 || bms > 60000) {
+          return res.status(400).json({ error: "player_buffer_ms must be an integer between 1000 and 60000" });
+        }
+        patch.player_buffer_ms = bms;
       }
       if (private_viewing !== undefined) {
         patch.private_viewing = !!private_viewing;

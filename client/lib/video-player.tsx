@@ -131,32 +131,37 @@ export type AudioTrack = {
 type Listener = (payload: any) => void;
 type Subscription = { remove: () => void };
 
-// Default VLC init options. Lower the network buffer a bit so live
-// channel switches feel snappier than VLC's 1500ms default.
+// Base VLC init options (no network-caching here — it is added dynamically
+// in buildVlcInitOptions so the per-profile buffer size is respected).
 // The `--http-user-agent` option overrides libvlc's built-in UA so the
 // provider's panel reports the Ultra Cast client name + version + "VLC"
 // suffix instead of generic "VLC/3.0.x LibVLC/3.0.x".
-const DEFAULT_INIT_OPTIONS = [
-  "--network-caching=300",
+const BASE_INIT_OPTIONS = [
   // Let libvlc transparently re-open an HTTP(S) connection that the
   // provider drops mid-stream (e.g. the common ~3h Xtream session cap)
-  // instead of stalling on the last decoded frame forever. The standalone
-  // VOD VLC screen already sets this; the shared live path now matches.
+  // instead of stalling on the last decoded frame forever.
   "--http-reconnect",
   `--http-user-agent=${UA_VLC}`,
 ];
 
-// Build the libVLC init options for a given hardware-decoding mode.
-// "auto" → no avcodec-hw flag (libVLC default — the existing behaviour).
-// "on"   → --avcodec-hw=any  (force hardware acceleration).
-// "off"  → --avcodec-hw=none (force pure software decoding — fixes devices
-//          whose hardware decoder produces green/garbled frames, stutter,
-//          or no audio even though other VLC apps work).
-// The flag is baked into the source's initOptions, which libVLC only reads
-// when a media source is set/replaced — so changing the mode requires
-// reopening the stream (consumer screens capture the mode at mount).
-export function buildVlcInitOptions(hw: HwDecodeMode = "auto"): string[] {
-  const opts = [...DEFAULT_INIT_OPTIONS];
+// Build the libVLC init options for a given hardware-decoding mode and
+// network pre-buffer size.
+// hw:       "auto" → no avcodec-hw flag (libVLC default — existing behaviour).
+//           "on"   → --avcodec-hw=any  (force hardware acceleration).
+//           "off"  → --avcodec-hw=none (force software decoding — fixes glitches).
+// bufferMs: network + file caching in milliseconds. Corresponds to the
+//           per-profile player_buffer_ms setting. Default 3000 ms.
+//           A larger value absorbs short provider hiccups; a smaller value
+//           keeps the stream closer to the live edge.
+// The flags are baked into the source's initOptions, which libVLC only reads
+// when a media source is set/replaced — changing requires reopening the stream
+// (consumer screens capture the mode at mount, same as the engine choice).
+export function buildVlcInitOptions(hw: HwDecodeMode = "auto", bufferMs: number = 3000): string[] {
+  const opts = [
+    ...BASE_INIT_OPTIONS,
+    `--network-caching=${bufferMs}`,
+    `--file-caching=${bufferMs}`,
+  ];
   if (hw === "on") opts.push("--avcodec-hw=any");
   else if (hw === "off") opts.push("--avcodec-hw=none");
   return opts;
@@ -179,9 +184,11 @@ export class VideoPlayer {
   /** @internal — VLC hardware-decoding mode, captured at creation. Baked
    *  into every source's initOptions. Switching requires a fresh player. */
   _hwDecode: HwDecodeMode = "auto";
+  /** @internal — network pre-buffer in ms, captured at creation. */
+  _bufferMs: number = 3000;
   /** @internal */ _source: { uri: string; initOptions: string[] } = {
     uri: "",
-    initOptions: buildVlcInitOptions("auto"),
+    initOptions: buildVlcInitOptions("auto", 3000),
   };
   /** @internal */ _paused: boolean = true;
   /** @internal */ _muted: boolean = false;
@@ -291,7 +298,7 @@ export class VideoPlayer {
   replace(src: string | { uri: string; headers?: Record<string, string> }) {
     if (this._released) return;
     const uri = typeof src === "string" ? src : src?.uri ?? "";
-    this._source = { uri, initOptions: buildVlcInitOptions(this._hwDecode) };
+    this._source = { uri, initOptions: buildVlcInitOptions(this._hwDecode, this._bufferMs) };
     this._currentTime = 0;
     this.duration = 0;
     this.playing = false;
@@ -311,7 +318,7 @@ export class VideoPlayer {
   release() {
     this._released = true;
     this._paused = true;
-    this._source = { uri: "", initOptions: buildVlcInitOptions(this._hwDecode) };
+    this._source = { uri: "", initOptions: buildVlcInitOptions(this._hwDecode, this._bufferMs) };
     this._pendingSeekFrac = null;
     this._pendingResumeSeconds = null;
     this._pendingResumeKick = false;
@@ -588,15 +595,17 @@ function useVlcPlayer(
   source: string,
   setup?: (player: VideoPlayer) => void,
   hwDecode: HwDecodeMode = "auto",
+  bufferMs: number = 3000,
 ): VideoPlayer {
   const ref = useRef<VideoPlayer | null>(null);
   if (!ref.current) {
     const p = new VideoPlayer();
-    // Capture the hardware-decoding mode once at creation so every source
-    // built for this player (initial + replace) bakes in the right flag.
+    // Capture the hardware-decoding mode and buffer size once at creation
+    // so every source built for this player bakes in the right flags.
     p._hwDecode = hwDecode;
+    p._bufferMs = bufferMs;
     if (source) {
-      p._source = { uri: source, initOptions: buildVlcInitOptions(hwDecode) };
+      p._source = { uri: source, initOptions: buildVlcInitOptions(hwDecode, bufferMs) };
       p._paused = false;
     }
     try { setup?.(p); } catch {}
@@ -627,7 +636,7 @@ function useVlcPlayer(
 export function useVideoPlayer(
   source: string | { uri: string; headers?: Record<string, string> } | null,
   setup?: (player: any) => void,
-  opts?: { engine?: PlayerEngine; hwDecode?: HwDecodeMode },
+  opts?: { engine?: PlayerEngine; hwDecode?: HwDecodeMode; bufferMs?: number },
 ): any {
   // Normalise to a bare URL for the VLC branch (which uses init options
   // for the UA) and to a {uri, headers} object for the expo branch.
@@ -640,8 +649,38 @@ export function useVideoPlayer(
   // empty source) so hook order stays stable across renders. The unused
   // engine doesn't actually decode anything.
   const useExpo = engineRef.current === "expo";
-  const expoSetup = useExpo ? setup : undefined;
-  const vlcSetup  = !useExpo ? setup : undefined;
+  const vlcSetup = !useExpo ? setup : undefined;
+
+  // Capture buffer size once per mount — same lifecycle as engine + hwDecode.
+  const bufferMsRef = useRef<number>(opts?.bufferMs ?? 3000);
+
+  // For the expo path: wrap the caller's setup to also apply bufferOptions
+  // before play() starts. This is the only reliable window to set them —
+  // expo-video's bufferOptions must be configured before decoding begins.
+  // The wrapped fn is stable (set once via a ref) so expo-video never sees
+  // a new setup identity and never recreates the player unnecessarily.
+  const expoSetupRef = useRef<((p: any) => void) | undefined>(undefined);
+  if (!expoSetupRef.current && useExpo) {
+    const bms = bufferMsRef.current;
+    expoSetupRef.current = (p: any) => {
+      try {
+        // ExoPlayer (Android) buffer knobs exposed via expo-video.
+        // minBufferMs: minimum to maintain after playback starts.
+        // maxBufferMs: maximum to fill ahead (cap at 60 s to avoid huge RAM use).
+        // bufferForPlaybackMs: required before initial playback begins (keep low
+        //   so channel switches feel instant; the pre-buffer builds up during play).
+        // bufferForPlaybackAfterRebufferMs: required to resume after a stall.
+        p.bufferOptions = {
+          minBufferMs: bms,
+          maxBufferMs: Math.min(bms * 3, 60000),
+          bufferForPlaybackMs: Math.min(1500, bms),
+          bufferForPlaybackAfterRebufferMs: Math.min(bms, 5000),
+        };
+      } catch {}
+      setup?.(p);
+    };
+  }
+
   // Pass `null` to the unused engine so it stays a true no-op. expo-video
   // treats null source as "no source" (no decoder, no errors); VLC's
   // bridge guards against falsy source the same way.
@@ -658,8 +697,8 @@ export function useVideoPlayer(
   const hwDecodeRef = useRef<HwDecodeMode>(
     opts?.hwDecode === "on" || opts?.hwDecode === "off" ? opts.hwDecode : "auto",
   );
-  const expoPlayer = useExpoVideoPlayer(expoSource, expoSetup as any);
-  const vlcPlayer  = useVlcPlayer(!useExpo ? url : "", vlcSetup as any, hwDecodeRef.current);
+  const expoPlayer = useExpoVideoPlayer(expoSource, useExpo ? expoSetupRef.current : undefined);
+  const vlcPlayer  = useVlcPlayer(!useExpo ? url : "", vlcSetup as any, hwDecodeRef.current, bufferMsRef.current);
   return useExpo ? expoPlayer : vlcPlayer;
 }
 

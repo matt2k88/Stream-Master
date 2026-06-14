@@ -636,9 +636,18 @@ function LegacyPlayerScreen() {
       ? activeProfile.player_hw_decode
       : "auto",
   );
+  // Network pre-buffer size in ms, captured at mount. Applies to both
+  // VLC (--network-caching) and Expo (bufferOptions). Default 3000 ms.
+  const bufferMsRef = useRef<number>(
+    typeof activeProfile?.player_buffer_ms === "number" &&
+    activeProfile.player_buffer_ms >= 1000
+      ? activeProfile.player_buffer_ms
+      : 3000,
+  );
   const player = useVideoPlayer(streamUrl, playerSetupRef.current, {
     engine: playerEngineRef.current,
     hwDecode: hwDecodeRef.current,
+    bufferMs: bufferMsRef.current,
   });
 
   // ── Controls visibility ───────────────────────────────────────────────────

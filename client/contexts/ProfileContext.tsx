@@ -30,6 +30,10 @@ export interface Profile {
   // users see no behaviour change until they opt in. Applies to both Live
   // and VOD on the VLC engine; ignored by the Expo engine.
   player_hw_decode?: HwDecodeMode;
+  // Per-profile network pre-buffer size in milliseconds. Controls how far
+  // ahead of playback the player buffers the stream. Defaults to 3000 ms.
+  // Applies to both VLC (--network-caching) and Expo (bufferOptions).
+  player_buffer_ms?: number;
   // When true, no watch history is saved to recently_watched — enforced
   // both client-side (upsertLocal no-ops) and server-side (POST skips insert).
   private_viewing?: boolean;
@@ -53,7 +57,7 @@ export function isGuestProfile(profile: Profile | null | undefined): boolean {
  */
 export function makeGuestProfile(
   accountUsername: string,
-  prefs?: { player_vod?: PlayerEngine; player_live?: PlayerEngine; player_hw_decode?: HwDecodeMode },
+  prefs?: { player_vod?: PlayerEngine; player_live?: PlayerEngine; player_hw_decode?: HwDecodeMode; player_buffer_ms?: number },
 ): Profile {
   return {
     id: GUEST_PROFILE_ID,
@@ -66,12 +70,29 @@ export function makeGuestProfile(
     player_vod: prefs?.player_vod === "expo" ? "expo" : "vlc",
     player_live: prefs?.player_live === "expo" ? "expo" : "vlc",
     player_hw_decode: normaliseHwDecode(prefs?.player_hw_decode),
+    player_buffer_ms: normaliseBufferMs(prefs?.player_buffer_ms),
   };
 }
 
 /** Coerce any value into a valid HwDecodeMode, defaulting to "auto". */
 export function normaliseHwDecode(v: unknown): HwDecodeMode {
   return v === "on" || v === "off" ? v : "auto";
+}
+
+const VALID_BUFFER_PRESETS = [1500, 3000, 5000, 10000, 30000] as const;
+export type BufferPreset = typeof VALID_BUFFER_PRESETS[number];
+
+/** Coerce any value into a valid buffer preset ms, defaulting to 3000. */
+export function normaliseBufferMs(v: unknown): BufferPreset {
+  const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : 3000;
+  return (VALID_BUFFER_PRESETS as readonly number[]).includes(n)
+    ? (n as BufferPreset)
+    : 3000;
+}
+
+/** Resolve the network pre-buffer for a profile. Defaults to 3000 ms. */
+export function getBufferMs(profile: Profile | null): BufferPreset {
+  return normaliseBufferMs(profile?.player_buffer_ms);
 }
 
 interface ProfileContextType {
@@ -132,6 +153,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           player_vod: fresh.player_vod,
           player_live: fresh.player_live,
           player_hw_decode: fresh.player_hw_decode,
+          player_buffer_ms: fresh.player_buffer_ms,
         };
         setActiveProfileState((prev) => {
           if (!prev || prev.id !== current.id) return prev;
@@ -146,7 +168,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
             prev.pin === patch.pin &&
             prev.player_vod === patch.player_vod &&
             prev.player_live === patch.player_live &&
-            prev.player_hw_decode === patch.player_hw_decode;
+            prev.player_hw_decode === patch.player_hw_decode &&
+            prev.player_buffer_ms === patch.player_buffer_ms;
           return unchanged ? prev : { ...prev, ...patch };
         });
         return { ...current, ...patch };

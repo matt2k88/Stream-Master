@@ -22,8 +22,11 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   useProfile,
   getHwDecode,
+  getBufferMs,
+  normaliseBufferMs,
   type PlayerEngine,
   type HwDecodeMode,
+  type BufferPreset,
 } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 import { saveGuestPlayerPrefs } from "@/lib/guest-prefs";
@@ -34,6 +37,14 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 // to comfortably show two columns — TVs and tablets in landscape. Phones and
 // narrow windows keep the stacked layout.
 const WIDE_BREAKPOINT = 700;
+
+const BUFFER_PRESETS: { ms: BufferPreset; label: string; sub: string }[] = [
+  { ms: 1500,  label: "1.5s",   sub: "Minimal — closest to live, lowest tolerance for drops" },
+  { ms: 3000,  label: "3s",     sub: "Balanced — recommended for most connections" },
+  { ms: 5000,  label: "5s",     sub: "Standard — absorbs brief provider hiccups" },
+  { ms: 10000, label: "10s",    sub: "High — for unstable or congested connections" },
+  { ms: 30000, label: "30s",    sub: "Maximum — 30s behind live, very resilient" },
+];
 
 function HoverBtn({
   style,
@@ -184,7 +195,7 @@ export default function PlayerSettingsScreen() {
   const { activeProfile, isGuest, updateActiveProfile, refreshActiveProfile } = useProfile();
 
   const [savingKey, setSavingKey] = useState<
-    "player_vod" | "player_live" | "player_hw_decode" | null
+    "player_vod" | "player_live" | "player_hw_decode" | "player_buffer_ms" | null
   >(null);
 
   // Pull the latest player prefs every time this screen gains focus, so
@@ -201,6 +212,7 @@ export default function PlayerSettingsScreen() {
   const vod: PlayerEngine = activeProfile?.player_vod === "expo" ? "expo" : "vlc";
   const live: PlayerEngine = activeProfile?.player_live === "expo" ? "expo" : "vlc";
   const hw: HwDecodeMode = getHwDecode(activeProfile);
+  const bufferMs: BufferPreset = getBufferMs(activeProfile);
 
   const isWide = width >= WIDE_BREAKPOINT;
 
@@ -228,6 +240,7 @@ export default function PlayerSettingsScreen() {
           player_live: key === "player_live" ? (next as PlayerEngine) : live,
           player_hw_decode:
             key === "player_hw_decode" ? (next as HwDecodeMode) : hw,
+          player_buffer_ms: bufferMs,
         });
       } catch (e) {
         updateActiveProfile({ [key]: prev } as any);
@@ -251,6 +264,52 @@ export default function PlayerSettingsScreen() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (e) {
       updateActiveProfile({ [key]: prev } as any);
+      Alert.alert(
+        "Could not save",
+        "We couldn't save your choice. Check your connection and try again.",
+      );
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const persistBuffer = async (next: BufferPreset) => {
+    if (!activeProfile) return;
+    const prev = bufferMs;
+    if (prev === next) return;
+    setSavingKey("player_buffer_ms");
+    updateActiveProfile({ player_buffer_ms: next });
+
+    if (isGuest) {
+      try {
+        await saveGuestPlayerPrefs({
+          player_vod: vod,
+          player_live: live,
+          player_hw_decode: hw,
+          player_buffer_ms: next,
+        });
+      } catch {
+        updateActiveProfile({ player_buffer_ms: prev });
+        Alert.alert(
+          "Could not save",
+          "We couldn't save your choice on this device. Please try again.",
+        );
+      } finally {
+        setSavingKey(null);
+      }
+      return;
+    }
+
+    try {
+      const url = new URL(`/api/profiles/${activeProfile.id}`, getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player_buffer_ms: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      updateActiveProfile({ player_buffer_ms: prev });
       Alert.alert(
         "Could not save",
         "We couldn't save your choice. Check your connection and try again.",
@@ -421,6 +480,65 @@ export default function PlayerSettingsScreen() {
             />
           </View>
 
+          {/* Pre-buffer card — applies to both VLC and Expo engines */}
+          <View style={styles.card}>
+            <LinearGradient
+              colors={["rgba(255,102,0,0.10)", "rgba(255,102,0,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+            <View style={styles.cardHeader}>
+              <Feather name="wifi" size={16} color={Colors.dark.accent} />
+              <ThemedText style={styles.cardTitle}>Stream Pre-Buffer</ThemedText>
+              {savingKey === "player_buffer_ms" ? (
+                <ActivityIndicator size="small" color={Colors.dark.accent} />
+              ) : null}
+            </View>
+            <ThemedText style={styles.cardSub}>
+              How far ahead of playback the player buffers the stream. A larger
+              buffer absorbs brief freezes and reconnections at the cost of a
+              slightly larger delay behind the live edge. Applies on the next
+              stream you open.
+            </ThemedText>
+            <View style={styles.bufferGrid}>
+              {BUFFER_PRESETS.map((preset) => {
+                const selected = bufferMs === preset.ms;
+                return (
+                  <HoverBtn
+                    key={preset.ms}
+                    style={[styles.bufferOpt, selected && styles.bufferOptSelected]}
+                    activeStyle={styles.bufferOptHover}
+                    onPress={() => persistBuffer(preset.ms)}
+                    disabled={savingKey !== null}
+                  >
+                    {(active) => (
+                      <View style={styles.bufferOptInner}>
+                        <View style={styles.bufferOptTop}>
+                          <View style={styles.engineRadio}>
+                            {selected ? <View style={styles.engineRadioDot} /> : null}
+                          </View>
+                          <ThemedText
+                            style={[
+                              styles.bufferLabel,
+                              (selected || active) && { color: Colors.dark.accent },
+                            ]}
+                          >
+                            {preset.label}
+                          </ThemedText>
+                          {selected ? (
+                            <Feather name="check" size={13} color={Colors.dark.accent} />
+                          ) : null}
+                        </View>
+                        <ThemedText style={styles.bufferSub}>{preset.sub}</ThemedText>
+                      </View>
+                    )}
+                  </HoverBtn>
+                );
+              })}
+            </View>
+          </View>
+
           <View style={styles.tipRow}>
             <Feather name="alert-circle" size={13} color={Colors.dark.textSecondary} />
             <ThemedText style={styles.tipText}>
@@ -531,6 +649,25 @@ const styles = StyleSheet.create({
   },
   engineLabel: { fontSize: 14, fontWeight: "700", color: Colors.dark.text },
   engineSub: { fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2 },
+
+  bufferGrid: { gap: Spacing.xs },
+  bufferOpt: {
+    backgroundColor: "rgba(255,255,255,0.025)",
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+  },
+  bufferOptSelected: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  bufferOptHover: { borderColor: Colors.dark.accent },
+  bufferOptInner: { gap: 2 },
+  bufferOptTop: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+  },
+  bufferLabel: { flex: 1, fontSize: 13, fontWeight: "700", color: Colors.dark.text },
+  bufferSub: { fontSize: 11, color: Colors.dark.textSecondary, marginLeft: 26 },
 
   tipRow: {
     flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm,

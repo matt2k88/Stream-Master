@@ -871,21 +871,28 @@ export default function VlcPlayerScreen() {
       ? activeProfile.player_hw_decode
       : "auto",
   );
+  // Network pre-buffer in ms, captured at mount. Default 3000 ms.
+  const bufferMsRef = useRef<number>(
+    typeof activeProfile?.player_buffer_ms === "number" &&
+    activeProfile.player_buffer_ms >= 1000
+      ? activeProfile.player_buffer_ms
+      : 3000,
+  );
   const source = useMemo(() => ({
     uri: streamUrl,
     initOptions:
       hwDecodeRef.current === "off"
         ? [
             "--http-reconnect",
-            "--network-caching=1500",
-            "--file-caching=1500",
+            `--network-caching=${bufferMsRef.current}`,
+            `--file-caching=${bufferMsRef.current}`,
             "--codec=all",
             "--avcodec-hw=none",
           ]
         : [
             "--http-reconnect",
-            "--network-caching=1500",
-            "--file-caching=1500",
+            `--network-caching=${bufferMsRef.current}`,
+            `--file-caching=${bufferMsRef.current}`,
             "--codec=mediacodec_ndk,mediacodec,all",
             "--avcodec-hw=mediacodec",
           ],
