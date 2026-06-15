@@ -21,7 +21,7 @@ import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
 import { useApkInstaller } from "@/hooks/useApkInstaller";
-import AdvertCarousel from "@/components/AdvertCarousel";
+import AdvertCarousel, { type Advert } from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
 import GuestPrompt from "@/components/GuestPrompt";
@@ -1124,6 +1124,23 @@ export default function HomeScreen() {
     }
   }, [navigation]);
 
+  const handleAdvertPress = useCallback((advert: Advert) => {
+    if (!advert.content_type || !advert.content_id) return;
+    if (advert.content_type === "movie") {
+      navigation.navigate("MovieInfo", {
+        streamId: Number(advert.content_id),
+        name: advert.content_name ?? advert.name,
+        streamIcon: advert.content_icon ?? undefined,
+      });
+    } else if (advert.content_type === "series") {
+      navigation.navigate("SeriesDetail", {
+        seriesId: Number(advert.content_id),
+        seriesName: advert.content_name ?? advert.name,
+        cover: advert.content_icon ?? "",
+      });
+    }
+  }, [navigation]);
+
   const watchRows = isGuest ? (
     <View style={[styles.watchCard, styles.guestPromptCard]}>
       <GuestPrompt
@@ -1269,7 +1286,7 @@ export default function HomeScreen() {
                   flexGrow:1 lets short landscape viewports scroll instead of
                   clipping. */}
               <View style={styles.advertBannerLandscape}>
-                <AdvertCarousel orientation="landscape" onFocusTag={(t) => setCarouselTag(t ?? undefined)} />
+                <AdvertCarousel orientation="landscape" onFocusTag={(t) => setCarouselTag(t ?? undefined)} onContentPress={handleAdvertPress} />
               </View>
 
               {/* Quick-action cards — portrait/mobile only; sidebar covers nav in landscape */}
@@ -1351,7 +1368,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.advertBannerPortrait}>
-              <AdvertCarousel orientation="portrait" />
+              <AdvertCarousel orientation="portrait" onContentPress={handleAdvertPress} />
             </View>
 
             <View style={styles.gridWrap}>

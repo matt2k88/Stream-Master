@@ -272,11 +272,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Adverts ───────────────────────────────────────────────────────────────
   app.get("/api/adverts", async (req, res) => {
     try {
-      // Full select including orientation (021) and category (022)
+      // Full select including orientation (021), category (022), content link columns
       let { data, error } = await supabase
         .from("adverts")
-        .select("id, name, image_url, orientation, category, created_at")
-        .order("created_at");
+        .select("id, name, image_url, orientation, category, content_type, content_id, content_name, content_icon, sort_order, created_at")
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      // Content columns not yet present — retry without them
+      if (error && (error.code === "42703" || /content_type|content_id|content_name|content_icon|sort_order/i.test(error.message))) {
+        ({ data, error } = (await supabase
+          .from("adverts")
+          .select("id, name, image_url, orientation, category, created_at")
+          .order("created_at")) as any);
+      }
       // Migration 022 not yet run — retry without category
       if (error && (error.code === "42703" || /category/i.test(error.message))) {
         ({ data, error } = (await supabase

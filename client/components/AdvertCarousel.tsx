@@ -14,12 +14,16 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, BorderRadius, Spacing } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 
-interface Advert {
+export interface Advert {
   id: string;
   name: string;
   image_url: string;
   orientation?: string | null;
   category?: string | null;
+  content_type?: string | null;
+  content_id?: string | null;
+  content_name?: string | null;
+  content_icon?: string | null;
 }
 
 const CYCLE_MS = 8000;
@@ -48,20 +52,18 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 // expo-image handles the crossfade natively at the GPU/decode level.
-// When the `source` prop changes it holds the previous pixels until the new
-// image is fully decoded, then dissolves between them — zero JS timing
-// involvement, so the "flash of previous advert" that occurs with JS-driven
-// Animated.Value opacity cannot happen here.
 const IMAGE_TRANSITION = { duration: FADE_MS, effect: "cross-dissolve" } as const;
 
 export default function AdvertCarousel({
   style,
   orientation,
   onFocusTag,
+  onContentPress,
 }: {
   style?: any;
   orientation?: "landscape" | "portrait";
   onFocusTag?: (tag: number | null) => void;
+  onContentPress?: (advert: Advert) => void;
 }) {
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [currIdx, setCurrIdx] = useState(0);
@@ -119,9 +121,6 @@ export default function AdvertCarousel({
     }, d);
   }, [clearTimer, stopProg, progressAnim]); // eslint-disable-line
 
-  // expo-image fires onLoad once the new image is fully decoded and the native
-  // transition has begun. Start the next cycle timer from here so the progress
-  // bar only moves once the image is actually visible.
   const handleLoad = useCallback(() => {
     if (advertsLenRef.current > 1 && !isActiveRef.current) startCycle();
   }, [startCycle]); // eslint-disable-line
@@ -131,8 +130,6 @@ export default function AdvertCarousel({
     if (count <= 1) return;
     clearTimer();
     stopProg();
-    // Changing source triggers expo-image's native cross-dissolve.
-    // The previous image pixels are held until the new decode completes.
     setCurrIdx((prev) => (prev + 1) % count);
   }, [clearTimer, stopProg]);
 
@@ -201,10 +198,19 @@ export default function AdvertCarousel({
     );
   }
 
-  const current  = adverts[currIdx];
-  const catKey   = current.category ?? "";
-  const catIcon  = (CATEGORY_ICON[catKey] ?? "star") as keyof typeof Feather.glyphMap;
-  const catLabel = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
+  const current    = adverts[currIdx];
+  const catKey     = current.category ?? "";
+  const catIcon    = (CATEGORY_ICON[catKey] ?? "star") as keyof typeof Feather.glyphMap;
+  const catLabel   = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
+  const hasContent = !!(current.content_type && current.content_id);
+  const isMovie    = current.content_type === "movie";
+  const isSeries   = current.content_type === "series";
+  const ctaLabel   = isMovie ? "Go to Movie" : isSeries ? "Go to Series" : null;
+  const ctaIcon: keyof typeof Feather.glyphMap = isMovie ? "film" : "grid";
+
+  const handlePress = () => {
+    if (hasContent && onContentPress) onContentPress(current);
+  };
 
   return (
     <View style={styles.outerWrap}>
@@ -221,6 +227,7 @@ export default function AdvertCarousel({
         onBlur={() => setFocused(false)}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
+        onPress={hasContent ? handlePress : undefined}
         onLayout={() => {
           if (!onFocusTag || Platform.OS === "web") return;
           onFocusTag(findNodeHandle(focusRef.current));
@@ -235,6 +242,33 @@ export default function AdvertCarousel({
           onLoad={handleLoad}
           onError={handleLoad}
         />
+
+        {/* CTA pill — top-right, visible when content is linked */}
+        {ctaLabel ? (
+          <View
+            style={[
+              styles.ctaPill,
+              isActive && styles.ctaPillActive,
+            ]}
+            pointerEvents="none"
+          >
+            <Feather
+              name={ctaIcon}
+              size={11}
+              color={isActive ? Colors.dark.accent : "rgba(255,255,255,0.75)"}
+            />
+            <ThemedText
+              style={[styles.ctaText, isActive && styles.ctaTextActive]}
+            >
+              {ctaLabel}
+            </ThemedText>
+            <Feather
+              name="chevron-right"
+              size={11}
+              color={isActive ? Colors.dark.accent : "rgba(255,255,255,0.75)"}
+            />
+          </View>
+        ) : null}
 
         {/* Category badge */}
         {current.category ? (
@@ -295,6 +329,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 14,
     elevation: 18,
+  },
+  ctaPill: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  ctaPillActive: {
+    backgroundColor: "rgba(0,0,0,0.82)",
+    borderColor: Colors.dark.accent,
+    shadowColor: Colors.dark.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  ctaText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.75)",
+    letterSpacing: 0.3,
+  },
+  ctaTextActive: {
+    color: Colors.dark.accent,
   },
   categoryRow: {
     position: "absolute",
