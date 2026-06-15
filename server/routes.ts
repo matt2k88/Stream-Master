@@ -1841,8 +1841,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { data, error } = await lifetimeDb
         .from("top_picks")
-        .select("id, tmdb_id, media_type, title, poster_path, overview, release_date, popularity")
-        .order("popularity", { ascending: false })
+        .select("id, tmdb_id, media_type, title, poster_path, overview, release_date")
+        .order("id", { ascending: true })
         .limit(8);
       if (error) {
         console.error("[top-picks] fetch error:", error.message);

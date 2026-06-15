@@ -35,7 +35,6 @@ interface TopPick {
   poster_path: string;
   overview: string;
   release_date: string;
-  popularity: number;
 }
 
 interface MatchedPick extends TopPick {
@@ -47,11 +46,7 @@ function normaliseTitle(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function flameCount(popularity: number, min: number, max: number): number {
-  if (max === min) return 3;
-  const norm = (popularity - min) / (max - min);
-  return Math.max(1, Math.min(5, Math.round(norm * 4) + 1));
-}
+const FLAME_COUNT = 5;
 
 function FlameRating({ count }: { count: number }) {
   return (
@@ -237,10 +232,6 @@ export default function TopPicksScreen() {
     });
   }, [picks, vodStreams, seriesList]);
 
-  const pops = matchedPicks.map((p) => p.popularity ?? 0);
-  const popMin = pops.length ? Math.min(...pops) : 0;
-  const popMax = pops.length ? Math.max(...pops) : 0;
-
   const handlePress = (pick: MatchedPick) => {
     if (pick.matchedId === null) return;
     if (pick.media_type === "movie") {
@@ -314,7 +305,7 @@ export default function TopPicksScreen() {
                 <PickCard
                   key={pick.id}
                   pick={pick}
-                  flames={flameCount(pick.popularity ?? 0, popMin, popMax)}
+                  flames={FLAME_COUNT}
                   onPress={() => handlePress(pick)}
                   style={styles.landscapeCard}
                 />
@@ -346,7 +337,7 @@ export default function TopPicksScreen() {
                 <PickCard
                   key={pick.id}
                   pick={pick}
-                  flames={flameCount(pick.popularity ?? 0, popMin, popMax)}
+                  flames={FLAME_COUNT}
                   onPress={() => handlePress(pick)}
                   style={styles.portraitCard}
                 />
