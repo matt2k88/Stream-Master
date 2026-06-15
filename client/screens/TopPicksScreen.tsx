@@ -35,6 +35,8 @@ interface TopPick {
   poster_path: string;
   overview: string;
   release_date: string;
+  position: number;
+  popularity_score: number; // 0–5, used directly as flame count
 }
 
 interface MatchedPick extends TopPick {
@@ -46,7 +48,6 @@ function normaliseTitle(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-const FLAME_COUNT = 5;
 
 function FlameRating({ count }: { count: number }) {
   return (
@@ -305,7 +306,7 @@ export default function TopPicksScreen() {
                 <PickCard
                   key={pick.id}
                   pick={pick}
-                  flames={FLAME_COUNT}
+                  flames={pick.popularity_score ?? 5}
                   onPress={() => handlePress(pick)}
                   style={styles.landscapeCard}
                 />
@@ -337,7 +338,7 @@ export default function TopPicksScreen() {
                 <PickCard
                   key={pick.id}
                   pick={pick}
-                  flames={FLAME_COUNT}
+                  flames={pick.popularity_score ?? 5}
                   onPress={() => handlePress(pick)}
                   style={styles.portraitCard}
                 />
