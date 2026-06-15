@@ -1830,6 +1830,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Top Picks (lifetime DB) ───────────────────────────────────────────────
+  // Returns up to 8 curated picks from the top_picks table, ordered by
+  // popularity descending. Poster path is stored as the TMDB relative path;
+  // the client builds the full URL.
+  app.get("/api/top-picks", async (req, res) => {
+    const cacheKey = "top_picks";
+    const cached = cacheGet(cacheKey);
+    if (cached !== null) return res.json(cached);
+    try {
+      const { data, error } = await lifetimeDb
+        .from("top_picks")
+        .select("id, tmdb_id, media_type, title, poster_path, overview, release_date, popularity")
+        .order("popularity", { ascending: false })
+        .limit(8);
+      if (error) {
+        console.error("[top-picks] fetch error:", error.message);
+        return res.status(500).json({ error: error.message });
+      }
+      const payload = data ?? [];
+      cacheSet(cacheKey, payload, 5 * 60_000); // 5-minute cache
+      res.json(payload);
+    } catch (e: any) {
+      console.error("[top-picks] exception:", e?.message);
+      res.status(500).json({ error: "Failed to fetch top picks" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

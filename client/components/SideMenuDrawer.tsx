@@ -266,9 +266,15 @@ export default function SideMenuDrawer() {
             <MenuItem
               label="Football Centre"
               mciIcon="soccer"
-              isNew
               active={routeName === "FootballCentre"}
               onPress={() => navTo(() => navigationRef.navigate("FootballCentre"))}
+            />
+            <MenuItem
+              label="Top Picks"
+              mciIcon="fire"
+              isNew
+              active={routeName === "TopPicks"}
+              onPress={() => navTo(() => navigationRef.navigate("TopPicks"))}
             />
             <MenuItem
               label="Settings"
