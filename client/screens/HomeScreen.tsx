@@ -491,6 +491,31 @@ function FootballCentreButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function TopPicksButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
+    >
+      <MaterialCommunityIcons name="fire" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
 function AccountButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -1218,7 +1243,8 @@ export default function HomeScreen() {
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
-              <SidebarItem label="Football Centre" mciIcon="soccer" isNew onPress={() => navigation.navigate("FootballCentre")} />
+              <SidebarItem label="Football Centre" mciIcon="soccer" onPress={() => navigation.navigate("FootballCentre")} />
+              <SidebarItem label="Top Picks" mciIcon="fire" isNew onPress={() => navigation.navigate("TopPicks")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
             </ScrollView>
           </View>
@@ -1350,7 +1376,7 @@ export default function HomeScreen() {
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-              <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+              <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
               <VpnButton />
               <UpdateAvailableButton />
               <MessagesButton onPress={() => navigation.navigate("Messages")} />
@@ -1420,10 +1446,10 @@ export default function HomeScreen() {
               <QuickActionCard
                 compact
                 style={styles.gridCard}
-                title="Football Centre"
-                subtitle="Live Matches & More"
-                mciIcon="soccer"
-                onPress={() => navigation.navigate("FootballCentre")}
+                title="Top Picks"
+                subtitle="Hand-picked for you"
+                mciIcon="fire"
+                onPress={() => navigation.navigate("TopPicks")}
               />
             </View>
 
