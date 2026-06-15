@@ -272,21 +272,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Adverts ───────────────────────────────────────────────────────────────
   app.get("/api/adverts", async (req, res) => {
     try {
-      // Full select: orientation (021), category (022), content link columns, sort_order
+      // Full select including orientation (021), category (022), content link columns
       let { data, error } = await supabase
         .from("adverts")
         .select("id, name, image_url, orientation, category, content_type, content_id, content_name, content_icon, sort_order, created_at")
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
-      // sort_order column absent — retry keeping content columns, fall back to created_at order
-      if (error && (error.code === "42703" || /sort_order/i.test(error.message))) {
-        ({ data, error } = (await supabase
-          .from("adverts")
-          .select("id, name, image_url, orientation, category, content_type, content_id, content_name, content_icon, created_at")
-          .order("created_at")) as any);
-      }
-      // Content link columns absent — retry without them (buttons won't render but adverts still show)
-      if (error && (error.code === "42703" || /content_type|content_id|content_name|content_icon/i.test(error.message))) {
+      // Content columns not yet present — retry without them
+      if (error && (error.code === "42703" || /content_type|content_id|content_name|content_icon|sort_order/i.test(error.message))) {
         ({ data, error } = (await supabase
           .from("adverts")
           .select("id, name, image_url, orientation, category, created_at")
