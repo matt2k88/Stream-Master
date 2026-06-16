@@ -13,6 +13,8 @@ interface ThemeContextValue {
   getIcon: (key: ThemeIconKey) => any | undefined;
   /** Re-fetch the active theme from the server and apply it if changed. */
   refetch: () => Promise<void>;
+  /** Admin-controlled toggle: whether the NEW badge shows on Top Picks. Defaults true. */
+  showTopPicksBadge: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -21,6 +23,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   loaded: true,
   getIcon: () => undefined,
   refetch: async () => {},
+  showTopPicksBadge: true,
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -71,6 +74,7 @@ function applyPalette(theme: ThemeDef) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeKey, setThemeKey] = useState<ThemeKey>("default");
   const [loaded, setLoaded] = useState(false);
+  const [showTopPicksBadge, setShowTopPicksBadge] = useState(true);
 
   const fetchTheme = React.useCallback(async () => {
     try {
@@ -89,6 +93,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyPalette(next);
         return next.key;
       });
+      // show_top_picks_badge defaults to true when the column is missing
+      setShowTopPicksBadge(data?.show_top_picks_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -125,8 +131,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       loaded,
       getIcon: (k: ThemeIconKey) => theme.icons[k],
       refetch: fetchTheme,
+      showTopPicksBadge,
     };
-  }, [themeKey, loaded, fetchTheme]);
+  }, [themeKey, loaded, fetchTheme, showTopPicksBadge]);
 
   return (
     <ThemeContext.Provider value={value}>

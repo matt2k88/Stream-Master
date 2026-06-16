@@ -20,6 +20,7 @@ import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
+import { useFootball } from "@/contexts/FootballContext";
 import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel, { type Advert } from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
@@ -83,9 +84,12 @@ function formatCount(n: number) {
   return n.toLocaleString("en-US");
 }
 
+const FOOTBALL_FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
+const FOOTBALL_NOT_STARTED = ["NS", "PST", "CANC", "TBD", "SUSP"];
+
 // ── Sidebar item (landscape / TV) ─────────────────────────────────────────
 function SidebarItem({
-  icon, mciIcon, label, active = false, count, isNew = false, onPress, preferFocus,
+  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, onPress, preferFocus,
 }: {
   icon?: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -93,6 +97,7 @@ function SidebarItem({
   active?: boolean;
   count?: number;
   isNew?: boolean;
+  isLive?: boolean;
   onPress: () => void;
   preferFocus?: boolean;
 }) {
@@ -132,7 +137,11 @@ function SidebarItem({
       <ThemedText style={[styles.sidebarLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
         {label}
       </ThemedText>
-      {isNew ? (
+      {isLive ? (
+        <View style={styles.liveBadge}>
+          <ThemedText style={styles.liveBadgeText}>LIVE</ThemedText>
+        </View>
+      ) : isNew ? (
         <View style={[styles.newBadge, { backgroundColor: accent.accent }]}>
           <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
         </View>
@@ -466,7 +475,7 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
   );
 }
 
-function FootballCentreButton({ onPress }: { onPress: () => void }) {
+function FootballCentreButton({ onPress, hasLive = false }: { onPress: () => void; hasLive?: boolean }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
@@ -487,6 +496,7 @@ function FootballCentreButton({ onPress }: { onPress: () => void }) {
       onHoverOut={() => setFocused(false)}
     >
       <MaterialCommunityIcons name="soccer" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+      {hasLive ? <View style={styles.headerBtnLiveDot} /> : null}
     </Pressable>
   );
 }
@@ -840,7 +850,12 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme } = useAppTheme();
+  const { refetch: refetchTheme, showTopPicksBadge } = useAppTheme();
+  const { scores } = useFootball();
+  const hasLiveGame = scores.some((s) => {
+    const st = (s.status_short || "").toUpperCase();
+    return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
+  });
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -1243,8 +1258,8 @@ export default function HomeScreen() {
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
-              <SidebarItem label="Football Centre" mciIcon="soccer" onPress={() => navigation.navigate("FootballCentre")} />
-              <SidebarItem label="Top Picks" mciIcon="fire" isNew onPress={() => navigation.navigate("TopPicks")} />
+              <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
+              <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
             </ScrollView>
           </View>
@@ -1277,7 +1292,7 @@ export default function HomeScreen() {
                 {/* Services group */}
                 <View style={styles.btnGroup}>
                   <LabelledAction label="Football">
-                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
+                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
                   </LabelledAction>
                   <LabelledAction label="VPN">
                     <VpnButton />
@@ -1848,6 +1863,19 @@ const styles = StyleSheet.create({
   },
   newBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs },
   newBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
+  liveBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs, backgroundColor: "#22c55e" },
+  liveBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
+  headerBtnLiveDot: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: "#22c55e",
+    borderWidth: 1,
+    borderColor: Colors.dark.backgroundDefault,
+  },
 
   contentArea: { flex: 1, paddingLeft: Spacing.lg },
   topBar: {

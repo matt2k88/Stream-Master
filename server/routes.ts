@@ -448,16 +448,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { data, error } = await supabase
         .from("app_theme")
-        .select("id, theme_key, updated_at")
+        .select("id, theme_key, show_top_picks_badge, updated_at")
         .eq("id", 1)
         .maybeSingle();
       // Gracefully fall back to default when table is missing (migration
       // 004 not yet applied) or no row exists, so clients always get a
       // valid theme instead of an error.
       if (error && error.code !== "PGRST116") {
-        return res.json({ id: 1, theme_key: "default", updated_at: null });
+        return res.json({ id: 1, theme_key: "default", show_top_picks_badge: true, updated_at: null });
       }
-      res.json(data ?? { id: 1, theme_key: "default", updated_at: null });
+      res.json(data ?? { id: 1, theme_key: "default", show_top_picks_badge: true, updated_at: null });
     } catch {
       res.json({ id: 1, theme_key: "default", updated_at: null });
     }

@@ -15,12 +15,16 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { navigationRef } from "@/lib/navigation-ref";
 import { useData } from "@/contexts/DataContext";
-import { useAccent } from "@/contexts/ThemeContext";
+import { useAccent, useAppTheme } from "@/contexts/ThemeContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
+import { useFootball } from "@/contexts/FootballContext";
 
 const DRAWER_WIDTH = 248;
 
 type ContentType = "live" | "movies" | "series";
+
+const FOOTBALL_FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
+const FOOTBALL_NOT_STARTED = ["NS", "PST", "CANC", "TBD", "SUSP"];
 
 function MenuItem({
   icon,
@@ -28,6 +32,7 @@ function MenuItem({
   label,
   active = false,
   isNew = false,
+  isLive = false,
   preferFocus,
   onPress,
 }: {
@@ -36,6 +41,7 @@ function MenuItem({
   label: string;
   active?: boolean;
   isNew?: boolean;
+  isLive?: boolean;
   preferFocus?: boolean;
   onPress: () => void;
 }) {
@@ -75,7 +81,11 @@ function MenuItem({
       <ThemedText style={[styles.label, highlight && { color: accent.accent }]} numberOfLines={1}>
         {label}
       </ThemedText>
-      {isNew ? (
+      {isLive ? (
+        <View style={styles.liveBadge}>
+          <ThemedText style={styles.liveBadgeText}>LIVE</ThemedText>
+        </View>
+      ) : isNew ? (
         <View style={[styles.newBadge, { backgroundColor: accent.accent }]}>
           <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
         </View>
@@ -91,6 +101,12 @@ export default function SideMenuDrawer() {
   const accent = useAccent();
   const { liveCategories } = useData();
   const { isOpen, transparent, close } = useSideMenu();
+  const { scores } = useFootball();
+  const { showTopPicksBadge } = useAppTheme();
+  const hasLiveGame = scores.some((s) => {
+    const st = (s.status_short || "").toUpperCase();
+    return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
+  });
 
   // Keep the Modal mounted long enough to play the slide-out animation.
   const [mounted, setMounted] = useState(false);
@@ -267,12 +283,13 @@ export default function SideMenuDrawer() {
               label="Football Centre"
               mciIcon="soccer"
               active={routeName === "FootballCentre"}
+              isLive={hasLiveGame}
               onPress={() => navTo(() => navigationRef.navigate("FootballCentre"))}
             />
             <MenuItem
               label="Top Picks"
               mciIcon="fire"
-              isNew
+              isNew={showTopPicksBadge}
               active={routeName === "TopPicks"}
               onPress={() => navTo(() => navigationRef.navigate("TopPicks"))}
             />
@@ -338,4 +355,6 @@ const styles = StyleSheet.create({
   },
   newBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs },
   newBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
+  liveBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs, backgroundColor: "#22c55e" },
+  liveBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
 });
