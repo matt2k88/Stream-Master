@@ -851,31 +851,31 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
         <MaterialCommunityIcons
           name={item.iconName as any}
           size={12}
-          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+          color={highlight ? accent : (item.accent ?? Colors.dark.text)}
         />
       ) : item.iconLib === "feather" && item.iconName ? (
         <Feather
           name={item.iconName as any}
           size={11}
-          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+          color={highlight ? accent : (item.accent ?? Colors.dark.text)}
         />
       ) : isFav ? (
         <Feather
           name="star"
           size={10}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : isRecent ? (
         <Feather
           name="clock"
           size={10}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : isSuggested ? (
         <MaterialCommunityIcons
           name="auto-fix"
           size={12}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : null}
       <ThemedText
@@ -2154,7 +2154,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: "500",
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.text,
     lineHeight: 15,
   },
   sidebarItemTextActive: {
@@ -2316,7 +2316,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 1, shadowRadius: 6, elevation: 6,
   },
   cardInfo: { padding: Spacing.sm, gap: 2, flex: 1, justifyContent: "center" },
-  cardName: { color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "500", lineHeight: 15 },
+  cardName: { color: Colors.dark.text, fontSize: 11, fontWeight: "500", lineHeight: 15 },
   cardNameActive: { color: Colors.dark.text },
   ratingBadge: {
     position: "absolute",
