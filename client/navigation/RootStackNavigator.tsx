@@ -47,7 +47,7 @@ export type RootStackParamList = {
   Home: undefined;
   Search: undefined;
   Messages: undefined;
-  TvGuide: undefined;
+  TvGuide: { initialGroupId?: string } | undefined;
   CatchUp: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };

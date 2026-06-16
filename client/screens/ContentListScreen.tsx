@@ -344,6 +344,45 @@ function MyGroupsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: bo
   );
 }
 
+function TvGuideBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      accessibilityLabel="TV Guide"
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="calendar" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          TV Guide
+        </ThemedText>
+      )}
+    </Pressable>
+  );
+}
+
 function MultiScreenBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -1848,6 +1887,15 @@ export default function ContentListScreen() {
         ) : null}
         {type === "live" ? (
           <MultiScreenBtn iconOnly={!isLandscapeHeader} onPress={() => navigation.navigate("MultiScreenLayout")} />
+        ) : null}
+        {type === "live" && String(selectedCategoryId).startsWith("group:") ? (
+          <TvGuideBtn
+            iconOnly={!isLandscapeHeader}
+            onPress={() => {
+              const groupId = selectedCategoryId.slice("group:".length);
+              navigation.navigate("TvGuide", { initialGroupId: groupId });
+            }}
+          />
         ) : null}
         <MyGroupsBtn
           iconOnly={!isLandscapeHeader}
