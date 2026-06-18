@@ -124,7 +124,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           fetchTheme(),
           fetch(new URL("/api/ultra-tube/config", getApiUrl()).toString())
             .then((r) => r.ok ? r.json() : null)
-            .then((d) => { if (!cancelled) setShowUltraTubeBadge(d?.show_badge !== false); })
+            .then((d) => { if (!cancelled) setShowUltraTubeBadge(d?.show_badge === true); })
             .catch(() => {}),
         ]);
       }
