@@ -92,18 +92,61 @@ function FeatureRow({ text }: { text: string }) {
   );
 }
 
+function TVIconButton({
+  onPress, icon, activeIcon, activeColor, label, activeLabel, large,
+}: {
+  onPress: () => void;
+  icon: React.ComponentProps<typeof Feather>["name"];
+  activeIcon?: React.ComponentProps<typeof Feather>["name"];
+  activeColor?: string;
+  label?: string;
+  activeLabel?: string;
+  large?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [triggered, setTriggered] = useState(false);
+  const active = focused || pressed || hovered;
+  const iconColor = triggered && activeColor ? activeColor : active ? Colors.dark.text : Colors.dark.textSecondary;
+  return (
+    <Pressable
+      onPress={() => { setTriggered(true); setTimeout(() => setTriggered(false), 1800); onPress(); }}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.tvIconBtn, large && styles.tvIconBtnLarge, active && styles.tvIconBtnActive]}
+    >
+      <Feather
+        name={(triggered && activeIcon) ? activeIcon : icon}
+        size={large ? 18 : 14}
+        color={iconColor}
+      />
+      {label ? (
+        <ThemedText style={[styles.copyBtnText, triggered && activeColor ? { color: activeColor } : active ? { color: Colors.dark.text } : undefined]}>
+          {triggered && activeLabel ? activeLabel : label}
+        </ThemedText>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function CopyButton({ value, label }: { value: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
   const handle = useCallback(async () => {
     await Clipboard.setStringAsync(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
   }, [value]);
   return (
-    <Pressable style={styles.copyBtn} onPress={handle}>
-      <Feather name={copied ? "check" : "copy"} size={14} color={copied ? "#22c55e" : Colors.dark.textSecondary} />
-      {label ? <ThemedText style={[styles.copyBtnText, copied && { color: "#22c55e" }]}>{copied ? "Copied!" : label}</ThemedText> : null}
-    </Pressable>
+    <TVIconButton
+      onPress={handle}
+      icon="copy"
+      activeIcon="check"
+      activeColor="#22c55e"
+      label={label}
+      activeLabel={label ? "Copied!" : undefined}
+    />
   );
 }
 
@@ -521,9 +564,11 @@ function AccessView({
               <ThemedText style={styles.credValue} selectable numberOfLines={1}>
                 {showPassword ? access.ultra_tube_password ?? "" : "••••••••••••"}
               </ThemedText>
-              <Pressable style={styles.copyBtn} onPress={() => setShowPassword(!showPassword)}>
-                <Feather name={showPassword ? "eye-off" : "eye"} size={14} color={Colors.dark.textSecondary} />
-              </Pressable>
+              <TVIconButton
+                large
+                onPress={() => setShowPassword(!showPassword)}
+                icon={showPassword ? "eye-off" : "eye"}
+              />
               <CopyButton value={access.ultra_tube_password ?? ""} />
             </View>
           </View>
@@ -743,6 +788,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundRoot, borderWidth: 1, borderColor: Colors.dark.border,
   },
   copyBtnText: { fontSize: 11, fontWeight: "700", color: Colors.dark.textSecondary },
+
+  // TV-focusable icon button (copy + eye)
+  tvIconBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
+    minWidth: 32, minHeight: 32,
+    paddingHorizontal: 8, paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  tvIconBtnLarge: { minWidth: 40, minHeight: 40, paddingHorizontal: 10, paddingVertical: 8 },
+  tvIconBtnActive: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: Colors.dark.textSecondary,
+  },
 
   // Downloader code
   codeCard: {
