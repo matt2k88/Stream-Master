@@ -473,20 +473,15 @@ function ShowcaseCarousel() {
 
   return (
     <View style={styles.carouselWrap}>
-      {/* Scrapbook stack — two decorative cards peeking behind */}
+      {/* Clean 16:9 device frame */}
       <View style={styles.carouselOuter}>
-        <View style={styles.carouselBack2} />
-        <View style={styles.carouselBack1} />
-        {/* Active image with crossfade */}
-        <Animated.View style={[styles.carouselFront, { opacity }]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity }]}>
           <Image
             source={SHOWCASE_IMAGES[idx]}
             style={styles.carouselImg}
-            contentFit="contain"
-            transition={{ duration: 200, effect: "cross-dissolve" }}
+            contentFit="cover"
+            transition={{ duration: 250, effect: "cross-dissolve" }}
           />
-          {/* Subtle red vignette overlay */}
-          <View style={styles.carouselVignette} pointerEvents="none" />
         </Animated.View>
       </View>
 
@@ -721,14 +716,14 @@ const styles = StyleSheet.create({
   accessRight: { flex: 6, gap: Spacing.md, justifyContent: "center" },
 
   salesLeft: {
-    flex: 5, gap: Spacing.md, justifyContent: "center",
+    flex: 5, gap: Spacing.md, justifyContent: "center", alignItems: "center",
     borderRightWidth: 1, borderRightColor: Colors.dark.border,
     paddingRight: Spacing.xl,
   },
-  utLogo: { width: 170, height: 68 },
+  utLogo: { width: 190, height: 76, alignSelf: "center" },
   utLogoLoading: { width: 200, height: 80 },
-  salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED },
-  salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20 },
+  salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED, textAlign: "center" },
+  salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, textAlign: "center" },
   pricePill: {
     flexDirection: "row", alignItems: "center", gap: Spacing.md,
     backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.md,
@@ -746,42 +741,21 @@ const styles = StyleSheet.create({
   // ── Showcase carousel ────────────────────────────────────────────────────
   carouselWrap: { gap: Spacing.xs },
   carouselOuter: {
-    width: "100%", height: 148,
-    position: "relative",
-    // Extra margin so rotated back-cards don't clip
-    marginHorizontal: 4,
-  },
-  carouselBack2: {
-    position: "absolute",
-    top: 6, left: -7, right: 7, bottom: 0,
-    borderRadius: BorderRadius.md,
-    backgroundColor: "rgba(14,14,14,0.95)",
-    borderWidth: 1, borderColor: "rgba(239,68,68,0.2)",
-    transform: [{ rotate: "-3.5deg" }],
-  },
-  carouselBack1: {
-    position: "absolute",
-    top: 3, left: 5, right: -5, bottom: 0,
-    borderRadius: BorderRadius.md,
-    backgroundColor: "rgba(14,14,14,0.95)",
-    borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
-    transform: [{ rotate: "2deg" }],
-  },
-  carouselFront: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 6,
-    borderRadius: BorderRadius.md,
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: BorderRadius.lg,
     overflow: "hidden",
-    borderWidth: 1.5, borderColor: ULTRA_RED_BORDER,
-    backgroundColor: "#0a0a0a",
+    borderWidth: 2,
+    borderColor: ULTRA_RED_BORDER,
+    backgroundColor: "#080808",
+    shadowColor: ULTRA_RED,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 10,
   },
-  carouselImg: { width: "100%", height: "100%", backgroundColor: "#0a0a0a" },
-  carouselVignette: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: BorderRadius.md,
-    backgroundColor: "rgba(239,68,68,0.04)",
-  },
-  carouselDots: { flexDirection: "row", gap: 5, justifyContent: "center", paddingTop: 2 },
+  carouselImg: { width: "100%", height: "100%" },
+  carouselDots: { flexDirection: "row", gap: 5, justifyContent: "center", paddingTop: 4 },
   carouselDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.dark.border },
   carouselDotActive: { backgroundColor: ULTRA_RED, width: 14, borderRadius: 3 },
   salesCompatRow: {
