@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: Spacing.md,
     backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.md,
     borderWidth: 1, borderColor: ULTRA_RED_BORDER, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    alignSelf: "flex-start", marginTop: Spacing.xs,
+    alignSelf: "center", marginTop: Spacing.xs,
   },
   priceAmount: { fontSize: 32, fontWeight: "900", color: ULTRA_RED },
   priceMeta: { gap: 2 },
