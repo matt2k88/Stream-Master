@@ -303,21 +303,28 @@ export default function UltraTubeScreen() {
       </View>
 
       {access.hasAccess ? (
-        /* Access view — scrollable, full width */
-        <ScrollView
-          contentContainerStyle={[styles.accessScroll, { paddingBottom: padBottom }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <AccessView
-            access={access}
-            config={config}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            installPhase={installPhase}
-            startInstall={startInstall}
-            cancelInstall={cancelInstall}
-          />
-        </ScrollView>
+        /* Access view — same premium centred card as sales page */
+        <View style={styles.salesCenter}>
+          <View style={styles.salesCard}>
+            <LinearGradient
+              colors={["rgba(34,197,94,0.04)", "rgba(239,68,68,0.04)", "transparent"]}
+              style={[StyleSheet.absoluteFill, { borderRadius: BorderRadius.xl }]}
+              locations={[0, 0.3, 0.7]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <AccessView
+              access={access}
+              config={config}
+              showPassword={showPassword}
+              setShowPassword={setShowPassword}
+              installPhase={installPhase}
+              startInstall={startInstall}
+              cancelInstall={cancelInstall}
+            />
+          </View>
+        </View>
       ) : (
         /* Sales page — centred card */
         <View style={styles.salesCenter}>
@@ -475,102 +482,106 @@ function AccessView({
   const isBusy = installPhase.phase !== "idle" && installPhase.phase !== "error";
 
   return (
-    <>
-      {/* Header */}
-      <View style={styles.accessHeader}>
-        <View style={[styles.heroIcon, { marginBottom: Spacing.xs }]}>
-          <Feather name="play-circle" size={36} color={ULTRA_RED} />
+    <View style={styles.salesWrap}>
+      {/* ── Left: identity + credentials ───────────────────────────────── */}
+      <View style={styles.accessLeft}>
+        {/* Logo + title */}
+        <View style={styles.salesLogoRow}>
+          <View style={styles.salesIconCircle}>
+            <Feather name="play-circle" size={26} color={ULTRA_RED} />
+          </View>
+          <ThemedText style={styles.salesTitle}>Ultra Tube</ThemedText>
         </View>
-        <ThemedText style={styles.heroTitle}>Ultra Tube</ThemedText>
+
+        {/* Active badge */}
         <View style={styles.activeBadge}>
           <Feather name="check-circle" size={12} color="#22c55e" />
           <ThemedText style={styles.activeBadgeText}>Active Subscriber</ThemedText>
         </View>
-      </View>
 
-      {/* Separate app notice */}
-      <View style={styles.separateNotice}>
-        <Feather name="alert-circle" size={15} color="#f59e0b" />
-        <ThemedText style={styles.separateNoticeText}>
-          Ultra Tube is a completely separate app to Ultra Cast. Use the credentials below to log in to the Ultra Tube app.
-        </ThemedText>
-      </View>
+        {/* Credentials card */}
+        <View style={styles.credCard}>
+          <ThemedText style={styles.credCardTitle}>Your Login Credentials</ThemedText>
 
-      {/* Credentials */}
-      <View style={styles.credCard}>
-        <ThemedText style={styles.credCardTitle}>Your Ultra Tube Credentials</ThemedText>
+          <View style={styles.credRow}>
+            <ThemedText style={styles.credLabel}>Username</ThemedText>
+            <View style={styles.credValueRow}>
+              <ThemedText style={styles.credValue} selectable numberOfLines={1}>
+                {access.ultra_tube_username ?? ""}
+              </ThemedText>
+              <CopyButton value={access.ultra_tube_username ?? ""} />
+            </View>
+          </View>
 
-        <View style={styles.credRow}>
-          <ThemedText style={styles.credLabel}>Username</ThemedText>
-          <View style={styles.credValueRow}>
-            <ThemedText style={styles.credValue} selectable>{access.ultra_tube_username ?? ""}</ThemedText>
-            <CopyButton value={access.ultra_tube_username ?? ""} />
+          <View style={styles.dividerThin} />
+
+          <View style={styles.credRow}>
+            <ThemedText style={styles.credLabel}>Password</ThemedText>
+            <View style={styles.credValueRow}>
+              <ThemedText style={styles.credValue} selectable numberOfLines={1}>
+                {showPassword ? access.ultra_tube_password ?? "" : "••••••••••••"}
+              </ThemedText>
+              <Pressable style={styles.copyBtn} onPress={() => setShowPassword(!showPassword)}>
+                <Feather name={showPassword ? "eye-off" : "eye"} size={14} color={Colors.dark.textSecondary} />
+              </Pressable>
+              <CopyButton value={access.ultra_tube_password ?? ""} />
+            </View>
           </View>
         </View>
 
-        <View style={styles.dividerThin} />
+        {/* Separate app notice */}
+        <View style={styles.separateNotice}>
+          <Feather name="info" size={13} color={Colors.dark.textSecondary} />
+          <ThemedText style={styles.separateNoticeText}>
+            Ultra Tube is a separate app to Ultra Cast. Use the credentials above to log in.
+          </ThemedText>
+        </View>
+      </View>
 
-        <View style={styles.credRow}>
-          <ThemedText style={styles.credLabel}>Password</ThemedText>
-          <View style={styles.credValueRow}>
-            <ThemedText style={styles.credValue} selectable>
-              {showPassword ? access.ultra_tube_password ?? "" : "••••••••••••"}
-            </ThemedText>
-            <Pressable style={styles.copyBtn} onPress={() => setShowPassword(!showPassword)}>
-              <Feather name={showPassword ? "eye-off" : "eye"} size={14} color={Colors.dark.textSecondary} />
-            </Pressable>
-            <CopyButton value={access.ultra_tube_password ?? ""} />
+      {/* ── Right: download code + install ─────────────────────────────── */}
+      <View style={styles.accessRight}>
+        {/* Downloader code */}
+        <View style={styles.codeCard}>
+          <View style={styles.codeCardHeader}>
+            <ThemedText style={styles.codeCardTitle}>Downloader Code</ThemedText>
+            <CopyButton value={config.downloader_code} label="Copy" />
+          </View>
+          <ThemedText style={styles.codeValue}>{config.downloader_code}</ThemedText>
+          <ThemedText style={styles.codeSub}>
+            Enter this code in the Downloader app, or tap below to install directly.
+          </ThemedText>
+        </View>
+
+        {/* Download button */}
+        <Pressable
+          style={[styles.downloadBtn, isBusy && styles.downloadBtnBusy]}
+          onPress={startInstall}
+          disabled={isBusy}
+        >
+          <Feather name="download" size={18} color="#fff" />
+          <ThemedText style={styles.downloadBtnText}>
+            {isBusy ? "Downloading..." : "Download & Install Ultra Tube"}
+          </ThemedText>
+        </Pressable>
+
+        {/* Unknown sources */}
+        <View style={styles.unknownSourcesNote}>
+          <Feather name="shield" size={13} color={Colors.dark.textSecondary} />
+          <ThemedText style={styles.unknownSourcesText}>
+            Requires "Install from unknown sources" to be enabled. Android will prompt you on first install.
+          </ThemedText>
+        </View>
+
+        {/* Compat */}
+        <View style={styles.compatCard}>
+          <Feather name="tv" size={13} color="#f59e0b" />
+          <View style={styles.compatText}>
+            <ThemedText style={styles.compatTitle}>Android TV & Fire TV Only</ThemedText>
+            <ThemedText style={styles.compatSub}>Not compatible with mobile devices.</ThemedText>
           </View>
         </View>
       </View>
-
-      {/* Downloader code */}
-      <View style={styles.codeCard}>
-        <View style={styles.codeCardHeader}>
-          <ThemedText style={styles.codeCardTitle}>Downloader Code</ThemedText>
-          <CopyButton value={config.downloader_code} label="Copy" />
-        </View>
-        <ThemedText style={styles.codeValue}>{config.downloader_code}</ThemedText>
-        <ThemedText style={styles.codeSub}>Enter this code into the Downloader app or use the button below to install Ultra Tube directly.</ThemedText>
-      </View>
-
-      {/* Download button */}
-      <Pressable
-        style={[styles.downloadBtn, isBusy && styles.downloadBtnBusy]}
-        onPress={startInstall}
-        disabled={isBusy}
-      >
-        <Feather name="download" size={18} color="#fff" />
-        <ThemedText style={styles.downloadBtnText}>
-          {isBusy ? "Downloading..." : "Download &amp; Install Ultra Tube"}
-        </ThemedText>
-      </Pressable>
-
-      {/* Install unknown sources note */}
-      <View style={styles.unknownSourcesNote}>
-        <Feather name="shield" size={13} color={Colors.dark.textSecondary} />
-        <ThemedText style={styles.unknownSourcesText}>
-          Requires "Install from unknown sources" to be enabled for Ultra Cast. Android will prompt you on first install.
-        </ThemedText>
-      </View>
-
-      {/* Compatibility */}
-      <View style={[styles.compatCard, { marginTop: Spacing.xs }]}>
-        <Feather name="tv" size={15} color="#f59e0b" />
-        <View style={styles.compatText}>
-          <ThemedText style={styles.compatTitle}>Android TV &amp; Amazon Fire TV Only</ThemedText>
-          <ThemedText style={styles.compatSub}>Ultra Tube is not compatible with mobile devices.</ThemedText>
-        </View>
-      </View>
-
-      {/* Separate app reminder */}
-      <View style={styles.disclaimer}>
-        <Feather name="info" size={13} color={Colors.dark.textSecondary} />
-        <ThemedText style={styles.disclaimerText}>
-          Ultra Tube is an entirely separate app to Ultra Cast and must be installed separately.
-        </ThemedText>
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -610,11 +621,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18, shadowRadius: 24, elevation: 8,
   },
 
-  // Access view scroll
-  accessScroll: { paddingHorizontal: Spacing.lg, gap: Spacing.md, paddingTop: Spacing.sm },
-
-  // ── Sales page (TV two-column) ────────────────────────────────────────────
+  // ── Shared two-column layout (sales + access) ────────────────────────────
   salesWrap: { flexDirection: "row", gap: Spacing.xl, alignItems: "center" },
+
+  // Access-specific columns
+  accessLeft: {
+    flex: 5, gap: Spacing.md, justifyContent: "center",
+    borderRightWidth: 1, borderRightColor: Colors.dark.border, paddingRight: Spacing.xl,
+  },
+  accessRight: { flex: 6, gap: Spacing.md, justifyContent: "center" },
 
   salesLeft: {
     flex: 5, gap: Spacing.md, justifyContent: "center",
