@@ -323,8 +323,7 @@ export default function UltraTubeScreen() {
           locations={[0, 0.5]}
         />
         <View style={styles.loadingSpinner}>
-          <Feather name="play-circle" size={32} color={ULTRA_RED} />
-          <ThemedText style={styles.loadingText}>Ultra Tube</ThemedText>
+          <Image source={ULTRATUBE_LOGO} style={styles.utLogoLoading} contentFit="contain" />
         </View>
       </View>
     );
@@ -449,6 +448,8 @@ export default function UltraTubeScreen() {
 }
 
 // ── Sales / No-access view ─────────────────────────────────────────────────
+const ULTRATUBE_LOGO = require("../assets/ultratube/ut-logo.png");
+
 const SHOWCASE_IMAGES = [
   require("../assets/ultratube/ut-1.png"),
   require("../assets/ultratube/ut-2.png"),
@@ -481,7 +482,7 @@ function ShowcaseCarousel() {
           <Image
             source={SHOWCASE_IMAGES[idx]}
             style={styles.carouselImg}
-            contentFit="cover"
+            contentFit="contain"
             transition={{ duration: 200, effect: "cross-dissolve" }}
           />
           {/* Subtle red vignette overlay */}
@@ -504,12 +505,7 @@ function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
     <View style={styles.salesWrap}>
       {/* Left column — branding + pricing */}
       <View style={styles.salesLeft}>
-        <View style={styles.salesLogoRow}>
-          <View style={styles.salesIconCircle}>
-            <Feather name="play-circle" size={28} color={ULTRA_RED} />
-          </View>
-          <ThemedText style={styles.salesTitle}>Ultra Tube</ThemedText>
-        </View>
+        <Image source={ULTRATUBE_LOGO} style={styles.utLogo} contentFit="contain" />
         <ThemedText style={styles.salesTagline}>YouTube without the interruptions.</ThemedText>
         <ThemedText style={styles.salesDesc}>
           Our own ad-free YouTube experience, built exclusively for Ultra Cast subscribers. No waiting. No skipping. Just watch.
@@ -581,13 +577,8 @@ function AccessView({
     <View style={styles.salesWrap}>
       {/* ── Left: identity + credentials ───────────────────────────────── */}
       <View style={styles.accessLeft}>
-        {/* Logo + title */}
-        <View style={styles.salesLogoRow}>
-          <View style={styles.salesIconCircle}>
-            <Feather name="play-circle" size={26} color={ULTRA_RED} />
-          </View>
-          <ThemedText style={styles.salesTitle}>Ultra Tube</ThemedText>
-        </View>
+        {/* Logo */}
+        <Image source={ULTRATUBE_LOGO} style={styles.utLogo} contentFit="contain" />
 
         {/* Active badge */}
         <View style={styles.activeBadge}>
@@ -734,13 +725,8 @@ const styles = StyleSheet.create({
     borderRightWidth: 1, borderRightColor: Colors.dark.border,
     paddingRight: Spacing.xl,
   },
-  salesLogoRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
-  salesIconCircle: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: ULTRA_RED_DIM, borderWidth: 1, borderColor: ULTRA_RED_BORDER,
-    justifyContent: "center", alignItems: "center",
-  },
-  salesTitle: { fontSize: 26, fontWeight: "900", color: Colors.dark.text, letterSpacing: -0.5 },
+  utLogo: { width: 170, height: 68 },
+  utLogoLoading: { width: 200, height: 80 },
   salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED },
   salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20 },
   pricePill: {
@@ -787,8 +773,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     borderWidth: 1.5, borderColor: ULTRA_RED_BORDER,
+    backgroundColor: "#0a0a0a",
   },
-  carouselImg: { width: "100%", height: "100%" },
+  carouselImg: { width: "100%", height: "100%", backgroundColor: "#0a0a0a" },
   carouselVignette: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: BorderRadius.md,
