@@ -14,12 +14,14 @@ import * as Clipboard from "expo-clipboard";
 import * as LegacyFS from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
+import SideMenuButton from "@/components/SideMenuButton";
 
 const ULTRA_RED = "#ef4444";
 const ULTRA_RED_DIM = "rgba(239,68,68,0.12)";
@@ -55,6 +57,28 @@ async function cleanStaleApks() {
       try { await LegacyFS.deleteAsync(dir + name, { idempotent: true }); } catch {}
     }
   } catch {}
+}
+
+function TVBackButton({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const active = focused || pressed || hovered;
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.backBtn, active && styles.backBtnActive]}
+    >
+      <Feather name="arrow-left" size={16} color={active ? Colors.dark.text : Colors.dark.textSecondary} />
+      <ThemedText style={[styles.backText, active && styles.backTextActive]}>Back</ThemedText>
+    </Pressable>
+  );
 }
 
 function FeatureRow({ text }: { text: string }) {
@@ -243,12 +267,16 @@ export default function UltraTubeScreen() {
     );
   }, []);
 
-  const padTop = insets.top + Spacing.md;
   const padBottom = insets.bottom + Spacing.lg;
 
   if (loading) {
     return (
       <View style={[styles.root, styles.center]}>
+        <LinearGradient
+          colors={["rgba(239,68,68,0.06)", "transparent"]}
+          style={StyleSheet.absoluteFill}
+          locations={[0, 0.5]}
+        />
         <View style={styles.loadingSpinner}>
           <Feather name="play-circle" size={32} color={ULTRA_RED} />
           <ThemedText style={styles.loadingText}>Ultra Tube</ThemedText>
@@ -259,17 +287,27 @@ export default function UltraTubeScreen() {
 
   return (
     <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: padTop, paddingBottom: padBottom }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Back button */}
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Feather name="arrow-left" size={18} color={Colors.dark.textSecondary} />
-          <ThemedText style={styles.backText}>Back</ThemedText>
-        </Pressable>
+      {/* Ambient gradient — subtle red glow from top-left */}
+      <LinearGradient
+        colors={["rgba(239,68,68,0.09)", "rgba(8,8,8,0)", "rgba(8,8,8,0)"]}
+        style={StyleSheet.absoluteFill}
+        locations={[0, 0.45, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
 
-        {access.hasAccess ? (
+      {/* Top nav bar */}
+      <View style={[styles.topNav, { paddingTop: insets.top + Spacing.xs }]}>
+        <SideMenuButton />
+        <TVBackButton onPress={() => navigation.goBack()} />
+      </View>
+
+      {access.hasAccess ? (
+        /* Access view — scrollable, full width */
+        <ScrollView
+          contentContainerStyle={[styles.accessScroll, { paddingBottom: padBottom }]}
+          showsVerticalScrollIndicator={false}
+        >
           <AccessView
             access={access}
             config={config}
@@ -279,10 +317,24 @@ export default function UltraTubeScreen() {
             startInstall={startInstall}
             cancelInstall={cancelInstall}
           />
-        ) : (
-          <SalesView openWhatsApp={openWhatsApp} />
-        )}
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        /* Sales page — centred card */
+        <View style={styles.salesCenter}>
+          <View style={styles.salesCard}>
+            {/* Card inner gradient */}
+            <LinearGradient
+              colors={["rgba(239,68,68,0.05)", "transparent"]}
+              style={[StyleSheet.absoluteFill, { borderRadius: BorderRadius.xl }]}
+              locations={[0, 0.6]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <SalesView openWhatsApp={openWhatsApp} />
+          </View>
+        </View>
+      )}
 
       {/* Download progress modal */}
       {installPhase.phase !== "idle" ? (
@@ -527,16 +579,42 @@ const styles = StyleSheet.create({
   center: { justifyContent: "center", alignItems: "center" },
   loadingSpinner: { alignItems: "center", gap: Spacing.sm },
   loadingText: { fontSize: 16, fontWeight: "700", color: ULTRA_RED },
-  scroll: { paddingHorizontal: Spacing.lg, gap: Spacing.md, flexGrow: 1 },
 
+  // Top nav bar
+  topNav: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
   backBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    alignSelf: "flex-start", paddingVertical: 6, paddingRight: 10,
+    paddingVertical: 8, paddingHorizontal: 12,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
+  },
+  backBtnActive: {
+    backgroundColor: "rgba(255,255,255,0.07)", borderColor: Colors.dark.border,
   },
   backText: { fontSize: 14, color: Colors.dark.textSecondary },
+  backTextActive: { color: Colors.dark.text },
+
+  // Sales: centred card wrapper
+  salesCenter: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  salesCard: {
+    width: "100%", maxWidth: 920,
+    backgroundColor: "rgba(14,14,14,0.97)",
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1, borderColor: ULTRA_RED_BORDER,
+    padding: Spacing.xl,
+    overflow: "hidden",
+    shadowColor: ULTRA_RED, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18, shadowRadius: 24, elevation: 8,
+  },
+
+  // Access view scroll
+  accessScroll: { paddingHorizontal: Spacing.lg, gap: Spacing.md, paddingTop: Spacing.sm },
 
   // ── Sales page (TV two-column) ────────────────────────────────────────────
-  salesWrap: { flexDirection: "row", gap: Spacing.xl, alignItems: "stretch", flex: 1 },
+  salesWrap: { flexDirection: "row", gap: Spacing.xl, alignItems: "center" },
 
   salesLeft: {
     flex: 5, gap: Spacing.md, justifyContent: "center",
