@@ -457,38 +457,42 @@ const SHOWCASE_IMAGES = [
 ];
 
 function ShowcaseCarousel() {
-  const [idx, setIdx] = useState(0);
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [dotIdx, setDotIdx] = useState(0);
+  const currentRef = useRef(0);
+  // One opacity value per image — all always mounted, no source swapping
+  const opacities = useRef(
+    SHOWCASE_IMAGES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))
+  ).current;
 
   useEffect(() => {
-    const advance = () => {
-      Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }).start(() => {
-        setIdx(prev => (prev + 1) % SHOWCASE_IMAGES.length);
-        Animated.timing(opacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
-      });
-    };
-    const t = setInterval(advance, 3400);
+    const t = setInterval(() => {
+      const current = currentRef.current;
+      const next = (current + 1) % SHOWCASE_IMAGES.length;
+      currentRef.current = next;
+      // True crossfade: fade out current AND fade in next simultaneously
+      Animated.parallel([
+        Animated.timing(opacities[current], { toValue: 0, duration: 400, useNativeDriver: true }),
+        Animated.timing(opacities[next],   { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]).start(() => setDotIdx(next));
+    }, 3400);
     return () => clearInterval(t);
-  }, [opacity]);
+  }, []);
 
   return (
     <View style={styles.carouselWrap}>
-      {/* Clean 16:9 device frame */}
+      {/* All images stacked — no source-swap, no ghost frame */}
       <View style={styles.carouselOuter}>
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity }]}>
-          <Image
-            source={SHOWCASE_IMAGES[idx]}
-            style={styles.carouselImg}
-            contentFit="cover"
-            transition={{ duration: 250, effect: "cross-dissolve" }}
-          />
-        </Animated.View>
+        {SHOWCASE_IMAGES.map((src, i) => (
+          <Animated.View key={i} style={[StyleSheet.absoluteFill, { opacity: opacities[i] }]}>
+            <Image source={src} style={styles.carouselImg} contentFit="cover" />
+          </Animated.View>
+        ))}
       </View>
 
       {/* Dot indicators */}
       <View style={styles.carouselDots}>
         {SHOWCASE_IMAGES.map((_, i) => (
-          <View key={i} style={[styles.carouselDot, i === idx && styles.carouselDotActive]} />
+          <View key={i} style={[styles.carouselDot, i === dotIdx && styles.carouselDotActive]} />
         ))}
       </View>
     </View>
@@ -500,7 +504,7 @@ function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
     <View style={styles.salesWrap}>
       {/* Left column — branding + pricing */}
       <View style={styles.salesLeft}>
-        <Image source={ULTRATUBE_LOGO} style={styles.utLogo} contentFit="contain" />
+        <Image source={ULTRATUBE_LOGO} style={styles.utLogoSales} contentFit="contain" />
         <ThemedText style={styles.salesTagline}>YouTube without the interruptions.</ThemedText>
         <ThemedText style={styles.salesDesc}>
           Our own ad-free YouTube experience, built exclusively for Ultra Cast subscribers. No waiting. No skipping. Just watch.
@@ -721,6 +725,7 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.xl,
   },
   utLogo: { width: 190, height: 76, alignSelf: "center" },
+  utLogoSales: { width: 240, height: 96, alignSelf: "center" },
   utLogoLoading: { width: 200, height: 80 },
   salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED, textAlign: "center" },
   salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, textAlign: "center" },
