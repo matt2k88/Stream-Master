@@ -19,8 +19,7 @@ import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
-import { useAppTheme, useAccent, withAlpha } from "@/contexts/ThemeContext";
-import { useFootball } from "@/contexts/FootballContext";
+import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
 import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel, { type Advert } from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
@@ -84,12 +83,9 @@ function formatCount(n: number) {
   return n.toLocaleString("en-US");
 }
 
-const FOOTBALL_FINISHED = ["FT", "AET", "PEN", "AWD", "WO"];
-const FOOTBALL_NOT_STARTED = ["NS", "PST", "CANC", "TBD", "SUSP"];
-
 // ── Sidebar item (landscape / TV) ─────────────────────────────────────────
 function SidebarItem({
-  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, activeTint, onPress, preferFocus,
+  icon, mciIcon, label, active = false, count, isNew = false, onPress, preferFocus,
 }: {
   icon?: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -97,9 +93,6 @@ function SidebarItem({
   active?: boolean;
   count?: number;
   isNew?: boolean;
-  isLive?: boolean;
-  /** Override the hover/focus/active accent colour (e.g. red for Ultra Tube). */
-  activeTint?: string;
   onPress: () => void;
   preferFocus?: boolean;
 }) {
@@ -108,8 +101,7 @@ function SidebarItem({
   const [hovered, setHovered] = useState(false);
   const accent = useAccent();
   const highlight = focused || pressed || hovered || active;
-  const effectiveTint = activeTint ?? accent.accent;
-  const tint = highlight ? effectiveTint : Colors.dark.textSecondary;
+  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
 
   return (
     <Pressable
@@ -124,12 +116,12 @@ function SidebarItem({
       style={[
         styles.sidebarItem,
         highlight && {
-          backgroundColor: withAlpha(effectiveTint, active ? 0.08 : 0.06),
-          borderColor: withAlpha(effectiveTint, active ? 0.45 : 0.35),
+          backgroundColor: accent.withAlpha(accent.accent, active ? 0.08 : 0.06),
+          borderColor: accent.withAlpha(accent.accent, active ? 0.45 : 0.35),
         },
       ]}
     >
-      {active ? <View style={[styles.sidebarActiveBar, { backgroundColor: effectiveTint }]} /> : null}
+      {active ? <View style={[styles.sidebarActiveBar, { backgroundColor: accent.accent }]} /> : null}
       <View style={styles.sidebarIconWrap}>
         {mciIcon ? (
           <MaterialCommunityIcons name={mciIcon} size={20} color={tint} />
@@ -140,11 +132,7 @@ function SidebarItem({
       <ThemedText style={[styles.sidebarLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
         {label}
       </ThemedText>
-      {isLive ? (
-        <View style={styles.liveBadge}>
-          <ThemedText style={styles.liveBadgeText}>LIVE</ThemedText>
-        </View>
-      ) : isNew ? (
+      {isNew ? (
         <View style={[styles.newBadge, { backgroundColor: accent.accent }]}>
           <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
         </View>
@@ -478,7 +466,7 @@ function RefreshButton({ onPress, refreshing }: { onPress: () => void; refreshin
   );
 }
 
-function FootballCentreButton({ onPress, hasLive = false }: { onPress: () => void; hasLive?: boolean }) {
+function FootballCentreButton({ onPress }: { onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
@@ -499,32 +487,6 @@ function FootballCentreButton({ onPress, hasLive = false }: { onPress: () => voi
       onHoverOut={() => setFocused(false)}
     >
       <MaterialCommunityIcons name="soccer" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
-      {hasLive ? <View style={styles.headerBtnLiveDot} /> : null}
-    </Pressable>
-  );
-}
-
-function TopPicksButton({ onPress }: { onPress: () => void }) {
-  const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
-  const accent = useAccent();
-  return (
-    <Pressable
-      style={[
-        styles.headerBtn,
-        isActive && styles.headerBtnActive,
-        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
-      ]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onHoverIn={() => setFocused(true)}
-      onHoverOut={() => setFocused(false)}
-    >
-      <MaterialCommunityIcons name="fire" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
     </Pressable>
   );
 }
@@ -853,12 +815,7 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsNewsBadge } = useAppTheme();
-  const { scores } = useFootball();
-  const hasLiveGame = scores.some((s) => {
-    const st = (s.status_short || "").toUpperCase();
-    return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
-  });
+  const { refetch: refetchTheme } = useAppTheme();
 
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
@@ -1261,10 +1218,7 @@ export default function HomeScreen() {
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
-              <SidebarItem label="Sports News" mciIcon="newspaper" isNew={showSportsNewsBadge} onPress={() => navigation.navigate("SportsNews" as never)} />
-              <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
-              <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
-              <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
+              <SidebarItem label="Football Centre" mciIcon="soccer" isNew onPress={() => navigation.navigate("FootballCentre")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
             </ScrollView>
           </View>
@@ -1297,7 +1251,7 @@ export default function HomeScreen() {
                 {/* Services group */}
                 <View style={styles.btnGroup}>
                   <LabelledAction label="Football">
-                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
+                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
                   </LabelledAction>
                   <LabelledAction label="VPN">
                     <VpnButton />
@@ -1396,7 +1350,7 @@ export default function HomeScreen() {
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-              <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
+              <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} />
               <VpnButton />
               <UpdateAvailableButton />
               <MessagesButton onPress={() => navigation.navigate("Messages")} />
@@ -1466,10 +1420,10 @@ export default function HomeScreen() {
               <QuickActionCard
                 compact
                 style={styles.gridCard}
-                title="Top Picks"
-                subtitle="Hand-picked for you"
-                mciIcon="fire"
-                onPress={() => navigation.navigate("TopPicks")}
+                title="Football Centre"
+                subtitle="Live Matches & More"
+                mciIcon="soccer"
+                onPress={() => navigation.navigate("FootballCentre")}
               />
             </View>
 
@@ -1847,10 +1801,10 @@ const styles = StyleSheet.create({
   },
   sidebarLogo: { width: 34, height: 34 },
   sidebarScroll: { flex: 1 },
-  sidebarScrollContent: { gap: 2, paddingBottom: Spacing.lg },
+  sidebarScrollContent: { gap: Spacing.xs, paddingBottom: Spacing.lg },
   sidebarItem: {
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    paddingVertical: 4, paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
     overflow: "hidden",
   },
@@ -1868,19 +1822,6 @@ const styles = StyleSheet.create({
   },
   newBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs },
   newBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
-  liveBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs, backgroundColor: "#22c55e" },
-  liveBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
-  headerBtnLiveDot: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: "#22c55e",
-    borderWidth: 1,
-    borderColor: Colors.dark.backgroundDefault,
-  },
 
   contentArea: { flex: 1, paddingLeft: Spacing.lg },
   topBar: {

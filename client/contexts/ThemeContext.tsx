@@ -13,12 +13,6 @@ interface ThemeContextValue {
   getIcon: (key: ThemeIconKey) => any | undefined;
   /** Re-fetch the active theme from the server and apply it if changed. */
   refetch: () => Promise<void>;
-  /** Admin-controlled toggle: whether the NEW badge shows on Top Picks. Defaults true. */
-  showTopPicksBadge: boolean;
-  /** Admin-controlled toggle: whether the NEW badge shows on Ultra Tube. Defaults true. */
-  showUltraTubeBadge: boolean;
-  /** Admin-controlled toggle: whether the NEW badge shows on Sports News. Defaults true. */
-  showSportsNewsBadge: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -27,9 +21,6 @@ const ThemeContext = createContext<ThemeContextValue>({
   loaded: true,
   getIcon: () => undefined,
   refetch: async () => {},
-  showTopPicksBadge: true,
-  showUltraTubeBadge: true,
-  showSportsNewsBadge: true,
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -80,9 +71,6 @@ function applyPalette(theme: ThemeDef) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeKey, setThemeKey] = useState<ThemeKey>("default");
   const [loaded, setLoaded] = useState(false);
-  const [showTopPicksBadge, setShowTopPicksBadge] = useState(true);
-  const [showUltraTubeBadge, setShowUltraTubeBadge] = useState(true);
-  const [showSportsNewsBadge, setShowSportsNewsBadge] = useState(true);
 
   const fetchTheme = React.useCallback(async () => {
     try {
@@ -101,9 +89,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyPalette(next);
         return next.key;
       });
-      // badge flags default to true when the column is missing
-      setShowTopPicksBadge(data?.show_top_picks_badge !== false);
-      setShowSportsNewsBadge(data?.show_sports_news_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -123,16 +108,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         // ignore cache failures
       }
 
-      // 2) Fetch the latest from the server (theme + ultra tube config in parallel).
-      if (!cancelled) {
-        await Promise.all([
-          fetchTheme(),
-          fetch(new URL("/api/ultra-tube/config", getApiUrl()).toString())
-            .then((r) => r.ok ? r.json() : null)
-            .then((d) => { if (!cancelled) setShowUltraTubeBadge(d?.show_badge === true); })
-            .catch(() => {}),
-        ]);
-      }
+      // 2) Fetch the latest from the server.
+      if (!cancelled) await fetchTheme();
       if (!cancelled) setLoaded(true);
     })();
     return () => {
@@ -148,11 +125,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       loaded,
       getIcon: (k: ThemeIconKey) => theme.icons[k],
       refetch: fetchTheme,
-      showTopPicksBadge,
-      showUltraTubeBadge,
-      showSportsNewsBadge,
     };
-  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsNewsBadge]);
+  }, [themeKey, loaded, fetchTheme]);
 
   return (
     <ThemeContext.Provider value={value}>

@@ -2,7 +2,6 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
-import { parseString } from "xml2js";
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
 // Reduces Supabase egress for high-frequency polling endpoints.
@@ -445,136 +444,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── App Theme (admin-controlled, applies to all clients on next launch) ──
-  // ── Sports News (BBC Sport RSS) ───────────────────────────────────────────
-  const BBC_FEEDS: Record<string, string> = {
-    all:       "https://feeds.bbci.co.uk/sport/rss.xml",
-    football:  "https://feeds.bbci.co.uk/sport/football/rss.xml",
-    f1:        "https://feeds.bbci.co.uk/sport/formula1/rss.xml",
-    cricket:   "https://feeds.bbci.co.uk/sport/cricket/rss.xml",
-    tennis:    "https://feeds.bbci.co.uk/sport/tennis/rss.xml",
-    rugby:     "https://feeds.bbci.co.uk/sport/rugby-union/rss.xml",
-    boxing:    "https://feeds.bbci.co.uk/sport/boxing/rss.xml",
-    golf:      "https://feeds.bbci.co.uk/sport/golf/rss.xml",
-    athletics: "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
-  };
-  const NEWS_TTL = 15 * 60 * 1000;
-
-  function parseRssItem(item: any): object | null {
-    try {
-      const title   = Array.isArray(item.title)       ? item.title[0]       : item.title ?? "";
-      const summary = Array.isArray(item.description) ? item.description[0] : item.description ?? "";
-      const link    = Array.isArray(item.link)        ? item.link[0]        : item.link ?? "";
-      const pubDate = Array.isArray(item.pubDate)     ? item.pubDate[0]     : item.pubDate ?? "";
-      // BBC uses <media:thumbnail url="..." /> in the yahoo media namespace
-      const thumbArr = item["media:thumbnail"];
-      let imageUrl = "";
-      if (Array.isArray(thumbArr) && thumbArr[0]?.$?.url) {
-        imageUrl = String(thumbArr[0].$.url)
-          .replace(/\{width\}/g, "976").replace(/\{height\}/g, "549")
-          .replace(/\/ace\/standard\/\d+\//, "/ace/standard/976/");
-      } else if (item.enclosure?.[0]?.$?.url) {
-        imageUrl = item.enclosure[0].$.url;
-      }
-      const cleanSummary = String(summary).replace(/<[^>]+>/g, "").trim();
-      if (!title) return null;
-      return { id: link, title: String(title).trim(), summary: cleanSummary, imageUrl, link, publishedAt: pubDate };
-    } catch { return null; }
-  }
-
-  app.get("/api/sports-news", async (req, res) => {
-    const sport = String(req.query.sport ?? "all").toLowerCase();
-    const feedUrl = BBC_FEEDS[sport] ?? BBC_FEEDS.all;
-    const cacheKey = `sports-news:${sport}`;
-    const cached = cacheGet(cacheKey);
-    if (cached) return res.json(cached);
-    try {
-      const feedRes = await fetch(feedUrl, { signal: AbortSignal.timeout(8000) });
-      if (!feedRes.ok) throw new Error(`feed ${feedRes.status}`);
-      const xml = await feedRes.text();
-      const parsed: any = await new Promise((resolve, reject) =>
-        parseString(xml, { xmlns: false }, (err: any, r: any) => err ? reject(err) : resolve(r))
-      );
-      const items: any[] = parsed?.rss?.channel?.[0]?.item ?? [];
-      const articles = items.map(parseRssItem).filter(Boolean).slice(0, 20);
-      cacheSet(cacheKey, articles, NEWS_TTL);
-      res.json(articles);
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message ?? "Failed to fetch news" });
-    }
-  });
-
-  // Fetch + extract full article body from a BBC Sport article URL
-  app.get("/api/sports-article", async (req, res) => {
-    const url = String(req.query.url ?? "");
-    if (!url || !url.startsWith("https://www.bbc.com/sport")) {
-      return res.status(400).json({ error: "Invalid URL" });
-    }
-    const cacheKey = `sports-article:${url}`;
-    const cached = cacheGet(cacheKey);
-    if (cached) return res.json(cached);
-    try {
-      const r = await fetch(url, {
-        signal: AbortSignal.timeout(10000),
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36" },
-      });
-      if (!r.ok) throw new Error(`${r.status}`);
-      const html = await r.text();
-
-      const stripTags = (s: string) =>
-        s.replace(/<[^>]+>/g, " ")
-          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
-          .replace(/\s+/g, " ").trim();
-
-      const paragraphs: string[] = [];
-
-      // BBC Sport primary: <div data-component="text-block">…<p>…</p>…</div>
-      const blockRx = /<div[^>]*data-component="text-block"[^>]*>([\s\S]*?)<\/div>/g;
-      let bm: RegExpExecArray | null;
-      while ((bm = blockRx.exec(html)) !== null) {
-        const pRx = /<p[^>]*>([\s\S]*?)<\/p>/g;
-        let pm: RegExpExecArray | null;
-        while ((pm = pRx.exec(bm[1])) !== null) {
-          const t = stripTags(pm[1]);
-          if (t.length > 10) paragraphs.push(t);
-        }
-      }
-
-      // Fallback: first <article> tag
-      if (paragraphs.length === 0) {
-        const am = /<article[^>]*>([\s\S]*?)<\/article>/i.exec(html);
-        if (am) {
-          const pRx = /<p[^>]*>([\s\S]*?)<\/p>/g;
-          let pm: RegExpExecArray | null;
-          while ((pm = pRx.exec(am[1])) !== null) {
-            const t = stripTags(pm[1]);
-            if (t.length > 30) paragraphs.push(t);
-          }
-        }
-      }
-
-      const result = { paragraphs };
-      cacheSet(cacheKey, result, 30 * 60 * 1000);
-      res.json(result);
-    } catch (e: any) {
-      res.status(500).json({ error: e?.message ?? "Failed to fetch article" });
-    }
-  });
-
   app.get("/api/app-theme", async (_req, res) => {
     try {
       const { data, error } = await supabase
         .from("app_theme")
-        .select("*")
+        .select("id, theme_key, updated_at")
         .eq("id", 1)
         .maybeSingle();
       // Gracefully fall back to default when table is missing (migration
       // 004 not yet applied) or no row exists, so clients always get a
       // valid theme instead of an error.
       if (error && error.code !== "PGRST116") {
-        return res.json({ id: 1, theme_key: "default", show_top_picks_badge: true, updated_at: null });
+        return res.json({ id: 1, theme_key: "default", updated_at: null });
       }
-      res.json(data ?? { id: 1, theme_key: "default", show_top_picks_badge: true, updated_at: null });
+      res.json(data ?? { id: 1, theme_key: "default", updated_at: null });
     } catch {
       res.json({ id: 1, theme_key: "default", updated_at: null });
     }
@@ -1944,83 +1827,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("[referrals/history] exception:", e?.message);
       res.status(500).json({ error: "Failed to fetch referral history" });
-    }
-  });
-
-  // ── Top Picks (lifetime DB) ───────────────────────────────────────────────
-  // Returns up to 8 curated picks from the top_picks table, ordered by
-  // popularity descending. Poster path is stored as the TMDB relative path;
-  // the client builds the full URL.
-  app.get("/api/top-picks", async (req, res) => {
-    const cacheKey = "top_picks";
-    const cached = cacheGet(cacheKey);
-    if (cached !== null) return res.json(cached);
-    try {
-      const { data, error } = await lifetimeDb
-        .from("top_picks")
-        .select("id, tmdb_id, media_type, title, poster_path, overview, release_date, position, popularity_score")
-        .order("position", { ascending: true })
-        .limit(8);
-      if (error) {
-        console.error("[top-picks] fetch error:", error.message);
-        return res.status(500).json({ error: error.message });
-      }
-      const payload = data ?? [];
-      cacheSet(cacheKey, payload, 5 * 60_000); // 5-minute cache
-      res.json(payload);
-    } catch (e: any) {
-      console.error("[top-picks] exception:", e?.message);
-      res.status(500).json({ error: "Failed to fetch top picks" });
-    }
-  });
-
-  // ── Ultra Tube ─────────────────────────────────────────────────────────────
-  // Config: APK URL, downloader code, badge toggle.  Reads from ultra_tube_config
-  // row id=1.  Gracefully falls back to hardcoded defaults when the table is
-  // missing (migration 025 not yet run).
-  app.get("/api/ultra-tube/config", async (_req, res) => {
-    const DEFAULTS = {
-      apk_url: "https://app.ultracast.co.uk/ultratube2.apk",
-      downloader_code: "6844940",
-      show_badge: true,
-    };
-    try {
-      const { data, error } = await supabase
-        .from("ultra_tube_config")
-        .select("apk_url, downloader_code, show_badge")
-        .eq("id", 1)
-        .maybeSingle();
-      if (error && error.code !== "PGRST116") return res.json(DEFAULTS);
-      res.json(data ?? DEFAULTS);
-    } catch {
-      res.json(DEFAULTS);
-    }
-  });
-
-  // Access check: given the user's ultracast username, returns their Ultra Tube
-  // credentials if they have a row in ultra_tube_access, otherwise { hasAccess: false }.
-  app.get("/api/ultra-tube/check", async (req, res) => {
-    const { username } = req.query;
-    if (!username || typeof username !== "string") return res.json({ hasAccess: false });
-    try {
-      const { data, error } = await supabase
-        .from("ultra_tube_access")
-        .select("ultra_tube_username, ultra_tube_password")
-        .eq("username", username.trim().toLowerCase())
-        .maybeSingle();
-      if (error && error.code !== "PGRST116") {
-        console.error("[ultra-tube] check error:", error.message);
-        return res.json({ hasAccess: false });
-      }
-      if (!data) return res.json({ hasAccess: false });
-      res.json({
-        hasAccess: true,
-        ultra_tube_username: data.ultra_tube_username,
-        ultra_tube_password: data.ultra_tube_password,
-      });
-    } catch (e: any) {
-      console.error("[ultra-tube] check exception:", e?.message);
-      res.json({ hasAccess: false });
     }
   });
 
