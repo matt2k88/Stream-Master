@@ -19,7 +19,7 @@ import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 import { useMessages } from "@/contexts/MessageContext";
 import { useVpn } from "@/contexts/VpnContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
-import { useAppTheme, useAccent } from "@/contexts/ThemeContext";
+import { useAppTheme, useAccent, withAlpha } from "@/contexts/ThemeContext";
 import { useFootball } from "@/contexts/FootballContext";
 import { useApkInstaller } from "@/hooks/useApkInstaller";
 import AdvertCarousel, { type Advert } from "@/components/AdvertCarousel";
@@ -89,7 +89,7 @@ const FOOTBALL_NOT_STARTED = ["NS", "PST", "CANC", "TBD", "SUSP"];
 
 // ── Sidebar item (landscape / TV) ─────────────────────────────────────────
 function SidebarItem({
-  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, onPress, preferFocus,
+  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, activeTint, onPress, preferFocus,
 }: {
   icon?: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -98,6 +98,8 @@ function SidebarItem({
   count?: number;
   isNew?: boolean;
   isLive?: boolean;
+  /** Override the hover/focus/active accent colour (e.g. red for Ultra Tube). */
+  activeTint?: string;
   onPress: () => void;
   preferFocus?: boolean;
 }) {
@@ -106,7 +108,8 @@ function SidebarItem({
   const [hovered, setHovered] = useState(false);
   const accent = useAccent();
   const highlight = focused || pressed || hovered || active;
-  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
+  const effectiveTint = activeTint ?? accent.accent;
+  const tint = highlight ? effectiveTint : Colors.dark.textSecondary;
 
   return (
     <Pressable
@@ -121,12 +124,12 @@ function SidebarItem({
       style={[
         styles.sidebarItem,
         highlight && {
-          backgroundColor: accent.withAlpha(accent.accent, active ? 0.08 : 0.06),
-          borderColor: accent.withAlpha(accent.accent, active ? 0.45 : 0.35),
+          backgroundColor: withAlpha(effectiveTint, active ? 0.08 : 0.06),
+          borderColor: withAlpha(effectiveTint, active ? 0.45 : 0.35),
         },
       ]}
     >
-      {active ? <View style={[styles.sidebarActiveBar, { backgroundColor: accent.accent }]} /> : null}
+      {active ? <View style={[styles.sidebarActiveBar, { backgroundColor: effectiveTint }]} /> : null}
       <View style={styles.sidebarIconWrap}>
         {mciIcon ? (
           <MaterialCommunityIcons name={mciIcon} size={20} color={tint} />
@@ -850,7 +853,7 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme, showTopPicksBadge } = useAppTheme();
+  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
   const { scores } = useFootball();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
@@ -1260,6 +1263,7 @@ export default function HomeScreen() {
                   dedicated Centre (whose scores keep updating server-side). */}
               <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
               <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
+              <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
             </ScrollView>
           </View>

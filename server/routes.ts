@@ -1857,6 +1857,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Ultra Tube ─────────────────────────────────────────────────────────────
+  // Config: APK URL, downloader code, badge toggle.  Reads from ultra_tube_config
+  // row id=1.  Gracefully falls back to hardcoded defaults when the table is
+  // missing (migration 025 not yet run).
+  app.get("/api/ultra-tube/config", async (_req, res) => {
+    const DEFAULTS = {
+      apk_url: "https://app.ultracast.co.uk/ultratube2.apk",
+      downloader_code: "6844940",
+      show_badge: true,
+    };
+    try {
+      const { data, error } = await supabase
+        .from("ultra_tube_config")
+        .select("apk_url, downloader_code, show_badge")
+        .eq("id", 1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") return res.json(DEFAULTS);
+      res.json(data ?? DEFAULTS);
+    } catch {
+      res.json(DEFAULTS);
+    }
+  });
+
+  // Access check: given the user's ultracast username, returns their Ultra Tube
+  // credentials if they have a row in ultra_tube_access, otherwise { hasAccess: false }.
+  app.get("/api/ultra-tube/check", async (req, res) => {
+    const { username } = req.query;
+    if (!username || typeof username !== "string") return res.json({ hasAccess: false });
+    try {
+      const { data, error } = await supabase
+        .from("ultra_tube_access")
+        .select("ultra_tube_username, ultra_tube_password")
+        .eq("username", username.trim().toLowerCase())
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") {
+        console.error("[ultra-tube] check error:", error.message);
+        return res.json({ hasAccess: false });
+      }
+      if (!data) return res.json({ hasAccess: false });
+      res.json({
+        hasAccess: true,
+        ultra_tube_username: data.ultra_tube_username,
+        ultra_tube_password: data.ultra_tube_password,
+      });
+    } catch (e: any) {
+      console.error("[ultra-tube] check exception:", e?.message);
+      res.json({ hasAccess: false });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

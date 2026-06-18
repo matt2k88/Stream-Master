@@ -15,7 +15,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { navigationRef } from "@/lib/navigation-ref";
 import { useData } from "@/contexts/DataContext";
-import { useAccent, useAppTheme } from "@/contexts/ThemeContext";
+import { useAccent, useAppTheme, withAlpha } from "@/contexts/ThemeContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
 import { useFootball } from "@/contexts/FootballContext";
 
@@ -33,6 +33,7 @@ function MenuItem({
   active = false,
   isNew = false,
   isLive = false,
+  activeTint,
   preferFocus,
   onPress,
 }: {
@@ -42,6 +43,8 @@ function MenuItem({
   active?: boolean;
   isNew?: boolean;
   isLive?: boolean;
+  /** Override the hover/focus/active accent colour (e.g. red for Ultra Tube). */
+  activeTint?: string;
   preferFocus?: boolean;
   onPress: () => void;
 }) {
@@ -50,7 +53,8 @@ function MenuItem({
   const [hovered, setHovered] = useState(false);
   const accent = useAccent();
   const highlight = focused || pressed || hovered || active;
-  const tint = highlight ? accent.accent : Colors.dark.textSecondary;
+  const effectiveTint = activeTint ?? accent.accent;
+  const tint = highlight ? effectiveTint : Colors.dark.textSecondary;
 
   return (
     <Pressable
@@ -65,12 +69,12 @@ function MenuItem({
       style={[
         styles.item,
         highlight && {
-          backgroundColor: accent.withAlpha(accent.accent, active ? 0.16 : 0.1),
-          borderColor: accent.accent,
+          backgroundColor: withAlpha(effectiveTint, active ? 0.16 : 0.1),
+          borderColor: effectiveTint,
         },
       ]}
     >
-      {active ? <View style={[styles.activeBar, { backgroundColor: accent.accent }]} /> : null}
+      {active ? <View style={[styles.activeBar, { backgroundColor: effectiveTint }]} /> : null}
       <View style={styles.iconWrap}>
         {mciIcon ? (
           <MaterialCommunityIcons name={mciIcon} size={20} color={tint} />
@@ -102,7 +106,7 @@ export default function SideMenuDrawer() {
   const { liveCategories } = useData();
   const { isOpen, transparent, close } = useSideMenu();
   const { scores } = useFootball();
-  const { showTopPicksBadge } = useAppTheme();
+  const { showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
     return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
@@ -292,6 +296,14 @@ export default function SideMenuDrawer() {
               isNew={showTopPicksBadge}
               active={routeName === "TopPicks"}
               onPress={() => navTo(() => navigationRef.navigate("TopPicks"))}
+            />
+            <MenuItem
+              label="Ultra Tube"
+              icon="play-circle"
+              isNew={showUltraTubeBadge}
+              activeTint="#ef4444"
+              active={routeName === "UltraTube"}
+              onPress={() => navTo(() => navigationRef.navigate("UltraTube" as never))}
             />
             <MenuItem
               label="Settings"

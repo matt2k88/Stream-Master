@@ -26,4 +26,6 @@ degrade gracefully until run (endpoints return `[]`, defaults kick in).
 
 - `024_player_buffer.sql` — adds `player_buffer_ms integer not null default 3000` to `profiles`. Per-profile network pre-buffer setting (1 500 / 3 000 / 5 000 / 10 000 / 30 000 ms) applied to both the VLC (`--network-caching` + `--file-caching`) and Expo/ExoPlayer (`bufferOptions`) engines. Read/written via `GET`/`PUT /api/profiles/:id`. Guest profiles keep the value device-local (AsyncStorage). Until run, `player_buffer_ms` is absent from the column list so the PUT drops the field silently; all players continue to use the 3 000 ms hard-coded default.
 
+- `025_ultra_tube.sql` — creates `ultra_tube_access` (username → ultra_tube_username + ultra_tube_password, unique on lowercase ultracast username) and `ultra_tube_config` (id=1 row: apk_url, downloader_code, show_badge). Seeded with defaults. Used by `/api/ultra-tube/config` and `/api/ultra-tube/check`. Until run, both endpoints fall back to hardcoded defaults; the access-check will always return `{ hasAccess: false }` (PGRST116 is ignored silently).
+
 > **Note on numbering**: gaps (005–006, 010–011) were intentionally skipped during earlier development; ordering above reflects application order.
