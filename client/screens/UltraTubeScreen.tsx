@@ -568,7 +568,7 @@ function AccessView({
         <View style={styles.unknownSourcesNote}>
           <Feather name="shield" size={13} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.unknownSourcesText}>
-            Requires "Install from unknown sources" to be enabled. Android will prompt you on first install.
+            Requires "Install from unknown sources" to be enabled.
           </ThemedText>
         </View>
 
