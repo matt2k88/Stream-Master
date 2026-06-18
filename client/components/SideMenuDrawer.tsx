@@ -71,7 +71,6 @@ function MenuItem({
         highlight && {
           backgroundColor: withAlpha(effectiveTint, active ? 0.16 : 0.1),
           borderColor: effectiveTint,
-          paddingVertical: 9,
         },
       ]}
     >

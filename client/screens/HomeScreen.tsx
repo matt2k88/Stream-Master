@@ -1846,10 +1846,10 @@ const styles = StyleSheet.create({
   },
   sidebarLogo: { width: 34, height: 34 },
   sidebarScroll: { flex: 1 },
-  sidebarScrollContent: { gap: Spacing.xs, paddingBottom: Spacing.lg },
+  sidebarScrollContent: { gap: 2, paddingBottom: Spacing.lg },
   sidebarItem: {
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
+    paddingVertical: 4, paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
     overflow: "hidden",
   },
