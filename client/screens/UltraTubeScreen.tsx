@@ -8,7 +8,9 @@ import {
   Linking,
   Alert,
   Modal,
+  Animated,
 } from "react-native";
+import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as LegacyFS from "expo-file-system/legacy";
@@ -447,6 +449,56 @@ export default function UltraTubeScreen() {
 }
 
 // ── Sales / No-access view ─────────────────────────────────────────────────
+const SHOWCASE_IMAGES = [
+  require("../assets/ultratube/ut-1.png"),
+  require("../assets/ultratube/ut-2.png"),
+  require("../assets/ultratube/ut-3.png"),
+];
+
+function ShowcaseCarousel() {
+  const [idx, setIdx] = useState(0);
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const advance = () => {
+      Animated.timing(opacity, { toValue: 0, duration: 320, useNativeDriver: true }).start(() => {
+        setIdx(prev => (prev + 1) % SHOWCASE_IMAGES.length);
+        Animated.timing(opacity, { toValue: 1, duration: 320, useNativeDriver: true }).start();
+      });
+    };
+    const t = setInterval(advance, 3400);
+    return () => clearInterval(t);
+  }, [opacity]);
+
+  return (
+    <View style={styles.carouselWrap}>
+      {/* Scrapbook stack — two decorative cards peeking behind */}
+      <View style={styles.carouselOuter}>
+        <View style={styles.carouselBack2} />
+        <View style={styles.carouselBack1} />
+        {/* Active image with crossfade */}
+        <Animated.View style={[styles.carouselFront, { opacity }]}>
+          <Image
+            source={SHOWCASE_IMAGES[idx]}
+            style={styles.carouselImg}
+            contentFit="cover"
+            transition={{ duration: 200, effect: "cross-dissolve" }}
+          />
+          {/* Subtle red vignette overlay */}
+          <View style={styles.carouselVignette} pointerEvents="none" />
+        </Animated.View>
+      </View>
+
+      {/* Dot indicators */}
+      <View style={styles.carouselDots}>
+        {SHOWCASE_IMAGES.map((_, i) => (
+          <View key={i} style={[styles.carouselDot, i === idx && styles.carouselDotActive]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
   return (
     <View style={styles.salesWrap}>
@@ -473,8 +525,9 @@ function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
         </View>
       </View>
 
-      {/* Right column — features + CTA */}
+      {/* Right column — showcase + features + CTA */}
       <View style={styles.salesRight}>
+        <ShowcaseCarousel />
         <View style={styles.salesFeatures}>
           <FeatureRow text="Auto-skips ALL adverts — instantly" />
           <FeatureRow text="Auto-skips sponsored &amp; promo sections" />
@@ -701,8 +754,49 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 13, fontWeight: "800", color: Colors.dark.text },
   priceSub: { fontSize: 11, color: Colors.dark.textSecondary },
 
-  salesRight: { flex: 6, gap: Spacing.md, justifyContent: "center" },
-  salesFeatures: { gap: Spacing.sm },
+  salesRight: { flex: 6, gap: Spacing.sm, justifyContent: "center" },
+  salesFeatures: { gap: Spacing.xs },
+
+  // ── Showcase carousel ────────────────────────────────────────────────────
+  carouselWrap: { gap: Spacing.xs },
+  carouselOuter: {
+    width: "100%", height: 148,
+    position: "relative",
+    // Extra margin so rotated back-cards don't clip
+    marginHorizontal: 4,
+  },
+  carouselBack2: {
+    position: "absolute",
+    top: 6, left: -7, right: 7, bottom: 0,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(14,14,14,0.95)",
+    borderWidth: 1, borderColor: "rgba(239,68,68,0.2)",
+    transform: [{ rotate: "-3.5deg" }],
+  },
+  carouselBack1: {
+    position: "absolute",
+    top: 3, left: 5, right: -5, bottom: 0,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(14,14,14,0.95)",
+    borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
+    transform: [{ rotate: "2deg" }],
+  },
+  carouselFront: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 6,
+    borderRadius: BorderRadius.md,
+    overflow: "hidden",
+    borderWidth: 1.5, borderColor: ULTRA_RED_BORDER,
+  },
+  carouselImg: { width: "100%", height: "100%" },
+  carouselVignette: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(239,68,68,0.04)",
+  },
+  carouselDots: { flexDirection: "row", gap: 5, justifyContent: "center", paddingTop: 2 },
+  carouselDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.dark.border },
+  carouselDotActive: { backgroundColor: ULTRA_RED, width: 14, borderRadius: 3 },
   salesCompatRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: "rgba(245,158,11,0.08)", borderRadius: BorderRadius.sm,
