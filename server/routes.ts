@@ -469,7 +469,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const thumbArr = item["media:thumbnail"];
       let imageUrl = "";
       if (Array.isArray(thumbArr) && thumbArr[0]?.$?.url) {
-        imageUrl = String(thumbArr[0].$.url).replace(/\{width\}/g, "976").replace(/\{height\}/g, "549");
+        imageUrl = String(thumbArr[0].$.url)
+          .replace(/\{width\}/g, "976").replace(/\{height\}/g, "549")
+          .replace(/\/ace\/standard\/\d+\//, "/ace/standard/976/");
       } else if (item.enclosure?.[0]?.$?.url) {
         imageUrl = item.enclosure[0].$.url;
       }

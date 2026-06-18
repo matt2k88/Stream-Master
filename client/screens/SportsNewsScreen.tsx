@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
-  View, StyleSheet, Pressable, FlatList, Modal, ScrollView,
-  ActivityIndicator, useWindowDimensions, Platform,
+  View, StyleSheet, Pressable, FlatList, ScrollView,
+  ActivityIndicator, useWindowDimensions, BackHandler, Animated,
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,29 +15,6 @@ import { getApiUrl } from "@/lib/query-client";
 import { useAccent, withAlpha } from "@/contexts/ThemeContext";
 import SideMenuButton from "@/components/SideMenuButton";
 
-// ── TV Back button (inline, mirrors UltraTubeScreen pattern) ─────────────
-function TVBackButton({ onPress }: { onPress: () => void }) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const active = focused || pressed || hovered;
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={[styles.backBtn, active && styles.backBtnActive]}
-    >
-      <Feather name="arrow-left" size={16} color={active ? Colors.dark.text : Colors.dark.textSecondary} />
-      <ThemedText style={[styles.backText, active && styles.backTextActive]}>Back</ThemedText>
-    </Pressable>
-  );
-}
-
 // ── Types ─────────────────────────────────────────────────────────────────
 interface NewsItem {
   id: string;
@@ -50,17 +27,16 @@ interface NewsItem {
 
 // ── Sport tabs ────────────────────────────────────────────────────────────
 const SPORTS = [
-  { key: "all",       label: "All Sports",  mciIcon: "newspaper-variant-outline" },
-  { key: "football",  label: "Football",    mciIcon: "soccer"                   },
-  { key: "f1",        label: "Formula 1",   mciIcon: "car-sports"               },
-  { key: "cricket",   label: "Cricket",     mciIcon: "cricket"                  },
-  { key: "tennis",    label: "Tennis",      mciIcon: "tennis"                   },
-  { key: "rugby",     label: "Rugby",       mciIcon: "rugby"                    },
-  { key: "boxing",    label: "Boxing",      mciIcon: "boxing-glove"             },
-  { key: "golf",      label: "Golf",        mciIcon: "golf"                     },
-  { key: "athletics", label: "Athletics",   mciIcon: "run"                      },
+  { key: "all",       label: "All Sports", mciIcon: "newspaper-variant-outline" },
+  { key: "football",  label: "Football",   mciIcon: "soccer"                   },
+  { key: "f1",        label: "Formula 1",  mciIcon: "car-sports"               },
+  { key: "cricket",   label: "Cricket",    mciIcon: "cricket"                  },
+  { key: "tennis",    label: "Tennis",     mciIcon: "tennis"                   },
+  { key: "rugby",     label: "Rugby",      mciIcon: "rugby"                    },
+  { key: "boxing",    label: "Boxing",     mciIcon: "boxing-glove"             },
+  { key: "golf",      label: "Golf",       mciIcon: "golf"                     },
+  { key: "athletics", label: "Athletics",  mciIcon: "run"                      },
 ] as const;
-
 type SportKey = (typeof SPORTS)[number]["key"];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -74,6 +50,26 @@ function timeAgo(dateStr: string): string {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
   } catch { return ""; }
+}
+
+// ── TV back button ────────────────────────────────────────────────────────
+function TVBackButton({ onPress }: { onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const active = focused || hovered;
+  return (
+    <Pressable
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.backBtn, active && styles.backBtnActive]}
+    >
+      <Feather name="arrow-left" size={16} color={active ? Colors.dark.text : Colors.dark.textSecondary} />
+      <ThemedText style={[styles.backText, active && styles.backTextActive]}>Back</ThemedText>
+    </Pressable>
+  );
 }
 
 // ── Sport tab ─────────────────────────────────────────────────────────────
@@ -108,7 +104,7 @@ function SportTab({
       ]}
     >
       {active ? <View style={[styles.tabActiveBar, { backgroundColor: accent.accent }]} /> : null}
-      <MaterialCommunityIcons name={sport.mciIcon as any} size={18} color={tint} />
+      <MaterialCommunityIcons name={sport.mciIcon as any} size={16} color={tint} />
       <ThemedText style={[styles.tabLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
         {sport.label}
       </ThemedText>
@@ -116,8 +112,8 @@ function SportTab({
   );
 }
 
-// ── Article card ──────────────────────────────────────────────────────────
-function ArticleCard({
+// ── Article tile ──────────────────────────────────────────────────────────
+function ArticleTile({
   item, onPress, preferFocus,
 }: {
   item: NewsItem;
@@ -141,21 +137,26 @@ function ArticleCard({
       onBlur={() => setFocused(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
-      style={[styles.card, highlight && { borderColor: withAlpha(accent.accent, 0.55), shadowColor: accent.accent, shadowOpacity: 0.25, shadowRadius: 10 }]}
+      style={[
+        styles.tile,
+        highlight && {
+          borderColor: withAlpha(accent.accent, 0.55),
+          shadowColor: accent.accent, shadowOpacity: 0.2, shadowRadius: 8,
+        },
+      ]}
     >
-      {/* Hero image */}
-      <View style={styles.cardImageWrap}>
+      <View style={styles.tileImageWrap}>
         {item.imageUrl ? (
-          <Image source={{ uri: item.imageUrl }} style={styles.cardImage} contentFit="cover" />
+          <Image source={{ uri: item.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
         ) : (
-          <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
-            <MaterialCommunityIcons name="newspaper-variant-outline" size={32} color={Colors.dark.textSecondary} />
+          <View style={[StyleSheet.absoluteFill, styles.tilePlaceholder]}>
+            <MaterialCommunityIcons name="newspaper-variant-outline" size={28} color={Colors.dark.textSecondary} />
           </View>
         )}
         <LinearGradient
-          colors={["transparent", "rgba(8,8,8,0.85)"]}
+          colors={["transparent", "rgba(8,8,8,0.9)"]}
           style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0.5 }}
+          start={{ x: 0, y: 0.45 }}
           end={{ x: 0, y: 1 }}
         />
         {ago ? (
@@ -164,112 +165,117 @@ function ArticleCard({
           </View>
         ) : null}
       </View>
-
-      {/* Text content */}
-      <View style={styles.cardBody}>
-        <ThemedText style={styles.cardTitle} numberOfLines={3}>{item.title}</ThemedText>
+      <View style={styles.tileBody}>
+        <ThemedText style={styles.tileTitle} numberOfLines={3}>{item.title}</ThemedText>
         {item.summary ? (
-          <ThemedText style={styles.cardSummary} numberOfLines={2}>{item.summary}</ThemedText>
+          <ThemedText style={styles.tileSummary} numberOfLines={2}>{item.summary}</ThemedText>
         ) : null}
       </View>
-
-      {highlight ? (
-        <View style={[styles.cardFocusBar, { backgroundColor: accent.accent }]} />
-      ) : null}
+      {highlight ? <View style={[styles.tileFocusBar, { backgroundColor: accent.accent }]} /> : null}
     </Pressable>
   );
 }
 
-// ── Article reader modal ──────────────────────────────────────────────────
-function ArticleModal({
+// ── Inline article detail (replaces grid when article selected) ───────────
+function ArticleDetail({
   item, onClose,
 }: {
-  item: NewsItem | null;
+  item: NewsItem;
   onClose: () => void;
 }) {
-  const [closeFocused, setCloseFocused] = useState(false);
+  const accent = useAccent();
+  const { width } = useWindowDimensions();
   const [readFocused, setReadFocused] = useState(false);
   const [readHovered, setReadHovered] = useState(false);
-  const accent = useAccent();
-  const insets = useSafeAreaInsets();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+  }, []);
+
+  // TV hardware back button
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      onClose();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onClose]);
 
   const openFull = useCallback(async () => {
-    if (!item?.link) return;
+    if (!item.link) return;
     try {
-      await WebBrowser.openBrowserAsync(item.link, { presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN });
-    } catch {
-      // fallback: ignore
-    }
-  }, [item]);
-
-  if (!item) return null;
+      await WebBrowser.openBrowserAsync(item.link, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+    } catch {}
+  }, [item.link]);
 
   const readActive = readFocused || readHovered;
+  const ago = timeAgo(item.publishedAt);
+
+  // Image panel: 42% of available width; content panel: remainder
+  const imageW = Math.floor(width * 0.38);
 
   return (
-    <Modal
-      visible
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={[styles.modalRoot, { backgroundColor: "#0a0a0a" }]}>
-        {/* Hero image */}
-        <View style={styles.modalHero}>
+    <Animated.View style={[styles.detail, { opacity: fadeAnim }]}>
+      {/* Back row */}
+      <View style={styles.detailTopBar}>
+        <Pressable
+          hasTVPreferredFocus
+          onPress={onClose}
+          onFocus={() => {}}
+          style={styles.detailBackBtn}
+        >
+          <Feather name="chevron-left" size={18} color={Colors.dark.textSecondary} />
+          <ThemedText style={styles.detailBackText}>Back to News</ThemedText>
+        </Pressable>
+        <View style={styles.bbcPill}>
+          <ThemedText style={styles.bbcPillText}>BBC SPORT</ThemedText>
+        </View>
+      </View>
+
+      {/* Content row: image + text */}
+      <View style={styles.detailBody}>
+        {/* Left: image */}
+        <View style={[styles.detailImageWrap, { width: imageW }]}>
           {item.imageUrl ? (
-            <Image source={{ uri: item.imageUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <Image
+              source={{ uri: item.imageUrl }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+            />
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: "#111" }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" }]}>
+              <MaterialCommunityIcons name="newspaper-variant-outline" size={48} color={Colors.dark.textSecondary} />
+            </View>
           )}
           <LinearGradient
-            colors={["rgba(0,0,0,0.35)", "transparent", "rgba(10,10,10,0.95)"]}
+            colors={["transparent", "rgba(10,10,10,0.7)"]}
             style={StyleSheet.absoluteFill}
-            locations={[0, 0.4, 1]}
+            start={{ x: 0.5, y: 0.5 }}
+            end={{ x: 0.5, y: 1 }}
           />
-          {/* Close button */}
-          <Pressable
-            hasTVPreferredFocus
-            onPress={onClose}
-            onFocus={() => setCloseFocused(true)}
-            onBlur={() => setCloseFocused(false)}
-            style={[styles.modalClose, { top: insets.top + Spacing.sm }, closeFocused && { backgroundColor: withAlpha(accent.accent, 0.3), borderColor: accent.accent }]}
-          >
-            <Feather name="x" size={20} color={Colors.dark.text} />
-          </Pressable>
-
-          {/* BBC badge */}
-          <View style={[styles.bbcBadge, { bottom: Spacing.lg, left: Spacing.lg }]}>
-            <ThemedText style={styles.bbcBadgeText}>BBC SPORT</ThemedText>
-          </View>
         </View>
 
-        {/* Article content */}
+        {/* Right: text content */}
         <ScrollView
-          style={styles.modalScroll}
-          contentContainerStyle={[styles.modalContent, { paddingBottom: insets.bottom + Spacing.xl }]}
+          style={styles.detailText}
+          contentContainerStyle={styles.detailTextContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Time */}
-          {item.publishedAt ? (
-            <ThemedText style={styles.modalDate}>
-              {timeAgo(item.publishedAt)}
-              {item.publishedAt ? ` · ${new Date(item.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : ""}
-            </ThemedText>
+          {ago ? (
+            <ThemedText style={styles.detailDate}>{ago}</ThemedText>
           ) : null}
 
-          {/* Headline */}
-          <ThemedText style={styles.modalTitle}>{item.title}</ThemedText>
+          <ThemedText style={styles.detailTitle}>{item.title}</ThemedText>
 
-          {/* Divider */}
-          <View style={[styles.modalDivider, { backgroundColor: withAlpha(accent.accent, 0.35) }]} />
+          <View style={[styles.detailDivider, { backgroundColor: withAlpha(accent.accent, 0.4) }]} />
 
-          {/* Summary */}
           {item.summary ? (
-            <ThemedText style={styles.modalSummary}>{item.summary}</ThemedText>
+            <ThemedText style={styles.detailSummary}>{item.summary}</ThemedText>
           ) : null}
 
-          {/* Read full article */}
           <Pressable
             onPress={openFull}
             onFocus={() => setReadFocused(true)}
@@ -278,16 +284,16 @@ function ArticleModal({
             onHoverOut={() => setReadHovered(false)}
             style={[
               styles.readBtn,
-              { backgroundColor: accent.accent, borderColor: accent.accent },
-              readActive && { opacity: 0.85, shadowColor: accent.accent, shadowOpacity: 0.7, shadowRadius: 16 },
+              { backgroundColor: accent.accent },
+              readActive && { opacity: 0.85, shadowColor: accent.accent, shadowOpacity: 0.6, shadowRadius: 14 },
             ]}
           >
-            <Feather name="external-link" size={16} color="#fff" />
+            <Feather name="external-link" size={15} color="#fff" />
             <ThemedText style={styles.readBtnText}>Read Full Article on BBC Sport</ThemedText>
           </Pressable>
         </ScrollView>
       </View>
-    </Modal>
+    </Animated.View>
   );
 }
 
@@ -305,6 +311,20 @@ export default function SportsNewsScreen() {
   const [selectedArticle, setSelectedArticle] = useState<NewsItem | null>(null);
   const listRef = useRef<FlatList>(null);
 
+  // Animate grid ↔ detail
+  const gridOpacity = useRef(new Animated.Value(1)).current;
+
+  const showDetail = useCallback((item: NewsItem) => {
+    Animated.timing(gridOpacity, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setSelectedArticle(item);
+    });
+  }, [gridOpacity]);
+
+  const hideDetail = useCallback(() => {
+    setSelectedArticle(null);
+    Animated.timing(gridOpacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
+  }, [gridOpacity]);
+
   const fetchNews = useCallback(async (sport: SportKey) => {
     setLoading(true);
     setError(null);
@@ -314,7 +334,7 @@ export default function SportsNewsScreen() {
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const data = await res.json();
       setArticles(Array.isArray(data) ? data : []);
-    } catch (e: any) {
+    } catch {
       setError("Could not load news. Check your connection.");
       setArticles([]);
     } finally {
@@ -327,40 +347,38 @@ export default function SportsNewsScreen() {
   }, [activeSport, fetchNews]));
 
   const handleSportChange = (key: SportKey) => {
+    setSelectedArticle(null);
+    gridOpacity.setValue(1);
     setActiveSport(key);
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
     fetchNews(key);
   };
 
-  // Responsive columns — TV gets 3, narrower gets 2
   const numCols = width >= 1100 ? 3 : 2;
 
   const renderItem = ({ item, index }: { item: NewsItem; index: number }) => (
-    <ArticleCard
+    <ArticleTile
       item={item}
-      onPress={() => setSelectedArticle(item)}
+      onPress={() => showDetail(item)}
       preferFocus={index === 0}
     />
   );
 
   return (
     <View style={[styles.root, { paddingLeft: insets.left, paddingRight: insets.right }]}>
-      <LinearGradient
-        colors={["#080808", "#0d0d0d", "#080808"]}
-        style={StyleSheet.absoluteFill}
-      />
+      <LinearGradient colors={["#080808", "#0d0d0d", "#080808"]} style={StyleSheet.absoluteFill} />
 
       {/* Top nav */}
       <View style={[styles.topNav, { paddingTop: insets.top + Spacing.xs }]}>
         <SideMenuButton />
         <View style={styles.navCenter}>
-          <MaterialCommunityIcons name="newspaper-variant-outline" size={20} color={accent.accent} />
+          <MaterialCommunityIcons name="newspaper-variant-outline" size={18} color={accent.accent} />
           <ThemedText style={styles.navTitle}>Sports News</ThemedText>
         </View>
         <TVBackButton onPress={() => navigation.goBack()} />
       </View>
 
-      {/* Body: sidebar + articles */}
+      {/* Body */}
       <View style={styles.body}>
         {/* Left sport sidebar */}
         <ScrollView
@@ -368,7 +386,7 @@ export default function SportsNewsScreen() {
           contentContainerStyle={[styles.sidebarContent, { paddingBottom: insets.bottom + Spacing.lg }]}
           showsVerticalScrollIndicator={false}
         >
-          <ThemedText style={styles.sidebarHeading}>CATEGORY</ThemedText>
+          <ThemedText style={styles.sidebarHeading}>SPORT</ThemedText>
           {SPORTS.map((s, i) => (
             <SportTab
               key={s.key}
@@ -378,60 +396,60 @@ export default function SportsNewsScreen() {
               preferFocus={i === 0}
             />
           ))}
-          {/* BBC attribution */}
           <View style={styles.attribution}>
-            <Feather name="rss" size={11} color={Colors.dark.textSecondary} />
-            <ThemedText style={styles.attributionText}>BBC Sport RSS</ThemedText>
+            <Feather name="rss" size={10} color={Colors.dark.textSecondary} />
+            <ThemedText style={styles.attributionText}>BBC Sport</ThemedText>
           </View>
         </ScrollView>
 
-        {/* Right article grid */}
+        {/* Right: grid or detail */}
         <View style={styles.main}>
-          {loading ? (
-            <View style={styles.centerState}>
-              <ActivityIndicator size="large" color={accent.accent} />
-              <ThemedText style={styles.stateText}>Loading latest news…</ThemedText>
-            </View>
-          ) : error ? (
-            <View style={styles.centerState}>
-              <Feather name="wifi-off" size={36} color={Colors.dark.textSecondary} />
-              <ThemedText style={styles.stateText}>{error}</ThemedText>
-              <Pressable onPress={() => fetchNews(activeSport)} style={[styles.retryBtn, { borderColor: accent.accent }]}>
-                <ThemedText style={[styles.retryBtnText, { color: accent.accent }]}>Try Again</ThemedText>
-              </Pressable>
-            </View>
-          ) : articles.length === 0 ? (
-            <View style={styles.centerState}>
-              <MaterialCommunityIcons name="newspaper-variant-outline" size={40} color={Colors.dark.textSecondary} />
-              <ThemedText style={styles.stateText}>No articles found</ThemedText>
-            </View>
+          {selectedArticle ? (
+            <ArticleDetail item={selectedArticle} onClose={hideDetail} />
           ) : (
-            <FlatList
-              ref={listRef}
-              data={articles}
-              keyExtractor={(item) => item.id}
-              renderItem={renderItem}
-              numColumns={numCols}
-              key={numCols}
-              contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + Spacing.lg }]}
-              columnWrapperStyle={numCols > 1 ? styles.gridRow : undefined}
-              showsVerticalScrollIndicator={false}
-              removeClippedSubviews
-            />
+            <Animated.View style={[styles.gridWrap, { opacity: gridOpacity }]}>
+              {loading ? (
+                <View style={styles.centerState}>
+                  <ActivityIndicator size="large" color={accent.accent} />
+                  <ThemedText style={styles.stateText}>Loading latest news…</ThemedText>
+                </View>
+              ) : error ? (
+                <View style={styles.centerState}>
+                  <Feather name="wifi-off" size={32} color={Colors.dark.textSecondary} />
+                  <ThemedText style={styles.stateText}>{error}</ThemedText>
+                  <Pressable onPress={() => fetchNews(activeSport)} style={[styles.retryBtn, { borderColor: accent.accent }]}>
+                    <ThemedText style={[styles.retryBtnText, { color: accent.accent }]}>Try Again</ThemedText>
+                  </Pressable>
+                </View>
+              ) : articles.length === 0 ? (
+                <View style={styles.centerState}>
+                  <MaterialCommunityIcons name="newspaper-variant-outline" size={38} color={Colors.dark.textSecondary} />
+                  <ThemedText style={styles.stateText}>No articles found</ThemedText>
+                </View>
+              ) : (
+                <FlatList
+                  ref={listRef}
+                  data={articles}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderItem}
+                  numColumns={numCols}
+                  key={numCols}
+                  contentContainerStyle={[styles.grid, { paddingBottom: insets.bottom + Spacing.lg }]}
+                  columnWrapperStyle={numCols > 1 ? styles.gridRow : undefined}
+                  showsVerticalScrollIndicator={false}
+                  removeClippedSubviews
+                />
+              )}
+            </Animated.View>
           )}
         </View>
       </View>
-
-      {/* Article reader modal */}
-      {selectedArticle ? (
-        <ArticleModal item={selectedArticle} onClose={() => setSelectedArticle(null)} />
-      ) : null}
     </View>
   );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────
-const SIDEBAR_W = 172;
+const SIDEBAR_W = 128;
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#080808" },
@@ -440,40 +458,51 @@ const styles = StyleSheet.create({
   topNav: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
-    gap: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border, gap: Spacing.sm,
   },
   navCenter: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.sm },
-  navTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  navTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
+
+  // Back button
+  backBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
+  },
+  backBtnActive: { borderColor: Colors.dark.border, backgroundColor: "rgba(255,255,255,0.06)" },
+  backText: { fontSize: 13, color: Colors.dark.textSecondary },
+  backTextActive: { color: Colors.dark.text },
 
   // Body
   body: { flex: 1, flexDirection: "row" },
 
   // Sidebar
   sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: Colors.dark.border },
-  sidebarContent: { paddingTop: Spacing.sm, paddingHorizontal: Spacing.xs, gap: 2 },
+  sidebarContent: { paddingTop: Spacing.xs, paddingHorizontal: 4, gap: 1 },
   sidebarHeading: {
-    fontSize: 10, fontWeight: "700", color: Colors.dark.textMuted,
-    letterSpacing: 1.2, paddingHorizontal: Spacing.sm, paddingBottom: Spacing.xs, paddingTop: Spacing.xs,
+    fontSize: 9, fontWeight: "700", color: Colors.dark.textSecondary,
+    letterSpacing: 1.1, paddingHorizontal: Spacing.sm, paddingBottom: 4, paddingTop: 6,
   },
   sportTab: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: 6,
     paddingVertical: 5, paddingHorizontal: Spacing.sm,
-    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
-    overflow: "hidden",
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent", overflow: "hidden",
   },
-  tabActiveBar: { position: "absolute", left: 0, top: 6, bottom: 6, width: 3, borderRadius: 2 },
-  tabLabel: { flex: 1, fontSize: 13, fontWeight: "600", color: Colors.dark.text },
-  attribution: { flexDirection: "row", alignItems: "center", gap: 4, padding: Spacing.sm, marginTop: Spacing.md },
-  attributionText: { fontSize: 10, color: Colors.dark.textMuted },
+  tabActiveBar: { position: "absolute", left: 0, top: 5, bottom: 5, width: 3, borderRadius: 2 },
+  tabLabel: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.dark.text },
+  attribution: { flexDirection: "row", alignItems: "center", gap: 4, padding: Spacing.sm, marginTop: Spacing.sm },
+  attributionText: { fontSize: 10, color: Colors.dark.textSecondary },
 
-  // Main grid
+  // Main area
   main: { flex: 1 },
+  gridWrap: { flex: 1 },
+
+  // Article grid
   grid: { padding: Spacing.sm },
   gridRow: { gap: Spacing.sm },
 
-  // Article card
-  card: {
+  // Article tile
+  tile: {
     flex: 1, margin: Spacing.xs,
     backgroundColor: "#111",
     borderRadius: BorderRadius.lg,
@@ -481,19 +510,17 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     shadowOffset: { width: 0, height: 2 },
   },
-  cardImageWrap: { width: "100%", aspectRatio: 16 / 9, overflow: "hidden" },
-  cardImage: { width: "100%", height: "100%" },
-  cardImagePlaceholder: { backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
+  tileImageWrap: { width: "100%", aspectRatio: 16 / 9, overflow: "hidden" },
+  tilePlaceholder: { backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
   timeBadge: {
     position: "absolute", bottom: Spacing.xs, right: Spacing.xs,
-    paddingHorizontal: 6, paddingVertical: 2,
-    borderRadius: BorderRadius.full ?? 99,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 99,
   },
   timeBadgeText: { fontSize: 10, fontWeight: "700", color: "#fff" },
-  cardBody: { padding: Spacing.sm, gap: 4 },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.text, lineHeight: 19 },
-  cardSummary: { fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 17 },
-  cardFocusBar: { position: "absolute", bottom: 0, left: 0, right: 0, height: 2 },
+  tileBody: { padding: Spacing.sm, gap: 4 },
+  tileTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.text, lineHeight: 18 },
+  tileSummary: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 16 },
+  tileFocusBar: { position: "absolute", bottom: 0, left: 0, right: 0, height: 2 },
 
   // Center states
   centerState: { flex: 1, alignItems: "center", justifyContent: "center", gap: Spacing.md },
@@ -501,44 +528,48 @@ const styles = StyleSheet.create({
   retryBtn: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1 },
   retryBtnText: { fontSize: 14, fontWeight: "600" },
 
-  // Modal
-  modalRoot: { flex: 1 },
-  modalHero: { width: "100%", aspectRatio: 16 / 7 },
-  modalClose: {
-    position: "absolute", right: Spacing.lg,
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center", justifyContent: "center",
+  // Inline article detail
+  detail: { flex: 1, flexDirection: "column" },
+  detailTopBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.dark.border,
   },
-  bbcBadge: {
-    position: "absolute",
-    backgroundColor: "rgba(0,0,0,0.7)",
-    paddingHorizontal: 10, paddingVertical: 3,
-    borderRadius: 4, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+  detailBackBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: Spacing.sm, paddingVertical: 4,
+    borderRadius: BorderRadius.md,
   },
-  bbcBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 1.5 },
-  modalScroll: { flex: 1 },
-  modalContent: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, maxWidth: 800, alignSelf: "center", width: "100%" },
-  modalDate: { fontSize: 12, color: Colors.dark.textMuted, marginBottom: Spacing.xs },
-  modalTitle: { fontSize: 24, fontWeight: "800", color: Colors.dark.text, lineHeight: 32, marginBottom: Spacing.md },
-  modalDivider: { height: 2, borderRadius: 1, marginBottom: Spacing.md },
-  modalSummary: { fontSize: 16, color: Colors.dark.textSecondary, lineHeight: 26, marginBottom: Spacing.xl },
+  detailBackText: { fontSize: 13, color: Colors.dark.textSecondary },
+  bbcPill: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: "#bb1919", borderRadius: 4,
+  },
+  bbcPillText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 1.4 },
+
+  detailBody: { flex: 1, flexDirection: "row" },
+
+  detailImageWrap: {
+    alignSelf: "stretch",
+    backgroundColor: "#111",
+    overflow: "hidden",
+  },
+
+  detailText: { flex: 1 },
+  detailTextContent: {
+    padding: Spacing.lg, gap: Spacing.sm,
+    maxWidth: 640,
+  },
+  detailDate: { fontSize: 12, color: Colors.dark.textSecondary },
+  detailTitle: { fontSize: 22, fontWeight: "800", color: Colors.dark.text, lineHeight: 30 },
+  detailDivider: { height: 2, borderRadius: 1, marginVertical: Spacing.xs },
+  detailSummary: { fontSize: 15, color: Colors.dark.textSecondary, lineHeight: 24 },
+
   readBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: Spacing.sm, paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg, borderWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
+    gap: Spacing.sm, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg, marginTop: Spacing.md,
+    shadowOffset: { width: 0, height: 3 },
   },
-  readBtnText: { fontSize: 16, fontWeight: "700", color: "#fff" },
-
-  // Back button
-  backBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: Spacing.sm, paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent",
-  },
-  backBtnActive: { borderColor: Colors.dark.border, backgroundColor: "rgba(255,255,255,0.06)" },
-  backText: { fontSize: 14, color: Colors.dark.textSecondary },
-  backTextActive: { color: Colors.dark.text },
+  readBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 });
