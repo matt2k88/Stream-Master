@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
+import { parseString } from "xml2js";
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
 // Reduces Supabase egress for high-frequency polling endpoints.
@@ -444,11 +445,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── App Theme (admin-controlled, applies to all clients on next launch) ──
+  // ── Sports News (BBC Sport RSS) ───────────────────────────────────────────
+  const BBC_FEEDS: Record<string, string> = {
+    all:       "https://feeds.bbci.co.uk/sport/rss.xml",
+    football:  "https://feeds.bbci.co.uk/sport/football/rss.xml",
+    f1:        "https://feeds.bbci.co.uk/sport/formula1/rss.xml",
+    cricket:   "https://feeds.bbci.co.uk/sport/cricket/rss.xml",
+    tennis:    "https://feeds.bbci.co.uk/sport/tennis/rss.xml",
+    rugby:     "https://feeds.bbci.co.uk/sport/rugby-union/rss.xml",
+    boxing:    "https://feeds.bbci.co.uk/sport/boxing/rss.xml",
+    golf:      "https://feeds.bbci.co.uk/sport/golf/rss.xml",
+    athletics: "https://feeds.bbci.co.uk/sport/athletics/rss.xml",
+  };
+  const NEWS_TTL = 15 * 60 * 1000;
+
+  function parseRssItem(item: any): object | null {
+    try {
+      const title   = Array.isArray(item.title)       ? item.title[0]       : item.title ?? "";
+      const summary = Array.isArray(item.description) ? item.description[0] : item.description ?? "";
+      const link    = Array.isArray(item.link)        ? item.link[0]        : item.link ?? "";
+      const pubDate = Array.isArray(item.pubDate)     ? item.pubDate[0]     : item.pubDate ?? "";
+      // BBC uses <media:thumbnail url="..." /> in the yahoo media namespace
+      const thumbArr = item["media:thumbnail"];
+      let imageUrl = "";
+      if (Array.isArray(thumbArr) && thumbArr[0]?.$?.url) {
+        imageUrl = String(thumbArr[0].$.url).replace(/\{width\}/g, "976").replace(/\{height\}/g, "549");
+      } else if (item.enclosure?.[0]?.$?.url) {
+        imageUrl = item.enclosure[0].$.url;
+      }
+      const cleanSummary = String(summary).replace(/<[^>]+>/g, "").trim();
+      if (!title) return null;
+      return { id: link, title: String(title).trim(), summary: cleanSummary, imageUrl, link, publishedAt: pubDate };
+    } catch { return null; }
+  }
+
+  app.get("/api/sports-news", async (req, res) => {
+    const sport = String(req.query.sport ?? "all").toLowerCase();
+    const feedUrl = BBC_FEEDS[sport] ?? BBC_FEEDS.all;
+    const cacheKey = `sports-news:${sport}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+    try {
+      const feedRes = await fetch(feedUrl, { signal: AbortSignal.timeout(8000) });
+      if (!feedRes.ok) throw new Error(`feed ${feedRes.status}`);
+      const xml = await feedRes.text();
+      const parsed: any = await new Promise((resolve, reject) =>
+        parseString(xml, { xmlns: false }, (err: any, r: any) => err ? reject(err) : resolve(r))
+      );
+      const items: any[] = parsed?.rss?.channel?.[0]?.item ?? [];
+      const articles = items.map(parseRssItem).filter(Boolean).slice(0, 20);
+      cacheSet(cacheKey, articles, NEWS_TTL);
+      res.json(articles);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "Failed to fetch news" });
+    }
+  });
+
   app.get("/api/app-theme", async (_req, res) => {
     try {
       const { data, error } = await supabase
         .from("app_theme")
-        .select("id, theme_key, show_top_picks_badge, updated_at")
+        .select("*")
         .eq("id", 1)
         .maybeSingle();
       // Gracefully fall back to default when table is missing (migration

@@ -853,7 +853,7 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
+  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsNewsBadge } = useAppTheme();
   const { scores } = useFootball();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
@@ -1261,6 +1261,7 @@ export default function HomeScreen() {
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
+              <SidebarItem label="Sports News" mciIcon="newspaper" isNew={showSportsNewsBadge} onPress={() => navigation.navigate("SportsNews" as never)} />
               <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
               <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
               <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />

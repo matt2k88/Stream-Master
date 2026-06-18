@@ -17,6 +17,8 @@ interface ThemeContextValue {
   showTopPicksBadge: boolean;
   /** Admin-controlled toggle: whether the NEW badge shows on Ultra Tube. Defaults true. */
   showUltraTubeBadge: boolean;
+  /** Admin-controlled toggle: whether the NEW badge shows on Sports News. Defaults true. */
+  showSportsNewsBadge: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -27,6 +29,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   refetch: async () => {},
   showTopPicksBadge: true,
   showUltraTubeBadge: true,
+  showSportsNewsBadge: true,
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -79,6 +82,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [showTopPicksBadge, setShowTopPicksBadge] = useState(true);
   const [showUltraTubeBadge, setShowUltraTubeBadge] = useState(true);
+  const [showSportsNewsBadge, setShowSportsNewsBadge] = useState(true);
 
   const fetchTheme = React.useCallback(async () => {
     try {
@@ -97,8 +101,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyPalette(next);
         return next.key;
       });
-      // show_top_picks_badge defaults to true when the column is missing
+      // badge flags default to true when the column is missing
       setShowTopPicksBadge(data?.show_top_picks_badge !== false);
+      setShowSportsNewsBadge(data?.show_sports_news_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -145,8 +150,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       refetch: fetchTheme,
       showTopPicksBadge,
       showUltraTubeBadge,
+      showSportsNewsBadge,
     };
-  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge]);
+  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsNewsBadge]);
 
   return (
     <ThemeContext.Provider value={value}>

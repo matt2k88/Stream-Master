@@ -106,7 +106,7 @@ export default function SideMenuDrawer() {
   const { liveCategories } = useData();
   const { isOpen, transparent, close } = useSideMenu();
   const { scores } = useFootball();
-  const { showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
+  const { showTopPicksBadge, showUltraTubeBadge, showSportsNewsBadge } = useAppTheme();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
     return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
@@ -282,6 +282,13 @@ export default function SideMenuDrawer() {
               icon="search"
               active={routeName === "Search"}
               onPress={() => navTo(() => navigationRef.navigate("Search"))}
+            />
+            <MenuItem
+              label="Sports News"
+              mciIcon="newspaper"
+              isNew={showSportsNewsBadge}
+              active={routeName === "SportsNews"}
+              onPress={() => navTo(() => navigationRef.navigate("SportsNews" as never))}
             />
             <MenuItem
               label="Football Centre"
