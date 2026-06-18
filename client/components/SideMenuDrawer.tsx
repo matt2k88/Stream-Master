@@ -71,6 +71,7 @@ function MenuItem({
         highlight && {
           backgroundColor: withAlpha(effectiveTint, active ? 0.16 : 0.1),
           borderColor: effectiveTint,
+          paddingVertical: 9,
         },
       ]}
     >
@@ -344,12 +345,12 @@ const styles = StyleSheet.create({
   appName: { fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
   appVersion: { fontSize: 11, fontWeight: "700" },
   scroll: { flex: 1 },
-  scrollContent: { gap: Spacing.xs, paddingBottom: Spacing.lg },
+  scrollContent: { gap: 2, paddingBottom: Spacing.lg },
   item: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 4,
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md,
     borderWidth: 1,

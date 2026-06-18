@@ -348,7 +348,12 @@ export default function UltraTubeScreen() {
 
       {access.hasAccess ? (
         /* Access view — same premium centred card as sales page */
-        <View style={styles.salesCenter}>
+        <ScrollView
+          style={styles.scrollFlex}
+          contentContainerStyle={styles.salesCenter}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.salesCard}>
             <LinearGradient
               colors={["rgba(34,197,94,0.04)", "rgba(239,68,68,0.04)", "transparent"]}
@@ -368,10 +373,15 @@ export default function UltraTubeScreen() {
               cancelInstall={cancelInstall}
             />
           </View>
-        </View>
+        </ScrollView>
       ) : (
         /* Sales page — centred card */
-        <View style={styles.salesCenter}>
+        <ScrollView
+          style={styles.scrollFlex}
+          contentContainerStyle={styles.salesCenter}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.salesCard}>
             {/* Card inner gradient */}
             <LinearGradient
@@ -382,9 +392,9 @@ export default function UltraTubeScreen() {
               end={{ x: 1, y: 1 }}
               pointerEvents="none"
             />
-            <SalesView openWhatsApp={openWhatsApp} />
+            <SalesView />
           </View>
-        </View>
+        </ScrollView>
       )}
 
       {/* Download progress modal */}
@@ -499,7 +509,7 @@ function ShowcaseCarousel() {
   );
 }
 
-function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
+function SalesView() {
   return (
     <View style={styles.salesWrap}>
       {/* Left column — branding + pricing */}
@@ -535,11 +545,11 @@ function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
           <ThemedText style={styles.salesCompatText}>Android TV &amp; Fire TV only — not for mobile</ThemedText>
         </View>
 
-        <Pressable style={styles.salesWhatsApp} onPress={openWhatsApp}>
+        <View style={styles.salesWhatsApp}>
           <Feather name="message-circle" size={16} color="#fff" />
           <ThemedText style={styles.salesWhatsAppText}>Enquire on WhatsApp</ThemedText>
           <ThemedText style={styles.salesWhatsAppNum}>07459 683 465</ThemedText>
-        </Pressable>
+        </View>
 
         <View style={styles.salesDisclaimer}>
           <Feather name="info" size={11} color={Colors.dark.textSecondary} />
@@ -571,6 +581,10 @@ function AccessView({
   cancelInstall: () => void;
 }) {
   const isBusy = installPhase.phase !== "idle" && installPhase.phase !== "error";
+  const [dlFocused, setDlFocused] = useState(false);
+  const [dlHovered, setDlHovered] = useState(false);
+  const [dlPressed, setDlPressed] = useState(false);
+  const dlHighlight = !isBusy && (dlFocused || dlHovered || dlPressed);
 
   return (
     <View style={styles.salesWrap}>
@@ -642,9 +656,15 @@ function AccessView({
 
         {/* Download button */}
         <Pressable
-          style={[styles.downloadBtn, isBusy && styles.downloadBtnBusy]}
+          style={[styles.downloadBtn, isBusy && styles.downloadBtnBusy, dlHighlight && styles.downloadBtnHover]}
           onPress={startInstall}
           disabled={isBusy}
+          onFocus={() => setDlFocused(true)}
+          onBlur={() => setDlFocused(false)}
+          onHoverIn={() => setDlHovered(true)}
+          onHoverOut={() => setDlHovered(false)}
+          onPressIn={() => setDlPressed(true)}
+          onPressOut={() => setDlPressed(false)}
         >
           <Feather name="download" size={18} color="#fff" />
           <ThemedText style={styles.downloadBtnText}>
@@ -697,35 +717,36 @@ const styles = StyleSheet.create({
   backTextActive: { color: Colors.dark.text },
 
   // Sales: centred card wrapper
-  salesCenter: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  scrollFlex: { flex: 1 },
+  salesCenter: { flexGrow: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
   salesCard: {
-    width: "100%", maxWidth: 920,
+    width: "100%", maxWidth: 900,
     backgroundColor: "rgba(14,14,14,0.97)",
     borderRadius: BorderRadius.xl,
     borderWidth: 1, borderColor: ULTRA_RED_BORDER,
-    padding: Spacing.xl,
+    padding: Spacing.md,
     overflow: "hidden",
     shadowColor: ULTRA_RED, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.18, shadowRadius: 24, elevation: 8,
   },
 
   // ── Shared two-column layout (sales + access) ────────────────────────────
-  salesWrap: { flexDirection: "row", gap: Spacing.xl, alignItems: "center" },
+  salesWrap: { flexDirection: "row", gap: Spacing.md, alignItems: "center" },
 
   // Access-specific columns
   accessLeft: {
-    flex: 5, gap: Spacing.md, justifyContent: "center",
-    borderRightWidth: 1, borderRightColor: Colors.dark.border, paddingRight: Spacing.xl,
+    flex: 5, gap: Spacing.sm, justifyContent: "center",
+    borderRightWidth: 1, borderRightColor: Colors.dark.border, paddingRight: Spacing.md,
   },
-  accessRight: { flex: 6, gap: Spacing.md, justifyContent: "center" },
+  accessRight: { flex: 6, gap: Spacing.sm, justifyContent: "center" },
 
   salesLeft: {
-    flex: 5, gap: Spacing.md, justifyContent: "center", alignItems: "center",
+    flex: 5, gap: Spacing.sm, justifyContent: "center", alignItems: "center",
     borderRightWidth: 1, borderRightColor: Colors.dark.border,
-    paddingRight: Spacing.xl,
+    paddingRight: Spacing.md,
   },
   utLogo: { width: 190, height: 76, alignSelf: "center" },
-  utLogoSales: { width: 240, height: 96, alignSelf: "center" },
+  utLogoSales: { width: 200, height: 80, alignSelf: "center" },
   utLogoLoading: { width: 200, height: 80 },
   salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED, textAlign: "center" },
   salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, textAlign: "center" },
@@ -881,6 +902,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md + 2, paddingHorizontal: Spacing.xl,
   },
   downloadBtnBusy: { opacity: 0.6 },
+  downloadBtnHover: {
+    backgroundColor: "#c81e1e",
+    shadowColor: ULTRA_RED, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55, shadowRadius: 14, elevation: 10,
+  },
   downloadBtnText: { fontSize: 15, fontWeight: "800", color: "#fff" },
 
   // Unknown sources note
