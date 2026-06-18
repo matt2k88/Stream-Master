@@ -189,10 +189,31 @@ function ArticleDetail({
   const [readHovered, setReadHovered] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const mainW = width - SIDEBAR_W;
+  const [paragraphs, setParagraphs] = useState<string[] | null>(null);
+  const [bodyLoading, setBodyLoading] = useState(true);
+  const [bodyError, setBodyError] = useState(false);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
   }, []);
+
+  // Fetch full article body
+  useEffect(() => {
+    if (!item.link) { setBodyLoading(false); setBodyError(true); return; }
+    setBodyLoading(true); setBodyError(false);
+    const url = new URL(`/api/sports-article?url=${encodeURIComponent(item.link)}`, getApiUrl()).toString();
+    fetch(url, { signal: AbortSignal.timeout(12000) })
+      .then(r => r.json())
+      .then((data: { paragraphs?: string[] }) => {
+        if (Array.isArray(data.paragraphs) && data.paragraphs.length > 0) {
+          setParagraphs(data.paragraphs);
+        } else {
+          setBodyError(true);
+        }
+      })
+      .catch(() => setBodyError(true))
+      .finally(() => setBodyLoading(false));
+  }, [item.link]);
 
   // TV hardware back button
   useEffect(() => {
@@ -265,32 +286,40 @@ function ArticleDetail({
           contentContainerStyle={styles.detailTextContent}
           showsVerticalScrollIndicator={false}
         >
-          {ago ? (
-            <ThemedText style={styles.detailDate}>{ago}</ThemedText>
-          ) : null}
+          {ago ? <ThemedText style={styles.detailDate}>{ago}</ThemedText> : null}
 
           <ThemedText style={styles.detailTitle}>{item.title}</ThemedText>
 
           <View style={[styles.detailDivider, { backgroundColor: withAlpha(accent.accent, 0.4) }]} />
 
-          {item.summary ? (
-            <ThemedText style={styles.detailSummary}>{item.summary}</ThemedText>
-          ) : null}
+          {/* Article body */}
+          {bodyLoading ? (
+            <View style={styles.bodyLoading}>
+              <ActivityIndicator size="small" color={accent.accent} />
+              <ThemedText style={styles.bodyLoadingText}>Loading article…</ThemedText>
+            </View>
+          ) : paragraphs && paragraphs.length > 0 ? (
+            paragraphs.map((p, i) => (
+              <ThemedText key={i} style={styles.detailParagraph}>{p}</ThemedText>
+            ))
+          ) : (
+            // Fallback: RSS summary
+            item.summary ? (
+              <ThemedText style={styles.detailSummary}>{item.summary}</ThemedText>
+            ) : null
+          )}
 
+          {/* Open in browser — small secondary link */}
           <Pressable
             onPress={openFull}
             onFocus={() => setReadFocused(true)}
             onBlur={() => setReadFocused(false)}
             onHoverIn={() => setReadHovered(true)}
             onHoverOut={() => setReadHovered(false)}
-            style={[
-              styles.readBtn,
-              { backgroundColor: accent.accent },
-              readActive && { opacity: 0.85, shadowColor: accent.accent, shadowOpacity: 0.6, shadowRadius: 14 },
-            ]}
+            style={[styles.openLink, readActive && { opacity: 0.7 }]}
           >
-            <Feather name="external-link" size={15} color="#fff" />
-            <ThemedText style={styles.readBtnText}>Read Full Article on BBC Sport</ThemedText>
+            <Feather name="external-link" size={13} color={Colors.dark.textSecondary} />
+            <ThemedText style={styles.openLinkText}>Open on BBC Sport</ThemedText>
           </Pressable>
         </ScrollView>
       </View>
@@ -566,7 +595,14 @@ const styles = StyleSheet.create({
   detailTitle: { fontSize: 22, fontWeight: "800", color: Colors.dark.text, lineHeight: 30 },
   detailDivider: { height: 2, borderRadius: 1, marginVertical: Spacing.xs },
   detailSummary: { fontSize: 15, color: Colors.dark.textSecondary, lineHeight: 24 },
-
+  detailParagraph: { fontSize: 14, color: Colors.dark.text, lineHeight: 22 },
+  bodyLoading: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, paddingVertical: Spacing.md },
+  bodyLoadingText: { fontSize: 13, color: Colors.dark.textSecondary },
+  openLink: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginTop: Spacing.lg, paddingVertical: Spacing.sm, alignSelf: "flex-start",
+  },
+  openLinkText: { fontSize: 12, color: Colors.dark.textSecondary, textDecorationLine: "underline" },
   readBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: Spacing.sm, paddingVertical: Spacing.sm, paddingHorizontal: Spacing.lg,

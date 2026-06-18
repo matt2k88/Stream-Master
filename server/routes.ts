@@ -503,6 +503,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Fetch + extract full article body from a BBC Sport article URL
+  app.get("/api/sports-article", async (req, res) => {
+    const url = String(req.query.url ?? "");
+    if (!url || !url.startsWith("https://www.bbc.com/sport")) {
+      return res.status(400).json({ error: "Invalid URL" });
+    }
+    const cacheKey = `sports-article:${url}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+    try {
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36" },
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const html = await r.text();
+
+      const stripTags = (s: string) =>
+        s.replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+          .replace(/\s+/g, " ").trim();
+
+      const paragraphs: string[] = [];
+
+      // BBC Sport primary: <div data-component="text-block">…<p>…</p>…</div>
+      const blockRx = /<div[^>]*data-component="text-block"[^>]*>([\s\S]*?)<\/div>/g;
+      let bm: RegExpExecArray | null;
+      while ((bm = blockRx.exec(html)) !== null) {
+        const pRx = /<p[^>]*>([\s\S]*?)<\/p>/g;
+        let pm: RegExpExecArray | null;
+        while ((pm = pRx.exec(bm[1])) !== null) {
+          const t = stripTags(pm[1]);
+          if (t.length > 10) paragraphs.push(t);
+        }
+      }
+
+      // Fallback: first <article> tag
+      if (paragraphs.length === 0) {
+        const am = /<article[^>]*>([\s\S]*?)<\/article>/i.exec(html);
+        if (am) {
+          const pRx = /<p[^>]*>([\s\S]*?)<\/p>/g;
+          let pm: RegExpExecArray | null;
+          while ((pm = pRx.exec(am[1])) !== null) {
+            const t = stripTags(pm[1]);
+            if (t.length > 30) paragraphs.push(t);
+          }
+        }
+      }
+
+      const result = { paragraphs };
+      cacheSet(cacheKey, result, 30 * 60 * 1000);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message ?? "Failed to fetch article" });
+    }
+  });
+
   app.get("/api/app-theme", async (_req, res) => {
     try {
       const { data, error } = await supabase
