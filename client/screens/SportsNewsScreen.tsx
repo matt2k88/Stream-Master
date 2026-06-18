@@ -381,27 +381,28 @@ export default function SportsNewsScreen() {
 
       {/* Body */}
       <View style={styles.body}>
-        {/* Left sport sidebar */}
-        <ScrollView
-          style={styles.sidebar}
-          contentContainerStyle={[styles.sidebarContent, { paddingBottom: insets.bottom + Spacing.lg }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <ThemedText style={styles.sidebarHeading}>SPORT</ThemedText>
-          {SPORTS.map((s, i) => (
-            <SportTab
-              key={s.key}
-              sport={s}
-              active={activeSport === s.key}
-              onPress={() => handleSportChange(s.key)}
-              preferFocus={i === 0}
-            />
-          ))}
-          <View style={styles.attribution}>
-            <Feather name="rss" size={10} color={Colors.dark.textSecondary} />
-            <ThemedText style={styles.attributionText}>BBC Sport</ThemedText>
-          </View>
-        </ScrollView>
+        {/* Left sport sidebar — outer View constrains width (ScrollView alone doesn't on RN Web) */}
+        <View style={styles.sidebar}>
+          <ScrollView
+            contentContainerStyle={[styles.sidebarContent, { paddingBottom: insets.bottom + Spacing.lg }]}
+            showsVerticalScrollIndicator={false}
+          >
+            <ThemedText style={styles.sidebarHeading}>SPORT</ThemedText>
+            {SPORTS.map((s, i) => (
+              <SportTab
+                key={s.key}
+                sport={s}
+                active={activeSport === s.key}
+                onPress={() => handleSportChange(s.key)}
+                preferFocus={i === 0}
+              />
+            ))}
+            <View style={styles.attribution}>
+              <Feather name="rss" size={10} color={Colors.dark.textSecondary} />
+              <ThemedText style={styles.attributionText}>BBC Sport</ThemedText>
+            </View>
+          </ScrollView>
+        </View>
 
         {/* Right: grid or detail */}
         <View style={styles.main}>
