@@ -74,13 +74,12 @@ function TVBackButton({ onPress }: { onPress: () => void }) {
 
 // ── Sport tab ─────────────────────────────────────────────────────────────
 function SportTab({
-  sport, active, onPress, preferFocus, iconOnly = false,
+  sport, active, onPress, preferFocus,
 }: {
   sport: (typeof SPORTS)[number];
   active: boolean;
   onPress: () => void;
   preferFocus?: boolean;
-  iconOnly?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -98,7 +97,6 @@ function SportTab({
       onHoverOut={() => setHovered(false)}
       style={[
         styles.sportTab,
-        iconOnly && styles.sportTabIconOnly,
         highlight && {
           backgroundColor: withAlpha(accent.accent, active ? 0.14 : 0.07),
           borderColor: withAlpha(accent.accent, active ? 0.5 : 0.3),
@@ -106,12 +104,10 @@ function SportTab({
       ]}
     >
       {active ? <View style={[styles.tabActiveBar, { backgroundColor: accent.accent }]} /> : null}
-      <MaterialCommunityIcons name={sport.mciIcon as any} size={16} color={tint} />
-      {!iconOnly ? (
-        <ThemedText style={[styles.tabLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
-          {sport.label}
-        </ThemedText>
-      ) : null}
+      <MaterialCommunityIcons name={sport.mciIcon as any} size={14} color={tint} />
+      <ThemedText style={[styles.tabLabel, highlight && { color: accent.accent }]} numberOfLines={1}>
+        {sport.label}
+      </ThemedText>
     </Pressable>
   );
 }
@@ -192,9 +188,7 @@ function ArticleDetail({
   const [readFocused, setReadFocused] = useState(false);
   const [readHovered, setReadHovered] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  // Compute main area width (same formula as parent) so image isn't oversized
-  const _sidebarW = width <= 480 ? 44 : width <= 600 ? 80 : Math.min(120, Math.floor(width * 0.13));
-  const mainW = width - _sidebarW;
+  const mainW = width - SIDEBAR_W;
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
@@ -311,10 +305,6 @@ export default function SportsNewsScreen() {
   const { width } = useWindowDimensions();
   const accent = useAccent();
 
-  // Responsive sidebar: icon-only on narrow viewports
-  const iconOnly = width <= 480;
-  const sidebarW = iconOnly ? 44 : width <= 600 ? 80 : Math.min(120, Math.floor(width * 0.13));
-
   const [activeSport, setActiveSport] = useState<SportKey>("all");
   const [articles, setArticles] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -393,13 +383,11 @@ export default function SportsNewsScreen() {
       <View style={styles.body}>
         {/* Left sport sidebar */}
         <ScrollView
-          style={[styles.sidebar, { width: sidebarW }]}
+          style={styles.sidebar}
           contentContainerStyle={[styles.sidebarContent, { paddingBottom: insets.bottom + Spacing.lg }]}
           showsVerticalScrollIndicator={false}
         >
-          {!iconOnly ? (
-            <ThemedText style={styles.sidebarHeading}>SPORT</ThemedText>
-          ) : null}
+          <ThemedText style={styles.sidebarHeading}>SPORT</ThemedText>
           {SPORTS.map((s, i) => (
             <SportTab
               key={s.key}
@@ -407,15 +395,12 @@ export default function SportsNewsScreen() {
               active={activeSport === s.key}
               onPress={() => handleSportChange(s.key)}
               preferFocus={i === 0}
-              iconOnly={iconOnly}
             />
           ))}
-          {!iconOnly ? (
-            <View style={styles.attribution}>
-              <Feather name="rss" size={10} color={Colors.dark.textSecondary} />
-              <ThemedText style={styles.attributionText}>BBC Sport</ThemedText>
-            </View>
-          ) : null}
+          <View style={styles.attribution}>
+            <Feather name="rss" size={10} color={Colors.dark.textSecondary} />
+            <ThemedText style={styles.attributionText}>BBC Sport</ThemedText>
+          </View>
         </ScrollView>
 
         {/* Right: grid or detail */}
@@ -465,6 +450,8 @@ export default function SportsNewsScreen() {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────
+const SIDEBAR_W = 110;
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#080808" },
 
@@ -490,8 +477,8 @@ const styles = StyleSheet.create({
   // Body
   body: { flex: 1, flexDirection: "row" },
 
-  // Sidebar — width applied inline so it responds to useWindowDimensions
-  sidebar: { flexShrink: 0, borderRightWidth: 1, borderRightColor: Colors.dark.border },
+  // Sidebar — fixed width, same pattern as ContentListScreen
+  sidebar: { width: SIDEBAR_W, borderRightWidth: 1, borderRightColor: Colors.dark.border },
   sidebarContent: { paddingTop: Spacing.xs, paddingHorizontal: 4, gap: 1 },
   sidebarHeading: {
     fontSize: 9, fontWeight: "700", color: Colors.dark.textSecondary,
@@ -501,9 +488,6 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingVertical: 5, paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "transparent", overflow: "hidden",
-  },
-  sportTabIconOnly: {
-    justifyContent: "center", paddingHorizontal: 0, gap: 0,
   },
   tabActiveBar: { position: "absolute", left: 0, top: 5, bottom: 5, width: 3, borderRadius: 2 },
   tabLabel: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.dark.text },
