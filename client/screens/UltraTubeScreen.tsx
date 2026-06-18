@@ -347,70 +347,58 @@ export default function UltraTubeScreen() {
 // ── Sales / No-access view ─────────────────────────────────────────────────
 function SalesView({ openWhatsApp }: { openWhatsApp: () => void }) {
   return (
-    <>
-      {/* Hero */}
-      <View style={styles.hero}>
-        <View style={styles.heroIcon}>
-          <Feather name="play-circle" size={40} color={ULTRA_RED} />
+    <View style={styles.salesWrap}>
+      {/* Left column — branding + pricing */}
+      <View style={styles.salesLeft}>
+        <View style={styles.salesLogoRow}>
+          <View style={styles.salesIconCircle}>
+            <Feather name="play-circle" size={28} color={ULTRA_RED} />
+          </View>
+          <ThemedText style={styles.salesTitle}>Ultra Tube</ThemedText>
         </View>
-        <ThemedText style={styles.heroTitle}>Ultra Tube</ThemedText>
-        <ThemedText style={styles.heroTagline}>YouTube. Without the interruptions.</ThemedText>
-      </View>
-
-      {/* What is it */}
-      <View style={styles.section}>
-        <ThemedText style={styles.sectionTitle}>What is Ultra Tube?</ThemedText>
-        <ThemedText style={styles.bodyText}>
-          Ultra Tube is our very own YouTube Premium experience — built exclusively for Ultra Cast subscribers. Enjoy your favourite YouTube content completely uninterrupted, on your big screen.
+        <ThemedText style={styles.salesTagline}>YouTube without the interruptions.</ThemedText>
+        <ThemedText style={styles.salesDesc}>
+          Our own ad-free YouTube experience, built exclusively for Ultra Cast subscribers. No waiting. No skipping. Just watch.
         </ThemedText>
-      </View>
 
-      {/* Features */}
-      <View style={styles.featureCard}>
-        <ThemedText style={styles.featureCardTitle}>Key Features</ThemedText>
-        <FeatureRow text="Auto-skips ALL adverts — no waiting, no clicking" />
-        <FeatureRow text="Auto-skips sponsored & promotional sections" />
-        <FeatureRow text="Clean, uninterrupted viewing from start to finish" />
-        <FeatureRow text="Optimised for Android TV big-screen experience" />
-        <FeatureRow text="Works seamlessly alongside your Ultra Cast subscription" />
-      </View>
-
-      {/* Compatibility */}
-      <View style={styles.compatCard}>
-        <Feather name="tv" size={16} color="#f59e0b" />
-        <View style={styles.compatText}>
-          <ThemedText style={styles.compatTitle}>Android TV &amp; Amazon Fire TV Only</ThemedText>
-          <ThemedText style={styles.compatSub}>Ultra Tube is not compatible with mobile phones or tablets. Android TV based devices only.</ThemedText>
+        {/* Pricing pill */}
+        <View style={styles.pricePill}>
+          <ThemedText style={styles.priceAmount}>£20</ThemedText>
+          <View style={styles.priceMeta}>
+            <ThemedText style={styles.priceLabel}>Lifetime Access</ThemedText>
+            <ThemedText style={styles.priceSub}>One-time · No monthly fees</ThemedText>
+          </View>
         </View>
       </View>
 
-      {/* Pricing */}
-      <View style={styles.pricingCard}>
-        <ThemedText style={styles.pricingLabel}>Lifetime Access</ThemedText>
-        <ThemedText style={styles.pricingAmount}>£20</ThemedText>
-        <ThemedText style={styles.pricingSub}>One-time payment. No subscriptions. No monthly fees.</ThemedText>
-        <ThemedText style={styles.pricingSub2}>Pay once — yours forever.</ThemedText>
-      </View>
+      {/* Right column — features + CTA */}
+      <View style={styles.salesRight}>
+        <View style={styles.salesFeatures}>
+          <FeatureRow text="Auto-skips ALL adverts — instantly" />
+          <FeatureRow text="Auto-skips sponsored &amp; promo sections" />
+          <FeatureRow text="Clean, uninterrupted viewing" />
+          <FeatureRow text="Built for Android TV big screen" />
+        </View>
 
-      {/* CTA */}
-      <View style={styles.ctaSection}>
-        <ThemedText style={styles.ctaLabel}>Ready to get started?</ThemedText>
-        <Pressable style={styles.whatsappBtn} onPress={openWhatsApp}>
-          <Feather name="message-circle" size={18} color="#fff" />
-          <ThemedText style={styles.whatsappBtnText}>Enquire on WhatsApp</ThemedText>
+        <View style={styles.salesCompatRow}>
+          <Feather name="tv" size={13} color="#f59e0b" />
+          <ThemedText style={styles.salesCompatText}>Android TV &amp; Fire TV only — not for mobile</ThemedText>
+        </View>
+
+        <Pressable style={styles.salesWhatsApp} onPress={openWhatsApp}>
+          <Feather name="message-circle" size={16} color="#fff" />
+          <ThemedText style={styles.salesWhatsAppText}>Enquire on WhatsApp</ThemedText>
+          <ThemedText style={styles.salesWhatsAppNum}>07459 683 465</ThemedText>
         </Pressable>
-        <ThemedText style={styles.ctaNumber}>07459 683 465</ThemedText>
-        <ThemedText style={styles.ctaHint}>Message us and we'll get you set up in minutes.</ThemedText>
-      </View>
 
-      {/* Disclaimer */}
-      <View style={styles.disclaimer}>
-        <Feather name="info" size={13} color={Colors.dark.textSecondary} />
-        <ThemedText style={styles.disclaimerText}>
-          Ultra Tube is an entirely separate app to Ultra Cast. Your Ultra Cast subscription does not include Ultra Tube access.
-        </ThemedText>
+        <View style={styles.salesDisclaimer}>
+          <Feather name="info" size={11} color={Colors.dark.textSecondary} />
+          <ThemedText style={styles.salesDisclaimerText}>
+            Ultra Tube is a separate app to Ultra Cast and is not included in your subscription.
+          </ThemedText>
+        </View>
       </View>
-    </>
+    </View>
   );
 }
 
@@ -539,7 +527,7 @@ const styles = StyleSheet.create({
   center: { justifyContent: "center", alignItems: "center" },
   loadingSpinner: { alignItems: "center", gap: Spacing.sm },
   loadingText: { fontSize: 16, fontWeight: "700", color: ULTRA_RED },
-  scroll: { paddingHorizontal: Spacing.lg, gap: Spacing.lg },
+  scroll: { paddingHorizontal: Spacing.lg, gap: Spacing.md, flexGrow: 1 },
 
   backBtn: {
     flexDirection: "row", alignItems: "center", gap: 6,
@@ -547,18 +535,72 @@ const styles = StyleSheet.create({
   },
   backText: { fontSize: 14, color: Colors.dark.textSecondary },
 
-  // Hero
-  hero: { alignItems: "center", paddingVertical: Spacing.xl, gap: Spacing.sm },
-  heroIcon: {
-    width: 72, height: 72, borderRadius: 36,
+  // ── Sales page (TV two-column) ────────────────────────────────────────────
+  salesWrap: { flexDirection: "row", gap: Spacing.xl, alignItems: "stretch", flex: 1 },
+
+  salesLeft: {
+    flex: 5, gap: Spacing.md, justifyContent: "center",
+    borderRightWidth: 1, borderRightColor: Colors.dark.border,
+    paddingRight: Spacing.xl,
+  },
+  salesLogoRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  salesIconCircle: {
+    width: 48, height: 48, borderRadius: 24,
     backgroundColor: ULTRA_RED_DIM, borderWidth: 1, borderColor: ULTRA_RED_BORDER,
     justifyContent: "center", alignItems: "center",
   },
-  heroTitle: { fontSize: 30, fontWeight: "900", color: Colors.dark.text, letterSpacing: -0.5 },
-  heroTagline: { fontSize: 15, color: Colors.dark.textSecondary, textAlign: "center" },
+  salesTitle: { fontSize: 26, fontWeight: "900", color: Colors.dark.text, letterSpacing: -0.5 },
+  salesTagline: { fontSize: 15, fontWeight: "700", color: ULTRA_RED },
+  salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20 },
+  pricePill: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.md,
+    backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: ULTRA_RED_BORDER, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
+    alignSelf: "flex-start", marginTop: Spacing.xs,
+  },
+  priceAmount: { fontSize: 32, fontWeight: "900", color: ULTRA_RED },
+  priceMeta: { gap: 2 },
+  priceLabel: { fontSize: 13, fontWeight: "800", color: Colors.dark.text },
+  priceSub: { fontSize: 11, color: Colors.dark.textSecondary },
+
+  salesRight: { flex: 6, gap: Spacing.md, justifyContent: "center" },
+  salesFeatures: { gap: Spacing.sm },
+  salesCompatRow: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: "rgba(245,158,11,0.08)", borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: "rgba(245,158,11,0.25)", paddingHorizontal: 10, paddingVertical: 6,
+    alignSelf: "flex-start",
+  },
+  salesCompatText: { fontSize: 12, color: "#f59e0b", fontWeight: "600" },
+  salesWhatsApp: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    backgroundColor: WHATSAPP_GREEN, borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md,
+    alignSelf: "flex-start",
+  },
+  salesWhatsAppText: { fontSize: 14, fontWeight: "800", color: "#fff" },
+  salesWhatsAppNum: { fontSize: 12, color: "rgba(255,255,255,0.75)", marginLeft: 2 },
+  salesDisclaimer: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  salesDisclaimerText: { fontSize: 11, color: Colors.dark.textSecondary, flex: 1, lineHeight: 16 },
+
+  // ── Shared components ─────────────────────────────────────────────────────
+  featureRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  featureCheck: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: ULTRA_RED, justifyContent: "center", alignItems: "center",
+    flexShrink: 0,
+  },
+  featureText: { fontSize: 13, color: Colors.dark.text },
 
   // Access header
-  accessHeader: { alignItems: "center", paddingVertical: Spacing.lg, gap: Spacing.xs },
+  heroIcon: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: ULTRA_RED_DIM, borderWidth: 1, borderColor: ULTRA_RED_BORDER,
+    justifyContent: "center", alignItems: "center",
+  },
+  heroTitle: { fontSize: 26, fontWeight: "900", color: Colors.dark.text, letterSpacing: -0.5 },
+  heroTagline: { fontSize: 14, color: Colors.dark.textSecondary, textAlign: "center" },
+  accessHeader: { alignItems: "center", paddingVertical: Spacing.md, gap: Spacing.xs },
   activeBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
@@ -566,64 +608,22 @@ const styles = StyleSheet.create({
   },
   activeBadgeText: { fontSize: 12, fontWeight: "700", color: "#22c55e" },
 
-  // Section
-  section: { gap: Spacing.xs },
-  sectionTitle: { fontSize: 17, fontWeight: "800", color: Colors.dark.text },
-  bodyText: { fontSize: 14, color: Colors.dark.textSecondary, lineHeight: 22 },
-
-  // Features
-  featureCard: {
-    backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.lg,
-    borderWidth: 1, borderColor: ULTRA_RED_BORDER, padding: Spacing.lg, gap: Spacing.sm,
-  },
-  featureCardTitle: { fontSize: 15, fontWeight: "800", color: Colors.dark.text, marginBottom: Spacing.xs },
-  featureRow: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm },
-  featureCheck: {
-    width: 20, height: 20, borderRadius: 10,
-    backgroundColor: ULTRA_RED, justifyContent: "center", alignItems: "center",
-    marginTop: 1, flexShrink: 0,
-  },
-  featureText: { fontSize: 14, color: Colors.dark.text, flex: 1, lineHeight: 20 },
-
-  // Compat
+  // Compat (used in AccessView)
   compatCard: {
-    flexDirection: "row", alignItems: "flex-start", gap: Spacing.md,
+    flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm,
     backgroundColor: "rgba(245,158,11,0.08)", borderRadius: BorderRadius.md,
-    borderWidth: 1, borderColor: "rgba(245,158,11,0.3)", padding: Spacing.md,
+    borderWidth: 1, borderColor: "rgba(245,158,11,0.3)", padding: Spacing.sm,
   },
-  compatText: { flex: 1, gap: 3 },
-  compatTitle: { fontSize: 13, fontWeight: "700", color: "#f59e0b" },
-  compatSub: { fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 18 },
+  compatText: { flex: 1, gap: 2 },
+  compatTitle: { fontSize: 12, fontWeight: "700", color: "#f59e0b" },
+  compatSub: { fontSize: 11, color: Colors.dark.textSecondary },
 
-  // Pricing
-  pricingCard: {
-    backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.lg,
-    borderWidth: 2, borderColor: ULTRA_RED, padding: Spacing.xl, alignItems: "center", gap: Spacing.xs,
-  },
-  pricingLabel: { fontSize: 12, fontWeight: "700", color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
-  pricingAmount: { fontSize: 52, fontWeight: "900", color: ULTRA_RED, lineHeight: 60 },
-  pricingSub: { fontSize: 14, color: Colors.dark.text, fontWeight: "600", textAlign: "center" },
-  pricingSub2: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center" },
-
-  // CTA
-  ctaSection: { alignItems: "center", gap: Spacing.md },
-  ctaLabel: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
-  whatsappBtn: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    backgroundColor: WHATSAPP_GREEN, borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md, paddingHorizontal: Spacing.xl,
-    alignSelf: "stretch", justifyContent: "center",
-  },
-  whatsappBtnText: { fontSize: 16, fontWeight: "800", color: "#fff" },
-  ctaNumber: { fontSize: 15, color: Colors.dark.textSecondary, fontWeight: "600" },
-  ctaHint: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center" },
-
-  // Disclaimer
+  // Disclaimer (used in AccessView)
   disclaimer: {
     flexDirection: "row", gap: Spacing.sm, alignItems: "flex-start",
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
-  disclaimerText: { fontSize: 12, color: Colors.dark.textSecondary, flex: 1, lineHeight: 18 },
+  disclaimerText: { fontSize: 11, color: Colors.dark.textSecondary, flex: 1, lineHeight: 16 },
 
   // Separate app notice
   separateNotice: {
