@@ -160,12 +160,14 @@ const PRESET_CATS = [
     seeds: ['Bolt','Pixel','Chip','Nexus','Axiom','Circuit','Spark','Droid'] },
   { label: 'Fun', style: 'fun-emoji',
     seeds: ['Happy','Sunny','Cool','Chill','Zen','Ace','Vibe','Bliss'] },
-  { label: 'Abstract', style: 'shapes',
-    seeds: ['Alpha','Beta','Gamma','Delta','Omega','Sigma','Theta','Lambda'] },
 ];
 
-function presetUrl(style, seed) {
-  return 'https://api.dicebear.com/9.x/' + style + '/png?seed=' + encodeURIComponent(seed) + '&size=200&scale=85';
+/* SVG for fast thumbnail display; PNG for the actual upload canvas step */
+function thumbUrl(style, seed) {
+  return 'https://api.dicebear.com/9.x/' + style + '/svg?seed=' + encodeURIComponent(seed);
+}
+function uploadPngUrl(style, seed) {
+  return 'https://api.dicebear.com/9.x/' + style + '/png?seed=' + encodeURIComponent(seed) + '&size=240&scale=85';
 }
 
 /* Build gallery DOM */
@@ -180,7 +182,8 @@ PRESET_CATS.forEach(function(cat) {
   grid.className = 'avatar-grid';
 
   cat.seeds.forEach(function(seed) {
-    const url = presetUrl(cat.style, seed);
+    const svgUrl = thumbUrl(cat.style, seed);
+    const pngUrl = uploadPngUrl(cat.style, seed);
     const cell = document.createElement('div');
     cell.className = 'av';
 
@@ -198,10 +201,10 @@ PRESET_CATS.forEach(function(cat) {
     img.style.transition = 'opacity 0.2s';
     img.onload = function() { loader.style.display = 'none'; img.style.opacity = '1'; };
     img.onerror = function() { loader.style.display = 'none'; img.style.opacity = '0.3'; };
-    img.src = url;
+    img.src = svgUrl;
     cell.appendChild(img);
 
-    cell.onclick = function() { selectPreset(url); };
+    cell.onclick = function() { selectPreset(svgUrl, pngUrl); };
     grid.appendChild(cell);
   });
 
@@ -218,28 +221,31 @@ function switchTab(tab) {
 }
 
 /* ── Preset selection & upload ───────────────────────────────────────── */
-var selectedPresetUrl = null;
+var selectedPresetSvg = null;
+var selectedPresetPng = null;
 
-function selectPreset(url) {
-  selectedPresetUrl = url;
-  document.getElementById('presetPreviewImg').src = url;
+function selectPreset(svgUrl, pngUrl) {
+  selectedPresetSvg = svgUrl;
+  selectedPresetPng = pngUrl;
+  document.getElementById('presetPreviewImg').src = svgUrl;
   document.getElementById('landing').style.display = 'none';
   document.getElementById('presetWrap').style.display = 'flex';
 }
 
 function backToGallery() {
-  selectedPresetUrl = null;
+  selectedPresetSvg = null;
+  selectedPresetPng = null;
   document.getElementById('presetWrap').style.display = 'none';
   document.getElementById('landing').style.display = 'flex';
   switchTab('gallery');
 }
 
 async function uploadPreset() {
-  if (!selectedPresetUrl) return;
+  if (!selectedPresetPng) return;
   document.getElementById('presetWrap').style.display = 'none';
   document.getElementById('loadingWrap').style.display = 'flex';
   try {
-    var resp = await fetch(selectedPresetUrl);
+    var resp = await fetch(selectedPresetPng);
     if (!resp.ok) throw new Error('fetch');
     var blob = await resp.blob();
     var blobUrl = URL.createObjectURL(blob);
