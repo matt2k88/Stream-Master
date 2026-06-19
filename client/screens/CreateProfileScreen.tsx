@@ -217,26 +217,31 @@ export default function CreateProfileScreen() {
   const isValid = name.trim().length > 0 && (!pinEnabled || pin.length === 4);
 
   const handleOpenAvatarModal = async () => {
-    if (!editing) return;
     setGeneratingToken(true);
-    try {
-      const r = await fetch(new URL("/api/avatar-token", getApiUrl()).toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: editing.id }),
-      });
-      const d = await r.json();
-      if (d.token) {
-        setAvatarToken(d.token);
-        setQrUrl(d.qrUrl ?? d.uploadUrl);
-        setPendingAvatarImage(null);
-        setShowQrModal(true);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const r = await fetch(new URL("/api/avatar-token", getApiUrl()).toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profileId: editing?.id ?? null }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (d.token) {
+          setAvatarToken(d.token);
+          setQrUrl(d.qrUrl ?? d.uploadUrl);
+          setPendingAvatarImage(null);
+          setShowQrModal(true);
+          setGeneratingToken(false);
+          return;
+        }
+        throw new Error("No token returned");
+      } catch {
+        if (attempt < 3) await new Promise<void>((res) => setTimeout(res, 700 * attempt));
       }
-    } catch {
-      Alert.alert("Error", "Could not generate upload link. Please check your connection.");
-    } finally {
-      setGeneratingToken(false);
     }
+    setGeneratingToken(false);
+    Alert.alert("Connection Error", "Could not generate the upload link after several attempts. Please try again in a moment.");
   };
 
   const handleCancelModal = () => {
@@ -245,8 +250,30 @@ export default function CreateProfileScreen() {
     setPendingAvatarImage(null);
   };
 
+  // Remove photo — clears locally and immediately saves to server in edit mode
+  const handleRemovePhoto = async () => {
+    setAvatarImage(null);
+    if (!editing) return;
+    try {
+      const r = await fetch(new URL(`/api/profiles/${editing.id}`, getApiUrl()).toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar_image: null }),
+      });
+      if (r.ok) { const updated = await r.json(); setActiveProfile(updated); }
+    } catch { /* local state already cleared — silently ignore */ }
+  };
+
   const handleConfirmAvatar = async () => {
-    if (!editing || !pendingAvatarImage) return;
+    if (!pendingAvatarImage) return;
+    // Create mode: store locally — image will be sent when the profile is created
+    if (!editing) {
+      setAvatarImage(pendingAvatarImage);
+      setShowQrModal(false);
+      setPendingAvatarImage(null);
+      return;
+    }
+    // Edit mode: save to server immediately
     setSavingAvatar(true);
     try {
       const r = await fetch(new URL(`/api/profiles/${editing.id}`, getApiUrl()).toString(), {
@@ -318,8 +345,8 @@ export default function CreateProfileScreen() {
     ]);
   };
 
-  /* ── Custom Avatar section (edit mode only) ─────────────────────────── */
-  const customAvatarSection = editing ? (
+  /* ── Custom Avatar section ───────────────────────────────────────────── */
+  const customAvatarSection = (
     <View style={styles.section}>
       <ThemedText style={styles.sectionLabel}>Custom Avatar</ThemedText>
       {avatarImage ? (
@@ -329,10 +356,12 @@ export default function CreateProfileScreen() {
           </View>
           <View style={styles.avatarPhotoInfo}>
             <ThemedText style={styles.avatarPhotoTitle}>Custom photo active</ThemedText>
-            <ThemedText style={styles.avatarPhotoSub}>This photo is used as your profile avatar</ThemedText>
+            <ThemedText style={styles.avatarPhotoSub}>
+              {editing ? "Photo saved to your profile" : "Photo will be saved when you create the profile"}
+            </ThemedText>
             <Pressable
               style={({ pressed }) => [styles.avatarRemoveBtn, (pressed || removeFocused) && styles.avatarRemoveBtnFocused]}
-              onPress={() => setAvatarImage(null)}
+              onPress={handleRemovePhoto}
               onFocus={() => setRemoveFocused(true)}
               onBlur={() => setRemoveFocused(false)}
               onHoverIn={() => setRemoveFocused(true)}
@@ -373,7 +402,7 @@ export default function CreateProfileScreen() {
         </Pressable>
       )}
     </View>
-  ) : null;
+  );
 
   /* ── Avatar upload modal ─────────────────────────────────────────────── */
   const avatarModal = (

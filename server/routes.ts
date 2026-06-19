@@ -398,9 +398,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Step 1: app requests a short-lived token for a profile
   app.post("/api/avatar-token", (req, res) => {
     const { profileId } = req.body ?? {};
-    if (!profileId) return res.status(400).json({ error: "profileId required" });
+    // profileId is optional — omit when creating a new profile (image saved locally until profile is created)
     const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    _avatarTokens.set(token, { profileId, ready: false, expiresAt: Date.now() + 10 * 60_000 });
+    _avatarTokens.set(token, { profileId: profileId ?? null, ready: false, expiresAt: Date.now() + 10 * 60_000 });
     const forwarded = (req.headers["x-forwarded-host"] as string) ?? req.headers.host ?? "localhost";
     const proto = ((req.headers["x-forwarded-proto"] as string) ?? "").split(",")[0].trim() || (req.secure ? "https" : "http");
     const uploadUrl = `${proto}://${forwarded}/avatar-upload/${token}`;
@@ -434,8 +434,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ error: "Invalid image data" });
     }
     try {
-      const { error } = await supabase.from("profiles").update({ avatar_image: imageData }).eq("id", entry.profileId);
-      if (error) return res.status(500).json({ error: error.message });
+      // Only persist to DB immediately when we have a profileId (edit mode).
+      // In create mode the client stores the image locally until profile creation.
+      if (entry.profileId) {
+        const { error } = await supabase.from("profiles").update({ avatar_image: imageData }).eq("id", entry.profileId);
+        if (error) return res.status(500).json({ error: error.message });
+      }
       entry.ready = true;
       entry.imageData = imageData;
       res.json({ success: true });
