@@ -356,6 +356,12 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
     navigation.navigate("CreateProfile", {});
   }, [navigation]);
 
+  const editProfile = useCallback(() => {
+    if (!activeProfile || activeProfile.id === "guest") return;
+    setOpen(false);
+    navigation.navigate("CreateProfile", { profile: activeProfile });
+  }, [navigation, activeProfile]);
+
   if (!activeProfile) return null;
 
   return (
@@ -434,6 +440,17 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
                 </ProfileDropdownRow>
 
                 <View style={styles.profileDropdownDivider} />
+
+                {activeProfile.id !== "guest" ? (
+                  <ProfileDropdownRow onPress={editProfile}>
+                    <View style={[styles.profileRowAvatar, styles.profileRowAvatarEdit]}>
+                      <Feather name="edit-2" size={15} color={Colors.dark.textSecondary} />
+                    </View>
+                    <ThemedText style={[styles.profileRowName, { color: Colors.dark.text }]} numberOfLines={1}>
+                      Edit Profile
+                    </ThemedText>
+                  </ProfileDropdownRow>
+                ) : null}
 
                 <ProfileDropdownRow onPress={createProfile}>
                   <View style={[styles.profileRowAvatar, styles.profileRowAvatarAdd]}>
@@ -1771,6 +1788,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
   profileRowAvatarAdd: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.border },
+  profileRowAvatarEdit: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.border },
   profileRowName: { fontSize: 14, fontWeight: "600", flex: 1 },
   headerDivider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.xs },
 
