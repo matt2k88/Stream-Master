@@ -1769,7 +1769,7 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   profileDropdownLoading: { paddingVertical: Spacing.lg, alignItems: "center" },
-  profileDropdownScroll: { maxHeight: 320 },
+  profileDropdownScroll: { maxHeight: 400 },
   profileDropdownContent: { paddingHorizontal: Spacing.xs },
   profileDropdownDivider: { height: 1, backgroundColor: Colors.dark.border, marginVertical: Spacing.xs, marginHorizontal: Spacing.xs },
   profileRow: {
