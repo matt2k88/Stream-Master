@@ -26,10 +26,29 @@ const AVATAR_UPLOAD_HTML = `<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#090909;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100dvh;display:flex;flex-direction:column;align-items:center;overflow:hidden}
-header{width:100%;padding:14px 20px 10px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;gap:10px}
+header{width:100%;padding:14px 20px 10px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;gap:10px;flex-shrink:0}
 header h1{font-size:18px;font-weight:800;color:#FF6600}
 header p{font-size:11px;color:#555;margin-top:2px}
-#landing{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px;padding:28px}
+/* ── Tab layout ── */
+#landing{display:flex;flex-direction:column;flex:1;width:100%;overflow:hidden}
+.tab-row{display:flex;width:100%;border-bottom:1px solid #1a1a1a;flex-shrink:0}
+.tab{flex:1;padding:12px 8px;background:none;border:none;border-bottom:2px solid transparent;color:#555;font-size:13px;font-weight:700;cursor:pointer;transition:color 0.15s,border-color 0.15s;letter-spacing:0.2px}
+.tab.active{color:#FF6600;border-bottom-color:#FF6600}
+.tab:active{opacity:0.7}
+/* ── Upload pane ── */
+#uploadPane{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px 28px;flex:1;overflow-y:auto}
+/* ── Gallery pane ── */
+#galleryPane{display:none;flex-direction:column;flex:1;overflow-y:auto;padding:14px 14px 24px}
+.gallery-cat{font-size:10.5px;font-weight:800;color:#444;text-transform:uppercase;letter-spacing:1px;margin:14px 0 10px;padding-left:2px}
+.gallery-cat:first-child{margin-top:4px}
+.avatar-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:4px}
+.av{width:100%;aspect-ratio:1;border-radius:50%;overflow:hidden;cursor:pointer;border:3px solid transparent;transition:border-color 0.15s,transform 0.1s;background:#141414;position:relative}
+.av:active{transform:scale(0.92);border-color:#FF6600}
+.av img{width:100%;height:100%;display:block;object-fit:cover}
+.av-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#141414;border-radius:50%}
+.av-dot{width:8px;height:8px;border-radius:50%;background:#222;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:0.8}}
+/* ── Crop wrap ── */
 #cropWrap{display:none;flex-direction:column;align-items:center;flex:1;width:100%;padding:12px 16px 16px;gap:14px}
 .crop-hint{font-size:12px;color:#555;text-align:center}
 #cropCanvas{border-radius:50%;touch-action:none;cursor:grab;display:block}
@@ -37,10 +56,16 @@ header p{font-size:11px;color:#555;margin-top:2px}
 .zoom-row{display:flex;align-items:center;gap:10px;width:100%}
 .zoom-row button{background:none;border:none;color:#777;font-size:22px;cursor:pointer;padding:4px 8px;line-height:1}
 input[type=range]{flex:1;accent-color:#FF6600;height:4px}
+/* ── Preset preview wrap ── */
+#presetWrap{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:18px;padding:28px;text-align:center}
+.preset-ring{width:130px;height:130px;border-radius:50%;overflow:hidden;border:3px solid #FF6600;box-shadow:0 0 28px rgba(255,102,0,0.3)}
+.preset-ring img{width:100%;height:100%;display:block;object-fit:cover}
+/* ── Shared buttons ── */
 .btn{padding:14px 24px;border-radius:14px;font-size:15px;font-weight:700;border:none;cursor:pointer;width:100%}
 .btn-primary{background:linear-gradient(135deg,#FF8C1A,#FF5500);color:#fff;box-shadow:0 4px 20px rgba(255,102,0,0.35)}
 .btn-secondary{background:#1a1a1a;color:#aaa;border:1px solid #2a2a2a;margin-top:2px}
 .btn:active{opacity:0.82}
+/* ── Loading / Success ── */
 #loadingWrap{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:14px}
 .spinner{width:44px;height:44px;border:3px solid #1e1e1e;border-top-color:#FF6600;border-radius:50%;animation:spin 0.75s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -60,21 +85,34 @@ input[type=file]{display:none}
 </header>
 
 <div id="landing">
-  <div class="pick-icon">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="44" height="44">
-      <circle cx="12" cy="12" r="3.5"/><path d="M2 12.5V17a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4.5M9 5h1.5L12 3l1.5 2H15a2 2 0 0 1 2 2v1H7V7a2 2 0 0 1 2-2Z"/>
-    </svg>
+  <div class="tab-row">
+    <button class="tab active" onclick="switchTab('upload')">Upload Photo</button>
+    <button class="tab" onclick="switchTab('gallery')">Avatar Gallery</button>
   </div>
-  <div style="text-align:center;max-width:280px">
-    <p style="font-size:19px;font-weight:700;margin-bottom:8px">Choose a photo</p>
-    <p style="font-size:13px;color:#666;line-height:1.5">Select a photo from your gallery or take one with your camera. You can crop it to fit your avatar circle.</p>
+
+  <!-- ── Upload tab ── -->
+  <div id="uploadPane">
+    <div class="pick-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="44" height="44">
+        <circle cx="12" cy="12" r="3.5"/><path d="M2 12.5V17a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4.5M9 5h1.5L12 3l1.5 2H15a2 2 0 0 1 2 2v1H7V7a2 2 0 0 1 2-2Z"/>
+      </svg>
+    </div>
+    <div style="text-align:center;max-width:280px">
+      <p style="font-size:19px;font-weight:700;margin-bottom:8px">Choose a photo</p>
+      <p style="font-size:13px;color:#666;line-height:1.5">Select a photo from your gallery or take one with your camera. You can crop it to fit your avatar circle.</p>
+    </div>
+    <div style="display:flex;align-items:flex-start;gap:10px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;max-width:300px;text-align:left">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <p style="font-size:11.5px;color:#777;line-height:1.55">Your photo is <strong style="color:#aaa">fully secured and encrypted</strong>. It is stored privately on your account only — nobody else can view it, not even us.</p>
+    </div>
+    <button class="btn btn-primary" onclick="fileInput.click()">Choose Photo</button>
+    <input type="file" id="fileInput" accept="image/*">
   </div>
-  <div style="display:flex;align-items:flex-start;gap:10px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;max-width:300px;text-align:left">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-    <p style="font-size:11.5px;color:#777;line-height:1.55">Your photo is <strong style="color:#aaa">fully secured and encrypted</strong>. It is stored privately on your account only — nobody else can view it, not even us.</p>
+
+  <!-- ── Gallery tab ── -->
+  <div id="galleryPane">
+    <div id="galleryGrid"></div>
   </div>
-  <button class="btn btn-primary" onclick="fileInput.click()">Choose Photo</button>
-  <input type="file" id="fileInput" accept="image/*">
 </div>
 
 <div id="cropWrap">
@@ -89,7 +127,17 @@ input[type=file]{display:none}
   <button class="btn btn-secondary" onclick="fileInput.click()">Choose a different photo</button>
 </div>
 
-<div id="loadingWrap"><div class="spinner"></div><p style="color:#555;font-size:14px">Uploading photo...</p></div>
+<div id="presetWrap">
+  <div class="preset-ring"><img id="presetPreviewImg" src="" alt=""></div>
+  <div>
+    <p style="font-size:18px;font-weight:800;margin-bottom:6px">Looking good!</p>
+    <p style="font-size:13px;color:#666;line-height:1.5">Tap confirm to set this as your profile avatar.</p>
+  </div>
+  <button class="btn btn-primary" onclick="uploadPreset()">Use this avatar</button>
+  <button class="btn btn-secondary" onclick="backToGallery()">Choose a different one</button>
+</div>
+
+<div id="loadingWrap"><div class="spinner"></div><p style="color:#555;font-size:14px">Saving avatar...</p></div>
 
 <div id="successWrap">
   <div class="success-ring">
@@ -97,12 +145,138 @@ input[type=file]{display:none}
       <polyline points="20 6 9 17 4 12"/>
     </svg>
   </div>
-  <p style="font-size:22px;font-weight:800">Photo uploaded!</p>
+  <p style="font-size:22px;font-weight:800">Avatar saved!</p>
   <p style="font-size:14px;color:#666;line-height:1.6">Your new avatar is ready.<br>You can close this page.</p>
 </div>
 
 <script>
 const TOKEN = location.pathname.split('/').filter(Boolean).pop();
+
+/* ── Avatar gallery presets ─────────────────────────────────────────── */
+const PRESET_CATS = [
+  { label: 'Characters', style: 'adventurer-neutral',
+    seeds: ['Felix','Luna','Max','Zara','Nova','Aria','Kai','Rex','Ember','Ivy','Storm','Quinn'] },
+  { label: 'Robots', style: 'bottts-neutral',
+    seeds: ['Bolt','Pixel','Chip','Nexus','Axiom','Circuit','Spark','Droid'] },
+  { label: 'Fun', style: 'fun-emoji',
+    seeds: ['Happy','Sunny','Cool','Chill','Zen','Ace','Vibe','Bliss'] },
+  { label: 'Abstract', style: 'shapes',
+    seeds: ['Alpha','Beta','Gamma','Delta','Omega','Sigma','Theta','Lambda'] },
+];
+
+function presetUrl(style, seed) {
+  return 'https://api.dicebear.com/9.x/' + style + '/png?seed=' + encodeURIComponent(seed) + '&size=200&scale=85';
+}
+
+/* Build gallery DOM */
+const galleryGrid = document.getElementById('galleryGrid');
+PRESET_CATS.forEach(function(cat) {
+  const label = document.createElement('p');
+  label.className = 'gallery-cat';
+  label.textContent = cat.label;
+  galleryGrid.appendChild(label);
+
+  const grid = document.createElement('div');
+  grid.className = 'avatar-grid';
+
+  cat.seeds.forEach(function(seed) {
+    const url = presetUrl(cat.style, seed);
+    const cell = document.createElement('div');
+    cell.className = 'av';
+
+    const loader = document.createElement('div');
+    loader.className = 'av-loading';
+    const dot = document.createElement('div');
+    dot.className = 'av-dot';
+    loader.appendChild(dot);
+    cell.appendChild(loader);
+
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    img.alt = seed;
+    img.style.opacity = '0';
+    img.style.transition = 'opacity 0.2s';
+    img.onload = function() { loader.style.display = 'none'; img.style.opacity = '1'; };
+    img.onerror = function() { loader.style.display = 'none'; img.style.opacity = '0.3'; };
+    img.src = url;
+    cell.appendChild(img);
+
+    cell.onclick = function() { selectPreset(url); };
+    grid.appendChild(cell);
+  });
+
+  galleryGrid.appendChild(grid);
+});
+
+/* ── Tab switching ───────────────────────────────────────────────────── */
+function switchTab(tab) {
+  var tabs = document.querySelectorAll('.tab');
+  tabs[0].classList.toggle('active', tab === 'upload');
+  tabs[1].classList.toggle('active', tab === 'gallery');
+  document.getElementById('uploadPane').style.display = tab === 'upload' ? 'flex' : 'none';
+  document.getElementById('galleryPane').style.display = tab === 'gallery' ? 'flex' : 'none';
+}
+
+/* ── Preset selection & upload ───────────────────────────────────────── */
+var selectedPresetUrl = null;
+
+function selectPreset(url) {
+  selectedPresetUrl = url;
+  document.getElementById('presetPreviewImg').src = url;
+  document.getElementById('landing').style.display = 'none';
+  document.getElementById('presetWrap').style.display = 'flex';
+}
+
+function backToGallery() {
+  selectedPresetUrl = null;
+  document.getElementById('presetWrap').style.display = 'none';
+  document.getElementById('landing').style.display = 'flex';
+  switchTab('gallery');
+}
+
+async function uploadPreset() {
+  if (!selectedPresetUrl) return;
+  document.getElementById('presetWrap').style.display = 'none';
+  document.getElementById('loadingWrap').style.display = 'flex';
+  try {
+    var resp = await fetch(selectedPresetUrl);
+    if (!resp.ok) throw new Error('fetch');
+    var blob = await resp.blob();
+    var blobUrl = URL.createObjectURL(blob);
+    var tempImg = new Image();
+    await new Promise(function(resolve, reject) {
+      tempImg.onload = resolve;
+      tempImg.onerror = reject;
+      tempImg.src = blobUrl;
+    });
+    var OUT = 320;
+    var off = document.createElement('canvas');
+    off.width = OUT; off.height = OUT;
+    var oc = off.getContext('2d');
+    oc.save();
+    oc.beginPath();
+    oc.arc(OUT/2, OUT/2, OUT/2, 0, Math.PI*2);
+    oc.clip();
+    oc.drawImage(tempImg, 0, 0, OUT, OUT);
+    oc.restore();
+    URL.revokeObjectURL(blobUrl);
+    var imageData = off.toDataURL('image/jpeg', 0.92);
+    var res = await fetch('/api/avatar-upload/' + TOKEN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData: imageData })
+    });
+    if (!res.ok) throw new Error('upload');
+    document.getElementById('loadingWrap').style.display = 'none';
+    document.getElementById('successWrap').style.display = 'flex';
+  } catch(e) {
+    document.getElementById('loadingWrap').style.display = 'none';
+    document.getElementById('presetWrap').style.display = 'flex';
+    alert('Failed to save avatar — please try again.');
+  }
+}
+
+/* ── Photo upload (existing) ─────────────────────────────────────────── */
 let img = null, scale = 1, panX = 0, panY = 0, fitScale = 1;
 const canvas = document.getElementById('cropCanvas');
 const ctx = canvas.getContext('2d');
@@ -115,10 +289,8 @@ function computeSize() {
 }
 
 let SIZE = computeSize();
-canvas.width = SIZE;
-canvas.height = SIZE;
-canvas.style.width = SIZE + 'px';
-canvas.style.height = SIZE + 'px';
+canvas.width = SIZE; canvas.height = SIZE;
+canvas.style.width = SIZE + 'px'; canvas.style.height = SIZE + 'px';
 
 fileInput.addEventListener('change', function(e) {
   const file = e.target.files[0];
@@ -128,12 +300,9 @@ fileInput.addEventListener('change', function(e) {
     img = new Image();
     img.onload = function() {
       fitScale = Math.max(SIZE / img.width, SIZE / img.height);
-      scale = fitScale;
-      panX = 0; panY = 0;
-      zoomSlider.min = fitScale;
-      zoomSlider.max = fitScale * 6;
-      zoomSlider.step = fitScale * 0.005;
-      zoomSlider.value = scale;
+      scale = fitScale; panX = 0; panY = 0;
+      zoomSlider.min = fitScale; zoomSlider.max = fitScale * 6;
+      zoomSlider.step = fitScale * 0.005; zoomSlider.value = scale;
       document.getElementById('landing').style.display = 'none';
       document.getElementById('cropWrap').style.display = 'flex';
       draw();
@@ -161,15 +330,11 @@ function draw() {
   ctx.stroke();
 }
 
-zoomSlider.addEventListener('input', function() {
-  scale = parseFloat(this.value);
-  clampPan(); draw();
-});
+zoomSlider.addEventListener('input', function() { scale = parseFloat(this.value); clampPan(); draw(); });
 
 function adjustZoom(delta) {
   scale = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), scale + fitScale * delta * 2));
-  zoomSlider.value = scale;
-  clampPan(); draw();
+  zoomSlider.value = scale; clampPan(); draw();
 }
 
 let dragging = false, lastX = 0, lastY = 0;
@@ -209,8 +374,7 @@ canvas.addEventListener('touchend', () => { touchLast = null; pinchDist0 = null;
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   scale = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), scale * (e.deltaY < 0 ? 1.06 : 0.94)));
-  zoomSlider.value = scale;
-  clampPan(); draw();
+  zoomSlider.value = scale; clampPan(); draw();
 }, { passive: false });
 
 function clampPan() {
@@ -222,8 +386,7 @@ function clampPan() {
 
 async function uploadCrop() {
   if (!img) return;
-  const OUT = 320;
-  const ratio = OUT / SIZE;
+  const OUT = 320, ratio = OUT / SIZE;
   const off = document.createElement('canvas');
   off.width = OUT; off.height = OUT;
   const oc = off.getContext('2d');
