@@ -183,6 +183,7 @@ export default function CreateProfileScreen() {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [generatingToken, setGeneratingToken] = useState(false);
+  const [qrImageLoading, setQrImageLoading] = useState(true);
   const [savingAvatar, setSavingAvatar] = useState(false);
   const [avatarBtnFocused, setAvatarBtnFocused] = useState(false);
   const [removeFocused, setRemoveFocused] = useState(false);
@@ -230,6 +231,7 @@ export default function CreateProfileScreen() {
         if (d.token) {
           setAvatarToken(d.token);
           setQrUrl(d.qrUrl ?? d.uploadUrl);
+          setQrImageLoading(true);
           setPendingAvatarImage(null);
           setShowQrModal(true);
           setGeneratingToken(false);
@@ -458,22 +460,38 @@ export default function CreateProfileScreen() {
           ) : (
             <>
               <View style={styles.modalQrWrap}>
-                {qrUrl
-                  ? <Image
+                {qrUrl ? (
+                  <>
+                    <Image
                       source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrUrl)}&margin=2` }}
                       style={styles.modalQrImg}
+                      onLoadEnd={() => setQrImageLoading(false)}
+                      onError={() => setQrImageLoading(false)}
                     />
-                  : <ActivityIndicator color={Colors.dark.accent} size="large" />
-                }
+                    {qrImageLoading ? (
+                      <View style={styles.modalQrLoadingOverlay}>
+                        <ActivityIndicator color={Colors.dark.accent} size="large" />
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <ActivityIndicator color={Colors.dark.accent} size="large" />
+                )}
               </View>
-              <ThemedText style={styles.modalScanTitle}>Scan with your phone</ThemedText>
-              <ThemedText style={styles.modalScanDesc}>
-                Open the link on your phone to choose and crop a photo for this profile.
+              <ThemedText style={styles.modalScanTitle}>
+                {qrImageLoading ? "Generating QR code..." : "Scan with your phone"}
               </ThemedText>
-              <View style={styles.modalWaitRow}>
-                <View style={styles.modalPulseDot} />
-                <ThemedText style={styles.modalWaitText}>Waiting for photo...</ThemedText>
-              </View>
+              <ThemedText style={styles.modalScanDesc}>
+                {qrImageLoading
+                  ? "Please wait a moment while we prepare your secure upload link."
+                  : "Open the link on your phone to choose and crop a photo for this profile."}
+              </ThemedText>
+              {!qrImageLoading ? (
+                <View style={styles.modalWaitRow}>
+                  <View style={styles.modalPulseDot} />
+                  <ThemedText style={styles.modalWaitText}>Waiting for photo...</ThemedText>
+                </View>
+              ) : null}
               <Pressable
                 style={({ pressed }) => [styles.modalCancelBtn, (pressed || cancelModalFocused) && styles.modalCancelBtnFocused, { alignSelf: "center", paddingHorizontal: Spacing.xl }]}
                 onPress={handleCancelModal}
@@ -838,6 +856,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center", marginTop: Spacing.xs,
   },
   modalQrImg: { width: 190, height: 190 },
+  modalQrLoadingOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#fff", justifyContent: "center", alignItems: "center" },
   modalScanTitle: { fontSize: 15, fontWeight: "700", textAlign: "center", marginTop: 2 },
   modalScanDesc: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 18 },
   modalWaitRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 2 },
