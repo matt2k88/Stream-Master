@@ -396,7 +396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Avatar photo upload (QR-code flow) ────────────────────────────────────
 
   // Step 1: app requests a short-lived token for a profile
-  app.post("/api/avatar-token", async (req, res) => {
+  app.post("/api/avatar-token", (req, res) => {
     const { profileId } = req.body ?? {};
     if (!profileId) return res.status(400).json({ error: "profileId required" });
     const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
@@ -404,21 +404,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const forwarded = (req.headers["x-forwarded-host"] as string) ?? req.headers.host ?? "localhost";
     const proto = ((req.headers["x-forwarded-proto"] as string) ?? "").split(",")[0].trim() || (req.secure ? "https" : "http");
     const uploadUrl = `${proto}://${forwarded}/avatar-upload/${token}`;
-    // Shorten the URL so the underlying host is not visible in the QR code
-    let qrUrl = uploadUrl;
-    const shorteners = [
-      `https://tinyurl.com/api-create.php?url=${encodeURIComponent(uploadUrl)}`,
-      `https://is.gd/create.php?format=simple&url=${encodeURIComponent(uploadUrl)}`,
-    ];
-    for (const api of shorteners) {
-      try {
-        const r = await fetch(api, { signal: AbortSignal.timeout(4000) });
-        if (r.ok) {
-          const text = (await r.text()).trim();
-          if (text.startsWith("http")) { qrUrl = text; break; }
-        }
-      } catch { /* try next */ }
-    }
+    // If AVATAR_BASE_URL is set, the QR code uses that domain instead of the
+    // auto-detected Replit host — set it to your custom domain, e.g.
+    // https://upload.ultracast.co.uk  (point that domain at this server)
+    const avatarBase = (process.env.AVATAR_BASE_URL ?? "").replace(/\/$/, "");
+    const qrUrl = avatarBase ? `${avatarBase}/avatar-upload/${token}` : uploadUrl;
     res.json({ token, uploadUrl, qrUrl });
   });
 
