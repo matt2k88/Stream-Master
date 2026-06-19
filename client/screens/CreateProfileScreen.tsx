@@ -532,7 +532,7 @@ export default function CreateProfileScreen() {
   );
 
   const colorPickerSection = (
-    <View style={[styles.section, avatarImage ? { opacity: 0.3 } : null]} pointerEvents={avatarImage ? "none" : "auto"}>
+    <View style={styles.section}>
       <ThemedText style={styles.sectionLabel}>Colour</ThemedText>
       <View style={styles.colorGrid}>
         {AVATAR_COLORS.map((c) => (
