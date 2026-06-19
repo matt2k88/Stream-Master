@@ -57,3 +57,7 @@ ensurePreviewReachable = "/status"
 path = "post-merge.sh"
 timeoutMs = 120000
 
+[userenv]
+
+[userenv.shared]
+
