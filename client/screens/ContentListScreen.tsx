@@ -344,6 +344,45 @@ function MyGroupsBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: bo
   );
 }
 
+function TvGuideBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[
+        styles.backBtn,
+        isActive && styles.backBtnActive,
+        iconOnly ? null : { flexDirection: "row", paddingHorizontal: Spacing.sm, gap: 6, width: undefined },
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      accessibilityLabel="TV Guide"
+    >
+      {isActive ? (
+        <LinearGradient
+          colors={["rgba(255,102,0,0.18)", "rgba(255,102,0,0.06)"]}
+          style={StyleSheet.absoluteFill}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+      ) : null}
+      <Feather name="calendar" size={iconOnly ? 18 : 16} color={isActive ? Colors.dark.accent : Colors.dark.text} />
+      {iconOnly ? null : (
+        <ThemedText style={{ color: isActive ? Colors.dark.accent : Colors.dark.text, fontWeight: "700", fontSize: 12 }}>
+          TV Guide
+        </ThemedText>
+      )}
+    </Pressable>
+  );
+}
+
 function MultiScreenBtn({ onPress, iconOnly }: { onPress: () => void; iconOnly?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -851,31 +890,31 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
         <MaterialCommunityIcons
           name={item.iconName as any}
           size={12}
-          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+          color={highlight ? accent : (item.accent ?? Colors.dark.text)}
         />
       ) : item.iconLib === "feather" && item.iconName ? (
         <Feather
           name={item.iconName as any}
           size={11}
-          color={highlight ? accent : (item.accent ?? Colors.dark.textSecondary)}
+          color={highlight ? accent : (item.accent ?? Colors.dark.text)}
         />
       ) : isFav ? (
         <Feather
           name="star"
           size={10}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : isRecent ? (
         <Feather
           name="clock"
           size={10}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : isSuggested ? (
         <MaterialCommunityIcons
           name="auto-fix"
           size={12}
-          color={highlight ? accent : Colors.dark.textSecondary}
+          color={highlight ? accent : Colors.dark.text}
         />
       ) : null}
       <ThemedText
@@ -1849,6 +1888,15 @@ export default function ContentListScreen() {
         {type === "live" ? (
           <MultiScreenBtn iconOnly={!isLandscapeHeader} onPress={() => navigation.navigate("MultiScreenLayout")} />
         ) : null}
+        {type === "live" && String(selectedCategoryId).startsWith("group:") ? (
+          <TvGuideBtn
+            iconOnly={!isLandscapeHeader}
+            onPress={() => {
+              const groupId = selectedCategoryId.slice("group:".length);
+              navigation.navigate("TvGuide", { initialGroupId: groupId });
+            }}
+          />
+        ) : null}
         <MyGroupsBtn
           iconOnly={!isLandscapeHeader}
           onPress={() => navigation.navigate("MyGroups", { type })}
@@ -2154,7 +2202,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: "500",
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.text,
     lineHeight: 15,
   },
   sidebarItemTextActive: {
@@ -2316,7 +2364,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 1, shadowRadius: 6, elevation: 6,
   },
   cardInfo: { padding: Spacing.sm, gap: 2, flex: 1, justifyContent: "center" },
-  cardName: { color: Colors.dark.textSecondary, fontSize: 11, fontWeight: "500", lineHeight: 15 },
+  cardName: { color: Colors.dark.text, fontSize: 11, fontWeight: "500", lineHeight: 15 },
   cardNameActive: { color: Colors.dark.text },
   ratingBadge: {
     position: "absolute",

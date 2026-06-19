@@ -7,7 +7,7 @@ import {
   PanResponder, useWindowDimensions, Platform, ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useData } from "@/contexts/DataContext";
 import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
+import { useGroups } from "@/contexts/GroupsContext";
 import { xtreamApi, EpgListing, LiveStream } from "@/lib/xtream-api";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -199,10 +200,11 @@ function ChannelRow({ channel, epg, guideStart, scrollX, onPress }: {
 }
 
 // ── Category item ────────────────────────────────────────────────────────────
-function CatItem({ name, selected, onPress }: {
+function CatItem({ name, selected, onPress, isGroup }: {
   name: string;
   selected: boolean;
   onPress: () => void;
+  isGroup?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const isActive = selected || focused;
@@ -215,6 +217,14 @@ function CatItem({ name, selected, onPress }: {
       onBlur={() => setFocused(false)}
     >
       {isActive ? <View style={styles.catActiveBar} /> : null}
+      {isGroup ? (
+        <Feather
+          name="folder"
+          size={10}
+          color={isActive ? Colors.dark.accent : Colors.dark.textSecondary}
+          style={{ marginRight: 3, flexShrink: 0 }}
+        />
+      ) : null}
       <ThemedText
         style={[styles.catName, { fontSize: scaleFont(11) }, isActive && styles.catNameActive]}
         numberOfLines={2}
@@ -279,18 +289,26 @@ function ScrollBtn({ icon, onPress }: { icon: "chevron-left" | "chevron-right"; 
   );
 }
 
+const GROUP_PREFIX = "__group__";
+
 // ── Main screen ──────────────────────────────────────────────────────────────
 export default function TvGuideScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProp<RootStackParamList, "TvGuide">>();
+  const initialGroupId = route.params?.initialGroupId;
   const { width } = useWindowDimensions();
   const { liveCategories, liveStreams } = useData();
   const { applyOrder } = useCategoryOrder();
+  const { getGroupsByType, getItemsByGroup } = useGroups();
   // Channels list ref so we can snap back to the top each time the user
   // selects a different category.
   const channelListRef = useRef<FlatList<LiveStream>>(null);
 
-  const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  // Pre-select the group passed in via navigation (if any)
+  const [selectedCatId, setSelectedCatId] = useState<string | null>(
+    initialGroupId ? `${GROUP_PREFIX}${initialGroupId}` : null
+  );
   const [clockStr, setClockStr] = useState(fmtHHMM(new Date()));
 
   // ── EPG local cache: catId → { streamId → EpgListing[] } ─────────────────
@@ -384,9 +402,30 @@ export default function TvGuideScreen() {
     return () => clearInterval(id);
   }, []);
 
+  // ── Custom live groups ────────────────────────────────────────────────────
+  const liveGroups = useMemo(() => getGroupsByType("live"), [getGroupsByType]);
+
+  // groupId → Set<stream_id> for O(1) membership checks
+  const groupStreamSets = useMemo(() => {
+    const map: Record<string, Set<number>> = {};
+    for (const g of liveGroups) {
+      const its = getItemsByGroup(g.id);
+      map[g.id] = new Set(its.map((it) => it.stream_id));
+    }
+    return map;
+  }, [liveGroups, getItemsByGroup]);
+
   // Honour the user's per-profile category prefs (hidden + custom order)
   // exactly as Live TV elsewhere in the app does.
-  const cats = useMemo(() => applyOrder("live", liveCategories), [applyOrder, liveCategories]);
+  // Custom live groups are prepended so they always appear at the top.
+  const cats = useMemo(() => {
+    const providerCats = applyOrder("live", liveCategories);
+    const groupCats = liveGroups.map((g) => ({
+      category_id: `${GROUP_PREFIX}${g.id}`,
+      category_name: g.name,
+    }));
+    return [...groupCats, ...providerCats];
+  }, [applyOrder, liveCategories, liveGroups]);
 
   // Auto-select first visible category. Also if the previously-selected
   // category is no longer in the visible list (e.g. user just hid it in
@@ -401,7 +440,14 @@ export default function TvGuideScreen() {
   // ── Fetch EPG for all channels in the selected category ──────────────────
   const fetchEpgForCategory = useCallback(async (catId: string, force = false) => {
     if (!force && epgCache[catId]) return; // already cached
-    const channelsInCat = liveStreams.filter((s) => s.category_id === catId);
+    let channelsInCat: LiveStream[];
+    if (catId.startsWith(GROUP_PREFIX)) {
+      const groupId = catId.slice(GROUP_PREFIX.length);
+      const streamSet = groupStreamSets[groupId] ?? new Set<number>();
+      channelsInCat = liveStreams.filter((s) => streamSet.has(s.stream_id));
+    } else {
+      channelsInCat = liveStreams.filter((s) => s.category_id === catId);
+    }
     if (channelsInCat.length === 0) return;
 
     setIsLoadingEpg(true);
@@ -472,7 +518,7 @@ export default function TvGuideScreen() {
     } finally {
       setIsLoadingEpg(false);
     }
-  }, [liveStreams, epgCache]);
+  }, [liveStreams, epgCache, groupStreamSets]);
 
   // Fetch when category changes
   useEffect(() => {
@@ -494,8 +540,13 @@ export default function TvGuideScreen() {
 
   const channels = useMemo(() => {
     if (!selectedCatId) return [];
+    if (selectedCatId.startsWith(GROUP_PREFIX)) {
+      const groupId = selectedCatId.slice(GROUP_PREFIX.length);
+      const streamSet = groupStreamSets[groupId] ?? new Set<number>();
+      return liveStreams.filter((s) => streamSet.has(s.stream_id));
+    }
     return liveStreams.filter((s) => s.category_id === selectedCatId);
-  }, [selectedCatId, liveStreams]);
+  }, [selectedCatId, liveStreams, groupStreamSets]);
 
   const padH = Math.max(insets.left, Spacing.xs);
   const padT = Math.max(insets.top, Spacing.xs);
@@ -566,6 +617,7 @@ export default function TvGuideScreen() {
               <CatItem
                 name={item.category_name}
                 selected={item.category_id === selectedCatId}
+                isGroup={item.category_id.startsWith(GROUP_PREFIX)}
                 onPress={() => handleCatSelect(item.category_id)}
               />
             )}

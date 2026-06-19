@@ -36,7 +36,9 @@ import MultiScreenPickerScreen from "@/screens/MultiScreenPickerScreen";
 import MyGroupsScreen from "@/screens/MyGroupsScreen";
 import FootballSettingsScreen from "@/screens/FootballSettingsScreen";
 import FootballCentreScreen from "@/screens/FootballCentreScreen";
+import TopPicksScreen from "@/screens/TopPicksScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
+import UltraTubeScreen from "@/screens/UltraTubeScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -46,7 +48,7 @@ export type RootStackParamList = {
   Home: undefined;
   Search: undefined;
   Messages: undefined;
-  TvGuide: undefined;
+  TvGuide: { initialGroupId?: string } | undefined;
   CatchUp: undefined;
   Category: { type: "live" | "movies" | "series"; title: string };
   ContentList: { type: "live" | "movies" | "series"; categoryId: string; categoryName: string };
@@ -72,7 +74,9 @@ export type RootStackParamList = {
   MyGroups: { type: "live" | "movies" | "series" };
   FootballSettings: undefined;
   FootballCentre: undefined;
+  TopPicks: undefined;
   Referrals: undefined;
+  UltraTube: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -143,7 +147,9 @@ export default function RootStackNavigator() {
             <Stack.Screen name="MyGroups" component={MyGroupsScreen} />
             <Stack.Screen name="FootballSettings" component={FootballSettingsScreen} />
             <Stack.Screen name="FootballCentre" component={FootballCentreScreen} />
+            <Stack.Screen name="TopPicks" component={TopPicksScreen} />
             <Stack.Screen name="Referrals" component={ReferralsScreen} />
+            <Stack.Screen name="UltraTube" component={UltraTubeScreen} />
           </>
         )}
       </Stack.Navigator>
