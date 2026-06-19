@@ -153,12 +153,21 @@ input[type=file]{display:none}
 const TOKEN = location.pathname.split('/').filter(Boolean).pop();
 
 /* ── Avatar gallery presets ─────────────────────────────────────────── */
+/* Seeds can be a plain string or {s, x} where x is extra query params */
 const PRESET_CATS = [
-  { label: 'Smiles', style: 'big-smile',
+  { label: 'Bright Smiles', style: 'big-smile',
     seeds: [
       'Casey','Riley','Jordan','Taylor','Morgan','Avery',
       'Quinn','Skyler','Drew','Blake','Reese','Jamie',
       'Sunny','Lively','Beamy','Glow',
+      {s:'Alex',  x:'skinColor=fddbb4'},
+      {s:'Mike',  x:'skinColor=fddbb4'},
+      {s:'Jack',  x:'skinColor=f2d3b1'},
+      {s:'Ryan',  x:'skinColor=fddbb4'},
+      {s:'Luke',  x:'skinColor=f2d3b1'},
+      {s:'Tom',   x:'skinColor=fddbb4'},
+      {s:'Brad',  x:'skinColor=ecad80'},
+      {s:'Chris', x:'skinColor=fddbb4'},
     ] },
   { label: 'Fun', style: 'fun-emoji',
     seeds: [
@@ -171,7 +180,10 @@ const PRESET_CATS = [
     seeds: ['Bolt','Pixel','Chip','Nexus','Axiom','Circuit','Spark','Droid'] },
 ];
 
-/* Colour palette cycled across Smiles & Fun thumbnails for variety */
+function getSeed(e) { return typeof e === 'string' ? e : e.s; }
+function getExtra(e) { return typeof e === 'string' ? '' : ('&' + e.x); }
+
+/* Colour palette cycled across Bright Smiles & Fun thumbnails */
 const BG_COLOURS = [
   'ff6b6b','ffd93d','6bcb77','4d96ff','c77dff','ff9f1c',
   '2ec4b6','e63946','06d6a0','ffd166','8338ec','fb8500',
@@ -179,15 +191,17 @@ const BG_COLOURS = [
 ];
 
 /* SVG for fast thumbnail display; PNG for the actual upload canvas step */
-function thumbUrl(style, seed, idx) {
-  var base = 'https://api.dicebear.com/9.x/' + style + '/svg?seed=' + encodeURIComponent(seed);
+function thumbUrl(style, entry, idx) {
+  var seed = getSeed(entry), extra = getExtra(entry);
+  var base = 'https://api.dicebear.com/9.x/' + style + '/svg?seed=' + encodeURIComponent(seed) + extra;
   if (style === 'big-smile' || style === 'fun-emoji') {
     base += '&backgroundColor=' + BG_COLOURS[idx % BG_COLOURS.length];
   }
   return base;
 }
-function uploadPngUrl(style, seed, idx) {
-  var base = 'https://api.dicebear.com/9.x/' + style + '/png?seed=' + encodeURIComponent(seed) + '&size=240&scale=85';
+function uploadPngUrl(style, entry, idx) {
+  var seed = getSeed(entry), extra = getExtra(entry);
+  var base = 'https://api.dicebear.com/9.x/' + style + '/png?seed=' + encodeURIComponent(seed) + '&size=240&scale=85' + extra;
   if (style === 'big-smile' || style === 'fun-emoji') {
     base += '&backgroundColor=' + BG_COLOURS[idx % BG_COLOURS.length];
   }
@@ -205,9 +219,9 @@ PRESET_CATS.forEach(function(cat) {
   const grid = document.createElement('div');
   grid.className = 'avatar-grid';
 
-  cat.seeds.forEach(function(seed, idx) {
-    const svgUrl = thumbUrl(cat.style, seed, idx);
-    const pngUrl = uploadPngUrl(cat.style, seed, idx);
+  cat.seeds.forEach(function(entry, idx) {
+    const svgUrl = thumbUrl(cat.style, entry, idx);
+    const pngUrl = uploadPngUrl(cat.style, entry, idx);
     const cell = document.createElement('div');
     cell.className = 'av';
 
