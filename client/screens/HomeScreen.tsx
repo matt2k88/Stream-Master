@@ -382,9 +382,13 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
         onHoverIn={() => setFocused(true)}
         onHoverOut={() => setFocused(false)}
       >
-        <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
-          <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
-        </View>
+        {activeProfile.avatar_image ? (
+          <Image source={{ uri: activeProfile.avatar_image }} style={[styles.profileBtnAvatar, styles.profileBtnAvatarImg]} />
+        ) : (
+          <View style={[styles.profileBtnAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
+            <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
+          </View>
+        )}
         {compact ? null : (
           <>
             <ThemedText style={[styles.profileBtnName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
@@ -417,9 +421,13 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
                   const selected = p.id === activeProfile.id;
                   return (
                     <ProfileDropdownRow key={p.id} preferFocus={selected} onPress={() => selectProfile(p)}>
-                      <View style={[styles.profileRowAvatar, { backgroundColor: p.avatar_color + "33", borderColor: p.avatar_color }]}>
-                        <Feather name={p.avatar_icon as any} size={16} color={p.avatar_color} />
-                      </View>
+                      {p.avatar_image ? (
+                        <Image source={{ uri: p.avatar_image }} style={[styles.profileRowAvatar, styles.profileRowAvatarImg]} />
+                      ) : (
+                        <View style={[styles.profileRowAvatar, { backgroundColor: p.avatar_color + "33", borderColor: p.avatar_color }]}>
+                          <Feather name={p.avatar_icon as any} size={16} color={p.avatar_color} />
+                        </View>
+                      )}
                       <ThemedText style={[styles.profileRowName, { color: p.avatar_color }]} numberOfLines={1}>
                         {p.name}
                       </ThemedText>
@@ -1752,6 +1760,7 @@ const styles = StyleSheet.create({
     width: 26, height: 26, borderRadius: 13,
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
+  profileBtnAvatarImg: { backgroundColor: "transparent", borderWidth: 0 },
   profileBtnName: { fontSize: 12, fontWeight: "600", flex: 1 },
   profileDropdownBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
   profileDropdown: {
@@ -1787,6 +1796,7 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
+  profileRowAvatarImg: { backgroundColor: "transparent", borderWidth: 0 },
   profileRowAvatarAdd: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.border },
   profileRowAvatarEdit: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.border },
   profileRowName: { fontSize: 14, fontWeight: "600", flex: 1 },

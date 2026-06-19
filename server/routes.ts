@@ -8,6 +8,251 @@ import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, sear
 // Works for ALL app versions — no client update required.
 interface CacheEntry { data: any; expiresAt: number; }
 const _cache = new Map<string, CacheEntry>();
+
+// ── Avatar upload tokens ──────────────────────────────────────────────────────
+interface AvatarToken { profileId: string; ready: boolean; imageData?: string; expiresAt: number }
+const _avatarTokens = new Map<string, AvatarToken>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _avatarTokens.entries()) if (v.expiresAt < now) _avatarTokens.delete(k);
+}, 5 * 60_000);
+
+const AVATAR_UPLOAD_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>Avatar Upload — Ultra Cast</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#090909;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100dvh;display:flex;flex-direction:column;align-items:center;overflow:hidden}
+header{width:100%;padding:14px 20px 10px;border-bottom:1px solid #1a1a1a;display:flex;align-items:center;gap:10px}
+header h1{font-size:18px;font-weight:800;color:#FF6600}
+header p{font-size:11px;color:#555;margin-top:2px}
+#landing{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:20px;padding:28px}
+#cropWrap{display:none;flex-direction:column;align-items:center;flex:1;width:100%;padding:12px 16px 16px;gap:14px}
+.crop-hint{font-size:12px;color:#555;text-align:center}
+#cropCanvas{border-radius:50%;touch-action:none;cursor:grab;display:block}
+#cropCanvas:active{cursor:grabbing}
+.zoom-row{display:flex;align-items:center;gap:10px;width:100%}
+.zoom-row button{background:none;border:none;color:#777;font-size:22px;cursor:pointer;padding:4px 8px;line-height:1}
+input[type=range]{flex:1;accent-color:#FF6600;height:4px}
+.btn{padding:14px 24px;border-radius:14px;font-size:15px;font-weight:700;border:none;cursor:pointer;width:100%}
+.btn-primary{background:linear-gradient(135deg,#FF8C1A,#FF5500);color:#fff;box-shadow:0 4px 20px rgba(255,102,0,0.35)}
+.btn-secondary{background:#1a1a1a;color:#aaa;border:1px solid #2a2a2a;margin-top:2px}
+.btn:active{opacity:0.82}
+#loadingWrap{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:14px}
+.spinner{width:44px;height:44px;border:3px solid #1e1e1e;border-top-color:#FF6600;border-radius:50%;animation:spin 0.75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#successWrap{display:none;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:18px;padding:28px;text-align:center}
+.success-ring{width:76px;height:76px;border-radius:50%;background:rgba(255,102,0,0.12);border:2px solid #FF6600;display:flex;align-items:center;justify-content:center}
+.success-ring svg{width:36px;height:36px}
+input[type=file]{display:none}
+.pick-icon{width:90px;height:90px;border-radius:50%;background:rgba(255,102,0,0.08);border:2px solid rgba(255,102,0,0.4);display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Ultra Cast</h1>
+    <p>Profile Avatar Upload</p>
+  </div>
+</header>
+
+<div id="landing">
+  <div class="pick-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="44" height="44">
+      <circle cx="12" cy="12" r="3.5"/><path d="M2 12.5V17a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4.5M9 5h1.5L12 3l1.5 2H15a2 2 0 0 1 2 2v1H7V7a2 2 0 0 1 2-2Z"/>
+    </svg>
+  </div>
+  <div style="text-align:center;max-width:280px">
+    <p style="font-size:19px;font-weight:700;margin-bottom:8px">Choose a photo</p>
+    <p style="font-size:13px;color:#666;line-height:1.5">Select a photo from your gallery or take one with your camera. You can crop it to fit your avatar circle.</p>
+  </div>
+  <button class="btn btn-primary" onclick="fileInput.click()">Choose Photo</button>
+  <input type="file" id="fileInput" accept="image/*">
+</div>
+
+<div id="cropWrap">
+  <p class="crop-hint">Drag to reposition &nbsp;·&nbsp; Pinch or slide to zoom</p>
+  <canvas id="cropCanvas"></canvas>
+  <div class="zoom-row">
+    <button onclick="adjustZoom(-0.1)">−</button>
+    <input type="range" id="zoomSlider" min="0.1" max="4" step="0.005" value="1">
+    <button onclick="adjustZoom(0.1)">+</button>
+  </div>
+  <button class="btn btn-primary" onclick="uploadCrop()">Use this photo</button>
+  <button class="btn btn-secondary" onclick="fileInput.click()">Choose a different photo</button>
+</div>
+
+<div id="loadingWrap"><div class="spinner"></div><p style="color:#555;font-size:14px">Uploading photo...</p></div>
+
+<div id="successWrap">
+  <div class="success-ring">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  </div>
+  <p style="font-size:22px;font-weight:800">Photo uploaded!</p>
+  <p style="font-size:14px;color:#666;line-height:1.6">Your new avatar is ready.<br>You can close this page.</p>
+</div>
+
+<script>
+const TOKEN = location.pathname.split('/').filter(Boolean).pop();
+let img = null, scale = 1, panX = 0, panY = 0, fitScale = 1;
+const canvas = document.getElementById('cropCanvas');
+const ctx = canvas.getContext('2d');
+const zoomSlider = document.getElementById('zoomSlider');
+const fileInput = document.getElementById('fileInput');
+
+function computeSize() {
+  const s = Math.min(Math.floor(window.innerWidth * 0.78), 340);
+  return s % 2 === 0 ? s : s - 1;
+}
+
+let SIZE = computeSize();
+canvas.width = SIZE;
+canvas.height = SIZE;
+canvas.style.width = SIZE + 'px';
+canvas.style.height = SIZE + 'px';
+
+fileInput.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    img = new Image();
+    img.onload = function() {
+      fitScale = Math.max(SIZE / img.width, SIZE / img.height);
+      scale = fitScale;
+      panX = 0; panY = 0;
+      zoomSlider.min = fitScale;
+      zoomSlider.max = fitScale * 6;
+      zoomSlider.step = fitScale * 0.005;
+      zoomSlider.value = scale;
+      document.getElementById('landing').style.display = 'none';
+      document.getElementById('cropWrap').style.display = 'flex';
+      draw();
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function draw() {
+  if (!img) return;
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  const cx = SIZE/2 + panX, cy = SIZE/2 + panY;
+  const w = img.width * scale, h = img.height * scale;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(SIZE/2, SIZE/2, SIZE/2, 0, Math.PI*2);
+  ctx.clip();
+  ctx.drawImage(img, cx - w/2, cy - h/2, w, h);
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(SIZE/2, SIZE/2, SIZE/2 - 1.5, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(255,102,0,0.65)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+zoomSlider.addEventListener('input', function() {
+  scale = parseFloat(this.value);
+  clampPan(); draw();
+});
+
+function adjustZoom(delta) {
+  scale = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), scale + fitScale * delta * 2));
+  zoomSlider.value = scale;
+  clampPan(); draw();
+}
+
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('mouseup', () => { dragging = false; });
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  panX += e.clientX - lastX; panY += e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+  clampPan(); draw();
+});
+
+let touchLast = null, pinchDist0 = null, scale0 = 1;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length === 2) {
+    pinchDist0 = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    scale0 = scale;
+  }
+  touchLast = e.touches[0];
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 2 && pinchDist0) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    scale = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), scale0 * d / pinchDist0));
+    zoomSlider.value = scale;
+  } else if (touchLast && e.touches.length === 1) {
+    panX += e.touches[0].clientX - touchLast.clientX;
+    panY += e.touches[0].clientY - touchLast.clientY;
+  }
+  touchLast = e.touches[0];
+  clampPan(); draw();
+}, { passive: false });
+canvas.addEventListener('touchend', () => { touchLast = null; pinchDist0 = null; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  scale = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), scale * (e.deltaY < 0 ? 1.06 : 0.94)));
+  zoomSlider.value = scale;
+  clampPan(); draw();
+}, { passive: false });
+
+function clampPan() {
+  if (!img) return;
+  const hw = img.width * scale / 2, hh = img.height * scale / 2, r = SIZE/2;
+  panX = Math.max(r - hw, Math.min(hw - r, panX));
+  panY = Math.max(r - hh, Math.min(hh - r, panY));
+}
+
+async function uploadCrop() {
+  if (!img) return;
+  const OUT = 320;
+  const ratio = OUT / SIZE;
+  const off = document.createElement('canvas');
+  off.width = OUT; off.height = OUT;
+  const oc = off.getContext('2d');
+  oc.save();
+  oc.beginPath();
+  oc.arc(OUT/2, OUT/2, OUT/2, 0, Math.PI*2);
+  oc.clip();
+  const w = img.width * scale * ratio, h = img.height * scale * ratio;
+  oc.drawImage(img, OUT/2 + panX*ratio - w/2, OUT/2 + panY*ratio - h/2, w, h);
+  oc.restore();
+  const imageData = off.toDataURL('image/jpeg', 0.88);
+
+  document.getElementById('cropWrap').style.display = 'none';
+  document.getElementById('loadingWrap').style.display = 'flex';
+
+  try {
+    const res = await fetch('/api/avatar-upload/' + TOKEN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageData })
+    });
+    if (!res.ok) throw new Error();
+    document.getElementById('loadingWrap').style.display = 'none';
+    document.getElementById('successWrap').style.display = 'flex';
+  } catch {
+    document.getElementById('loadingWrap').style.display = 'none';
+    document.getElementById('cropWrap').style.display = 'flex';
+    alert('Upload failed — please try again.');
+  }
+}
+</script>
+</body>
+</html>`;
 function cacheGet(key: string): any | null {
   const e = _cache.get(key);
   if (!e || Date.now() > e.expiresAt) { _cache.delete(key); return null; }
@@ -80,7 +325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, pin, player_vod, player_live, player_hw_decode, player_buffer_ms, private_viewing } = req.body;
+    const { name, avatar_icon, avatar_color, avatar_image, pin, player_vod, player_live, player_hw_decode, player_buffer_ms, private_viewing } = req.body;
     try {
       // Build a partial update so callers (e.g. PlayerSettingsScreen)
       // can patch only the fields they care about.
@@ -88,6 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (name !== undefined) patch.name = name;
       if (avatar_icon !== undefined) patch.avatar_icon = avatar_icon;
       if (avatar_color !== undefined) patch.avatar_color = avatar_color;
+      if (avatar_image !== undefined) patch.avatar_image = avatar_image ?? null;
       if (pin !== undefined) patch.pin = pin ?? null;
       if (player_vod !== undefined) {
         if (player_vod !== "vlc" && player_vod !== "expo") {
@@ -145,6 +391,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch {
       res.status(500).json({ error: "Failed to delete profile" });
     }
+  });
+
+  // ── Avatar photo upload (QR-code flow) ────────────────────────────────────
+
+  // Step 1: app requests a short-lived token for a profile
+  app.post("/api/avatar-token", (req, res) => {
+    const { profileId } = req.body ?? {};
+    if (!profileId) return res.status(400).json({ error: "profileId required" });
+    const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    _avatarTokens.set(token, { profileId, ready: false, expiresAt: Date.now() + 10 * 60_000 });
+    const forwarded = (req.headers["x-forwarded-host"] as string) ?? req.headers.host ?? "localhost";
+    const proto = ((req.headers["x-forwarded-proto"] as string) ?? "").split(",")[0].trim() || (req.secure ? "https" : "http");
+    const uploadUrl = `${proto}://${forwarded}/avatar-upload/${token}`;
+    res.json({ token, uploadUrl });
+  });
+
+  // Step 2: serve the mobile crop page
+  app.get("/avatar-upload/:token", (req, res) => {
+    const entry = _avatarTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) {
+      return res.status(410).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Expired</title><style>body{background:#090909;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px}p{color:#666;margin-top:8px}h2{color:#FF6600}</style></head><body><div><h2>Link expired</h2><p>This upload link has expired. Please open the profile editor again to get a new QR code.</p></div></body></html>`);
+    }
+    if (entry.ready) {
+      return res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Done</title><style>body{background:#090909;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px}p{color:#666;margin-top:8px}h2{color:#FF6600}</style></head><body><div><h2>Already uploaded</h2><p>Your avatar photo was already uploaded. You can close this page.</p></div></body></html>`);
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(AVATAR_UPLOAD_HTML);
+  });
+
+  // Step 3: receive the cropped base64 image from the phone browser
+  app.post("/api/avatar-upload/:token", async (req, res) => {
+    const entry = _avatarTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) return res.status(410).json({ error: "Token expired" });
+    const { imageData } = req.body ?? {};
+    if (!imageData || typeof imageData !== "string" || !imageData.startsWith("data:image")) {
+      return res.status(400).json({ error: "Invalid image data" });
+    }
+    try {
+      const { error } = await supabase.from("profiles").update({ avatar_image: imageData }).eq("id", entry.profileId);
+      if (error) return res.status(500).json({ error: error.message });
+      entry.ready = true;
+      entry.imageData = imageData;
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: "Failed to save avatar" });
+    }
+  });
+
+  // Step 4: app polls this until ready
+  app.get("/api/avatar-status/:token", (req, res) => {
+    const entry = _avatarTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) return res.json({ ready: false, expired: true });
+    res.json({ ready: entry.ready, imageData: entry.ready ? entry.imageData : undefined });
   });
 
   // ── Favourites ────────────────────────────────────────────────────────────

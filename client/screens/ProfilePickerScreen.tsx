@@ -5,6 +5,7 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
+  Image,
   useWindowDimensions,
   Animated,
   Easing,
@@ -36,11 +37,13 @@ function ProfileAvatar({
   color,
   size,
   active,
+  imageUri,
 }: {
   icon: string;
   color: string;
   size: number;
   active: boolean;
+  imageUri?: string | null;
 }) {
   const ring = size + 14;
   return (
@@ -77,21 +80,28 @@ function ProfileAvatar({
           },
         ]}
       >
-        {/* Inner gradient disc */}
-        <LinearGradient
-          colors={[color + "55", color + "22", "rgba(0,0,0,0.55)"]}
-          start={{ x: 0.3, y: 0.1 }}
-          end={{ x: 0.7, y: 1 }}
-          style={{
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <Feather name={icon as any} size={size * 0.46} color="#fff" />
-        </LinearGradient>
+        {/* Inner disc — photo or icon */}
+        {imageUri ? (
+          <Image
+            source={{ uri: imageUri }}
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+          />
+        ) : (
+          <LinearGradient
+            colors={[color + "55", color + "22", "rgba(0,0,0,0.55)"]}
+            start={{ x: 0.3, y: 0.1 }}
+            end={{ x: 0.7, y: 1 }}
+            style={{
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <Feather name={icon as any} size={size * 0.46} color="#fff" />
+          </LinearGradient>
+        )}
       </View>
     </View>
   );
@@ -151,6 +161,7 @@ function ProfileCard({
             color={profile.avatar_color}
             size={avatarSize}
             active={isActive}
+            imageUri={profile.avatar_image}
           />
           {profile.pin ? (
             <View style={[styles.lockBadge, { backgroundColor: profile.avatar_color }]}>

@@ -19,6 +19,7 @@ export interface Profile {
   name: string;
   avatar_icon: string;
   avatar_color: string;
+  avatar_image?: string | null;
   pin: string | null;
   created_at: string;
   // Per-profile video engine preferences. Default to "vlc" if the

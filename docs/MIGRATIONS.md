@@ -28,4 +28,6 @@ degrade gracefully until run (endpoints return `[]`, defaults kick in).
 
 - `025_ultra_tube.sql` — creates `ultra_tube_access` (username → ultra_tube_username + ultra_tube_password, unique on lowercase ultracast username) and `ultra_tube_config` (id=1 row: apk_url, downloader_code, show_badge). Seeded with defaults. Used by `/api/ultra-tube/config` and `/api/ultra-tube/check`. Until run, both endpoints fall back to hardcoded defaults; the access-check will always return `{ hasAccess: false }` (PGRST116 is ignored silently).
 
+- `026_avatar_image.sql` — adds nullable `avatar_image text` to `profiles`. Stores a base64-encoded 320×320 JPEG uploaded via the QR-code photo flow in the Edit Profile screen. When set, the photo overrides the icon+colour avatar everywhere in the app (profile picker, home bar, dropdown). Until run, the column does not exist and avatar uploads fail silently (the PUT drops `avatar_image`); icon/colour avatars continue to work normally.
+
 > **Note on numbering**: gaps (005–006, 010–011) were intentionally skipped during earlier development; ordering above reflects application order.

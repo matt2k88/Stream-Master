@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   StyleSheet,
@@ -6,6 +6,8 @@ import {
   Pressable,
   ScrollView,
   Alert,
+  Image,
+  ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -173,6 +175,45 @@ export default function CreateProfileScreen() {
   const [saveFocused, setSaveFocused] = useState(false);
   const [deleteFocused, setDeleteFocused] = useState(false);
 
+  // QR photo upload
+  const [avatarToken, setAvatarToken] = useState<string | null>(null);
+  const [avatarUploadUrl, setAvatarUploadUrl] = useState<string | null>(null);
+  const [avatarImage, setAvatarImage] = useState<string | null>(editing?.avatar_image ?? null);
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch a token as soon as the edit screen opens
+  useEffect(() => {
+    if (!editing) return;
+    setTokenLoading(true);
+    fetch(new URL("/api/avatar-token", getApiUrl()).toString(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: editing.id }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.token) { setAvatarToken(d.token); setAvatarUploadUrl(d.uploadUrl); } })
+      .catch(() => {})
+      .finally(() => setTokenLoading(false));
+  }, [editing?.id]);
+
+  // Poll for completion once we have a token and no image yet
+  useEffect(() => {
+    if (!avatarToken || avatarImage) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await fetch(new URL(`/api/avatar-status/${avatarToken}`, getApiUrl()).toString());
+        const d = await r.json();
+        if (d.ready && d.imageData) {
+          setAvatarImage(d.imageData);
+          if (pollRef.current) clearInterval(pollRef.current);
+        }
+        if (d.expired) { if (pollRef.current) clearInterval(pollRef.current); }
+      } catch {}
+    }, 2500);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [avatarToken, avatarImage]);
+
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.sm, Spacing.xl);
@@ -183,12 +224,13 @@ export default function CreateProfileScreen() {
     if (!isValid || saving) return;
     setSaving(true);
     try {
-      const body = {
+      const body: Record<string, any> = {
         account_username: username,
         name: name.trim(),
         avatar_icon: icon,
         avatar_color: color,
         pin: pinEnabled && pin.length === 4 ? pin : null,
+        avatar_image: avatarImage ?? null,
       };
       const baseUrl = getApiUrl();
       const url = editing
@@ -228,6 +270,50 @@ export default function CreateProfileScreen() {
       },
     ]);
   };
+
+  /* ── QR photo section (edit mode only) ──────────────────────────────── */
+  const qrPhotoSection = editing ? (
+    <View style={styles.section}>
+      <ThemedText style={styles.sectionLabel}>Photo Avatar</ThemedText>
+      <View style={styles.qrCard}>
+        {avatarImage ? (
+          <View style={styles.qrPhotoRow}>
+            <View style={[styles.qrPhotoCircle, { borderColor: color }]}>
+              <Image source={{ uri: avatarImage }} style={styles.qrPhotoImg} />
+            </View>
+            <View style={styles.qrPhotoMeta}>
+              <ThemedText style={styles.qrPhotoTitle}>Photo uploaded</ThemedText>
+              <ThemedText style={styles.qrPhotoSub}>Tap save to apply this photo as your avatar</ThemedText>
+              <Pressable style={styles.qrRemoveBtn} onPress={() => setAvatarImage(null)}>
+                <Feather name="x" size={11} color={Colors.dark.error} />
+                <ThemedText style={styles.qrRemoveText}>Remove photo</ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        ) : tokenLoading ? (
+          <View style={styles.qrLoading}>
+            <ActivityIndicator color={Colors.dark.accent} size="small" />
+            <ThemedText style={styles.qrLoadingText}>Generating QR code...</ThemedText>
+          </View>
+        ) : avatarUploadUrl ? (
+          <View style={styles.qrRow}>
+            <View style={styles.qrCodeWrap}>
+              <Image
+                source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(avatarUploadUrl)}&margin=2` }}
+                style={styles.qrCode}
+              />
+            </View>
+            <View style={styles.qrMeta}>
+              <ThemedText style={styles.qrMetaTitle}>Scan to upload</ThemedText>
+              <ThemedText style={styles.qrMetaSub}>Scan with your phone to choose and crop a photo</ThemedText>
+              <View style={styles.qrPollDot} />
+              <ThemedText style={styles.qrExpiry}>Expires in 10 minutes</ThemedText>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  ) : null;
 
   /* ── shared sub-sections ─────────────────────────────────────────────── */
   const avatarPreview = (
@@ -350,9 +436,13 @@ export default function CreateProfileScreen() {
             />
             {/* Large avatar */}
             <View style={[styles.lsAvatarRing, { borderColor: color, shadowColor: color }]}>
-              <View style={[styles.lsAvatarInner, { backgroundColor: color + "33" }]}>
-                <Feather name={icon as any} size={48} color={color} />
-              </View>
+              {avatarImage ? (
+                <Image source={{ uri: avatarImage }} style={styles.lsAvatarImg} />
+              ) : (
+                <View style={[styles.lsAvatarInner, { backgroundColor: color + "33" }]}>
+                  <Feather name={icon as any} size={48} color={color} />
+                </View>
+              )}
             </View>
             {/* Live name preview */}
             <ThemedText style={[styles.lsProfileName, { color }]} numberOfLines={1}>
@@ -393,6 +483,7 @@ export default function CreateProfileScreen() {
               />
             </View>
 
+            {qrPhotoSection}
             {iconPickerSection}
             {colorPickerSection}
             {pinSection}
@@ -426,9 +517,13 @@ export default function CreateProfileScreen() {
       >
         <View style={styles.previewRow}>
           <View style={[styles.avatarPreviewRingBorder, { borderColor: color, shadowColor: color }]}>
-            <View style={[styles.avatarPreviewInner, { backgroundColor: color + "33" }]}>
-              <Feather name={icon as any} size={36} color={color} />
-            </View>
+            {avatarImage ? (
+              <Image source={{ uri: avatarImage }} style={styles.portraitAvatarImg} />
+            ) : (
+              <View style={[styles.avatarPreviewInner, { backgroundColor: color + "33" }]}>
+                <Feather name={icon as any} size={36} color={color} />
+              </View>
+            )}
           </View>
           <ThemedText style={styles.previewName} numberOfLines={1}>
             {name.trim() || "Profile Name"}
@@ -450,6 +545,7 @@ export default function CreateProfileScreen() {
           />
         </View>
 
+        {qrPhotoSection}
         {iconPickerSection}
         {colorPickerSection}
         {pinSection}
@@ -500,6 +596,46 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   lsAvatarInner: { width: 112, height: 112, borderRadius: 56, justifyContent: "center", alignItems: "center" },
+  lsAvatarImg: { width: 124, height: 124, borderRadius: 62 },
+  portraitAvatarImg: { width: 74, height: 74, borderRadius: 37 },
+
+  /* QR photo section */
+  qrCard: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: Spacing.md,
+  },
+  qrRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  qrCodeWrap: {
+    width: 88, height: 88,
+    borderRadius: BorderRadius.sm,
+    overflow: "hidden",
+    backgroundColor: "#fff",
+  },
+  qrCode: { width: 88, height: 88 },
+  qrMeta: { flex: 1, gap: 4 },
+  qrMetaTitle: { fontSize: 14, fontWeight: "700" },
+  qrMetaSub: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
+  qrExpiry: { fontSize: 10, color: Colors.dark.border, marginTop: 2 },
+  qrPollDot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: Colors.dark.accent, marginTop: 4,
+  },
+  qrLoading: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, padding: Spacing.sm },
+  qrLoadingText: { fontSize: 12, color: Colors.dark.textSecondary },
+  qrPhotoRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  qrPhotoCircle: {
+    width: 68, height: 68, borderRadius: 34,
+    borderWidth: 2, overflow: "hidden",
+  },
+  qrPhotoImg: { width: 68, height: 68, borderRadius: 34 },
+  qrPhotoMeta: { flex: 1, gap: 4 },
+  qrPhotoTitle: { fontSize: 13, fontWeight: "700" },
+  qrPhotoSub: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
+  qrRemoveBtn: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  qrRemoveText: { fontSize: 11, color: Colors.dark.error },
   lsProfileName: { fontSize: 22, fontWeight: "800", textAlign: "center", letterSpacing: 0.3 },
   lsProfileSub: { fontSize: 11, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
   lsPinBadge: {
