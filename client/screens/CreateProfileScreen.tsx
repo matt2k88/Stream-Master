@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Image,
+  Modal,
   ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
@@ -175,50 +176,96 @@ export default function CreateProfileScreen() {
   const [saveFocused, setSaveFocused] = useState(false);
   const [deleteFocused, setDeleteFocused] = useState(false);
 
-  // QR photo upload
+  // QR photo upload — lazy (token only generated when user opens the modal)
   const [avatarToken, setAvatarToken] = useState<string | null>(null);
-  const [avatarUploadUrl, setAvatarUploadUrl] = useState<string | null>(null);
   const [avatarImage, setAvatarImage] = useState<string | null>(editing?.avatar_image ?? null);
-  const [tokenLoading, setTokenLoading] = useState(false);
+  const [pendingAvatarImage, setPendingAvatarImage] = useState<string | null>(null);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [generatingToken, setGeneratingToken] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [avatarBtnFocused, setAvatarBtnFocused] = useState(false);
+  const [removeFocused, setRemoveFocused] = useState(false);
+  const [confirmFocused, setConfirmFocused] = useState(false);
+  const [cancelModalFocused, setCancelModalFocused] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch a token as soon as the edit screen opens
+  // Poll only while the modal is open and we don't have a pending image yet
   useEffect(() => {
-    if (!editing) return;
-    setTokenLoading(true);
-    fetch(new URL("/api/avatar-token", getApiUrl()).toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profileId: editing.id }),
-    })
-      .then((r) => r.json())
-      .then((d) => { if (d.token) { setAvatarToken(d.token); setAvatarUploadUrl(d.uploadUrl); } })
-      .catch(() => {})
-      .finally(() => setTokenLoading(false));
-  }, [editing?.id]);
-
-  // Poll for completion once we have a token and no image yet
-  useEffect(() => {
-    if (!avatarToken || avatarImage) return;
+    if (!showQrModal || !avatarToken || pendingAvatarImage) return;
     pollRef.current = setInterval(async () => {
       try {
         const r = await fetch(new URL(`/api/avatar-status/${avatarToken}`, getApiUrl()).toString());
         const d = await r.json();
         if (d.ready && d.imageData) {
-          setAvatarImage(d.imageData);
-          if (pollRef.current) clearInterval(pollRef.current);
+          setPendingAvatarImage(d.imageData);
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         }
-        if (d.expired) { if (pollRef.current) clearInterval(pollRef.current); }
+        if (d.expired) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setShowQrModal(false);
+        }
       } catch {}
     }, 2500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [avatarToken, avatarImage]);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [showQrModal, avatarToken, pendingAvatarImage]);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.sm, Spacing.xl);
 
   const isValid = name.trim().length > 0 && (!pinEnabled || pin.length === 4);
+
+  const handleOpenAvatarModal = async () => {
+    if (!editing) return;
+    setGeneratingToken(true);
+    try {
+      const r = await fetch(new URL("/api/avatar-token", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: editing.id }),
+      });
+      const d = await r.json();
+      if (d.token) {
+        setAvatarToken(d.token);
+        setQrUrl(d.qrUrl ?? d.uploadUrl);
+        setPendingAvatarImage(null);
+        setShowQrModal(true);
+      }
+    } catch {
+      Alert.alert("Error", "Could not generate upload link. Please check your connection.");
+    } finally {
+      setGeneratingToken(false);
+    }
+  };
+
+  const handleCancelModal = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setShowQrModal(false);
+    setPendingAvatarImage(null);
+  };
+
+  const handleConfirmAvatar = async () => {
+    if (!editing || !pendingAvatarImage) return;
+    setSavingAvatar(true);
+    try {
+      const r = await fetch(new URL(`/api/profiles/${editing.id}`, getApiUrl()).toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar_image: pendingAvatarImage }),
+      });
+      if (!r.ok) throw new Error();
+      const updated = await r.json();
+      setAvatarImage(pendingAvatarImage);
+      setActiveProfile(updated);
+      setShowQrModal(false);
+      setPendingAvatarImage(null);
+    } catch {
+      Alert.alert("Error", "Failed to save photo. Please try again.");
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!isValid || saving) return;
@@ -271,49 +318,149 @@ export default function CreateProfileScreen() {
     ]);
   };
 
-  /* ── QR photo section (edit mode only) ──────────────────────────────── */
-  const qrPhotoSection = editing ? (
+  /* ── Custom Avatar section (edit mode only) ─────────────────────────── */
+  const customAvatarSection = editing ? (
     <View style={styles.section}>
-      <ThemedText style={styles.sectionLabel}>Photo Avatar</ThemedText>
-      <View style={styles.qrCard}>
-        {avatarImage ? (
-          <View style={styles.qrPhotoRow}>
-            <View style={[styles.qrPhotoCircle, { borderColor: color }]}>
-              <Image source={{ uri: avatarImage }} style={styles.qrPhotoImg} />
-            </View>
-            <View style={styles.qrPhotoMeta}>
-              <ThemedText style={styles.qrPhotoTitle}>Photo uploaded</ThemedText>
-              <ThemedText style={styles.qrPhotoSub}>Tap save to apply this photo as your avatar</ThemedText>
-              <Pressable style={styles.qrRemoveBtn} onPress={() => setAvatarImage(null)}>
-                <Feather name="x" size={11} color={Colors.dark.error} />
-                <ThemedText style={styles.qrRemoveText}>Remove photo</ThemedText>
-              </Pressable>
-            </View>
+      <ThemedText style={styles.sectionLabel}>Custom Avatar</ThemedText>
+      {avatarImage ? (
+        <View style={styles.avatarPhotoCard}>
+          <View style={[styles.avatarPhotoThumb, { borderColor: color }]}>
+            <Image source={{ uri: avatarImage }} style={styles.avatarPhotoThumbImg} />
           </View>
-        ) : tokenLoading ? (
-          <View style={styles.qrLoading}>
-            <ActivityIndicator color={Colors.dark.accent} size="small" />
-            <ThemedText style={styles.qrLoadingText}>Generating QR code...</ThemedText>
+          <View style={styles.avatarPhotoInfo}>
+            <ThemedText style={styles.avatarPhotoTitle}>Custom photo active</ThemedText>
+            <ThemedText style={styles.avatarPhotoSub}>This photo is used as your profile avatar</ThemedText>
+            <Pressable
+              style={({ pressed }) => [styles.avatarRemoveBtn, (pressed || removeFocused) && styles.avatarRemoveBtnFocused]}
+              onPress={() => setAvatarImage(null)}
+              onFocus={() => setRemoveFocused(true)}
+              onBlur={() => setRemoveFocused(false)}
+              onHoverIn={() => setRemoveFocused(true)}
+              onHoverOut={() => setRemoveFocused(false)}
+            >
+              <Feather name="x" size={11} color={removeFocused ? Colors.dark.text : Colors.dark.error} />
+              <ThemedText style={[styles.avatarRemoveText, removeFocused && styles.avatarRemoveTextFocused]}>
+                Remove photo
+              </ThemedText>
+            </Pressable>
           </View>
-        ) : avatarUploadUrl ? (
-          <View style={styles.qrRow}>
-            <View style={styles.qrCodeWrap}>
-              <Image
-                source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(avatarUploadUrl)}&margin=2` }}
-                style={styles.qrCode}
-              />
-            </View>
-            <View style={styles.qrMeta}>
-              <ThemedText style={styles.qrMetaTitle}>Scan to upload</ThemedText>
-              <ThemedText style={styles.qrMetaSub}>Scan with your phone to choose and crop a photo</ThemedText>
-              <View style={styles.qrPollDot} />
-              <ThemedText style={styles.qrExpiry}>Expires in 10 minutes</ThemedText>
-            </View>
+        </View>
+      ) : (
+        <Pressable
+          style={({ pressed }) => [styles.avatarUploadBtn, (pressed || avatarBtnFocused) && styles.avatarUploadBtnFocused]}
+          onPress={handleOpenAvatarModal}
+          onFocus={() => setAvatarBtnFocused(true)}
+          onBlur={() => setAvatarBtnFocused(false)}
+          onHoverIn={() => setAvatarBtnFocused(true)}
+          onHoverOut={() => setAvatarBtnFocused(false)}
+          disabled={generatingToken}
+        >
+          <View style={[styles.avatarUploadIconWrap, avatarBtnFocused && styles.avatarUploadIconWrapFocused]}>
+            {generatingToken
+              ? <ActivityIndicator size="small" color={Colors.dark.accent} />
+              : <Feather name="camera" size={20} color={avatarBtnFocused ? Colors.dark.accent : Colors.dark.textSecondary} />
+            }
           </View>
-        ) : null}
-      </View>
+          <View style={styles.avatarUploadText}>
+            <ThemedText style={[styles.avatarUploadTitle, avatarBtnFocused && styles.avatarUploadTitleFocused]}>
+              {generatingToken ? "Preparing..." : "Custom Avatar"}
+            </ThemedText>
+            <ThemedText style={styles.avatarUploadDesc}>
+              Upload a custom photo as your profile picture
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={16} color={avatarBtnFocused ? Colors.dark.accent : Colors.dark.border} />
+        </Pressable>
+      )}
     </View>
   ) : null;
+
+  /* ── Avatar upload modal ─────────────────────────────────────────────── */
+  const avatarModal = (
+    <Modal visible={showQrModal} transparent animationType="fade" onRequestClose={handleCancelModal}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <ThemedText style={styles.modalTitle}>Custom Avatar</ThemedText>
+            <IconBtn onPress={handleCancelModal}>
+              {(active) => <Feather name="x" size={18} color={active ? Colors.dark.accent : Colors.dark.textSecondary} />}
+            </IconBtn>
+          </View>
+
+          {pendingAvatarImage ? (
+            <>
+              <View style={styles.modalPhotoWrap}>
+                <View style={[styles.modalPhotoRing, { borderColor: color, shadowColor: color }]}>
+                  <Image source={{ uri: pendingAvatarImage }} style={styles.modalPhotoImg} />
+                </View>
+              </View>
+              <ThemedText style={styles.modalPhotoTitle}>Photo ready!</ThemedText>
+              <ThemedText style={styles.modalPhotoSub}>
+                Tap Confirm to set this as your profile photo. It will be saved immediately.
+              </ThemedText>
+              <View style={styles.modalBtnRow}>
+                <Pressable
+                  style={({ pressed }) => [styles.modalCancelBtn, (pressed || cancelModalFocused) && styles.modalCancelBtnFocused]}
+                  onPress={handleCancelModal}
+                  onFocus={() => setCancelModalFocused(true)}
+                  onBlur={() => setCancelModalFocused(false)}
+                  onHoverIn={() => setCancelModalFocused(true)}
+                  onHoverOut={() => setCancelModalFocused(false)}
+                >
+                  <ThemedText style={[styles.modalCancelText, cancelModalFocused && styles.modalCancelTextFocused]}>Cancel</ThemedText>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.modalConfirmBtn, (pressed || confirmFocused) && styles.modalConfirmBtnFocused, savingAvatar && styles.modalConfirmBtnDisabled]}
+                  onPress={handleConfirmAvatar}
+                  onFocus={() => setConfirmFocused(true)}
+                  onBlur={() => setConfirmFocused(false)}
+                  onHoverIn={() => setConfirmFocused(true)}
+                  onHoverOut={() => setConfirmFocused(false)}
+                  disabled={savingAvatar}
+                >
+                  {savingAvatar
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <Feather name="check" size={15} color="#fff" />
+                  }
+                  <ThemedText style={styles.modalConfirmText}>{savingAvatar ? "Saving..." : "Confirm"}</ThemedText>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.modalQrWrap}>
+                {qrUrl
+                  ? <Image
+                      source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrUrl)}&margin=2` }}
+                      style={styles.modalQrImg}
+                    />
+                  : <ActivityIndicator color={Colors.dark.accent} size="large" />
+                }
+              </View>
+              <ThemedText style={styles.modalScanTitle}>Scan with your phone</ThemedText>
+              <ThemedText style={styles.modalScanDesc}>
+                Open the link on your phone to choose and crop a photo for this profile.
+              </ThemedText>
+              <View style={styles.modalWaitRow}>
+                <View style={styles.modalPulseDot} />
+                <ThemedText style={styles.modalWaitText}>Waiting for photo...</ThemedText>
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.modalCancelBtn, (pressed || cancelModalFocused) && styles.modalCancelBtnFocused, { alignSelf: "center", paddingHorizontal: Spacing.xl }]}
+                onPress={handleCancelModal}
+                onFocus={() => setCancelModalFocused(true)}
+                onBlur={() => setCancelModalFocused(false)}
+                onHoverIn={() => setCancelModalFocused(true)}
+                onHoverOut={() => setCancelModalFocused(false)}
+              >
+                <ThemedText style={[styles.modalCancelText, cancelModalFocused && styles.modalCancelTextFocused]}>Cancel</ThemedText>
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
   /* ── shared sub-sections ─────────────────────────────────────────────── */
   const avatarPreview = (
@@ -483,7 +630,7 @@ export default function CreateProfileScreen() {
               />
             </View>
 
-            {qrPhotoSection}
+            {customAvatarSection}
             {iconPickerSection}
             {colorPickerSection}
             {pinSection}
@@ -493,6 +640,7 @@ export default function CreateProfileScreen() {
             </View>
           </ScrollView>
         </View>
+        {avatarModal}
       </ThemedView>
     );
   }
@@ -545,13 +693,14 @@ export default function CreateProfileScreen() {
           />
         </View>
 
-        {qrPhotoSection}
+        {customAvatarSection}
         {iconPickerSection}
         {colorPickerSection}
         {pinSection}
 
         {actionButtons}
       </ScrollView>
+      {avatarModal}
     </ThemedView>
   );
 }
@@ -599,43 +748,97 @@ const styles = StyleSheet.create({
   lsAvatarImg: { width: 124, height: 124, borderRadius: 62 },
   portraitAvatarImg: { width: 74, height: 74, borderRadius: 37 },
 
-  /* QR photo section */
-  qrCard: {
+  /* Custom avatar upload button */
+  avatarUploadBtn: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.md,
     backgroundColor: Colors.dark.backgroundSecondary,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.dark.border,
     padding: Spacing.md,
   },
-  qrRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
-  qrCodeWrap: {
-    width: 88, height: 88,
-    borderRadius: BorderRadius.sm,
-    overflow: "hidden",
-    backgroundColor: "#fff",
+  avatarUploadBtnFocused: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  avatarUploadIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.dark.backgroundDefault, borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
   },
-  qrCode: { width: 88, height: 88 },
-  qrMeta: { flex: 1, gap: 4 },
-  qrMetaTitle: { fontSize: 14, fontWeight: "700" },
-  qrMetaSub: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
-  qrExpiry: { fontSize: 10, color: Colors.dark.border, marginTop: 2 },
-  qrPollDot: {
-    width: 6, height: 6, borderRadius: 3,
-    backgroundColor: Colors.dark.accent, marginTop: 4,
+  avatarUploadIconWrapFocused: { borderColor: Colors.dark.accent },
+  avatarUploadText: { flex: 1, gap: 3 },
+  avatarUploadTitle: { fontSize: 14, fontWeight: "700" },
+  avatarUploadTitleFocused: { color: Colors.dark.accent },
+  avatarUploadDesc: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
+
+  /* Photo already set card */
+  avatarPhotoCard: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.md,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.md,
   },
-  qrLoading: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, padding: Spacing.sm },
-  qrLoadingText: { fontSize: 12, color: Colors.dark.textSecondary },
-  qrPhotoRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
-  qrPhotoCircle: {
-    width: 68, height: 68, borderRadius: 34,
-    borderWidth: 2, overflow: "hidden",
+  avatarPhotoThumb: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, overflow: "hidden" },
+  avatarPhotoThumbImg: { width: 64, height: 64 },
+  avatarPhotoInfo: { flex: 1, gap: 3 },
+  avatarPhotoTitle: { fontSize: 13, fontWeight: "700" },
+  avatarPhotoSub: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
+  avatarRemoveBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4, alignSelf: "flex-start",
+    paddingVertical: 5, paddingHorizontal: 9, borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: "transparent",
   },
-  qrPhotoImg: { width: 68, height: 68, borderRadius: 34 },
-  qrPhotoMeta: { flex: 1, gap: 4 },
-  qrPhotoTitle: { fontSize: 13, fontWeight: "700" },
-  qrPhotoSub: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
-  qrRemoveBtn: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
-  qrRemoveText: { fontSize: 11, color: Colors.dark.error },
+  avatarRemoveBtnFocused: { borderColor: Colors.dark.border, backgroundColor: Colors.dark.backgroundDefault },
+  avatarRemoveText: { fontSize: 11, color: Colors.dark.error },
+  avatarRemoveTextFocused: { color: Colors.dark.text },
+
+  /* Avatar upload modal */
+  modalBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center", alignItems: "center", padding: Spacing.xl,
+  },
+  modalCard: {
+    width: "100%", maxWidth: 400,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: 20, borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.lg, gap: Spacing.md,
+    shadowColor: "#000", shadowOpacity: 0.6, shadowRadius: 24, shadowOffset: { width: 0, height: 8 },
+    elevation: 20,
+  },
+  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 },
+  modalTitle: { fontSize: 16, fontWeight: "800" },
+  modalQrWrap: {
+    alignSelf: "center", width: 190, height: 190,
+    borderRadius: BorderRadius.md, overflow: "hidden", backgroundColor: "#fff",
+    justifyContent: "center", alignItems: "center", marginTop: Spacing.xs,
+  },
+  modalQrImg: { width: 190, height: 190 },
+  modalScanTitle: { fontSize: 15, fontWeight: "700", textAlign: "center", marginTop: 2 },
+  modalScanDesc: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 18 },
+  modalWaitRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 2 },
+  modalPulseDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.dark.accent },
+  modalWaitText: { fontSize: 12, color: Colors.dark.textSecondary },
+  modalPhotoWrap: { alignItems: "center", paddingVertical: Spacing.sm },
+  modalPhotoRing: {
+    width: 120, height: 120, borderRadius: 60, borderWidth: 3, overflow: "hidden",
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 12,
+  },
+  modalPhotoImg: { width: 120, height: 120 },
+  modalPhotoTitle: { fontSize: 18, fontWeight: "800", textAlign: "center" },
+  modalPhotoSub: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 18 },
+  modalBtnRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.xs },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 13, borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.dark.border, backgroundColor: Colors.dark.backgroundDefault,
+    alignItems: "center", justifyContent: "center",
+  },
+  modalCancelBtnFocused: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  modalCancelText: { fontSize: 14, fontWeight: "600", color: Colors.dark.textSecondary },
+  modalCancelTextFocused: { color: Colors.dark.accent },
+  modalConfirmBtn: {
+    flex: 2, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+    paddingVertical: 13, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.accent,
+  },
+  modalConfirmBtnFocused: { backgroundColor: "#FF8400" },
+  modalConfirmBtnDisabled: { opacity: 0.6 },
+  modalConfirmText: { fontSize: 14, fontWeight: "700", color: "#fff" },
   lsProfileName: { fontSize: 22, fontWeight: "800", textAlign: "center", letterSpacing: 0.3 },
   lsProfileSub: { fontSize: 11, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
   lsPinBadge: {
