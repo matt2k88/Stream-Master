@@ -234,7 +234,7 @@ PRESET_CATS.forEach(function(cat) {
 
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.alt = seed;
+    img.alt = getSeed(entry);
     img.style.opacity = '0';
     img.style.transition = 'opacity 0.2s';
     img.onload = function() { loader.style.display = 'none'; img.style.opacity = '1'; };
