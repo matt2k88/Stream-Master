@@ -503,7 +503,7 @@ export default function CreateProfileScreen() {
   );
 
   const iconPickerSection = (
-    <View style={styles.section}>
+    <View style={[styles.section, avatarImage ? { opacity: 0.3 } : null]} pointerEvents={avatarImage ? "none" : "auto"}>
       <ThemedText style={styles.sectionLabel}>Avatar Icon</ThemedText>
       <View style={styles.iconGrid}>
         {AVATAR_ICONS.map((ic) => (
@@ -514,7 +514,7 @@ export default function CreateProfileScreen() {
   );
 
   const colorPickerSection = (
-    <View style={styles.section}>
+    <View style={[styles.section, avatarImage ? { opacity: 0.3 } : null]} pointerEvents={avatarImage ? "none" : "auto"}>
       <ThemedText style={styles.sectionLabel}>Colour</ThemedText>
       <View style={styles.colorGrid}>
         {AVATAR_COLORS.map((c) => (

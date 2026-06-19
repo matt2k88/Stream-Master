@@ -302,7 +302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/profiles", async (req, res) => {
-    const { account_username, name, avatar_icon, avatar_color, pin } = req.body;
+    const { account_username, name, avatar_icon, avatar_color, avatar_image, pin } = req.body;
     if (!account_username || !name) {
       return res.status(400).json({ error: "account_username and name required" });
     }
@@ -317,7 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const { data, error } = await supabase
         .from("profiles")
-        .insert({ account_username, name, avatar_icon: avatar_icon ?? "user", avatar_color: avatar_color ?? "#FF6600", pin: pin ?? null })
+        .insert({ account_username, name, avatar_icon: avatar_icon ?? "user", avatar_color: avatar_color ?? "#FF6600", avatar_image: avatar_image ?? null, pin: pin ?? null })
         .select()
         .single();
       if (error) return res.status(500).json({ error: error.message });
