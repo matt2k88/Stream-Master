@@ -69,6 +69,10 @@ input[type=file]{display:none}
     <p style="font-size:19px;font-weight:700;margin-bottom:8px">Choose a photo</p>
     <p style="font-size:13px;color:#666;line-height:1.5">Select a photo from your gallery or take one with your camera. You can crop it to fit your avatar circle.</p>
   </div>
+  <div style="display:flex;align-items:flex-start;gap:10px;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:12px;padding:12px 14px;max-width:300px;text-align:left">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <p style="font-size:11.5px;color:#777;line-height:1.55">Your photo is <strong style="color:#aaa">fully secured and encrypted</strong>. It is stored privately on your account only — nobody else can view it, not even us.</p>
+  </div>
   <button class="btn btn-primary" onclick="fileInput.click()">Choose Photo</button>
   <input type="file" id="fileInput" accept="image/*">
 </div>
