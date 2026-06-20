@@ -93,25 +93,33 @@ const INJECT_JS = `(function() {
     // from a preview/thumbnail video that may have been found first).
     post({ type:'ready', duration:0 });
     v.addEventListener('playing', function() {
+      if (vid !== v) return;
       post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('pause', function() {
+      if (vid !== v) return;
       if (!v.ended) post({ type:'state', state:2, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('ended', function() {
+      if (vid !== v) return;
       post({ type:'state', state:0, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('waiting', function() {
+      if (vid !== v) return;
       post({ type:'state', state:3, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('canplay', function() {
+      if (vid !== v) return;
       // If the duration is very short this is a YouTube preview/thumbnail video,
       // not the real player — detach and let check() find the real one.
+      // The vid !== v guard on all other listeners ensures the detached video
+      // can never overwrite the real video's duration via progress/state messages.
       if (v.duration > 0 && v.duration < 30) { vid = null; return; }
       post({ type:'ready', duration:v.duration||0 });
       v.play().catch(function(){});
     });
     v.addEventListener('timeupdate', function() {
+      if (vid !== v) return;
       var f = Math.floor(v.currentTime);
       if (f !== lastFloor) {
         lastFloor = f;
@@ -119,6 +127,7 @@ const INJECT_JS = `(function() {
       }
     });
     v.addEventListener('error', function() {
+      if (vid !== v) return;
       post({ type:'error', code: v.error ? v.error.code : -1 });
     });
     // Attempt autoplay — silently catch ALL rejections here.
