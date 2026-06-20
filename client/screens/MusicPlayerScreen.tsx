@@ -326,6 +326,8 @@ export default function MusicPlayerScreen() {
 
   const [leftMode, setLeftMode] = useState<"queue" | "search" | "playlists">((albumId || (initQueue?.length ?? 0) > 0) ? "queue" : "playlists");
   const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [browsePl, setBrowsePl] = useState<{ id: string; name: string; isLikedSongs: boolean } | null>(null);
+  const [browsePlTracks, setBrowsePlTracks] = useState<Track[]>([]);
   const [albumContext, setAlbumContext] = useState<{ id: number; name: string; tracks: Track[] } | null>(null);
   const [albumLoading, setAlbumLoading] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
@@ -707,10 +709,10 @@ export default function MusicPlayerScreen() {
     setTrackAddModal(track);
   }, []);
 
-  const handleLoadPlaylist = useCallback(async (playlistId: string, playlistName: string) => {
+  const handleLoadPlaylist = useCallback(async (pl: { id: string; name: string; isLikedSongs: boolean }) => {
     setPlaylistLoading(true);
     try {
-      const r = await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`);
+      const r = await fetch(`${getApiUrl()}/api/music/playlists/${pl.id}/tracks`);
       if (!r.ok) throw new Error("Failed to load");
       const data: any[] = await r.json();
       const tracks: Track[] = data.map((row) => ({
@@ -722,14 +724,23 @@ export default function MusicPlayerScreen() {
         thumbnail: row.thumbnail ?? "",
         searchKey: row.search_key ?? "",
       }));
-      setAlbumContext({ id: 0, name: playlistName, tracks });
-      setLeftMode("queue");
+      setBrowsePl(pl);
+      setBrowsePlTracks(tracks);
     } catch {
-      // stay on playlists tab silently
+      // stay on playlists list silently
     } finally {
       setPlaylistLoading(false);
     }
   }, []);
+
+  const handlePlayFromBrowse = useCallback((tracks: Track[], startIndex: number) => {
+    if (!tracks.length) return;
+    setAlbumContext({ id: 0, name: browsePl?.name ?? "Playlist", tracks });
+    handlePlayTrack(tracks[startIndex] ?? tracks[0]);
+    setLeftMode("queue");
+    setBrowsePl(null);
+    setBrowsePlTracks([]);
+  }, [browsePl, handlePlayTrack]);
 
   const handleSkipNext = useCallback(() => {
     if (!results.length || !currentTrack) return;
@@ -993,20 +1004,70 @@ export default function MusicPlayerScreen() {
             <View style={{ flex: 1 }}>
               {playlistLoading ? (
                 <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
+
+              ) : browsePl !== null ? (
+                /* ── Level 2: tracks inside a playlist ── */
+                <View style={{ flex: 1 }}>
+                  <View style={styles.plDrillHeader}>
+                    <FocusPressable
+                      hasTVPreferredFocus
+                      style={styles.plDrillBack}
+                      onPress={() => { setBrowsePl(null); setBrowsePlTracks([]); }}
+                    >
+                      <Feather name="arrow-left" size={16} color={Colors.dark.text} />
+                    </FocusPressable>
+                    <View style={[styles.plIcon, browsePl.isLikedSongs && styles.plIconLiked]}>
+                      <Feather name={browsePl.isLikedSongs ? "heart" : "music"} size={13} color="#fff" />
+                    </View>
+                    <ThemedText style={styles.plDrillTitle} numberOfLines={1}>{browsePl.name}</ThemedText>
+                    {browsePlTracks.length > 0 ? (
+                      <FocusPressable
+                        style={styles.plDrillPlayAll}
+                        onPress={() => handlePlayFromBrowse(browsePlTracks, 0)}
+                      >
+                        <Feather name="play" size={12} color="#fff" />
+                        <ThemedText style={styles.plDrillPlayAllText}>Play All</ThemedText>
+                      </FocusPressable>
+                    ) : null}
+                  </View>
+
+                  {browsePlTracks.length === 0 ? (
+                    <View style={styles.centred}>
+                      <Feather name="music" size={36} color="rgba(255,102,0,0.18)" />
+                      <ThemedText style={styles.emptyTitle}>No tracks</ThemedText>
+                    </View>
+                  ) : (
+                    <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+                      {browsePlTracks.map((t, i) => (
+                        <TrackRow
+                          key={`${t.searchKey}-${i}`}
+                          track={t}
+                          isActive={!!currentTrack && currentTrack.searchKey === t.searchKey && (isPlaying || isBuffering)}
+                          isLoading={isLoading && !!currentTrack && currentTrack.searchKey === t.searchKey}
+                          onPress={() => handlePlayFromBrowse(browsePlTracks, i)}
+                        />
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
+
               ) : playlists.length === 0 ? (
+                /* ── Empty state ── */
                 <View style={styles.centred}>
                   <Feather name="bookmark" size={40} color="rgba(255,102,0,0.18)" />
                   <ThemedText style={styles.emptyTitle}>No playlists yet</ThemedText>
                   <ThemedText style={[styles.emptySubtitle, { marginTop: 4 }]}>Add songs to a playlist from the Search tab</ThemedText>
                 </View>
+
               ) : (
+                /* ── Level 1: playlist list ── */
                 <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
                   {playlists.map((pl, i) => (
                     <FocusPressable
                       key={pl.id}
                       hasTVPreferredFocus={i === 0}
                       style={styles.plRow}
-                      onPress={() => handleLoadPlaylist(pl.id, pl.name)}
+                      onPress={() => handleLoadPlaylist(pl)}
                     >
                       <View style={[styles.plIcon, pl.isLikedSongs && styles.plIconLiked]}>
                         <Feather name={pl.isLikedSongs ? "heart" : "music"} size={16} color="#fff" />
@@ -1015,7 +1076,7 @@ export default function MusicPlayerScreen() {
                         <ThemedText style={styles.plName} numberOfLines={1}>{pl.name}</ThemedText>
                         <ThemedText style={styles.plCount}>{pl.trackCount} {pl.trackCount === 1 ? "track" : "tracks"}</ThemedText>
                       </View>
-                      <Feather name="play-circle" size={20} color={ACCENT} />
+                      <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} />
                     </FocusPressable>
                   ))}
                 </ScrollView>
@@ -1453,6 +1514,25 @@ const styles = StyleSheet.create({
   },
   modeTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
   modeTabTextActive: { color: ACCENT },
+
+  // ── Playlists panel drill-down header
+  plDrillHeader: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: Spacing.sm, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
+  },
+  plDrillBack: {
+    padding: 6, borderRadius: BorderRadius.sm,
+    borderWidth: 1.5, borderColor: "transparent",
+  },
+  plDrillTitle: { flex: 1, fontSize: 13, fontWeight: "700", color: Colors.dark.text },
+  plDrillPlayAll: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: ACCENT, borderRadius: BorderRadius.sm,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderWidth: 1.5, borderColor: "transparent",
+  },
+  plDrillPlayAllText: { fontSize: 11, fontWeight: "700", color: "#fff" },
 
   // ── Playlists panel rows
   plRow: {
