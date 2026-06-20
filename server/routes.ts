@@ -159,7 +159,7 @@ const LOGIN_HTML = `<!DOCTYPE html>
       function setLoading(on) {
         signInBtn.disabled = on;
         signInBtn.innerHTML = on
-          ? '<span class="spin"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.39 0 4.68.94 6.36 2.64"/></svg></span> Signing in...'
+          ? '<span class="spin"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.39 0 4.68.94 6.36 2.64"/></svg></span> Verifying...'
           : 'Sign In';
       }
 
@@ -879,13 +879,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.send(LOGIN_HTML);
   });
 
-  // Step 3: mobile page submits credentials
-  app.post("/api/login-submit/:token", (req, res) => {
+  // Step 3: mobile page submits credentials — validates against IPTV server first
+  app.post("/api/login-submit/:token", async (req, res) => {
     const entry = _loginTokens.get(req.params.token);
     if (!entry || Date.now() > entry.expiresAt) return res.status(410).json({ error: "Link expired. Please rescan the QR code." });
-    if (entry.ready) return res.status(409).json({ error: "Already used." });
+    if (entry.ready) return res.status(409).json({ error: "Already signed in." });
     const { username, password } = req.body ?? {};
     if (!username || !password) return res.status(400).json({ error: "Username and password required." });
+    // Validate against the IPTV provider before accepting credentials
+    try {
+      const authUrl = entry.serverUrl.replace(/\/$/, "") + "/player_api.php?username=" + encodeURIComponent(username) + "&password=" + encodeURIComponent(password);
+      const authRes = await fetch(authUrl, { signal: AbortSignal.timeout(12_000) });
+      if (!authRes.ok) throw new Error("provider_unreachable");
+      const authData = await authRes.json() as any;
+      if (!authData?.user_info?.auth) {
+        return res.json({ ok: false, error: "Invalid credentials. Please check your username and password and try again." });
+      }
+    } catch (err: any) {
+      if (err?.name === "TimeoutError" || err?.message === "provider_unreachable") {
+        return res.json({ ok: false, error: "Could not reach the server to verify credentials. Please check your connection and try again." });
+      }
+      return res.json({ ok: false, error: "Verification failed. Please try again." });
+    }
+    // Credentials verified — store and signal TV app
     entry.username = username;
     entry.password = password;
     entry.ready = true;
