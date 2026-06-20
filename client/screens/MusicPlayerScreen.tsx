@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  Modal,
   LayoutChangeEvent,
   GestureResponderEvent,
 } from "react-native";
@@ -36,6 +37,7 @@ const YT_PLAYING = 1;
 const YT_PAUSED = 2;
 const YT_BUFFERING = 3;
 const YT_UNSTARTED = -1;
+const YT_ENDED = 0;
 
 function fmtTime(sec: number): string {
   if (!sec || isNaN(sec) || sec < 0) return "--:--";
@@ -253,6 +255,17 @@ export default function MusicPlayerScreen() {
   const [duration, setDuration] = useState(0);
   const [streamError, setStreamError] = useState("");
 
+  const [repeat, setRepeat] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+
+  // Keep a stable ref to results/shuffle/repeat for use inside handleMessage
+  const resultsRef = useRef<Track[]>([]);
+  const repeatRef = useRef(false);
+  const shuffleRef = useRef(false);
+  resultsRef.current = results;
+  repeatRef.current = repeat;
+  shuffleRef.current = shuffle;
+
   const inputRef = useRef<TextInput>(null);
   const webViewRef = useRef<WebView>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -288,6 +301,9 @@ export default function MusicPlayerScreen() {
     progressBarWidth.current = e.nativeEvent.layout.width;
   }, []);
 
+  // Internal play-by-track — used by auto-advance and skip buttons
+  const playTrackRef = useRef<((track: Track) => Promise<void>) | null>(null);
+
   const handleMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
@@ -308,6 +324,27 @@ export default function MusicPlayerScreen() {
           if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
           if (msg.duration > 0) setDuration(msg.duration);
           if (msg.state === YT_PLAYING) { clearLoadTimer(); setStreamError(""); }
+          if (msg.state === YT_ENDED) {
+            // Auto-advance: repeat → replay same; shuffle → random; else → next
+            setCurrentTrack((curr) => {
+              if (!curr) return curr;
+              const list = resultsRef.current;
+              if (!list.length) return curr;
+              let next: Track;
+              if (repeatRef.current) {
+                next = curr;
+              } else if (shuffleRef.current) {
+                const others = list.filter((t) => t.searchKey !== curr.searchKey);
+                next = others.length ? others[Math.floor(Math.random() * others.length)] : list[0];
+              } else {
+                const idx = list.findIndex((t) => t.searchKey === curr.searchKey);
+                next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : list[0];
+              }
+              // Trigger play via the stable ref (avoids stale closure on handlePlayTrack)
+              setTimeout(() => { playTrackRef.current?.(next); }, 50);
+              return curr; // keep showing current track until new one loads
+            });
+          }
         } else if (msg.type === "progress") {
           if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
           if (msg.duration > 0) setDuration(msg.duration);
@@ -357,6 +394,7 @@ export default function MusicPlayerScreen() {
       // Optimistically set the track (shows thumbnail + title immediately)
       setCurrentTrack({ ...track, videoId: "" });
 
+
       try {
         const r = await fetch(
           `${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`
@@ -382,11 +420,45 @@ export default function MusicPlayerScreen() {
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
+  // Keep ref in sync so auto-advance can call it without a stale closure
+  playTrackRef.current = handlePlayTrack;
+
+  const handleSkipNext = useCallback(() => {
+    if (!results.length || !currentTrack) return;
+    if (shuffle) {
+      const others = results.filter((t) => t.searchKey !== currentTrack.searchKey);
+      const next = others.length ? others[Math.floor(Math.random() * others.length)] : results[0];
+      handlePlayTrack(next);
+    } else {
+      const idx = results.findIndex((t) => t.searchKey === currentTrack.searchKey);
+      const next = idx >= 0 && idx < results.length - 1 ? results[idx + 1] : results[0];
+      handlePlayTrack(next);
+    }
+  }, [results, currentTrack, shuffle, handlePlayTrack]);
+
+  const handleSkipPrev = useCallback(() => {
+    if (!results.length || !currentTrack) return;
+    // If more than 3s in, restart; otherwise go to previous
+    if (currentTime > 3) {
+      jsSeek(0);
+      return;
+    }
+    if (shuffle) {
+      const others = results.filter((t) => t.searchKey !== currentTrack.searchKey);
+      const prev = others.length ? others[Math.floor(Math.random() * others.length)] : results[0];
+      handlePlayTrack(prev);
+    } else {
+      const idx = results.findIndex((t) => t.searchKey === currentTrack.searchKey);
+      const prev = idx > 0 ? results[idx - 1] : results[results.length - 1];
+      handlePlayTrack(prev);
+    }
+  }, [results, currentTrack, currentTime, shuffle, jsSeek, handlePlayTrack]);
+
   const watchUrl = currentTrack?.videoId
     ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
     : null;
 
-  const PLAYER_H = 84;
+  const PLAYER_H = 112;
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
   return (
@@ -526,6 +598,26 @@ export default function MusicPlayerScreen() {
             </View>
           </Pressable>
 
+          {/* Repeat / Shuffle toggles */}
+          <View style={styles.toggleRow}>
+            <Pressable
+              style={[styles.toggleBtn, repeat && styles.toggleBtnActive]}
+              onPress={() => setRepeat((r) => !r)}
+              hitSlop={8}
+            >
+              <Feather name="repeat" size={14} color={repeat ? Colors.dark.accent : Colors.dark.textSecondary} />
+              <ThemedText style={[styles.toggleLabel, repeat && styles.toggleLabelActive]}>Repeat</ThemedText>
+            </Pressable>
+            <Pressable
+              style={[styles.toggleBtn, shuffle && styles.toggleBtnActive]}
+              onPress={() => setShuffle((s) => !s)}
+              hitSlop={8}
+            >
+              <Feather name="shuffle" size={14} color={shuffle ? Colors.dark.accent : Colors.dark.textSecondary} />
+              <ThemedText style={[styles.toggleLabel, shuffle && styles.toggleLabelActive]}>Shuffle</ThemedText>
+            </Pressable>
+          </View>
+
           {/* Controls */}
           <View style={styles.controlsRow}>
             {currentTrack.thumbnail ? (
@@ -550,14 +642,20 @@ export default function MusicPlayerScreen() {
               <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: 12 }} />
             ) : (
               <>
+                <Pressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={8}>
+                  <Feather name="skip-back" size={18} color={Colors.dark.textSecondary} />
+                </Pressable>
                 <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
-                  <Feather name="rotate-ccw" size={18} color={Colors.dark.textSecondary} />
+                  <Feather name="rotate-ccw" size={16} color={Colors.dark.textSecondary} />
                 </Pressable>
                 <Pressable style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
                   <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
                 </Pressable>
                 <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
-                  <Feather name="rotate-cw" size={18} color={Colors.dark.textSecondary} />
+                  <Feather name="rotate-cw" size={16} color={Colors.dark.textSecondary} />
+                </Pressable>
+                <Pressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={8}>
+                  <Feather name="skip-forward" size={18} color={Colors.dark.textSecondary} />
                 </Pressable>
               </>
             )}
@@ -609,6 +707,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: 8,
   },
   infoCardCloseText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+
+  toggleRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg, paddingTop: 6, paddingBottom: 2,
+  },
+  toggleBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: "transparent",
+  },
+  toggleBtnActive: {
+    borderColor: "rgba(255,102,0,0.35)",
+    backgroundColor: "rgba(255,102,0,0.10)",
+  },
+  toggleLabel: { fontSize: 11, color: Colors.dark.textSecondary },
+  toggleLabelActive: { color: Colors.dark.accent, fontWeight: "600" },
 
   searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
   searchBar: {
