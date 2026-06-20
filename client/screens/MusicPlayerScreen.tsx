@@ -189,6 +189,50 @@ function TrackRow({
   );
 }
 
+// ── Info button + modal ───────────────────────────────────────────────────────
+function InfoButton() {
+  const [visible, setVisible] = useState(false);
+  return (
+    <>
+      <Pressable
+        onPress={() => setVisible(true)}
+        hitSlop={12}
+        style={styles.infoBtn}
+        accessibilityLabel="About search results"
+      >
+        <Feather name="info" size={18} color={Colors.dark.textSecondary} />
+      </Pressable>
+
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+        statusBarTranslucent
+      >
+        <Pressable style={styles.infoOverlay} onPress={() => setVisible(false)}>
+          <Pressable style={styles.infoCard} onPress={() => {}}>
+            <View style={styles.infoCardHeader}>
+              <Feather name="info" size={16} color={Colors.dark.accent} />
+              <ThemedText style={styles.infoCardTitle}>About Search Results</ThemedText>
+            </View>
+            <ThemedText style={styles.infoCardBody}>
+              Music is matched using YouTube, so results may not always be the exact version you
+              had in mind — for example, you might get a live performance, an extended mix, or a
+              video that was originally made for TV rather than a simple audio track.{"\n\n"}
+              If the first result isn't quite right, try a more specific search (e.g. include
+              "radio edit" or the artist name) to narrow it down.
+            </ThemedText>
+            <Pressable style={styles.infoCardClose} onPress={() => setVisible(false)}>
+              <ThemedText style={styles.infoCardCloseText}>Got it</ThemedText>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 // ── Screen ───────────────────────────────────────────────────────────────────
 export default function MusicPlayerScreen() {
   const navigation = useNavigation();
@@ -359,6 +403,7 @@ export default function MusicPlayerScreen() {
           </View>
         ) : null}
         <View style={{ flex: 1 }} />
+        <InfoButton />
       </View>
 
       {/* ── Search bar ──────────────────────────────────────────────── */}
@@ -538,6 +583,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6, paddingVertical: 2,
   },
   betaBadgeText: { fontSize: 9, fontWeight: "800", color: Colors.dark.accent, letterSpacing: 0.8 },
+
+  infoBtn: { padding: 4 },
+  infoOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "center", alignItems: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  infoCard: {
+    width: "100%", maxWidth: 420,
+    backgroundColor: "#161616",
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    padding: Spacing.xl,
+    gap: Spacing.md,
+  },
+  infoCardHeader: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  infoCardTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
+  infoCardBody: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20 },
+  infoCardClose: {
+    alignSelf: "flex-end",
+    marginTop: Spacing.xs,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg, paddingVertical: 8,
+  },
+  infoCardCloseText: { fontSize: 13, fontWeight: "700", color: "#fff" },
 
   searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
   searchBar: {
