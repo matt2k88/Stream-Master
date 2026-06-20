@@ -387,6 +387,8 @@ export default function MusicHomeScreen() {
   const [richResults, setRichResults] = useState<{ songs: MusicTrack[]; artists: ArtistResult[]; albums: AlbumResult[] } | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [visibleAlbumsCount, setVisibleAlbumsCount] = useState(8);
+  const [visibleSongsCount, setVisibleSongsCount] = useState(50);
   const [drill, setDrill] = useState<{ type: "artist" | "album"; id: number; name: string; artwork?: string } | null>(null);
   const [drillSongs, setDrillSongs] = useState<MusicTrack[]>([]);
   const [drillAlbums, setDrillAlbums] = useState<AlbumResult[]>([]);
@@ -469,6 +471,8 @@ export default function MusicHomeScreen() {
     setSearching(true);
     setSearchError("");
     setRichResults(null);
+    setVisibleAlbumsCount(8);
+    setVisibleSongsCount(50);
     setDrill(null);
     setDrillSongs([]); setDrillAlbums([]);
     inputRef.current?.blur();
@@ -740,16 +744,24 @@ export default function MusicHomeScreen() {
               <View>
                 <ThemedText style={styles.richSectionLabel}>ALBUMS</ThemedText>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
-                  {richResults.albums.map((a) => (
+                  {richResults.albums.slice(0, visibleAlbumsCount).map((a) => (
                     <AlbumCard key={String(a.collectionId)} album={a} onPress={() => openAlbum(a.collectionId, a.collectionName)} />
                   ))}
                 </ScrollView>
+                {richResults.albums.length > visibleAlbumsCount ? (
+                  <Pressable style={styles.showMoreBtn} onPress={() => setVisibleAlbumsCount(richResults.albums.length)}>
+                    <ThemedText style={styles.showMoreText}>
+                      Show {richResults.albums.length - visibleAlbumsCount} more album{richResults.albums.length - visibleAlbumsCount === 1 ? "" : "s"}
+                    </ThemedText>
+                    <Feather name="chevron-down" size={13} color={Colors.dark.accent} />
+                  </Pressable>
+                ) : null}
               </View>
             )}
             {richResults.songs.length > 0 && (
               <View>
                 <ThemedText style={styles.richSectionLabel}>SONGS</ThemedText>
-                {richResults.songs.map((item, i) => (
+                {richResults.songs.slice(0, visibleSongsCount).map((item, i) => (
                   <SearchResultRow
                     key={`${item.searchKey}-${i}`}
                     track={item}
@@ -759,6 +771,14 @@ export default function MusicHomeScreen() {
                     onAdd={() => { if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; } setAddModal({ track: item, visible: true }); }}
                   />
                 ))}
+                {richResults.songs.length > visibleSongsCount ? (
+                  <Pressable style={styles.showMoreBtn} onPress={() => setVisibleSongsCount((v) => v + 50)}>
+                    <ThemedText style={styles.showMoreText}>
+                      Show {Math.min(50, richResults.songs.length - visibleSongsCount)} more song{Math.min(50, richResults.songs.length - visibleSongsCount) === 1 ? "" : "s"}
+                    </ThemedText>
+                    <Feather name="chevron-down" size={13} color={Colors.dark.accent} />
+                  </Pressable>
+                ) : null}
               </View>
             )}
             {richResults.artists.length === 0 && richResults.albums.length === 0 && richResults.songs.length === 0 && (
@@ -942,6 +962,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.xs,
   },
   hChips: { paddingHorizontal: Spacing.lg, gap: 10, paddingBottom: Spacing.sm },
+  showMoreBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    alignSelf: "center",
+    marginTop: 4, marginBottom: 2,
+    paddingHorizontal: Spacing.lg, paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,102,0,0.10)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.25)",
+  },
+  showMoreText: { fontSize: 12, fontWeight: "600", color: Colors.dark.accent },
   drillBack: {
     flexDirection: "row", alignItems: "center", gap: 8,
     paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
