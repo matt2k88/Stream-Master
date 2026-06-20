@@ -1,5 +1,6 @@
 -- Migration 028: Music playlists per profile
 -- Run in Supabase SQL Editor
+-- Fully idempotent: safe to re-run if a previous attempt partially succeeded.
 
 CREATE TABLE IF NOT EXISTS music_playlists (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -18,10 +19,13 @@ CREATE TABLE IF NOT EXISTS music_playlist_tracks (
   album       TEXT        DEFAULT '',
   duration_sec INTEGER    DEFAULT 0,
   thumbnail   TEXT        DEFAULT '',
-  search_key  TEXT        NOT NULL,
   position    INTEGER     DEFAULT 0,
   added_at    TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add search_key if the table was created without it (partial previous run)
+ALTER TABLE music_playlist_tracks
+  ADD COLUMN IF NOT EXISTS search_key TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_music_playlists_profile
   ON music_playlists(profile_id);
