@@ -117,11 +117,16 @@ const INJECT_JS = `(function() {
     });
     v.play()
       .then(function(){ post({ type:'play_ok', duration:v.duration||0 }); })
-      .catch(function(){
-        // Autoplay may be blocked by the browser/WebView policy (e.g. Fire Stick).
-        // This is NOT a real playback failure — the video element still loads and
-        // the 'canplay' event will fire 'ready' once buffered.
-        // Real errors are reported by the video 'error' event listener above.
+      .catch(function(e){
+        if (e && e.name === 'NotAllowedError') {
+          // Autoplay blocked (Fire Stick / Silk WebView policy). The video has
+          // loaded and buffered fine — signal ready so the load-timer is cleared.
+          // The user can start playback with the on-screen play button.
+          post({ type:'ready', duration:v.duration||0 });
+        } else {
+          // Real playback failure (codec, DRM, network, etc.)
+          post({ type:'play_err', msg: e ? e.message : 'play failed' });
+        }
       });
   }
 
@@ -321,7 +326,7 @@ export default function MusicPlayerScreen() {
   const insets = useSafeAreaInsets();
   const { showMusicBetaBadge } = useAppTheme();
   const route = useRoute<RouteProp<RootStackParamList, "MusicPlayer">>();
-  const { queue: initQueue, startIndex: initIndex = 0, contextName, initialQuery, albumId } = route.params ?? {};
+  const { queue: initQueue, startIndex: initIndex = 0, contextName, initialQuery, albumId, openPlaylistId, openPlaylistName, openIsLikedSongs } = route.params ?? {};
   const { activeProfile } = useProfile();
   const profileId = activeProfile?.id;
 
@@ -621,6 +626,15 @@ export default function MusicPlayerScreen() {
   );
 
   playTrackRef.current = handlePlayTrack;
+
+  // ── Auto-open a playlist in drill-down view when navigated from Home ──────
+  const openPlDone = useRef(false);
+  useEffect(() => {
+    if (openPlDone.current || !openPlaylistId || !openPlaylistName) return;
+    openPlDone.current = true;
+    setLeftMode("playlists");
+    handleLoadPlaylist({ id: openPlaylistId, name: openPlaylistName, isLikedSongs: openIsLikedSongs ?? false });
+  }, [openPlaylistId, openPlaylistName, openIsLikedSongs, handleLoadPlaylist]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const queueInitDone = useRef(false);
   useEffect(() => {

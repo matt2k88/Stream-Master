@@ -87,6 +87,9 @@ export type RootStackParamList = {
     contextName?: string;
     initialQuery?: string;
     albumId?: number;
+    openPlaylistId?: string;
+    openPlaylistName?: string;
+    openIsLikedSongs?: boolean;
   } | undefined;
   PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
 };

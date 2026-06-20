@@ -115,16 +115,18 @@ function BrowseTrackCard({
   isLiked: boolean;
 }) {
   return (
-    <FocusPressable style={styles.browseCard} onPress={onPress}>
-      {track.thumbnail ? (
-        <Image source={{ uri: track.thumbnail }} style={styles.browseCardArt} resizeMode="cover" />
-      ) : (
-        <View style={[styles.browseCardArt, styles.browseCardArtPlaceholder]}>
-          <Feather name="music" size={22} color={Colors.dark.textSecondary} />
-        </View>
-      )}
-      <ThemedText style={styles.browseCardTitle} numberOfLines={2}>{track.title}</ThemedText>
-      <ThemedText style={styles.browseCardArtist} numberOfLines={1}>{track.artist}</ThemedText>
+    <View style={styles.browseCard}>
+      <FocusPressable style={styles.browseCardMedia} onPress={onPress}>
+        {track.thumbnail ? (
+          <Image source={{ uri: track.thumbnail }} style={styles.browseCardArt} resizeMode="cover" />
+        ) : (
+          <View style={[styles.browseCardArt, styles.browseCardArtPlaceholder]}>
+            <Feather name="music" size={22} color={Colors.dark.textSecondary} />
+          </View>
+        )}
+        <ThemedText style={styles.browseCardTitle} numberOfLines={2}>{track.title}</ThemedText>
+        <ThemedText style={styles.browseCardArtist} numberOfLines={1}>{track.artist}</ThemedText>
+      </FocusPressable>
       <View style={styles.browseCardActions}>
         <FocusPressable onPress={onLike} hitSlop={10} style={styles.browseCardBtn}>
           <Feather name="heart" size={18} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
@@ -133,7 +135,7 @@ function BrowseTrackCard({
           <Feather name="plus-circle" size={18} color={Colors.dark.textSecondary} />
         </FocusPressable>
       </View>
-    </FocusPressable>
+    </View>
   );
 }
 
@@ -448,9 +450,9 @@ export default function MusicHomeScreen() {
   // Re-fetch playlists whenever this screen comes back into focus (e.g. after deleting a track in PlaylistDetail)
   useFocusEffect(useCallback(() => { fetchPlaylists(); }, [fetchPlaylists]));
 
-  // ── Fetch browse categories (parallel, module-level cache) ────────────────
+  // ── Fetch browse categories — priority first, rest deferred 1.5s ──────────
   useEffect(() => {
-    CATEGORIES.forEach(async (cat) => {
+    const fetchCat = async (cat: typeof CATEGORIES[number]) => {
       const cached = _catCache.get(cat.id);
       if (cached && Date.now() - cached.ts < CAT_TTL) {
         setCategoryTracks((prev) => ({ ...prev, [cat.id]: cached.tracks }));
@@ -467,7 +469,12 @@ export default function MusicHomeScreen() {
         }
       } catch {}
       setLoadingCats((prev) => ({ ...prev, [cat.id]: false }));
-    });
+    };
+
+    // Fetch first 4 immediately, remaining after 1.5s to reduce initial load
+    CATEGORIES.slice(0, 4).forEach(fetchCat);
+    const t = setTimeout(() => { CATEGORIES.slice(4).forEach(fetchCat); }, 1500);
+    return () => clearTimeout(t);
   }, []);
 
   // ── Search ────────────────────────────────────────────────────────────────
@@ -821,10 +828,10 @@ export default function MusicHomeScreen() {
                     <PlaylistCard
                       playlist={item}
                       onPress={() =>
-                        navigation.navigate("PlaylistDetail", {
-                          playlistId: item.id,
-                          playlistName: item.name,
-                          isLikedSongs: item.isLikedSongs,
+                        navigation.navigate("MusicPlayer", {
+                          openPlaylistId: item.id,
+                          openPlaylistName: item.name,
+                          openIsLikedSongs: item.isLikedSongs,
                         })
                       }
                     />
@@ -952,6 +959,7 @@ const styles = StyleSheet.create({
 
   // Browse track cards
   browseCard: { width: 130 },
+  browseCardMedia: { width: 130 },
   browseCardArt: { width: 130, height: 130, borderRadius: BorderRadius.md, marginBottom: 6 },
   browseCardArtPlaceholder: {
     backgroundColor: Colors.dark.backgroundSecondary,
