@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -18,9 +18,11 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { getApiUrl } from "@/lib/query-client";
 import { useAppTheme } from "@/contexts/ThemeContext";
+import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 // Track as returned by iTunes search — videoId is filled in on resolve
 interface Track {
@@ -140,11 +142,17 @@ function TrackRow({
   isActive,
   isLoading,
   onPress,
+  onLike,
+  onAdd,
+  isLiked,
 }: {
   track: Track;
   isActive: boolean;
   isLoading: boolean;
   onPress: () => void;
+  onLike?: () => void;
+  onAdd?: () => void;
+  isLiked?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
@@ -187,6 +195,17 @@ function TrackRow({
       </View>
 
       <ThemedText style={styles.trackDuration}>{fmtTime(track.duration)}</ThemedText>
+
+      {onAdd ? (
+        <Pressable onPress={(e) => { onAdd(); }} hitSlop={8} style={styles.trackIconBtn}>
+          <Feather name="plus-circle" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+      ) : null}
+      {onLike ? (
+        <Pressable onPress={(e) => { onLike(); }} hitSlop={8} style={styles.trackIconBtn}>
+          <Feather name="heart" size={16} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
+        </Pressable>
+      ) : null}
     </Pressable>
   );
 }
@@ -265,9 +284,13 @@ function InfoButton() {
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 export default function MusicPlayerScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { showMusicBetaBadge } = useAppTheme();
+  const route = useRoute<RouteProp<RootStackParamList, "MusicPlayer">>();
+  const { queue: initQueue, startIndex: initIndex = 0, contextName } = route.params ?? {};
+  const { activeProfile } = useProfile();
+  const profileId = activeProfile?.id;
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Track[]>([]);
@@ -285,6 +308,13 @@ export default function MusicPlayerScreen() {
 
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
+
+  // Liked songs + playlist state
+  const [likedKeys, setLikedKeys] = useState<Set<string>>(new Set());
+  const [likedPlaylistId, setLikedPlaylistId] = useState<string | null>(null);
+  const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; isLikedSongs: boolean; trackCount: number }>>([]);
+  const [trackAddModal, setTrackAddModal] = useState<Track | null>(null);
+  const [playlistAdded, setPlaylistAdded] = useState<Set<string>>(new Set());
 
   // Keep a stable ref to results/shuffle/repeat for use inside handleMessage
   const resultsRef = useRef<Track[]>([]);
@@ -353,6 +383,8 @@ export default function MusicPlayerScreen() {
           if (msg.duration > 0) setDuration(msg.duration);
           if (msg.state === YT_PLAYING) { clearLoadTimer(); setStreamError(""); }
           if (msg.state === YT_ENDED) {
+            // Immediately pause to block YouTube auto-queueing its own next video
+            webViewRef.current?.injectJavaScript('if(window.ytCmd) window.ytCmd("pause"); true;');
             // Auto-advance: repeat → replay same; shuffle → random; else → next
             setCurrentTrack((curr) => {
               if (!curr) return curr;
@@ -369,7 +401,7 @@ export default function MusicPlayerScreen() {
                 next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : list[0];
               }
               // Trigger play via the stable ref (avoids stale closure on handlePlayTrack)
-              setTimeout(() => { playTrackRef.current?.(next); }, 50);
+              setTimeout(() => { playTrackRef.current?.(next); }, 100);
               return curr; // keep showing current track until new one loads
             });
           }
@@ -451,6 +483,83 @@ export default function MusicPlayerScreen() {
   // Keep ref in sync so auto-advance can call it without a stale closure
   playTrackRef.current = handlePlayTrack;
 
+  // ── Load queue from navigation params (once on mount) ─────────────────────
+  const queueInitDone = useRef(false);
+  useEffect(() => {
+    if (queueInitDone.current || !initQueue?.length) return;
+    queueInitDone.current = true;
+    const tracks = initQueue as Track[];
+    setResults(tracks);
+    const track = tracks[initIndex] ?? tracks[0];
+    if (track) setTimeout(() => { playTrackRef.current?.(track); }, 80);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fetch liked-songs playlist on mount ────────────────────────────────────
+  useEffect(() => {
+    if (!profileId || profileId === GUEST_PROFILE_ID) return;
+    (async () => {
+      try {
+        const r = await fetch(`${getApiUrl()}/api/music/playlists?profile_id=${profileId}`);
+        if (!r.ok) return;
+        const data: any[] = await r.json();
+        const liked = data.find((p) => p.is_liked_songs);
+        setPlaylists(data.map((p) => ({
+          id: p.id, name: p.name,
+          isLikedSongs: p.is_liked_songs, trackCount: p.trackCount ?? 0,
+        })));
+        if (liked) {
+          setLikedPlaylistId(liked.id);
+          const tr = await fetch(`${getApiUrl()}/api/music/playlists/${liked.id}/tracks`);
+          if (tr.ok) {
+            const tData: any[] = await tr.json();
+            setLikedKeys(new Set(tData.map((t) => t.search_key as string)));
+          }
+        }
+      } catch {}
+    })();
+  }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLike = useCallback(async (track: Track) => {
+    if (!likedPlaylistId) return;
+    if (likedKeys.has(track.searchKey)) return; // already liked
+    setLikedKeys((prev) => new Set([...prev, track.searchKey]));
+    try {
+      await fetch(`${getApiUrl()}/api/music/playlists/${likedPlaylistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: track.title, artist: track.artist, album: track.album,
+          duration_sec: track.duration, thumbnail: track.thumbnail,
+          search_key: track.searchKey,
+        }),
+      });
+    } catch {
+      setLikedKeys((prev) => { const n = new Set(prev); n.delete(track.searchKey); return n; });
+    }
+  }, [likedPlaylistId, likedKeys]);
+
+  const handleAddToPlaylist = useCallback(async (playlistId: string) => {
+    const track = trackAddModal;
+    if (!track) return;
+    setPlaylistAdded((prev) => new Set([...prev, playlistId]));
+    try {
+      await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: track.title, artist: track.artist, album: track.album,
+          duration_sec: track.duration, thumbnail: track.thumbnail,
+          search_key: track.searchKey,
+        }),
+      });
+      setPlaylists((prev) => prev.map((p) =>
+        p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p
+      ));
+    } catch {
+      setPlaylistAdded((prev) => { const n = new Set(prev); n.delete(playlistId); return n; });
+    }
+  }, [trackAddModal]);
+
   const handleSkipNext = useCallback(() => {
     if (!results.length || !currentTrack) return;
     if (shuffle) {
@@ -483,7 +592,7 @@ export default function MusicPlayerScreen() {
   }, [results, currentTrack, currentTime, shuffle, jsSeek, handlePlayTrack]);
 
   const watchUrl = currentTrack?.videoId
-    ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
+    ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1&rel=0`
     : null;
 
   const PLAYER_H = 112;
@@ -574,6 +683,9 @@ export default function MusicPlayerScreen() {
               isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
               isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
               onPress={() => handlePlayTrack(item)}
+              onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+              onAdd={playlists.length > 0 ? () => { setPlaylistAdded(new Set()); setTrackAddModal(item); } : undefined}
+              isLiked={likedKeys.has(item.searchKey)}
             />
           )}
         />
@@ -626,6 +738,16 @@ export default function MusicPlayerScreen() {
               <View style={{ flex: Math.max(0.001, 1 - progress) }} />
             </View>
           </Pressable>
+
+          {/* Context name chip — shown when queue comes from a playlist/browse category */}
+          {contextName ? (
+            <View style={styles.contextChip}>
+              <Feather name="music" size={10} color={Colors.dark.accent} />
+              <ThemedText style={styles.contextChipText} numberOfLines={1}>
+                From: {contextName}
+              </ThemedText>
+            </View>
+          ) : null}
 
           {/* Repeat / Shuffle toggles */}
           <View style={styles.toggleRow}>
@@ -691,6 +813,48 @@ export default function MusicPlayerScreen() {
           </View>
         </View>
       ) : null}
+
+      {/* ── Add-to-playlist modal ─────────────────────────────────────── */}
+      <Modal
+        visible={trackAddModal !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTrackAddModal(null)}
+        statusBarTranslucent
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setTrackAddModal(null)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.modalHandle} />
+            <ThemedText style={styles.modalTitle}>Add to Playlist</ThemedText>
+            {trackAddModal ? (
+              <ThemedText style={styles.modalTrackName} numberOfLines={1}>
+                {trackAddModal.title} — {trackAddModal.artist}
+              </ThemedText>
+            ) : null}
+            <FlatList
+              data={playlists}
+              keyExtractor={(p) => p.id}
+              style={styles.modalList}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[styles.modalPlaylistRow, playlistAdded.has(item.id) && { opacity: 0.7 }]}
+                  onPress={() => { if (!playlistAdded.has(item.id)) handleAddToPlaylist(item.id); }}
+                >
+                  <View style={[styles.modalPlaylistIcon, item.isLikedSongs && styles.modalPlaylistIconLiked]}>
+                    <Feather name={item.isLikedSongs ? "heart" : "music"} size={13} color="#fff" />
+                  </View>
+                  <ThemedText style={styles.modalPlaylistName} numberOfLines={1}>{item.name}</ThemedText>
+                  <ThemedText style={styles.modalPlaylistCount}>{item.trackCount}</ThemedText>
+                  {playlistAdded.has(item.id)
+                    ? <Feather name="check" size={15} color="#22c55e" />
+                    : <Feather name="plus" size={15} color={Colors.dark.textSecondary} />
+                  }
+                </Pressable>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
@@ -799,6 +963,7 @@ const styles = StyleSheet.create({
   trackTitleActive: { color: ACCENT },
   trackArtist: { fontSize: 12, color: Colors.dark.textSecondary },
   trackDuration: { fontSize: 12, color: Colors.dark.textSecondary, minWidth: 38, textAlign: "right" },
+  trackIconBtn: { padding: 5, borderRadius: BorderRadius.sm },
 
   centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
@@ -806,6 +971,42 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 14, color: "#ef4444", textAlign: "center" },
   retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
   retryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+
+  contextChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: Spacing.lg, paddingTop: 6, paddingBottom: 0,
+  },
+  contextChipText: { fontSize: 10, color: Colors.dark.accent, fontWeight: "600" },
+
+  // ── Add-to-playlist modal
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
+  modalSheet: {
+    backgroundColor: "#141414",
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === "ios" ? 34 : 16,
+    maxHeight: "70%",
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignSelf: "center", marginTop: 12, marginBottom: 14,
+  },
+  modalTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, paddingHorizontal: 20, marginBottom: 3 },
+  modalTrackName: { fontSize: 12, color: Colors.dark.textSecondary, paddingHorizontal: 20, marginBottom: 14 },
+  modalList: { flexGrow: 0 },
+  modalPlaylistRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)", gap: 12,
+  },
+  modalPlaylistIcon: {
+    width: 32, height: 32, borderRadius: 7,
+    backgroundColor: Colors.dark.accent,
+    justifyContent: "center", alignItems: "center",
+  },
+  modalPlaylistIconLiked: { backgroundColor: "#e11d48" },
+  modalPlaylistName: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.dark.text },
+  modalPlaylistCount: { fontSize: 12, color: Colors.dark.textSecondary },
 
   // ── Player
   playerShell: {

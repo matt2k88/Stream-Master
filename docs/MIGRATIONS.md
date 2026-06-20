@@ -32,4 +32,6 @@ degrade gracefully until run (endpoints return `[]`, defaults kick in).
 
 - `027_music_badges.sql` — adds `show_music_badge boolean default true` and `show_music_beta_badge boolean default true` to `app_theme`. Admin flips either to `false` in Supabase to hide the NEW badge on the Music Player menu item or the BETA badge inside the Music Player screen respectively. Both endpoints fall back to `true` until this migration is run so both badges show immediately on deploy.
 
+- `028_music_playlists.sql` — creates `music_playlists` (id uuid pk, profile_id → profiles, name, is_liked_songs bool, created_at, updated_at) and `music_playlist_tracks` (id uuid pk, playlist_id → music_playlists, title, artist, album, duration_sec int, thumbnail, search_key, position int, added_at). A unique index on `(playlist_id, search_key)` prevents duplicate tracks. The playlist API endpoints (`GET/POST/PUT/DELETE /api/music/playlists`, `GET/POST/DELETE /api/music/playlists/:id/tracks`) auto-create a "Liked Songs" playlist on first `GET` for each profile. Until run, all endpoints return `[]` / `503` gracefully and the UI shows an empty playlists section rather than erroring.
+
 > **Note on numbering**: gaps (005–006, 010–011) were intentionally skipped during earlier development; ordering above reflects application order.

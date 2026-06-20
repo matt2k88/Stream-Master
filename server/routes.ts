@@ -2492,6 +2492,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
+  // ── Music Playlists (per-profile, Supabase — migration 028) ─────────────────
+  // Degrades gracefully (returns [] / 503) if migration hasn't been run yet.
+
+  // GET /api/music/playlists?profile_id=xxx
+  app.get("/api/music/playlists", async (req, res) => {
+    const profileId = String(req.query.profile_id ?? "").trim();
+    if (!profileId) return res.status(400).json({ error: "profile_id required" });
+    try {
+      const { data, error } = await supabase
+        .from("music_playlists")
+        .select("id, name, is_liked_songs, created_at, updated_at")
+        .eq("profile_id", profileId)
+        .order("is_liked_songs", { ascending: false })
+        .order("created_at", { ascending: true });
+      if ((error as any)?.code === "42P01") return res.json([]);
+      if (error) throw error;
+      // Auto-create "Liked Songs" for brand-new profiles
+      let list = data ?? [];
+      if (!list.length) {
+        const { data: created, error: ce } = await supabase
+          .from("music_playlists")
+          .insert({ profile_id: profileId, name: "Liked Songs", is_liked_songs: true })
+          .select().single();
+        if (ce) throw ce;
+        return res.json([{ ...created, trackCount: 0 }]);
+      }
+      // Attach track counts
+      const ids = list.map((p: any) => p.id);
+      const { data: counts } = await supabase
+        .from("music_playlist_tracks").select("playlist_id").in("playlist_id", ids);
+      const countMap: Record<string, number> = {};
+      (counts ?? []).forEach((r: any) => { countMap[r.playlist_id] = (countMap[r.playlist_id] ?? 0) + 1; });
+      return res.json(list.map((p: any) => ({ ...p, trackCount: countMap[p.id] ?? 0 })));
+    } catch (err: any) {
+      if ((err as any)?.code === "42P01") return res.json([]);
+      console.error("[music:playlists]", err.message);
+      res.status(500).json({ error: "Failed to load playlists" });
+    }
+  });
+
+  // POST /api/music/playlists
+  app.post("/api/music/playlists", async (req, res) => {
+    const { profile_id, name } = req.body ?? {};
+    if (!profile_id || !name) return res.status(400).json({ error: "profile_id and name required" });
+    try {
+      const { data, error } = await supabase
+        .from("music_playlists")
+        .insert({ profile_id, name: String(name).trim(), is_liked_songs: false })
+        .select().single();
+      if (error) throw error;
+      return res.json({ ...data, trackCount: 0 });
+    } catch (err: any) {
+      if ((err as any)?.code === "42P01") return res.status(503).json({ error: "Run migration 028 first" });
+      console.error("[music:playlists:create]", err.message);
+      res.status(500).json({ error: "Failed to create playlist" });
+    }
+  });
+
+  // PUT /api/music/playlists/:id  (rename — not allowed on liked songs)
+  app.put("/api/music/playlists/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name } = req.body ?? {};
+    if (!name) return res.status(400).json({ error: "name required" });
+    try {
+      const { data, error } = await supabase
+        .from("music_playlists")
+        .update({ name: String(name).trim(), updated_at: new Date().toISOString() })
+        .eq("id", id).neq("is_liked_songs", true)
+        .select().single();
+      if (error) throw error;
+      return res.json(data);
+    } catch (err: any) {
+      console.error("[music:playlists:rename]", err.message);
+      res.status(500).json({ error: "Failed to rename" });
+    }
+  });
+
+  // DELETE /api/music/playlists/:id
+  app.delete("/api/music/playlists/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { error } = await supabase
+        .from("music_playlists").delete().eq("id", id).neq("is_liked_songs", true);
+      if (error) throw error;
+      return res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[music:playlists:delete]", err.message);
+      res.status(500).json({ error: "Failed to delete" });
+    }
+  });
+
+  // GET /api/music/playlists/:id/tracks
+  app.get("/api/music/playlists/:id/tracks", async (req, res) => {
+    const { id } = req.params;
+    try {
+      const { data, error } = await supabase
+        .from("music_playlist_tracks").select("*").eq("playlist_id", id)
+        .order("position", { ascending: true }).order("added_at", { ascending: true });
+      if ((error as any)?.code === "42P01") return res.json([]);
+      if (error) throw error;
+      return res.json(data ?? []);
+    } catch (err: any) {
+      if ((err as any)?.code === "42P01") return res.json([]);
+      console.error("[music:playlist-tracks]", err.message);
+      res.status(500).json({ error: "Failed to load tracks" });
+    }
+  });
+
+  // POST /api/music/playlists/:id/tracks
+  app.post("/api/music/playlists/:id/tracks", async (req, res) => {
+    const { id } = req.params;
+    const { title, artist, album, duration_sec, thumbnail, search_key } = req.body ?? {};
+    if (!title || !search_key) return res.status(400).json({ error: "title and search_key required" });
+    try {
+      const { data: last } = await supabase
+        .from("music_playlist_tracks").select("position")
+        .eq("playlist_id", id).order("position", { ascending: false }).limit(1);
+      const position = ((last?.[0]?.position ?? -1) as number) + 1;
+      const { data, error } = await supabase
+        .from("music_playlist_tracks")
+        .upsert({ playlist_id: id, title: String(title), artist: String(artist ?? ""),
+          album: String(album ?? ""), duration_sec: Number(duration_sec ?? 0),
+          thumbnail: String(thumbnail ?? ""), search_key: String(search_key), position },
+          { onConflict: "playlist_id,search_key" })
+        .select().single();
+      if (error) throw error;
+      await supabase.from("music_playlists")
+        .update({ updated_at: new Date().toISOString() }).eq("id", id);
+      return res.json(data);
+    } catch (err: any) {
+      if ((err as any)?.code === "42P01") return res.status(503).json({ error: "Run migration 028 first" });
+      console.error("[music:playlist-tracks:add]", err.message);
+      res.status(500).json({ error: "Failed to add track" });
+    }
+  });
+
+  // DELETE /api/music/playlists/:id/tracks/:trackId
+  app.delete("/api/music/playlists/:id/tracks/:trackId", async (req, res) => {
+    const { id, trackId } = req.params;
+    try {
+      const { error } = await supabase
+        .from("music_playlist_tracks").delete()
+        .eq("id", trackId).eq("playlist_id", id);
+      if (error) throw error;
+      return res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[music:playlist-tracks:delete]", err.message);
+      res.status(500).json({ error: "Failed to remove track" });
+    }
+  });
+
   // ── Football Centre ───────────────────────────────────────────────────────
   // All Football Centre read endpoints are best-effort cache reads and never
   // hard-fail the UI — they degrade gracefully to [] when a migration hasn't
