@@ -230,43 +230,39 @@ function TrackRow({
   onAdd?: () => void;
   isLiked?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
   return (
-    <Pressable
-      style={[styles.trackRow, (isActive || focused) && styles.trackRowActive]}
-      onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-    >
-      <View style={styles.thumbWrap}>
-        {track.thumbnail ? (
-          <Image source={{ uri: track.thumbnail }} style={styles.thumbImg} resizeMode="cover" />
-        ) : (
-          <View style={styles.thumbPlaceholder}>
-            <Feather name="music" size={16} color={Colors.dark.textSecondary} />
-          </View>
-        )}
-        {(isActive || isLoading) && (
-          <View style={styles.thumbOverlay}>
-            {isLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Feather name="volume-2" size={16} color="#fff" />
-            )}
-          </View>
-        )}
-      </View>
+    <View style={[styles.trackRow, isActive && styles.trackRowActive]}>
+      <FocusPressable style={styles.trackRowMain} onPress={onPress}>
+        <View style={styles.thumbWrap}>
+          {track.thumbnail ? (
+            <Image source={{ uri: track.thumbnail }} style={styles.thumbImg} resizeMode="cover" />
+          ) : (
+            <View style={styles.thumbPlaceholder}>
+              <Feather name="music" size={16} color={Colors.dark.textSecondary} />
+            </View>
+          )}
+          {(isActive || isLoading) && (
+            <View style={styles.thumbOverlay}>
+              {isLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Feather name="volume-2" size={16} color="#fff" />
+              )}
+            </View>
+          )}
+        </View>
 
-      <View style={styles.trackInfo}>
-        <ThemedText style={[styles.trackTitle, isActive && styles.trackTitleActive]} numberOfLines={1}>
-          {track.title}
-        </ThemedText>
-        <ThemedText style={styles.trackArtist} numberOfLines={1}>
-          {track.artist}{track.album ? ` · ${track.album}` : ""}
-        </ThemedText>
-      </View>
+        <View style={styles.trackInfo}>
+          <ThemedText style={[styles.trackTitle, isActive && styles.trackTitleActive]} numberOfLines={1}>
+            {track.title}
+          </ThemedText>
+          <ThemedText style={styles.trackArtist} numberOfLines={1}>
+            {track.artist}{track.album ? ` · ${track.album}` : ""}
+          </ThemedText>
+        </View>
 
-      <ThemedText style={styles.trackDuration}>{fmtTime(track.duration)}</ThemedText>
+        <ThemedText style={styles.trackDuration}>{fmtTime(track.duration)}</ThemedText>
+      </FocusPressable>
 
       {onAdd ? (
         <FocusPressable onPress={onAdd} hitSlop={12} style={styles.trackIconBtn}>
@@ -278,7 +274,7 @@ function TrackRow({
           <Feather name="heart" size={20} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
         </FocusPressable>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -728,13 +724,12 @@ export default function MusicPlayerScreen() {
       }));
       setAlbumContext({ id: 0, name: playlistName, tracks });
       setLeftMode("queue");
-      if (tracks.length > 0) handlePlayTrack(tracks[0]);
     } catch {
       // stay on playlists tab silently
     } finally {
       setPlaylistLoading(false);
     }
-  }, [handlePlayTrack]);
+  }, []);
 
   const handleSkipNext = useCallback(() => {
     if (!results.length || !currentTrack) return;
@@ -1425,6 +1420,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "transparent",
   },
   trackRowActive: { backgroundColor: "rgba(255,102,0,0.10)", borderColor: "rgba(255,102,0,0.22)" },
+  trackRowMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   thumbWrap: { width: 46, height: 46, borderRadius: BorderRadius.sm, overflow: "hidden" },
   thumbImg: { width: "100%", height: "100%" },
   thumbPlaceholder: { width: "100%", height: "100%", backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },

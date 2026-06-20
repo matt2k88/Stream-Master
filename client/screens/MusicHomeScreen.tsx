@@ -151,27 +151,29 @@ function SearchResultRow({
   isLiked: boolean;
 }) {
   return (
-    <FocusPressable style={styles.searchRow} onPress={onPress}>
-      {track.thumbnail ? (
-        <Image source={{ uri: track.thumbnail }} style={styles.searchRowThumb} resizeMode="cover" />
-      ) : (
-        <View style={[styles.searchRowThumb, styles.searchRowThumbPh]}>
-          <Feather name="music" size={14} color={Colors.dark.textSecondary} />
+    <View style={styles.searchRow}>
+      <FocusPressable style={styles.searchRowMain} onPress={onPress}>
+        {track.thumbnail ? (
+          <Image source={{ uri: track.thumbnail }} style={styles.searchRowThumb} resizeMode="cover" />
+        ) : (
+          <View style={[styles.searchRowThumb, styles.searchRowThumbPh]}>
+            <Feather name="music" size={14} color={Colors.dark.textSecondary} />
+          </View>
+        )}
+        <View style={styles.searchRowMeta}>
+          <ThemedText style={styles.searchRowTitle} numberOfLines={1}>{track.title}</ThemedText>
+          <ThemedText style={styles.searchRowArtist} numberOfLines={1}>
+            {track.artist}{track.album ? ` · ${track.album}` : ""}{track.duration ? `  ${fmtTime(track.duration)}` : ""}
+          </ThemedText>
         </View>
-      )}
-      <View style={styles.searchRowMeta}>
-        <ThemedText style={styles.searchRowTitle} numberOfLines={1}>{track.title}</ThemedText>
-        <ThemedText style={styles.searchRowArtist} numberOfLines={1}>
-          {track.artist}{track.album ? ` · ${track.album}` : ""}{track.duration ? `  ${fmtTime(track.duration)}` : ""}
-        </ThemedText>
-      </View>
-      <FocusPressable onPress={onLike} hitSlop={10} style={styles.searchRowBtn}>
-        <Feather name="heart" size={20} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
       </FocusPressable>
       <FocusPressable onPress={onAdd} hitSlop={10} style={styles.searchRowBtn}>
         <Feather name="plus-circle" size={20} color={Colors.dark.textSecondary} />
       </FocusPressable>
-    </FocusPressable>
+      <FocusPressable onPress={onLike} hitSlop={10} style={styles.searchRowBtn}>
+        <Feather name="heart" size={20} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
+      </FocusPressable>
+    </View>
   );
 }
 
@@ -1007,6 +1009,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.04)",
   },
+  searchRowMain: { flex: 1, flexDirection: "row", alignItems: "center" },
   searchRowThumb: { width: 46, height: 46, borderRadius: BorderRadius.sm, marginRight: 12 },
   searchRowThumbPh: { backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
   searchRowMeta: { flex: 1 },
