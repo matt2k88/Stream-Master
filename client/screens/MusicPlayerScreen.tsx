@@ -41,12 +41,36 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Injected into the YouTube embed page to monitor the <video> element
-// and relay events back to React Native via postMessage.
+// Injected into the YouTube watch page to find the <video> element,
+// dismiss cookie/consent dialogs, and relay playback events back via postMessage.
 const INJECT_JS = `(function() {
   function post(obj) {
     try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
   }
+
+  // Click past GDPR consent / "Accept all" overlays
+  function dismissOverlays() {
+    try {
+      var sel = [
+        'button[aria-label*="Accept"]',
+        'button[aria-label*="Agree"]',
+        '.consent-bump-v2-lightbox button',
+        'ytm-consent-bump-v2-renderer button',
+        'tp-yt-paper-button[dialog-confirm]',
+      ];
+      for (var i = 0; i < sel.length; i++) {
+        var el = document.querySelector(sel[i]);
+        if (el) { el.click(); break; }
+      }
+      // Text-based fallback
+      var btns = document.querySelectorAll('button, c3-material-button');
+      for (var j = 0; j < btns.length; j++) {
+        var t = (btns[j].textContent || '').trim().toLowerCase();
+        if (t === 'accept all' || t === 'i agree' || t === 'agree') { btns[j].click(); break; }
+      }
+    } catch(e) {}
+  }
+
   var vid = null;
   var lastFloor = -1;
 
@@ -57,7 +81,7 @@ const INJECT_JS = `(function() {
       post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('pause', function() {
-      post({ type:'state', state:2, currentTime:v.currentTime, duration:v.duration||0 });
+      if (!v.ended) post({ type:'state', state:2, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('ended', function() {
       post({ type:'state', state:0, currentTime:v.currentTime, duration:v.duration||0 });
@@ -74,17 +98,25 @@ const INJECT_JS = `(function() {
       if (f !== lastFloor) { lastFloor = f; post({ type:'progress', currentTime:v.currentTime, duration:v.duration||0 }); }
     });
     v.addEventListener('error', function() {
-      post({ type:'error', code: v.error ? v.error.code : -1, msg: v.error ? v.error.message : '' });
+      post({ type:'error', code: v.error ? v.error.code : -1 });
     });
+    // Kick off play
     v.play().catch(function(){});
-    if (v.readyState >= 1 && !isNaN(v.duration)) post({ type:'ready', duration:v.duration||0 });
+    if (v.readyState >= 2 && !isNaN(v.duration) && v.duration > 0) {
+      post({ type:'ready', duration:v.duration });
+    }
+    post({ type:'debug', msg:'video attached, readyState='+v.readyState+' src='+v.src.substring(0,60) });
   }
 
+  dismissOverlays();
+
   var obs = new MutationObserver(function() {
+    dismissOverlays();
     var v = document.querySelector('video');
-    if (v) attach(v);
+    if (v && v !== vid) attach(v);
   });
   obs.observe(document.documentElement, { childList:true, subtree:true });
+
   var v = document.querySelector('video');
   if (v) attach(v);
 
@@ -208,6 +240,8 @@ export default function MusicPlayerScreen() {
         setStreamError(`Unavailable (${code}). Try another track.`);
         setLoadingTrackId(null);
         if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
+      } else if (msg.type === "debug") {
+        // diagnostic only — no UI change
       }
     } catch {}
   }, []);
@@ -257,26 +291,33 @@ export default function MusicPlayerScreen() {
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
-  // Build the YouTube embed URL — loaded as top-level WebView page,
-  // NOT inside an <iframe>, so embedding restrictions don't apply.
-  const embedUrl = currentTrack
-    ? `https://www.youtube.com/embed/${currentTrack.videoId}?autoplay=1&playsinline=1&controls=0&rel=0&fs=0&modestbranding=1`
+  // Full YouTube watch page — /embed/ blocks content at server level for major labels.
+  const watchUrl = currentTrack
+    ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
     : null;
 
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
   return (
     <ThemedView style={styles.root}>
-      {/* Hidden YouTube player — 1×1 pixel, off-screen, pointerEvents blocked */}
-      {embedUrl ? (
+      {/* Hidden YouTube player — clipped to 0×0 but 320×240 internally so YT player initialises */}
+      {watchUrl ? (
         <View style={styles.hiddenPlayer} pointerEvents="none">
           <WebView
             key={currentTrack!.videoId}
             ref={webViewRef}
             style={styles.webView}
-            source={{ uri: embedUrl }}
-            injectedJavaScript={INJECT_JS}
+            source={{ uri: watchUrl }}
+            onLoad={() => {
+              webViewRef.current?.injectJavaScript(INJECT_JS);
+            }}
             onMessage={handleMessage}
+            onShouldStartLoadWithRequest={(req) => {
+              // Block navigation away from youtube.com (ads, suggestions, etc.)
+              return req.url.startsWith("https://www.youtube.com") ||
+                req.url.startsWith("https://m.youtube.com") ||
+                req.url.startsWith("https://accounts.google.com");
+            }}
             javaScriptEnabled
             mediaPlaybackRequiresUserAction={false}
             allowsInlineMediaPlayback
@@ -286,7 +327,7 @@ export default function MusicPlayerScreen() {
             bounces={false}
             startInLoadingState={false}
             allowsFullscreenVideo={false}
-            userAgent="Mozilla/5.0 (Linux; Android 11; Fire HD 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36"
+            userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
           />
         </View>
       ) : null}
@@ -473,18 +514,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundRoot,
   },
 
-  // Tiny 1×1 offscreen slot — keeps WebView alive without any visible surface
+  // 0×0 clip — the inner WebView is real-sized so YouTube's player initialises
   hiddenPlayer: {
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: 1,
-    height: 1,
+    width: 0,
+    height: 0,
     overflow: "hidden",
   },
   webView: {
-    width: 1,
-    height: 1,
+    width: 320,
+    height: 240,
     backgroundColor: "#000",
   },
 
