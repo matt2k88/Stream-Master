@@ -18,7 +18,16 @@ YouTube blocks unauthenticated cloud IPs with a "Sign in to confirm you're not a
 - Replit Cloud Run deployments do NOT auto-run `uv sync` — add it to the deployment build command (`uv sync --frozen && ...`) or the venv won't exist in prod.
 - Verify with `yt-dlp --verbose ...` and look for `Optional libraries: yt_dlp_ejs-...` and `JS runtimes: deno-2.x.x` (no "(unsupported)" tag).
 
-**Replit Secrets UI gotcha:** pasting a multi-line cookies.txt strips ALL newlines but preserves tabs. Re-insert newlines on the server before each row that matches the Netscape pattern `^(#HttpOnly_)?domain\tFLAG\tpath\tFLAG\tdigits\t...`. Path is not always `/` — accept any non-tab string. Cache the normalized text once and reuse for both yt-dlp `--cookies` file and ytdl-core `Cookie:` header.
+**Replit Secrets UI gotcha:** pasting a multi-line cookies.txt strips ALL newlines but preserves tabs. Re-insert newlines on the server. The correct normalization pattern:
+```ts
+const stripped = raw.replace(/\r?\n|\r/g, "");
+const fixed = stripped.replace(
+  /((?:#HttpOnly_)?\.?[a-zA-Z][a-zA-Z0-9._-]+\t(?:TRUE|FALSE)\t)/g,
+  "\n$1"
+);
+await writeFile(path, "# Netscape HTTP Cookie File\n" + fixed.trimStart() + "\n");
+```
+**Critical**: use an unconditional replacement (no lookbehind on the preceding character). The comment section ends with spaces before the first domain, so any regex requiring a non-whitespace char immediately before the domain will silently fail and leave everything on one line — yt-dlp then rejects it as "invalid Netscape format".
 
 **Symptom → cause cheat sheet:**
 - "Sign in to confirm you're not a bot" → cookies missing/expired.

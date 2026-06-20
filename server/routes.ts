@@ -7,20 +7,24 @@ import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, sear
 
 // ── yt-dlp helpers ────────────────────────────────────────────────────────────
 
-let _cookiesWritten = false;
 const COOKIES_PATH = "/tmp/yt_music_cookies.txt";
 
 async function ensureCookiesFile(): Promise<string | null> {
   const raw = process.env.YT_COOKIES_TXT ?? "";
   if (!raw.trim()) return null;
-  if (_cookiesWritten) return COOKIES_PATH;
-  // Replit Secrets strips newlines — re-insert before each Netscape cookie row
-  const fixed = raw
-    .replace(/\r\n|\r/g, "\n")
-    .replace(/([^\n])((?:#HttpOnly_)?[^\s\t][^\t]*\t(?:TRUE|FALSE)\t[^\t]+\t(?:TRUE|FALSE)\t\d)/g, "$1\n$2")
-    .trim();
-  await writeFile(COOKIES_PATH, "# Netscape HTTP Cookie File\n" + fixed + "\n", "utf8");
-  _cookiesWritten = true;
+  // Replit Secrets strips ALL newlines but preserves tabs.
+  // Strip any surviving line-endings, then re-insert \n before every
+  // Netscape cookie row (domain immediately followed by \tTRUE|\tFALSE).
+  const stripped = raw.replace(/\r?\n|\r/g, "");
+  const withNewlines = stripped.replace(
+    /((?:#HttpOnly_)?\.?[a-zA-Z][a-zA-Z0-9._-]+\t(?:TRUE|FALSE)\t)/g,
+    "\n$1"
+  );
+  await writeFile(
+    COOKIES_PATH,
+    "# Netscape HTTP Cookie File\n" + withNewlines.trimStart() + "\n",
+    "utf8"
+  );
   return COOKIES_PATH;
 }
 
