@@ -17,7 +17,6 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useNavigation } from "@react-navigation/native";
 import { getApiUrl } from "@/lib/query-client";
-import { LinearGradient } from "expo-linear-gradient";
 
 interface Track {
   videoId: string;
@@ -40,9 +39,8 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Injected into the YouTube watch page. Posts init immediately so we can
-// confirm the bridge is alive, then finds the <video> via shadow-DOM search,
-// reports play() rejections, and relays state/progress events.
+// Injected after onLoad. Finds the <video> (incl. Shadow DOM), relays events.
+// Posts 'play_ok' immediately when play() resolves so we can clear the load-timer.
 const INJECT_JS = `(function() {
   function post(obj) {
     try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
@@ -55,10 +53,7 @@ const INJECT_JS = `(function() {
     if (v) return v;
     var all = root.querySelectorAll('*');
     for (var i = 0; i < all.length; i++) {
-      if (all[i].shadowRoot) {
-        var f = findVideo(all[i].shadowRoot);
-        if (f) return f;
-      }
+      if (all[i].shadowRoot) { var f = findVideo(all[i].shadowRoot); if (f) return f; }
     }
     return null;
   }
@@ -96,19 +91,23 @@ const INJECT_JS = `(function() {
     });
     v.addEventListener('canplay', function() {
       post({ type:'ready', duration:v.duration||0 });
-      v.play().catch(function(e){ post({ type:'debug', msg:'canplay play() err: '+e.message }); });
+      v.play().catch(function(){});
     });
     v.addEventListener('timeupdate', function() {
       var f = Math.floor(v.currentTime);
-      if (f !== lastFloor) { lastFloor = f; post({ type:'progress', currentTime:v.currentTime, duration:v.duration||0 }); }
+      if (f !== lastFloor) {
+        lastFloor = f;
+        post({ type:'progress', currentTime:v.currentTime, duration:v.duration||0 });
+      }
     });
     v.addEventListener('error', function() {
       post({ type:'error', code: v.error ? v.error.code : -1 });
     });
+    // play_ok fires as soon as play() Promise resolves — clears the load-timer early
     v.play()
-      .then(function(){ post({ type:'debug', msg:'play() ok readyState='+v.readyState }); })
-      .catch(function(e){ post({ type:'debug', msg:'play() err: '+e.message+' readyState='+v.readyState }); });
-    post({ type:'debug', msg:'attached src='+v.src.substring(0,60)+' readyState='+v.readyState });
+      .then(function(){ post({ type:'play_ok', duration:v.duration||0 }); })
+      .catch(function(e){ post({ type:'play_err', msg: e.message }); });
+    post({ type:'attached', readyState:v.readyState });
   }
 
   function check() {
@@ -118,13 +117,8 @@ const INJECT_JS = `(function() {
   }
 
   new MutationObserver(check).observe(document.documentElement, { childList:true, subtree:true });
-
   var n = 0;
-  var poll = setInterval(function() {
-    check();
-    if (++n > 60) clearInterval(poll);
-  }, 500);
-
+  var poll = setInterval(function() { check(); if (++n > 60) clearInterval(poll); }, 500);
   check();
 
   window.ytCmd = function(cmd, val) {
@@ -198,12 +192,11 @@ export default function MusicPlayerScreen() {
   const [searchError, setSearchError] = useState("");
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [playerState, setPlayerState] = useState<number>(YT_UNSTARTED);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [streamError, setStreamError] = useState("");
-  const [debugLog, setDebugLog] = useState<string[]>([]);
 
   const inputRef = useRef<TextInput>(null);
   const webViewRef = useRef<WebView>(null);
@@ -212,6 +205,14 @@ export default function MusicPlayerScreen() {
   const isPlaying = playerState === YT_PLAYING;
   const isBuffering = playerState === YT_BUFFERING;
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+
+  const clearLoadTimer = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+    setIsLoading(false);
+  }, []);
 
   const jsPlay = useCallback(() => {
     webViewRef.current?.injectJavaScript('window.ytCmd("play"); true;');
@@ -223,36 +224,40 @@ export default function MusicPlayerScreen() {
     webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`);
   }, []);
 
-  const handleMessage = useCallback((event: WebViewMessageEvent) => {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === "init") {
-        setDebugLog((d) => [`init: ${msg.url?.slice(0, 60)}`, ...d].slice(0, 6));
-      } else if (msg.type === "debug") {
-        setDebugLog((d) => [msg.msg, ...d].slice(0, 6));
-      } else if (msg.type === "ready") {
-        if (msg.duration) setDuration(msg.duration);
-        setLoadingTrackId(null);
-        if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
-      } else if (msg.type === "state") {
-        setPlayerState(msg.state);
-        if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-        if (msg.duration) setDuration(msg.duration);
-        if (msg.state === YT_PLAYING) {
-          setLoadingTrackId(null);
-          if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      try {
+        const msg = JSON.parse(event.nativeEvent.data);
+        if (msg.type === "play_ok") {
+          // play() Promise resolved — video is definitely going to play; clear timer now
+          clearLoadTimer();
+          if (msg.duration > 0) setDuration(msg.duration);
+          setStreamError("");
+        } else if (msg.type === "play_err") {
+          setStreamError("Playback blocked. Try another.");
+          clearLoadTimer();
+        } else if (msg.type === "ready") {
+          if (msg.duration > 0) setDuration(msg.duration);
+          clearLoadTimer();
+          setStreamError("");
+        } else if (msg.type === "state") {
+          setPlayerState(msg.state);
+          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+          if (msg.duration > 0) setDuration(msg.duration);
+          if (msg.state === YT_PLAYING) { clearLoadTimer(); setStreamError(""); }
+        } else if (msg.type === "progress") {
+          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+          if (msg.duration > 0) setDuration(msg.duration);
+        } else if (msg.type === "error") {
+          const code = msg.code ?? "?";
+          setStreamError(`Unavailable (${code}). Try another.`);
+          clearLoadTimer();
         }
-      } else if (msg.type === "progress") {
-        if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-        if (msg.duration) setDuration(msg.duration);
-      } else if (msg.type === "error") {
-        const code = msg.code ?? "?";
-        setStreamError(`Unavailable (${code}). Try another track.`);
-        setLoadingTrackId(null);
-        if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
-      }
-    } catch {}
-  }, []);
+        // init / attached / debug → no state changes needed
+      } catch {}
+    },
+    [clearLoadTimer]
+  );
 
   const handleSearch = useCallback(async () => {
     const q = query.trim();
@@ -281,55 +286,39 @@ export default function MusicPlayerScreen() {
       }
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       setCurrentTrack(track);
-      setLoadingTrackId(track.videoId);
+      setIsLoading(true);
       setStreamError("");
-      setDebugLog([]);
       setPlayerState(YT_UNSTARTED);
       setCurrentTime(0);
       setDuration(track.duration || 0);
+      // 45s timeout — only fires if WebView never responds at all
       loadTimeoutRef.current = setTimeout(() => {
-        setLoadingTrackId((id) => {
-          if (id === track.videoId) {
-            setStreamError("Track timed out. Try another.");
-            return null;
-          }
-          return id;
-        });
-      }, 30_000);
+        setIsLoading(false);
+        setStreamError("Track timed out. Try another.");
+      }, 45_000);
     },
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
-  // Full YouTube watch page — no content-level restrictions unlike /embed/
   const watchUrl = currentTrack
     ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
     : null;
 
-  const PLAYER_H = 180;
+  const PLAYER_H = 84;
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
-  const bottomPad = currentTrack ? PLAYER_H + insets.bottom : insets.bottom;
 
   return (
     <ThemedView style={styles.root}>
-      {/* ── Header ──────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padTop, paddingHorizontal: Spacing.lg }]}>
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Music Player</ThemedText>
-        {currentTrack ? (
-          <View style={styles.headerNowPlaying}>
-            <Feather name="music" size={12} color={Colors.dark.accent} />
-            <ThemedText style={styles.headerNowPlayingText} numberOfLines={1}>
-              {currentTrack.title}
-            </ThemedText>
-          </View>
-        ) : (
-          <View style={{ flex: 1 }} />
-        )}
+        <View style={{ flex: 1 }} />
       </View>
 
-      {/* ── Search bar ──────────────────────────────────────────── */}
+      {/* ── Search bar ──────────────────────────────────────────────── */}
       <View style={[styles.searchWrap, { paddingHorizontal: Spacing.lg }]}>
         <View style={styles.searchBar}>
           <Feather name="search" size={17} color={Colors.dark.textSecondary} style={{ marginRight: Spacing.sm }} />
@@ -356,11 +345,14 @@ export default function MusicPlayerScreen() {
           onPress={handleSearch}
           disabled={!query.trim() || searching}
         >
-          {searching ? <ActivityIndicator size="small" color="#fff" /> : <ThemedText style={styles.searchBtnText}>Search</ThemedText>}
+          {searching
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
+          }
         </Pressable>
       </View>
 
-      {/* ── Results ─────────────────────────────────────────────── */}
+      {/* ── Results ─────────────────────────────────────────────────── */}
       {searchError ? (
         <View style={styles.centred}>
           <Feather name="alert-circle" size={30} color="#ef4444" />
@@ -373,30 +365,35 @@ export default function MusicPlayerScreen() {
         <View style={styles.centred}>
           <Feather name="music" size={52} color="rgba(255,102,0,0.25)" />
           <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>Enter a song, artist or album above and tap Search</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>
+            Enter a song, artist or album above and tap Search
+          </ThemedText>
         </View>
       ) : (
         <FlatList
           data={results}
           keyExtractor={(t) => t.videoId}
           style={styles.list}
-          contentContainerStyle={[styles.listContent, { paddingBottom: bottomPad + Spacing.md }]}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: currentTrack ? PLAYER_H + insets.bottom + 16 : insets.bottom + 16 },
+          ]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
             <TrackRow
               track={item}
               isActive={currentTrack?.videoId === item.videoId && (isPlaying || isBuffering)}
-              isLoading={loadingTrackId === item.videoId}
+              isLoading={isLoading && currentTrack?.videoId === item.videoId}
               onPress={() => handlePlayTrack(item)}
             />
           )}
         />
       )}
 
-      {/* ── Player panel (visible WebView + overlaid controls) ──── */}
+      {/* ── Player ──────────────────────────────────────────────────── */}
       {currentTrack && watchUrl ? (
-        <View style={[styles.playerPanel, { height: PLAYER_H + insets.bottom, paddingBottom: insets.bottom }]}>
-          {/* YouTube watch page — visible so Android renders + plays it */}
+        <View style={[styles.playerShell, { paddingBottom: insets.bottom, height: PLAYER_H + insets.bottom }]}>
+          {/* WebView runs audio — androidLayerType=software lets our View cover it */}
           <WebView
             key={currentTrack.videoId}
             ref={webViewRef}
@@ -418,85 +415,62 @@ export default function MusicPlayerScreen() {
             scrollEnabled={false}
             bounces={false}
             allowsFullscreenVideo={false}
-            // software layer so React Native views can render on top (Android SurfaceView)
             androidLayerType="software"
             userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
           />
 
-          {/* Dark overlay — hides YouTube UI, shows our controls */}
-          <View style={styles.playerOverlay} pointerEvents="box-none">
-            {/* Top gradient fade */}
-            <LinearGradient
-              colors={["rgba(8,8,8,0.95)", "rgba(8,8,8,0.7)", "rgba(8,8,8,0)"]}
-              style={styles.topFade}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              pointerEvents="none"
-            />
-            {/* Bottom controls area */}
-            <LinearGradient
-              colors={["rgba(8,8,8,0)", "rgba(8,8,8,0.95)", "#080808"]}
-              style={styles.bottomFade}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              pointerEvents="none"
-            />
+          {/* Solid black cover — hides YouTube UI completely */}
+          <View style={styles.playerCover} />
 
-            {/* Progress bar */}
-            <View style={styles.progressRow}>
-              <View style={styles.progressTrack} pointerEvents="none">
-                <View style={{ flex: progress, backgroundColor: Colors.dark.accent, borderRadius: 2 }} />
-                <View style={[styles.progressDot, { opacity: progress > 0 ? 1 : 0 }]} />
-                <View style={{ flex: Math.max(0, 1 - progress) }} />
-              </View>
+          {/* Progress bar — sits above the cover */}
+          <View style={styles.progressWrap}>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { flex: progress }]} />
+              {progress > 0 && <View style={styles.progressDot} />}
+              <View style={{ flex: Math.max(0, 1 - progress) }} />
             </View>
+          </View>
 
-            {/* Controls row */}
-            <View style={styles.controlsRow}>
-              {currentTrack.thumbnail ? (
-                <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniThumb} />
-              ) : (
-                <View style={[styles.miniThumb, styles.miniThumbPlaceholder]}>
-                  <Feather name="music" size={14} color={Colors.dark.accent} />
-                </View>
-              )}
+          {/* Controls row */}
+          <View style={styles.controlsRow}>
+            {currentTrack.thumbnail ? (
+              <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniThumb} />
+            ) : (
+              <View style={[styles.miniThumb, styles.miniThumbPlaceholder]}>
+                <Feather name="music" size={14} color={Colors.dark.accent} />
+              </View>
+            )}
 
-              <View style={styles.trackMeta}>
-                <ThemedText style={styles.miniTitle} numberOfLines={1}>{currentTrack.title}</ThemedText>
-                <ThemedText style={styles.miniChannel} numberOfLines={1}>
-                  {currentTrack.channel}
-                  {duration > 0 ? `  ·  ${fmtTime(currentTime)} / ${fmtTime(duration)}` : ""}
+            <View style={styles.trackMeta}>
+              <ThemedText style={styles.miniTitle} numberOfLines={1}>
+                {currentTrack.title}
+              </ThemedText>
+              <ThemedText style={styles.miniChannel} numberOfLines={1}>
+                {currentTrack.channel}
+                {duration > 0 ? `  ·  ${fmtTime(currentTime)} / ${fmtTime(duration)}` : ""}
+              </ThemedText>
+              {streamError ? (
+                <ThemedText style={styles.streamError} numberOfLines={1}>
+                  {streamError}
                 </ThemedText>
-                {streamError ? (
-                  <ThemedText style={styles.streamError} numberOfLines={1}>{streamError}</ThemedText>
-                ) : null}
-              </View>
-
-              {loadingTrackId === currentTrack.videoId ? (
-                <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: Spacing.sm }} />
-              ) : (
-                <>
-                  <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
-                    <Feather name="rotate-ccw" size={18} color={Colors.dark.textSecondary} />
-                  </Pressable>
-                  <Pressable style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
-                    <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
-                  </Pressable>
-                  <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
-                    <Feather name="rotate-cw" size={18} color={Colors.dark.textSecondary} />
-                  </Pressable>
-                </>
-              )}
+              ) : null}
             </View>
 
-            {/* Debug log — shows what's happening in the WebView (temp diagnostic) */}
-            {debugLog.length > 0 ? (
-              <View style={styles.debugPanel} pointerEvents="none">
-                {debugLog.slice(0, 3).map((line, i) => (
-                  <ThemedText key={i} style={styles.debugLine} numberOfLines={1}>{line}</ThemedText>
-                ))}
-              </View>
-            ) : null}
+            {isLoading ? (
+              <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: 12 }} />
+            ) : (
+              <>
+                <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
+                  <Feather name="rotate-ccw" size={18} color={Colors.dark.textSecondary} />
+                </Pressable>
+                <Pressable style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
+                  <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
+                </Pressable>
+                <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
+                  <Feather name="rotate-cw" size={18} color={Colors.dark.textSecondary} />
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
       ) : null}
@@ -509,17 +483,22 @@ const ACCENT = Colors.dark.accent;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.md },
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingBottom: Spacing.md, gap: Spacing.md,
+  },
   backBtn: { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
-  headerNowPlaying: { flex: 1, flexDirection: "row", alignItems: "center", gap: 5, marginLeft: Spacing.sm, overflow: "hidden" },
-  headerNowPlayingText: { flex: 1, fontSize: 12, color: ACCENT },
 
-  searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
+  searchWrap: {
+    flexDirection: "row", alignItems: "center",
+    gap: Spacing.sm, marginBottom: Spacing.md,
+  },
   searchBar: {
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.dark.backgroundSecondary,
-    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.md, borderWidth: 1,
+    borderColor: Colors.dark.border,
     paddingHorizontal: Spacing.md, height: 44,
   },
   searchInput: { flex: 1, fontSize: 15, color: Colors.dark.text, paddingVertical: 0 },
@@ -534,55 +513,92 @@ const styles = StyleSheet.create({
   list: { flex: 1 },
   listContent: { paddingHorizontal: Spacing.lg },
 
-  trackRow: { flexDirection: "row", alignItems: "center", paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.md, marginBottom: 2, gap: Spacing.md },
-  trackRowActive: { backgroundColor: "rgba(255,102,0,0.12)", borderWidth: 1, borderColor: "rgba(255,102,0,0.25)" },
-  thumbWrap: { width: 52, height: 52, borderRadius: BorderRadius.sm, overflow: "hidden", position: "relative" },
+  trackRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md, marginBottom: 2, gap: Spacing.md,
+  },
+  trackRowActive: {
+    backgroundColor: "rgba(255,102,0,0.12)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.25)",
+  },
+  thumbWrap: {
+    width: 52, height: 52,
+    borderRadius: BorderRadius.sm, overflow: "hidden",
+  },
   thumbImg: { width: "100%", height: "100%" },
-  thumbPlaceholder: { width: "100%", height: "100%", backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
-  thumbOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center" },
+  thumbPlaceholder: {
+    width: "100%", height: "100%",
+    backgroundColor: Colors.dark.backgroundSecondary,
+    justifyContent: "center", alignItems: "center",
+  },
+  thumbOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center", alignItems: "center",
+  },
   trackInfo: { flex: 1, gap: 3 },
   trackTitle: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   trackTitleActive: { color: ACCENT },
   trackChannel: { fontSize: 12, color: Colors.dark.textSecondary },
   trackDuration: { fontSize: 12, color: Colors.dark.textSecondary, minWidth: 38, textAlign: "right" },
 
-  centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  centred: {
+    flex: 1, justifyContent: "center", alignItems: "center",
+    gap: Spacing.md, paddingHorizontal: Spacing.xl,
+  },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
   emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
   errorText: { fontSize: 14, color: "#ef4444", textAlign: "center" },
   retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
   retryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 
-  // ── Player panel
-  playerPanel: {
+  // ── Player
+  playerShell: {
     position: "absolute", left: 0, right: 0, bottom: 0,
-    backgroundColor: "#000",
+    backgroundColor: "#111",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,102,0,0.2)",
   },
-  playerOverlay: {
+  // Solid opaque cover — sits on top of WebView SurfaceView (needs androidLayerType=software on the WebView)
+  playerCover: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
+    backgroundColor: "#111",
   },
-  topFade: { position: "absolute", top: 0, left: 0, right: 0, height: 48 },
-  bottomFade: { position: "absolute", bottom: 0, left: 0, right: 0, height: 90 },
-
-  progressRow: { paddingHorizontal: Spacing.lg, marginBottom: 6 },
-  progressTrack: { flexDirection: "row", alignItems: "center", height: 3, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 2, overflow: "visible" },
-  progressDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: ACCENT, marginHorizontal: -5 },
-
-  controlsRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm, gap: Spacing.sm },
-  miniThumb: { width: 40, height: 40, borderRadius: BorderRadius.sm },
-  miniThumbPlaceholder: { backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
-  trackMeta: { flex: 1, gap: 2, overflow: "hidden" },
+  progressWrap: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: 8,
+  },
+  progressTrack: {
+    flexDirection: "row", alignItems: "center",
+    height: 3, backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 2,
+  },
+  progressFill: { height: 3, backgroundColor: ACCENT, borderRadius: 2 },
+  progressDot: {
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: ACCENT, marginHorizontal: -5,
+  },
+  controlsRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: 8,
+    gap: Spacing.sm,
+  },
+  miniThumb: { width: 44, height: 44, borderRadius: BorderRadius.sm },
+  miniThumbPlaceholder: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    justifyContent: "center", alignItems: "center",
+  },
+  trackMeta: { flex: 1, gap: 2 },
   miniTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.text },
   miniChannel: { fontSize: 11, color: Colors.dark.textSecondary },
   streamError: { fontSize: 11, color: "#ef4444" },
   ctrlBtn: { padding: Spacing.sm },
   playBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: ACCENT, justifyContent: "center", alignItems: "center",
-    shadowColor: ACCENT, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
+    backgroundColor: ACCENT,
+    justifyContent: "center", alignItems: "center",
+    elevation: 4,
   },
-
-  debugPanel: { paddingHorizontal: Spacing.lg, paddingBottom: 2, gap: 1 },
-  debugLine: { fontSize: 9, color: "rgba(255,165,0,0.6)", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
 });
