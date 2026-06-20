@@ -17,6 +17,190 @@ setInterval(() => {
   for (const [k, v] of _avatarTokens.entries()) if (v.expiresAt < now) _avatarTokens.delete(k);
 }, 5 * 60_000);
 
+// ── Mobile sign-in QR tokens ──────────────────────────────────────────────────
+interface LoginToken { serverUrl: string; serverName: string; ready: boolean; username?: string; password?: string; expiresAt: number }
+const _loginTokens = new Map<string, LoginToken>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _loginTokens.entries()) if (v.expiresAt < now) _loginTokens.delete(k);
+}, 5 * 60_000);
+
+const LOGIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>Sign In \u2014 Ultra Cast</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--accent:#FF6600;--bg:#090909;--bg2:#111;--bg3:#181818;--border:#222;--text:#fff;--text2:#888;--radius:10px;--error:#ff3b3b}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100dvh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;gap:0}
+    .logo-row{display:flex;align-items:center;gap:10px;margin-bottom:4px;margin-top:8px}
+    .logo-v3{font-size:20px;font-weight:800;letter-spacing:.5px}
+    .logo-v3 span{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:2px;margin-left:3px;vertical-align:super}
+    .card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px 22px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:16px;margin-top:14px}
+    .server-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(255,102,0,.1);border:1px solid rgba(255,102,0,.3);border-radius:20px;padding:4px 12px;align-self:flex-start;max-width:100%}
+    .server-chip span{font-size:12px;color:var(--accent);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+    .form-title{font-size:21px;font-weight:700;line-height:1.2}
+    .form-sub{font-size:13px;color:var(--text2);margin-top:-8px}
+    label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px}
+    .field{display:flex;flex-direction:column;gap:0}
+    .input-wrap{position:relative}
+    input[type=text],input[type=password]{width:100%;height:48px;background:var(--bg3);border:1.5px solid var(--border);border-radius:var(--radius);padding:0 48px 0 14px;color:var(--text);font-size:15px;font-family:inherit;outline:none;transition:border-color .2s,box-shadow .2s;-webkit-appearance:none}
+    input[type=text]:focus,input[type=password]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,102,0,.15)}
+    .eye-btn{position:absolute;right:0;top:0;bottom:0;width:44px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;color:var(--text2);transition:color .15s;-webkit-tap-highlight-color:transparent}
+    .eye-btn:hover{color:var(--text)}
+    .caps-warn{display:none;align-items:flex-start;gap:6px;background:rgba(230,168,23,.1);border:1px solid rgba(230,168,23,.3);border-radius:6px;padding:7px 10px;margin-top:8px;font-size:12px;color:#E6A817;line-height:1.45}
+    .btn{height:50px;width:100%;border:none;border-radius:var(--radius);background:linear-gradient(90deg,#FF8C1A,#FF5500);color:#fff;font-size:16px;font-weight:700;letter-spacing:.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .2s,transform .12s;box-shadow:0 4px 20px rgba(255,102,0,.4);-webkit-tap-highlight-color:transparent;margin-top:2px}
+    .btn:active:not(:disabled){transform:scale(.97)}
+    .btn:disabled{opacity:.45;cursor:not-allowed}
+    .err{background:rgba(255,59,59,.1);border:1px solid rgba(255,59,59,.3);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--error);text-align:center;display:none}
+    .security{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--text2);line-height:1.5;opacity:.7}
+    #success,#expired{display:none;flex-direction:column;align-items:center;gap:14px;text-align:center;padding-top:24px;width:100%;max-width:380px}
+    .result-ic{width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,102,0,.4);background:rgba(255,102,0,.1)}
+    #expired .result-ic{background:rgba(255,59,59,.1);border-color:rgba(255,59,59,.4)}
+    .result-title{font-size:22px;font-weight:700}
+    .result-sub{font-size:14px;color:var(--text2);max-width:280px;line-height:1.65}
+    .spin{animation:spin .75s linear infinite;display:inline-flex}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="logo-row">
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none"><rect width="34" height="34" rx="8" fill="#FF6600"/><circle cx="17" cy="17" r="7" stroke="#fff" stroke-width="2" fill="none"/><path d="M17 13.5v3.8l2.3 2.3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <div class="logo-v3">Ultra Cast<span>v3</span></div>
+  </div>
+
+  <div class="card" id="formCard">
+    <div class="server-chip">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      <span id="serverName">Loading...</span>
+    </div>
+    <div>
+      <div class="form-title">Sign In on Mobile</div>
+      <div class="form-sub" id="formSub">Enter your IPTV credentials</div>
+    </div>
+    <div class="field">
+      <label for="uname">Username</label>
+      <div class="input-wrap">
+        <input id="uname" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Enter username" />
+        <button class="eye-btn" type="button" tabindex="-1" style="pointer-events:none;opacity:.4">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </button>
+      </div>
+      <div class="caps-warn" id="capsWarn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Usernames are case-sensitive. Please check capitalisation.
+      </div>
+    </div>
+    <div class="field">
+      <label for="pass">Password</label>
+      <div class="input-wrap">
+        <input id="pass" type="password" autocomplete="current-password" autocapitalize="off" placeholder="Enter password" />
+        <button class="eye-btn" id="eyeBtn" type="button" aria-label="Toggle password visibility">
+          <svg id="eyeIconOpen" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg id="eyeIconClosed" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="err" id="errBox"></div>
+    <button class="btn" id="signInBtn" type="button">Sign In</button>
+    <div class="security">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Your credentials are sent securely and only used to sign in to your IPTV account on your TV.
+    </div>
+  </div>
+
+  <div id="success">
+    <div class="result-ic">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#FF6600" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="result-title">All done!</div>
+    <div class="result-sub">Your credentials have been sent to your TV. You can close this page.</div>
+  </div>
+
+  <div id="expired">
+    <div class="result-ic">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="result-title" style="color:var(--error)">Link Expired</div>
+    <div class="result-sub">This sign-in link has expired. Return to your TV and scan the new QR code.</div>
+  </div>
+
+  <script>
+    (function() {
+      var parts = location.pathname.split('/').filter(Boolean);
+      var TOKEN = parts[parts.length - 1];
+      var params = new URLSearchParams(location.search);
+      var serverName = params.get('server') || 'your provider';
+
+      document.getElementById('serverName').textContent = serverName;
+      document.getElementById('formSub').textContent = 'Enter your credentials for ' + serverName;
+
+      var uname = document.getElementById('uname');
+      var pass = document.getElementById('pass');
+      var eyeBtn = document.getElementById('eyeBtn');
+      var signInBtn = document.getElementById('signInBtn');
+      var errBox = document.getElementById('errBox');
+      var capsWarn = document.getElementById('capsWarn');
+      var showPass = false;
+
+      uname.addEventListener('input', function() {
+        capsWarn.style.display = /[A-Z]/.test(uname.value) ? 'flex' : 'none';
+      });
+
+      eyeBtn.addEventListener('click', function() {
+        showPass = !showPass;
+        pass.type = showPass ? 'text' : 'password';
+        document.getElementById('eyeIconOpen').style.display = showPass ? 'none' : '';
+        document.getElementById('eyeIconClosed').style.display = showPass ? '' : 'none';
+      });
+
+      function setLoading(on) {
+        signInBtn.disabled = on;
+        signInBtn.innerHTML = on
+          ? '<span class="spin"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-9-9c2.39 0 4.68.94 6.36 2.64"/></svg></span> Signing in...'
+          : 'Sign In';
+      }
+
+      function showErr(msg) { errBox.textContent = msg; errBox.style.display = 'block'; }
+      function clearErr() { errBox.style.display = 'none'; }
+
+      function doSubmit() {
+        clearErr();
+        var u = uname.value.trim();
+        var p = pass.value.trim();
+        if (!u || !p) { showErr('Please enter your username and password.'); return; }
+        setLoading(true);
+        fetch('/api/login-submit/' + TOKEN, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username: u, password: p})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.ok) {
+            document.getElementById('formCard').style.display = 'none';
+            document.getElementById('success').style.display = 'flex';
+          } else {
+            showErr(d.error || 'Something went wrong. Please try again.');
+            setLoading(false);
+          }
+        })
+        .catch(function() {
+          showErr('Network error. Please check your connection and try again.');
+          setLoading(false);
+        });
+      }
+
+      signInBtn.addEventListener('click', doSubmit);
+      pass.addEventListener('keydown', function(e) { if (e.key === 'Enter') doSubmit(); });
+      uname.addEventListener('keydown', function(e) { if (e.key === 'Enter') pass.focus(); });
+    })();
+  </script>
+</body>
+</html>`;
+
 const AVATAR_UPLOAD_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -664,6 +848,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const entry = _avatarTokens.get(req.params.token);
     if (!entry || Date.now() > entry.expiresAt) return res.json({ ready: false, expired: true });
     res.json({ ready: entry.ready, imageData: entry.ready ? entry.imageData : undefined });
+  });
+
+  // ── Mobile sign-in QR routes ──────────────────────────────────────────────
+
+  // Step 1: app requests a short-lived login token
+  app.post("/api/login-token", (req, res) => {
+    const { serverUrl, serverName } = req.body ?? {};
+    if (!serverUrl) return res.status(400).json({ error: "serverUrl required" });
+    const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    _loginTokens.set(token, { serverUrl, serverName: serverName ?? "", ready: false, expiresAt: Date.now() + 10 * 60_000 });
+    const forwarded = (req.headers["x-forwarded-host"] as string) ?? req.headers.host ?? "localhost";
+    const proto = ((req.headers["x-forwarded-proto"] as string) ?? "").split(",")[0].trim() || (req.secure ? "https" : "http");
+    const fallbackUrl = `${proto}://${forwarded}/login/${token}`;
+    const loginBase = (process.env.LOGIN_BASE_URL ?? "").replace(/\/$/, "");
+    const loginUrl = (loginBase ? `${loginBase}/login/${token}` : fallbackUrl) + "?server=" + encodeURIComponent(serverName ?? "");
+    res.json({ token, loginUrl });
+  });
+
+  // Step 2: serve the mobile sign-in page
+  app.get("/login/:token", (req, res) => {
+    const entry = _loginTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) {
+      return res.status(410).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Expired</title><style>body{background:#090909;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px}h2{color:#FF6600}p{color:#666;margin-top:8px}</style></head><body><div><h2>Link Expired</h2><p>This sign-in link has expired. Please return to your TV and scan the new QR code.</p></div></body></html>`);
+    }
+    if (entry.ready) {
+      return res.status(410).send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Already Used</title><style>body{background:#090909;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;padding:24px}h2{color:#FF6600}p{color:#666;margin-top:8px}</style></head><body><div><h2>Already Signed In</h2><p>These credentials have already been sent to your TV. You can close this page.</p></div></body></html>`);
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(LOGIN_HTML);
+  });
+
+  // Step 3: mobile page submits credentials
+  app.post("/api/login-submit/:token", (req, res) => {
+    const entry = _loginTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) return res.status(410).json({ error: "Link expired. Please rescan the QR code." });
+    if (entry.ready) return res.status(409).json({ error: "Already used." });
+    const { username, password } = req.body ?? {};
+    if (!username || !password) return res.status(400).json({ error: "Username and password required." });
+    entry.username = username;
+    entry.password = password;
+    entry.ready = true;
+    res.json({ ok: true });
+  });
+
+  // Step 4: TV app polls until credentials are ready
+  app.get("/api/login-status/:token", (req, res) => {
+    const entry = _loginTokens.get(req.params.token);
+    if (!entry || Date.now() > entry.expiresAt) return res.json({ ready: false, expired: true });
+    if (entry.ready) {
+      const { username, password } = entry;
+      _loginTokens.delete(req.params.token); // consume once
+      return res.json({ ready: true, username, password });
+    }
+    res.json({ ready: false });
   });
 
   // ── Favourites ────────────────────────────────────────────────────────────

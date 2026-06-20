@@ -8,6 +8,7 @@ import {
   Image,
   FlatList,
   useWindowDimensions,
+  Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -18,6 +19,7 @@ import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { LinearGradient } from "expo-linear-gradient";
 import { fetchServers, IptvServer } from "@/lib/supabase";
+import { getApiUrl } from "@/lib/query-client";
 
 type Step = "server" | "credentials";
 
@@ -102,6 +104,17 @@ export default function LoginScreen() {
   const passwordRef = useRef<TextInput>(null);
   const connectBtnRef = useRef<View>(null);
 
+  // ── Mobile sign-in QR state ────────────────────────────────────────────────
+  const [loginToken, setLoginToken] = useState<string | null>(null);
+  const [loginUrl, setLoginUrl] = useState<string | null>(null);
+  const [qrLoginImageLoading, setQrLoginImageLoading] = useState(true);
+  const loginPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const logoAnim = useRef(new Animated.Value(0)).current;
+
+  // Show QR panel only on large screens (TV / desktop) — phones excluded
+  const isLargeScreen = width >= 960;
+  const showMobileSignIn = step === "credentials" && isLargeScreen;
+
   const hasUppercase = /[A-Z]/.test(username);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.xl);
@@ -137,25 +150,29 @@ export default function LoginScreen() {
     setStep("credentials");
   };
 
-  const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      setError("Please enter your username and password");
-      return;
-    }
+  const doLogin = useCallback(async (u: string, p: string) => {
     if (!selectedServer) return;
     setIsLoading(true);
     setError("");
     try {
       await login({
         serverUrl: selectedServer.url,
-        username: username.trim(),
-        password: password.trim(),
+        username: u.trim(),
+        password: p.trim(),
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed. Check your credentials.");
     } finally {
       setIsLoading(false);
     }
+  }, [selectedServer, login]);
+
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      setError("Please enter your username and password");
+      return;
+    }
+    await doLogin(username, password);
   };
 
   const handleBack = () => {
@@ -163,6 +180,63 @@ export default function LoginScreen() {
     setError("");
     // Intentionally preserve username/password so going back doesn't wipe input
   };
+
+  // ── Animate logo when QR panel appears ────────────────────────────────────
+  useEffect(() => {
+    Animated.timing(logoAnim, {
+      toValue: showMobileSignIn ? 1 : 0,
+      duration: 320,
+      useNativeDriver: false,
+    }).start();
+  }, [showMobileSignIn]);
+
+  // ── Generate login token when entering credentials on large screen ─────────
+  useEffect(() => {
+    if (!showMobileSignIn || !selectedServer) return;
+    let cancelled = false;
+    const apiBase = getApiUrl();
+    fetch(`${apiBase}/api/login-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serverUrl: selectedServer.url, serverName: selectedServer.name }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setLoginToken(d.token ?? null);
+        setLoginUrl(d.loginUrl ?? null);
+        setQrLoginImageLoading(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      setLoginToken(null);
+      setLoginUrl(null);
+    };
+  }, [showMobileSignIn, selectedServer?.id]);
+
+  // ── Poll for credentials submitted on mobile ───────────────────────────────
+  useEffect(() => {
+    if (!loginToken || !showMobileSignIn) return;
+    const apiBase = getApiUrl();
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch(`${apiBase}/api/login-status/${loginToken}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d.ready && d.username && d.password) {
+          clearInterval(id);
+          loginPollRef.current = null;
+          doLogin(d.username, d.password);
+        }
+      } catch {}
+    }, 3000);
+    loginPollRef.current = id;
+    return () => {
+      clearInterval(id);
+      loginPollRef.current = null;
+    };
+  }, [loginToken, showMobileSignIn]);
 
   const credsReady = username.trim().length > 0 && password.trim().length > 0;
   const connectHighlighted =
@@ -196,9 +270,16 @@ export default function LoginScreen() {
       >
         {/* Brand panel */}
         <View style={[styles.brand, isLandscape ? styles.brandLandscape : styles.brandPortrait]}>
-          <Image
+          <Animated.Image
             source={require("../../assets/images/icon.png")}
-            style={isLandscape ? styles.logoLarge : styles.logoSmall}
+            style={[
+              isLandscape ? styles.logoLarge : styles.logoSmall,
+              isLandscape ? {
+                width: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [80, 48] }),
+                height: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [80, 48] }),
+                marginBottom: logoAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 2] }),
+              } : {},
+            ]}
             resizeMode="contain"
           />
           <View style={isLandscape ? { alignItems: "center" } : { flexDirection: "row", alignItems: "baseline", gap: 6 }}>
@@ -207,6 +288,45 @@ export default function LoginScreen() {
           </View>
           {isLandscape ? (
             <ThemedText style={styles.tagline}>Your stream. Your way.</ThemedText>
+          ) : null}
+
+          {/* QR sign-in panel — TV / desktop credentials step only */}
+          {showMobileSignIn ? (
+            <View style={styles.qrPanel}>
+              <View style={styles.qrDivider} />
+              <View style={styles.qrPanelHeader}>
+                <Feather name="smartphone" size={14} color={Colors.dark.accent} />
+                <ThemedText style={styles.qrTitle}>Sign in on Mobile</ThemedText>
+              </View>
+              <ThemedText style={styles.qrSubtitle}>Scan with your phone to sign in</ThemedText>
+
+              <View style={styles.qrBox}>
+                {!loginUrl ? (
+                  <ActivityIndicator color={Colors.dark.accent} size="large" />
+                ) : (
+                  <>
+                    {qrLoginImageLoading ? (
+                      <ActivityIndicator
+                        style={StyleSheet.absoluteFill}
+                        color={Colors.dark.accent}
+                        size="large"
+                      />
+                    ) : null}
+                    <Image
+                      source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(loginUrl)}&margin=1` }}
+                      style={[styles.qrImage, qrLoginImageLoading && { opacity: 0 }]}
+                      onLoadEnd={() => setQrLoginImageLoading(false)}
+                    />
+                  </>
+                )}
+              </View>
+
+              <View style={styles.qrWaiting}>
+                <ActivityIndicator size="small" color={Colors.dark.accent} />
+                <ThemedText style={styles.qrWaitingText}>Waiting for sign-in...</ThemedText>
+              </View>
+              <ThemedText style={styles.qrExpiry}>Link expires in 10 minutes</ThemedText>
+            </View>
           ) : null}
         </View>
 
@@ -753,5 +873,70 @@ const styles = StyleSheet.create({
   backBtnText: {
     color: Colors.dark.textSecondary,
     fontSize: 13,
+  },
+
+  // ── QR sign-in panel styles ─────────────────────────────────────────────────
+  qrPanel: {
+    width: "100%",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingTop: Spacing.md,
+  },
+  qrDivider: {
+    width: "75%",
+    height: 1,
+    backgroundColor: "rgba(255,102,0,0.18)",
+    marginBottom: Spacing.xs,
+  },
+  qrPanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  qrTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.dark.text,
+    letterSpacing: 0.3,
+  },
+  qrSubtitle: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+    marginTop: -Spacing.xs,
+    textAlign: "center",
+  },
+  qrBox: {
+    width: 180,
+    height: 180,
+    backgroundColor: "#ffffff",
+    borderRadius: BorderRadius.sm,
+    borderWidth: 3,
+    borderColor: Colors.dark.accent,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  qrImage: {
+    width: 174,
+    height: 174,
+  },
+  qrWaiting: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  qrWaitingText: {
+    fontSize: 12,
+    color: Colors.dark.textSecondary,
+  },
+  qrExpiry: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.25)",
+    marginTop: -Spacing.xs,
   },
 });
