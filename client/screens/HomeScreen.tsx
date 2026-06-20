@@ -271,6 +271,31 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function MusicPlayerButton({ onPress }: { onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = pressed || focused;
+  const accent = useAccent();
+  return (
+    <Pressable
+      style={[
+        styles.headerBtn,
+        isActive && styles.headerBtnActive,
+        isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
+      ]}
+      onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setFocused(true)}
+      onHoverOut={() => setFocused(false)}
+    >
+      <Feather name="music" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+    </Pressable>
+  );
+}
+
 function ProfileDropdownRow({
   preferFocus,
   onPress,
@@ -1283,6 +1308,7 @@ export default function HomeScreen() {
               <View style={styles.sidebarDivider} />
 
               <SidebarItem label="Search" icon="search" onPress={() => navigation.navigate("Search")} />
+              <SidebarItem label="Music Player" icon="music" onPress={() => navigation.navigate("MusicPlayer")} />
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
@@ -1419,6 +1445,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
+              <MusicPlayerButton onPress={() => navigation.navigate("MusicPlayer")} />
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
               <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
               <VpnButton />

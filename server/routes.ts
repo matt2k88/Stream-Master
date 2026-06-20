@@ -1,7 +1,43 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
+import { spawn } from "node:child_process";
+import { writeFile } from "node:fs/promises";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
+
+// ── yt-dlp helpers ────────────────────────────────────────────────────────────
+
+let _cookiesWritten = false;
+const COOKIES_PATH = "/tmp/yt_music_cookies.txt";
+
+async function ensureCookiesFile(): Promise<string | null> {
+  const raw = process.env.YT_COOKIES_TXT ?? "";
+  if (!raw.trim()) return null;
+  if (_cookiesWritten) return COOKIES_PATH;
+  // Replit Secrets strips newlines — re-insert before each Netscape cookie row
+  const fixed = raw
+    .replace(/\r\n|\r/g, "\n")
+    .replace(/([^\n])((?:#HttpOnly_)?[^\s\t][^\t]*\t(?:TRUE|FALSE)\t[^\t]+\t(?:TRUE|FALSE)\t\d)/g, "$1\n$2")
+    .trim();
+  await writeFile(COOKIES_PATH, "# Netscape HTTP Cookie File\n" + fixed + "\n", "utf8");
+  _cookiesWritten = true;
+  return COOKIES_PATH;
+}
+
+function ytdlp(args: string[], timeoutMs = 35_000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("yt-dlp", args, { env: { ...process.env } });
+    let out = "", err = "";
+    child.stdout.on("data", (d: Buffer) => (out += d.toString()));
+    child.stderr.on("data", (d: Buffer) => (err += d.toString()));
+    const timer = setTimeout(() => { child.kill(); reject(new Error("yt-dlp timeout")); }, timeoutMs);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) reject(new Error(err.slice(-300) || `yt-dlp exit ${code}`));
+      else resolve(out);
+    });
+  });
+}
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
 // Reduces Supabase egress for high-frequency polling endpoints.
@@ -2405,6 +2441,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data ?? []);
     } catch {
       res.status(500).json({ error: "Failed to fetch football scores" });
+    }
+  });
+
+  // ── Music Player (YouTube audio via yt-dlp) ──────────────────────────────
+  app.get("/api/music/search", async (req, res) => {
+    const q = String(req.query.q ?? "").trim();
+    if (!q) return res.status(400).json({ error: "q required" });
+    try {
+      const cookiesPath = await ensureCookiesFile();
+      const args = [
+        `ytsearch15:${q}`,
+        "--dump-json", "--flat-playlist", "--no-playlist",
+        "--quiet", "--no-warnings",
+      ];
+      if (cookiesPath) args.push("--cookies", cookiesPath);
+      const stdout = await ytdlp(args, 35_000);
+      const results = stdout.trim().split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            const d = JSON.parse(line);
+            const thumb =
+              (Array.isArray(d.thumbnails) && d.thumbnails.length > 0
+                ? d.thumbnails[d.thumbnails.length - 1]?.url
+                : null) ?? d.thumbnail ?? "";
+            return {
+              videoId: d.id as string,
+              title: (d.title ?? "Unknown") as string,
+              channel: (d.uploader ?? d.channel ?? "") as string,
+              duration: (d.duration ?? 0) as number,
+              thumbnail: thumb as string,
+            };
+          } catch { return null; }
+        })
+        .filter(Boolean);
+      res.json(results);
+    } catch (err: any) {
+      console.error("[music:search]", err.message);
+      res.status(500).json({ error: "Search failed. Please try again." });
+    }
+  });
+
+  app.get("/api/music/stream", async (req, res) => {
+    const videoId = String(req.query.videoId ?? "").trim();
+    if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) {
+      return res.status(400).json({ error: "Invalid videoId" });
+    }
+    try {
+      const cookiesPath = await ensureCookiesFile();
+      const args = [
+        `https://www.youtube.com/watch?v=${videoId}`,
+        "-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+        "-g", "--quiet", "--no-warnings",
+      ];
+      if (cookiesPath) args.push("--cookies", cookiesPath);
+      const stdout = await ytdlp(args, 35_000);
+      const url = stdout.trim().split("\n")[0];
+      if (!url?.startsWith("http")) {
+        return res.status(500).json({ error: "No stream URL found" });
+      }
+      res.json({ url });
+    } catch (err: any) {
+      console.error("[music:stream]", err.message);
+      res.status(500).json({ error: "Could not load track. Please try another." });
     }
   });
 
