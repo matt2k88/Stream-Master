@@ -1162,12 +1162,14 @@ export default function MusicPlayerScreen() {
                 </ThemedText>
               </View>
 
-              {/* Progress bar */}
+              {/* Progress bar — not focusable via D-pad; touch/click still works */}
               <Pressable
                 style={styles.progressWrap}
                 onPress={handleProgressTap}
                 onLayout={handleProgressLayout}
                 hitSlop={{ top: 12, bottom: 12 }}
+                focusable={false}
+                accessible={false}
               >
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { flex: progress }]} />
