@@ -2430,7 +2430,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const toArtwork = (u: string) => (u ?? "").replace("100x100bb", "400x400bb");
       const songs = (songData.results ?? [])
         .filter((t: any) => t.kind === "song" && t.trackName)
-        .slice(0, 10)
         .map((t: any) => ({
           videoId: "", title: t.trackName, artist: t.artistName,
           album: t.collectionName ?? "", collectionId: t.collectionId ?? 0,
@@ -2444,7 +2443,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .map((a: any) => ({ artistId: a.artistId, artistName: a.artistName, primaryGenreName: a.primaryGenreName ?? "" }));
       const albums = (albumData.results ?? [])
         .filter((a: any) => a.wrapperType === "collection")
-        .slice(0, 5)
         .map((a: any) => ({
           collectionId: a.collectionId, collectionName: a.collectionName, artistName: a.artistName,
           artwork: toArtwork(a.artworkUrl100 ?? ""), trackCount: a.trackCount ?? 0,
@@ -2469,7 +2467,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [sData, aData]: any[] = await Promise.all([sRes.json(), aRes.json()]);
       const songs = (sData.results ?? [])
         .filter((t: any) => t.wrapperType === "track" && t.kind === "song")
-        .slice(0, 15)
         .map((t: any) => ({
           videoId: "", title: t.trackName, artist: t.artistName,
           album: t.collectionName ?? "", duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
@@ -2478,7 +2475,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
       const albums = (aData.results ?? [])
         .filter((a: any) => a.wrapperType === "collection")
-        .slice(0, 8)
         .map((a: any) => ({
           collectionId: a.collectionId, collectionName: a.collectionName, artistName: a.artistName,
           artwork: toArtwork(a.artworkUrl100 ?? ""), trackCount: a.trackCount ?? 0,
