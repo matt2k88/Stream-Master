@@ -11,7 +11,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -80,6 +80,26 @@ function NewPlaylistCard({ onPress }: { onPress: () => void }) {
   );
 }
 
+// Shared TV-focusable pressable (same pattern as MusicPlayerScreen)
+function FocusPressable({
+  style, children, onFocus, onBlur, onHoverIn, onHoverOut, ...rest
+}: React.ComponentProps<typeof Pressable>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      {...rest}
+      style={[style, focused && focusBtnStyle]}
+      onFocus={(e) => { setFocused(true); onFocus?.(e as any); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e as any); }}
+      onHoverIn={(e) => { setFocused(true); onHoverIn?.(e as any); }}
+      onHoverOut={(e) => { setFocused(false); onHoverOut?.(e as any); }}
+    >
+      {children}
+    </Pressable>
+  );
+}
+const focusBtnStyle = { borderWidth: 1.5, borderColor: Colors.dark.accent, backgroundColor: "rgba(255,102,0,0.1)", borderRadius: 6 } as const;
+
 function BrowseTrackCard({
   track,
   onPress,
@@ -105,12 +125,12 @@ function BrowseTrackCard({
       <ThemedText style={styles.browseCardTitle} numberOfLines={2}>{track.title}</ThemedText>
       <ThemedText style={styles.browseCardArtist} numberOfLines={1}>{track.artist}</ThemedText>
       <View style={styles.browseCardActions}>
-        <Pressable onPress={onLike} hitSlop={6} style={styles.browseCardBtn}>
-          <Feather name="heart" size={14} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
-        </Pressable>
-        <Pressable onPress={onAdd} hitSlop={6} style={styles.browseCardBtn}>
-          <Feather name="plus-circle" size={14} color={Colors.dark.textSecondary} />
-        </Pressable>
+        <FocusPressable onPress={onLike} hitSlop={10} style={styles.browseCardBtn}>
+          <Feather name="heart" size={18} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
+        </FocusPressable>
+        <FocusPressable onPress={onAdd} hitSlop={10} style={styles.browseCardBtn}>
+          <Feather name="plus-circle" size={18} color={Colors.dark.textSecondary} />
+        </FocusPressable>
       </View>
     </Pressable>
   );
@@ -144,12 +164,12 @@ function SearchResultRow({
           {track.artist}{track.album ? ` · ${track.album}` : ""}{track.duration ? `  ${fmtTime(track.duration)}` : ""}
         </ThemedText>
       </View>
-      <Pressable onPress={onLike} hitSlop={8} style={styles.searchRowBtn}>
-        <Feather name="heart" size={17} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
-      </Pressable>
-      <Pressable onPress={onAdd} hitSlop={8} style={styles.searchRowBtn}>
-        <Feather name="plus-circle" size={17} color={Colors.dark.textSecondary} />
-      </Pressable>
+      <FocusPressable onPress={onLike} hitSlop={10} style={styles.searchRowBtn}>
+        <Feather name="heart" size={20} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
+      </FocusPressable>
+      <FocusPressable onPress={onAdd} hitSlop={10} style={styles.searchRowBtn}>
+        <Feather name="plus-circle" size={20} color={Colors.dark.textSecondary} />
+      </FocusPressable>
     </Pressable>
   );
 }
@@ -173,6 +193,11 @@ function AddToPlaylistModal({
 }) {
   const [adding, setAdding] = useState<string | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
+
+  // Reset checkmarks every time the modal opens for a new track
+  useEffect(() => {
+    if (visible) { setAdded(new Set()); setAdding(null); }
+  }, [visible, track?.searchKey]);
 
   const handleAdd = async (playlistId: string) => {
     setAdding(playlistId);
@@ -315,6 +340,8 @@ export default function MusicHomeScreen() {
   addModalRef.current = addModal;
   const [createModal, setCreateModal] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  // Prevent stale 700ms close timer from killing a freshly-opened modal
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Fetch playlists ───────────────────────────────────────────────────────
   const fetchPlaylists = useCallback(async () => {
@@ -351,6 +378,9 @@ export default function MusicHomeScreen() {
   }, [profileId, isGuest]);
 
   useEffect(() => { fetchPlaylists(); }, [fetchPlaylists]);
+
+  // Re-fetch playlists whenever this screen comes back into focus (e.g. after deleting a track in PlaylistDetail)
+  useFocusEffect(useCallback(() => { fetchPlaylists(); }, [fetchPlaylists]));
 
   // ── Fetch browse categories (parallel, module-level cache) ────────────────
   useEffect(() => {
@@ -434,7 +464,6 @@ export default function MusicHomeScreen() {
 
   // ── Add to playlist ───────────────────────────────────────────────────────
   const handleAddToPlaylist = useCallback(async (playlistId: string) => {
-    // Use ref so we always have the current track regardless of re-render timing
     const track = addModalRef.current?.track;
     if (!track) return;
     try {
@@ -453,8 +482,9 @@ export default function MusicHomeScreen() {
       setPlaylists((prev) =>
         prev.map((p) => p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p)
       );
-      // Close modal after brief checkmark flash
-      setTimeout(() => setAddModal(null), 700);
+      // Clear any stale timer before scheduling a new close — prevents killing a different song's modal
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = setTimeout(() => { closeTimerRef.current = null; setAddModal(null); }, 700);
     } catch {}
   }, []);
 
@@ -557,7 +587,10 @@ export default function MusicHomeScreen() {
               isLiked={likedKeys.has(item.searchKey)}
               onPress={() => playTrack(item, searchResults, `Search: ${query}`)}
               onLike={() => handleLike(item)}
-              onAdd={() => setAddModal({ track: item, visible: true })}
+              onAdd={() => {
+                if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+                setAddModal({ track: item, visible: true });
+              }}
             />
           )}
         />
@@ -627,7 +660,10 @@ export default function MusicHomeScreen() {
                         isLiked={likedKeys.has(item.searchKey)}
                         onPress={() => playTrack(item, tracks, cat.label)}
                         onLike={() => handleLike(item)}
-                        onAdd={() => setAddModal({ track: item, visible: true })}
+                        onAdd={() => {
+                          if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+                          setAddModal({ track: item, visible: true });
+                        }}
                       />
                     )}
                   />

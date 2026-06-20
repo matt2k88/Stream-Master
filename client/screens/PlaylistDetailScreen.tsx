@@ -7,7 +7,6 @@ import {
   TextInput,
   ActivityIndicator,
   Image,
-  Modal,
   Alert,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
@@ -102,6 +101,26 @@ export default function PlaylistDetailScreen() {
     setRemoving(null);
   }, [playlistId]);
 
+  const handleDelete = useCallback(async () => {
+    Alert.alert(
+      "Delete Playlist",
+      `Are you sure you want to delete "${newName}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}`, { method: "DELETE" });
+              navigation.goBack();
+            } catch {}
+          },
+        },
+      ]
+    );
+  }, [playlistId, newName, navigation]);
+
   const handleRename = useCallback(async () => {
     const name = nameInput.trim();
     if (!name || name === newName) { setRenaming(false); return; }
@@ -180,6 +199,11 @@ export default function PlaylistDetailScreen() {
           <Feather name="play" size={14} color="#fff" />
           <ThemedText style={styles.playAllText}>Play All</ThemedText>
         </Pressable>
+        {!isLikedSongs ? (
+          <Pressable style={styles.deleteBtn} onPress={handleDelete} hitSlop={10}>
+            <Feather name="trash-2" size={18} color="rgba(239,68,68,0.75)" />
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Track count */}
@@ -260,6 +284,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8,
   },
   playAllText: { fontSize: 13, fontWeight: "700", color: "#fff" },
+  deleteBtn: { padding: 8, borderRadius: BorderRadius.sm },
 
   subHeader: {
     flexDirection: "row", alignItems: "center",
