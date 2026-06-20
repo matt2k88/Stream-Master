@@ -2516,11 +2516,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
   {
     let _yt: any = null;
     let _ytInit: Promise<any> | null = null;
+
+    // Parse Netscape cookies.txt (from YT_COOKIES_TXT env var) into a
+    // "name=value; name2=value2" string that Innertube's cookie option accepts.
+    // Only includes youtube.com cookies. Falls back to "" if not set/parseable.
+    function parseYTCookies(): string {
+      const raw = process.env.YT_COOKIES_TXT ?? "";
+      if (!raw.trim()) return "";
+      const pairs: string[] = [];
+      for (const line of raw.split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t || t.startsWith("#")) continue;
+        const cols = t.split("\t");
+        if (cols.length < 7) continue;
+        const [domain, , , , , name, value] = cols;
+        if (domain && (domain.includes("youtube.com") || domain.includes(".youtube.com"))) {
+          pairs.push(`${name}=${value}`);
+        }
+      }
+      return pairs.join("; ");
+    }
+
     async function getYT() {
       if (_yt) return _yt;
       if (_ytInit) return _ytInit;
       const { Innertube } = await import("youtubei.js");
-      _ytInit = Innertube.create({ cache: undefined, retrieve_player: false })
+      const cookie = parseYTCookies();
+      const opts: any = { cache: undefined, retrieve_player: false };
+      if (cookie) opts.cookie = cookie;
+      _ytInit = Innertube.create(opts)
         .then((instance: any) => { _yt = instance; _ytInit = null; return _yt; })
         .catch((e: any) => { _ytInit = null; throw e; });
       return _ytInit;
@@ -2552,6 +2576,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resolveCache.set(key, { videoId: first.id, ts: Date.now() });
         res.json({ videoId: first.id as string });
       } catch (err: any) {
+        _yt = null; // Reset so next request gets a fresh authenticated client
         console.error("[music:resolve]", err.message);
         res.status(500).json({ error: "Could not find track on YouTube." });
       }
