@@ -86,14 +86,27 @@ const INJECT_JS = `(function() {
   var vid = null;
   var lastFloor = -1;
 
+  function unmute(v) {
+    // Mobile YouTube auto-mutes itself to satisfy browser autoplay policy.
+    // Force unmute every time we touch the player.
+    try { v.muted = false; v.volume = 1; } catch(e) {}
+    // Also try the YouTube player API's own mute controls
+    try {
+      var p = document.querySelector('.html5-video-player');
+      if (p && p.unMute) p.unMute();
+    } catch(e) {}
+  }
+
   function attach(v) {
     if (vid === v) return;
     vid = v;
     // Clear the load-timer immediately (duration:0 so we don't set a bad value
     // from a preview/thumbnail video that may have been found first).
     post({ type:'ready', duration:0 });
+    unmute(v);
     v.addEventListener('playing', function() {
       if (vid !== v) return;
+      unmute(v);
       post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('pause', function() {
@@ -112,9 +125,8 @@ const INJECT_JS = `(function() {
       if (vid !== v) return;
       // If the duration is very short this is a YouTube preview/thumbnail video,
       // not the real player — detach and let check() find the real one.
-      // The vid !== v guard on all other listeners ensures the detached video
-      // can never overwrite the real video's duration via progress/state messages.
       if (v.duration > 0 && v.duration < 30) { vid = null; return; }
+      unmute(v);
       post({ type:'ready', duration:v.duration||0 });
       v.play().catch(function(){});
     });
@@ -130,12 +142,7 @@ const INJECT_JS = `(function() {
       if (vid !== v) return;
       post({ type:'error', code: v.error ? v.error.code : -1 });
     });
-    // Attempt autoplay — silently catch ALL rejections here.
-    // • Autoplay blocks (Fire Stick / Silk, desktop browsers) must NOT trigger
-    //   an error banner — the user can press play manually.
-    // • Real failures (codec, network, DRM) are already reported by the
-    //   'error' event listener above.
-    // • Successful playback is confirmed by the 'playing' state event below.
+    unmute(v);
     v.play().catch(function(){});
   }
 
@@ -170,13 +177,11 @@ const INJECT_JS = `(function() {
 
   window.ytCmd = function(cmd, val) {
     if (cmd === 'play') {
+      if (vid) unmute(vid);
       var btn = findYTPBtn();
       if (btn) {
-        // Only click if the video is actually paused (button is in "play" state)
         if (!vid || vid.paused) btn.click();
       }
-      // Belt-and-suspenders: also call vid.play() — works fine when
-      // mediaPlaybackRequiresUserAction=false is set on the WebView.
       if (vid) vid.play().catch(function(){});
     } else if (cmd === 'pause') {
       var btn2 = findYTPBtn();
