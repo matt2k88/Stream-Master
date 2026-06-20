@@ -1,5 +1,5 @@
-- [YouTube audio extraction on server](youtube-audio-extraction.md) — server-side streaming is now blocked by PO tokens; use hidden WebView (IFrame API) for playback; youtubei.js for search.
-- [YouTube PO token wall](youtube-pot-wall.md) — since 2025 YouTube requires Proof-of-Origin tokens even for authenticated sessions from data-center IPs; no server-side workaround works.
+- [YouTube audio extraction on server](youtube-audio-extraction.md) — use `getInfo(id, { client: 'IOS' })` to bypass SABR; decipher() fallback for cipher formats; sort m4a by bitrate for itag 140.
+- [YouTube PO token wall](youtube-pot-wall.md) — WEB client now returns SABR formats (no URLs); IOS client bypasses this; `format.decipher(session.player)` handles remaining cipher formats.
 - [Guest profile guards](guest-profile.md) — every per-profile context must guard load AND all mutations against GUEST_PROFILE_ID, not just create/load.
 - [Overlay over native video](overlay-over-video.md) — wrap any overlay that must show over the fullscreen player in a transparent RN Modal; absolute Views get hidden behind the video SurfaceView on Fire TV/Android.
 - [Match fixture caching](match-fixture-caching.md) — favourite-team fixtures are team data (cache by team_id, NEVER per-profile/DB); next=10 + local countdown means refresh ~12h not poll; mark fresh only on full success.

@@ -2542,7 +2542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (_ytInit) return _ytInit;
       const { Innertube } = await import("youtubei.js");
       const cookie = parseYTCookies();
-      const opts: any = { cache: undefined, retrieve_player: false };
+      const opts: any = { cache: undefined };
       if (cookie) opts.cookie = cookie;
       _ytInit = Innertube.create(opts)
         .then((instance: any) => { _yt = instance; _ytInit = null; return _yt; })
@@ -2599,21 +2599,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       try {
         const yt = await getYT();
-        const info = await yt.getInfo(id);
-        const formats: any[] = info.streaming_data?.adaptive_formats ?? [];
+        // Use IOS client: it returns formats with real URLs instead of SABR (server ABR)
+        // which omits URL fields entirely and makes decipher() throw "No valid URL to decipher".
+        const info = await yt.getInfo(id, { client: 'IOS' });
+        const sd = info.streaming_data;
+        console.log(`[music:stream] id=${id} streaming_data=${sd ? "ok" : "null"} adaptive_formats=${sd?.adaptive_formats?.length ?? 0} client=IOS`);
+        const formats: any[] = sd?.adaptive_formats ?? [];
         const audioFormats = formats.filter((f: any) => f.has_audio && !f.has_video);
-        // Prefer m4a/aac (itag 140) — broadest device compatibility
-        const m4a = audioFormats.find((f: any) =>
-          (f.mime_type ?? "").includes("audio/mp4") || (f.mime_type ?? "").includes("audio/m4a")
-        );
-        const best = m4a ?? audioFormats.sort((a: any, b: any) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
-        if (!best?.url) throw new Error("No audio stream found");
+        console.log(`[music:stream] audioFormats=${audioFormats.length} first_mime=${audioFormats[0]?.mime_type ?? "none"} first_url=${audioFormats[0]?.url ? "direct" : "cipher"}`);
+        // Prefer m4a/aac — broadest device compatibility; sort by bitrate desc to get 128kbps (itag 140) over 48kbps (itag 139)
+        const m4aCandidates = audioFormats
+          .filter((f: any) => (f.mime_type ?? "").includes("audio/mp4") || (f.mime_type ?? "").includes("audio/m4a"))
+          .sort((a: any, b: any) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
+        const best = m4aCandidates[0] ?? audioFormats.sort((a: any, b: any) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
+        if (!best) throw new Error(`No audio stream found (${audioFormats.length} audio formats, streaming_data=${sd ? "ok" : "null"})`);
+        // format.url may be undefined when YouTube returns signatureCipher instead of a direct URL.
+        // decipher() uses the player JS (loaded via retrieve_player:true) to descramble the URL.
+        const streamUrl: string = best.url ?? await best.decipher((yt as any).session?.player);
+        if (!streamUrl) throw new Error(`decipher returned empty URL (itag=${best.itag})`);
         if (streamCache.size >= STREAM_CACHE_MAX) streamCache.delete(streamCache.keys().next().value!);
-        streamCache.set(id, { url: best.url, mimeType: best.mime_type ?? "audio/mp4", ts: Date.now() });
-        res.json({ url: best.url, mimeType: best.mime_type ?? "audio/mp4" });
+        streamCache.set(id, { url: streamUrl, mimeType: best.mime_type ?? "audio/mp4", ts: Date.now() });
+        console.log(`[music:stream] success id=${id} mime=${best.mime_type} url_len=${streamUrl.length}`);
+        res.json({ url: streamUrl, mimeType: best.mime_type ?? "audio/mp4" });
       } catch (err: any) {
         _yt = null;
-        console.error("[music:stream]", err.message);
+        console.error("[music:stream] ERROR:", err.message);
         res.status(500).json({ error: "Could not get stream." });
       }
     });

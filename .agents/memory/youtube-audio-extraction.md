@@ -1,37 +1,46 @@
 ---
 name: YouTube audio extraction on server
-description: Server-side YouTube streaming is blocked by PO tokens since 2025. Use hidden WebView IFrame API for playback and youtubei.js for search.
+description: How to extract playable audio stream URLs from YouTube server-side with youtubei.js on Replit data-center IPs.
 ---
 
-## Current architecture (June 2026)
+## Current working approach (June 2026)
 
-**Search:** `youtubei.js` v17 on the Express server — no PO token needed for metadata.
+Server-side stream URL extraction works using `{ client: 'IOS' }` on `getInfo()`.
+
 ```typescript
 const { Innertube } = await import('youtubei.js');
+const yt = await Innertube.create({ cache: undefined, cookie: "..." });
+// IOS client bypasses SABR delivery — returns direct googlevideo.com URLs
+const info = await yt.getInfo(videoId, { client: 'IOS' });
+const audioFormats = info.streaming_data?.adaptive_formats
+  .filter(f => f.has_audio && !f.has_video)
+  .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0)) ?? [];
+// format.url may still be absent for some formats — decipher() handles that
+const streamUrl = best.url ?? await best.decipher(yt.session.player);
+```
+
+**Why IOS client:** Default WEB client uses SABR (Server ABR) — YouTube returns format metadata with NO URL fields (`url`, `signature_cipher`, `cipher` all undefined). `format.decipher()` then throws `PlayerError: No valid URL to decipher`. The IOS client bypasses SABR entirely.
+
+**Quality:** Sort m4a candidates by bitrate descending → itag 140 (128 kbps, mp4a.40.2 AAC-LC) preferred over itag 139 (48 kbps, mp4a.40.5 HE-AAC). AAC-LC is more compatible on Fire TV.
+
+**decipher fallback:** `best.url ?? await best.decipher(yt.session.player)` — covers any remaining signature-cipher formats. Player is available when `retrieve_player` is not explicitly false (default is true).
+
+**How to apply:** Always pass `{ client: 'IOS' }` to `yt.getInfo()` when extracting stream URLs for music playback.
+
+## Search (metadata only)
+
+For search/resolve (no streaming data needed), `retrieve_player: false` is fine and faster:
+```typescript
 const yt = await Innertube.create({ cache: undefined, retrieve_player: false });
 const results = await yt.search(q, { type: 'video' });
-// v.id, v.title?.text, v.author?.name, v.duration (object with .seconds or .text), v.thumbnails[]
 ```
 
-**Playback:** Hidden `react-native-webview` on the device (not server-side).
-- Build HTML string with YouTube IFrame API; `height/width: 1`, `autoplay: 1`, `playsinline: 1`
-- Call `e.target.unMute(); e.target.setVolume(100); e.target.playVideo()` in `onReady`
-- Use `key={videoId}` on the WebView to remount it when the track changes
-- Progress: `setInterval` in the iframe posts `{type:'progress', currentTime, duration}`
-- Controls: `webViewRef.current.injectJavaScript('window.ytCmd("play"); true;')`
-- States: PLAYING=1, PAUSED=2, BUFFERING=3, ENDED=0, UNSTARTED=-1
+## Replit Secrets UI gotcha (cookie parsing)
 
-**Why device-side works:** Residential/consumer device IPs are trusted by YouTube's IFrame API. Replit data-center IPs are blocked by PO token enforcement added 2025.
+Secrets UI strips ALL newlines but preserves tabs. `parseYTCookies()` in `server/routes.ts` handles this by splitting on `\t` and domain-filtering lines.
 
-## Historical note (pre-2025 approach — no longer works)
-yt-dlp with `--cookies` + yt-dlp-ejs (Deno 2 for JS cipher) could extract stream URLs. Now YouTube additionally requires a Proof-of-Origin (PO) token from BotGuard (requires real browser context). yt-dlp-ejs 0.8.0 + Deno 2.6.4 are installed but only solve cipher, not PO. See `youtube-pot-wall.md`.
+## Historical notes
 
-**Replit Secrets UI gotcha (still relevant for cookies passed to youtubei.js):** Secrets UI strips ALL newlines but preserves tabs. To reformat cookie files:
-```ts
-const stripped = raw.replace(/\r?\n|\r/g, "");
-const fixed = stripped.replace(
-  /((?:#HttpOnly_)?\.?[a-zA-Z][a-zA-Z0-9._-]+\t(?:TRUE|FALSE)\t)/g,
-  "\n$1"
-);
-```
-Use unconditional replace (no lookbehind) — comment section ends with spaces before first domain row.
+- Pre-fix (WEB client default): formats had no URL fields at all due to SABR → "No valid URL to decipher"
+- Pre-2025: yt-dlp with --cookies worked. PO tokens from BotGuard broke that.
+- WebView IFrame API (device-side) also works but Silk browser on Fire TV can't autoplay → not usable on Fire Stick.
