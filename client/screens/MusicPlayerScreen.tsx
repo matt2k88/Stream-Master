@@ -10,8 +10,8 @@ import {
   Image,
   Platform,
   Modal,
-  Alert,
   BackHandler,
+  useWindowDimensions,
   LayoutChangeEvent,
   GestureResponderEvent,
 } from "react-native";
@@ -325,9 +325,13 @@ export default function MusicPlayerScreen() {
   const profileId = activeProfile?.id;
 
   // ── Left-panel mode: "queue" shows album track list; "search" shows search UI
+  const { width, height } = useWindowDimensions();
+  const isPortrait = height > width;
+
   const [leftMode, setLeftMode] = useState<"queue" | "search">((albumId || (initQueue?.length ?? 0) > 0) ? "queue" : "search");
   const [albumContext, setAlbumContext] = useState<{ id: number; name: string; tracks: Track[] } | null>(null);
   const [albumLoading, setAlbumLoading] = useState(false);
+  const [showExitModal, setShowExitModal] = useState(false);
 
   const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<Track[]>([]);
@@ -561,15 +565,7 @@ export default function MusicPlayerScreen() {
 
   const handleExit = useCallback(() => {
     if (currentTrackRef.current) {
-      Alert.alert(
-        "Exit Music Player",
-        "Are you sure? This will stop playback.",
-        [
-          { text: "Keep Listening", style: "cancel" },
-          { text: "Exit", style: "destructive", onPress: () => navigation.goBack() },
-        ],
-        { cancelable: true }
-      );
+      setShowExitModal(true);
     } else {
       navigation.goBack();
     }
@@ -761,11 +757,11 @@ export default function MusicPlayerScreen() {
         <InfoButton />
       </View>
 
-      {/* ── 50/50 body ──────────────────────────────────────────────── */}
-      <View style={styles.body}>
+      {/* ── body: row (landscape) / column (portrait) ──────────────── */}
+      <View style={[styles.body, isPortrait && styles.bodyPortrait]}>
 
-        {/* ══ LEFT: album queue OR search ═════════════════════════════ */}
-        <View style={styles.leftPanel}>
+        {/* ══ TOP/LEFT: album queue OR search ═════════════════════════ */}
+        <View style={[styles.leftPanel, isPortrait && styles.leftPanelPortrait]}>
 
           {/* ── Mode toggle strip ── */}
           <View style={styles.modeStrip}>
@@ -967,7 +963,7 @@ export default function MusicPlayerScreen() {
         </View>
 
         {/* ══ RIGHT: player ═══════════════════════════════════════════ */}
-        <View style={styles.rightPanel}>
+        <View style={[styles.rightPanel, isPortrait && styles.rightPanelPortrait]}>
           {/* Hidden WebView — in its own absoluteFill shell so it can never affect flow layout */}
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
             {watchUrl ? (
@@ -1001,12 +997,12 @@ export default function MusicPlayerScreen() {
           <View style={styles.playerCover} />
 
           {currentTrack ? (
-            <View style={[styles.playerContent, { paddingBottom: insets.bottom + 8 }]}>
+            <View style={[styles.playerContent, isPortrait && styles.playerContentPortrait, { paddingBottom: insets.bottom + 8 }]}>
               {/* Album art */}
               {currentTrack.thumbnail ? (
-                <Image source={{ uri: currentTrack.thumbnail }} style={styles.bigArt} resizeMode="cover" />
+                <Image source={{ uri: currentTrack.thumbnail }} style={[styles.bigArt, isPortrait && styles.bigArtPortrait]} resizeMode="cover" />
               ) : (
-                <View style={[styles.bigArt, styles.bigArtPlaceholder]}>
+                <View style={[styles.bigArt, isPortrait && styles.bigArtPortrait, styles.bigArtPlaceholder]}>
                   <Feather name="music" size={52} color={Colors.dark.accent} />
                 </View>
               )}
@@ -1155,6 +1151,35 @@ export default function MusicPlayerScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ── Exit confirmation modal ─────────────────────────────────── */}
+      <Modal
+        visible={showExitModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExitModal(false)}
+      >
+        <View style={styles.exitOverlay}>
+          <View style={styles.exitDialog}>
+            <ThemedText style={styles.exitTitle}>Exit Music Player</ThemedText>
+            <ThemedText style={styles.exitBody}>This will stop playback. Are you sure?</ThemedText>
+            <View style={styles.exitButtons}>
+              <FocusPressable
+                style={[styles.exitBtn, styles.exitBtnKeep]}
+                onPress={() => setShowExitModal(false)}
+              >
+                <ThemedText style={styles.exitBtnKeepText}>Keep Listening</ThemedText>
+              </FocusPressable>
+              <FocusPressable
+                style={[styles.exitBtn, styles.exitBtnExit]}
+                onPress={() => { setShowExitModal(false); navigation.goBack(); }}
+              >
+                <ThemedText style={styles.exitBtnExitText}>Exit</ThemedText>
+              </FocusPressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -1190,16 +1215,27 @@ const styles = StyleSheet.create({
 
   // ── Layout
   body: { flex: 1, flexDirection: "row" },
+  bodyPortrait: { flexDirection: "column" },
 
   leftPanel: {
     flex: 1,
     borderRightWidth: 1,
     borderRightColor: "rgba(255,255,255,0.06)",
   },
+  leftPanelPortrait: {
+    flex: 1,
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+  },
 
   rightPanel: {
     flex: 1,
     overflow: "hidden",
+  },
+  rightPanelPortrait: {
+    flex: 0,
+    height: 310,
   },
 
   playerCover: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.dark.backgroundRoot },
@@ -1211,11 +1247,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     gap: 10,
   },
+  playerContentPortrait: {
+    justifyContent: "space-evenly",
+    paddingVertical: Spacing.sm,
+    gap: 6,
+  },
 
   bigArt: {
     width: 168,
     height: 168,
     borderRadius: BorderRadius.lg,
+  },
+  bigArtPortrait: {
+    width: 100,
+    height: 100,
   },
   bigArtPlaceholder: {
     backgroundColor: Colors.dark.backgroundSecondary,
@@ -1393,4 +1438,39 @@ const styles = StyleSheet.create({
   modalPlaylistIconLiked: { backgroundColor: "#e11d48" },
   modalPlaylistName: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   modalPlaylistCount: { fontSize: 12, color: Colors.dark.textSecondary },
+
+  // ── Exit confirmation dialog
+  exitOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.72)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  exitDialog: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    width: "100%",
+    maxWidth: 380,
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  exitTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
+  exitBody: { fontSize: 14, color: Colors.dark.textSecondary, textAlign: "center" },
+  exitButtons: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.xs },
+  exitBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "transparent",
+  },
+  exitBtnKeep: { backgroundColor: "rgba(255,255,255,0.07)", borderColor: "rgba(255,255,255,0.12)" },
+  exitBtnKeepText: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
+  exitBtnExit: { backgroundColor: Colors.dark.accent },
+  exitBtnExitText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 });
