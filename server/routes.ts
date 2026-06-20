@@ -2413,34 +2413,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Music Player (YouTube search via youtubei.js) ────────────────────────
   // Playback is handled client-side by a hidden WebView (YouTube IFrame API)
   // so no stream/proxy endpoints are needed here.
-  // ── Music search via iTunes Search API (free, no key, real music metadata)
+  // ── Music search via iTunes Search API — returns { songs, artists, albums }
   app.get("/api/music/search", async (req, res) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) return res.status(400).json({ error: "q required" });
     try {
-      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=music&entity=song&limit=25&country=us`;
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`iTunes API ${r.status}`);
-      const data = await r.json() as any;
-      const results = (data.results ?? [])
+      const base = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&country=us`;
+      const [songRes, artistRes, albumRes] = await Promise.all([
+        fetch(`${base}&media=music&entity=song&limit=10`),
+        fetch(`${base}&media=music&entity=musicArtist&limit=4`),
+        fetch(`${base}&media=music&entity=album&limit=5`),
+      ]);
+      const [songData, artistData, albumData]: any[] = await Promise.all([
+        songRes.json(), artistRes.json(), albumRes.json(),
+      ]);
+      const toArtwork = (u: string) => (u ?? "").replace("100x100bb", "400x400bb");
+      const songs = (songData.results ?? [])
         .filter((t: any) => t.kind === "song" && t.trackName)
-        .slice(0, 20)
+        .slice(0, 10)
         .map((t: any) => ({
-          // no videoId yet — resolved on play via /api/music/resolve
-          videoId: "",
-          title: t.trackName as string,
-          artist: t.artistName as string,
-          album: (t.collectionName ?? "") as string,
-          duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
-          // swap 100x100bb → 400x400bb for sharper artwork
-          thumbnail: ((t.artworkUrl100 ?? "") as string).replace("100x100bb", "400x400bb"),
-          // store for resolve query
+          videoId: "", title: t.trackName, artist: t.artistName,
+          album: t.collectionName ?? "", duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
+          thumbnail: toArtwork(t.artworkUrl100 ?? ""),
           searchKey: `${t.trackName} ${t.artistName}`,
         }));
-      res.json(results);
+      const artists = (artistData.results ?? [])
+        .filter((a: any) => a.wrapperType === "artist")
+        .slice(0, 4)
+        .map((a: any) => ({ artistId: a.artistId, artistName: a.artistName, primaryGenreName: a.primaryGenreName ?? "" }));
+      const albums = (albumData.results ?? [])
+        .filter((a: any) => a.wrapperType === "collection")
+        .slice(0, 5)
+        .map((a: any) => ({
+          collectionId: a.collectionId, collectionName: a.collectionName, artistName: a.artistName,
+          artwork: toArtwork(a.artworkUrl100 ?? ""), trackCount: a.trackCount ?? 0,
+          releaseYear: a.releaseDate ? new Date(a.releaseDate).getFullYear() : null,
+        }));
+      res.json({ songs, artists, albums });
     } catch (err: any) {
       console.error("[music:search]", err.message);
       res.status(500).json({ error: "Search failed. Please try again." });
+    }
+  });
+
+  // GET /api/music/artist/:id — top songs + albums for an artist
+  app.get("/api/music/artist/:id", async (req, res) => {
+    const id = req.params.id;
+    try {
+      const toArtwork = (u: string) => (u ?? "").replace("100x100bb", "400x400bb");
+      const [sRes, aRes] = await Promise.all([
+        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=song&limit=20&country=us`),
+        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=album&limit=10&country=us`),
+      ]);
+      const [sData, aData]: any[] = await Promise.all([sRes.json(), aRes.json()]);
+      const songs = (sData.results ?? [])
+        .filter((t: any) => t.wrapperType === "track" && t.kind === "song")
+        .slice(0, 15)
+        .map((t: any) => ({
+          videoId: "", title: t.trackName, artist: t.artistName,
+          album: t.collectionName ?? "", duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
+          thumbnail: toArtwork(t.artworkUrl100 ?? ""),
+          searchKey: `${t.trackName} ${t.artistName}`,
+        }));
+      const albums = (aData.results ?? [])
+        .filter((a: any) => a.wrapperType === "collection")
+        .slice(0, 8)
+        .map((a: any) => ({
+          collectionId: a.collectionId, collectionName: a.collectionName, artistName: a.artistName,
+          artwork: toArtwork(a.artworkUrl100 ?? ""), trackCount: a.trackCount ?? 0,
+          releaseYear: a.releaseDate ? new Date(a.releaseDate).getFullYear() : null,
+        }));
+      res.json({ songs, albums });
+    } catch (err: any) {
+      console.error("[music:artist]", err.message);
+      res.status(500).json({ error: "Failed to load artist" });
+    }
+  });
+
+  // GET /api/music/album/:id — all tracks in an album
+  app.get("/api/music/album/:id", async (req, res) => {
+    const id = req.params.id;
+    try {
+      const r = await fetch(`https://itunes.apple.com/lookup?id=${id}&entity=song&country=us`);
+      const data: any = await r.json();
+      const toArtwork = (u: string) => (u ?? "").replace("100x100bb", "400x400bb");
+      const songs = (data.results ?? [])
+        .filter((t: any) => t.wrapperType === "track" && t.kind === "song")
+        .sort((a: any, b: any) => (a.trackNumber ?? 0) - (b.trackNumber ?? 0))
+        .map((t: any) => ({
+          videoId: "", title: t.trackName, artist: t.artistName,
+          album: t.collectionName ?? "", duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
+          thumbnail: toArtwork(t.artworkUrl100 ?? ""),
+          searchKey: `${t.trackName} ${t.artistName}`,
+        }));
+      res.json(songs);
+    } catch (err: any) {
+      console.error("[music:album]", err.message);
+      res.status(500).json({ error: "Failed to load album" });
     }
   });
 

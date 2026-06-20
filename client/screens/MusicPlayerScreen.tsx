@@ -4,7 +4,7 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  FlatList,
+  ScrollView,
   ActivityIndicator,
   Image,
   Platform,
@@ -33,6 +33,9 @@ interface Track {
   thumbnail: string;
   searchKey: string;
 }
+
+interface ArtistResult { artistId: number; artistName: string; primaryGenreName: string; }
+interface AlbumResult { collectionId: number; collectionName: string; artistName: string; artwork: string; trackCount: number; releaseYear: number | null; }
 
 const YT_PLAYING = 1;
 const YT_PAUSED = 2;
@@ -159,6 +162,53 @@ function FocusPressable({
   );
 }
 
+// ── Artist card ───────────────────────────────────────────────────────────────
+function ArtistCard({ artist, onPress }: { artist: ArtistResult; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      style={[styles.artistCard, focused && styles.artistCardFocused]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      <View style={[styles.artistAvatar, focused && styles.artistAvatarFocused]}>
+        <Feather name="user" size={28} color={styles.artistAvatar.borderColor as string} />
+      </View>
+      <ThemedText style={styles.artistCardName} numberOfLines={2}>{artist.artistName}</ThemedText>
+      {artist.primaryGenreName ? (
+        <ThemedText style={styles.artistCardGenre} numberOfLines={1}>{artist.primaryGenreName}</ThemedText>
+      ) : null}
+    </Pressable>
+  );
+}
+
+// ── Album card ────────────────────────────────────────────────────────────────
+function AlbumCard({ album, onPress }: { album: AlbumResult; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      style={[styles.albumCard, focused && styles.albumCardFocused]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {album.artwork ? (
+        <Image source={{ uri: album.artwork }} style={styles.albumCardArt} resizeMode="cover" />
+      ) : (
+        <View style={[styles.albumCardArt, styles.albumCardArtPh]}>
+          <Feather name="disc" size={24} color={Colors.dark.textSecondary} />
+        </View>
+      )}
+      <ThemedText style={styles.albumCardName} numberOfLines={2}>{album.collectionName}</ThemedText>
+      <ThemedText style={styles.albumCardMeta} numberOfLines={1}>
+        {album.artistName}{album.releaseYear ? ` · ${album.releaseYear}` : ""}
+        {album.trackCount > 0 ? ` · ${album.trackCount} tracks` : ""}
+      </ThemedText>
+    </Pressable>
+  );
+}
+
 // ── Track row ────────────────────────────────────────────────────────────────
 function TrackRow({
   track,
@@ -275,6 +325,12 @@ export default function MusicPlayerScreen() {
   const [results, setResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [richResults, setRichResults] = useState<{ songs: Track[]; artists: ArtistResult[]; albums: AlbumResult[] } | null>(null);
+  const [drill, setDrill] = useState<{ type: "artist" | "album"; id: number; name: string; artwork?: string } | null>(null);
+  const [drillSongs, setDrillSongs] = useState<Track[]>([]);
+  const [drillAlbums, setDrillAlbums] = useState<AlbumResult[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState("");
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -396,19 +452,63 @@ export default function MusicPlayerScreen() {
     if (!q || searching) return;
     setSearching(true);
     setSearchError("");
+    setRichResults(null);
     setResults([]);
+    setDrill(null);
+    setDrillSongs([]);
+    setDrillAlbums([]);
     inputRef.current?.blur();
     try {
       const r = await fetch(`${getApiUrl()}/api/music/search?q=${encodeURIComponent(q)}`);
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Search failed");
-      setResults(data);
+      setRichResults(data);
+      setResults(data.songs ?? []);
     } catch (err: any) {
       setSearchError(err.message ?? "Search failed");
     } finally {
       setSearching(false);
     }
   }, [query, searching]);
+
+  const handleArtistDrill = useCallback(async (artist: ArtistResult) => {
+    setDrill({ type: "artist", id: artist.artistId, name: artist.artistName });
+    setDrillLoading(true);
+    setDrillError("");
+    setDrillSongs([]);
+    setDrillAlbums([]);
+    try {
+      const r = await fetch(`${getApiUrl()}/api/music/artist/${artist.artistId}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Failed");
+      setDrillSongs(data.songs ?? []);
+      setDrillAlbums(data.albums ?? []);
+      setResults(data.songs ?? []);
+    } catch (err: any) {
+      setDrillError(err.message ?? "Failed to load artist");
+    } finally {
+      setDrillLoading(false);
+    }
+  }, []);
+
+  const handleAlbumDrill = useCallback(async (album: AlbumResult) => {
+    setDrill({ type: "album", id: album.collectionId, name: album.collectionName, artwork: album.artwork });
+    setDrillLoading(true);
+    setDrillError("");
+    setDrillSongs([]);
+    setDrillAlbums([]);
+    try {
+      const r = await fetch(`${getApiUrl()}/api/music/album/${album.collectionId}`);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? "Failed");
+      setDrillSongs(Array.isArray(data) ? data : []);
+      setResults(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setDrillError(err.message ?? "Failed to load album");
+    } finally {
+      setDrillLoading(false);
+    }
+  }, []);
 
   const handlePlayTrack = useCallback(
     async (track: Track) => {
@@ -599,7 +699,7 @@ export default function MusicPlayerScreen() {
                 autoCorrect={false}
               />
               {query.length > 0 && (
-                <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }} style={styles.clearBtn}>
+                <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setRichResults(null); setSearchError(""); setDrill(null); setDrillSongs([]); setDrillAlbums([]); }} style={styles.clearBtn}>
                   <Feather name="x" size={15} color={Colors.dark.textSecondary} />
                 </FocusPressable>
               )}
@@ -625,33 +725,106 @@ export default function MusicPlayerScreen() {
                 <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
               </FocusPressable>
             </View>
-          ) : results.length === 0 && !searching ? (
+          ) : !richResults && !searching ? (
             <View style={styles.centred}>
               <Feather name="music" size={48} color="rgba(255,102,0,0.2)" />
               <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
               <ThemedText style={styles.emptySubtitle}>
-                Uses Apple Music's catalogue — tap any track to play via YouTube
+                Artists, albums &amp; songs from Apple Music — tap to play via YouTube
               </ThemedText>
             </View>
-          ) : (
-            <FlatList
-              data={results}
-              keyExtractor={(t, i) => `${t.searchKey}-${i}`}
-              style={styles.list}
-              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 16 }]}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TrackRow
-                  track={item}
-                  isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
-                  isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
-                  onPress={() => handlePlayTrack(item)}
-                  onLike={likedPlaylistId ? () => handleLike(item) : undefined}
-                  onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
-                  isLiked={likedKeys.has(item.searchKey)}
-                />
+          ) : drill ? (
+            /* ── Drill view (artist or album) ── */
+            <View style={styles.list}>
+              <View style={styles.drillHeader}>
+                <FocusPressable
+                  style={styles.drillBack}
+                  hitSlop={8}
+                  onPress={() => { setDrill(null); setDrillSongs([]); setDrillAlbums([]); setResults(richResults?.songs ?? []); }}
+                >
+                  <Feather name="arrow-left" size={15} color={ACCENT} />
+                  <ThemedText style={styles.drillBackText} numberOfLines={1}>{drill.name}</ThemedText>
+                </FocusPressable>
+              </View>
+              {drillLoading ? (
+                <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
+              ) : drillError ? (
+                <View style={styles.centred}><ThemedText style={styles.errorText}>{drillError}</ThemedText></View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+                  {drillSongs.length > 0 && (
+                    <View>
+                      <ThemedText style={styles.drillSectionTitle}>
+                        {drill.type === "artist" ? "TOP SONGS" : "TRACKS"}
+                      </ThemedText>
+                      {drillSongs.map((item, i) => (
+                        <TrackRow
+                          key={`${item.searchKey}-${i}`}
+                          track={item}
+                          isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+                          isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
+                          onPress={() => handlePlayTrack(item)}
+                          onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+                          onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
+                          isLiked={likedKeys.has(item.searchKey)}
+                        />
+                      ))}
+                    </View>
+                  )}
+                  {drill.type === "artist" && drillAlbums.length > 0 && (
+                    <View>
+                      <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                        {drillAlbums.map((a) => (
+                          <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </ScrollView>
               )}
-            />
+            </View>
+          ) : (
+            /* ── Rich search results ── */
+            <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+              {(richResults?.artists ?? []).length > 0 && (
+                <View>
+                  <ThemedText style={styles.drillSectionTitle}>ARTISTS</ThemedText>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                    {richResults!.artists.map((a) => (
+                      <ArtistCard key={String(a.artistId)} artist={a} onPress={() => handleArtistDrill(a)} />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+              {(richResults?.albums ?? []).length > 0 && (
+                <View>
+                  <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                    {richResults!.albums.map((a) => (
+                      <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+              {(richResults?.songs ?? []).length > 0 && (
+                <View>
+                  <ThemedText style={styles.drillSectionTitle}>SONGS</ThemedText>
+                  {richResults!.songs.map((item, i) => (
+                    <TrackRow
+                      key={`${item.searchKey}-${i}`}
+                      track={item}
+                      isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+                      isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
+                      onPress={() => handlePlayTrack(item)}
+                      onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+                      onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
+                      isLiked={likedKeys.has(item.searchKey)}
+                    />
+                  ))}
+                </View>
+              )}
+            </ScrollView>
           )}
         </View>
 
@@ -1006,6 +1179,42 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 13, color: "#ef4444", textAlign: "center" },
   retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, borderWidth: 1.5, borderColor: "transparent" },
   retryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+
+  // ── Drill / rich results
+  drillHeader: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.06)",
+  },
+  drillBack: {
+    flexDirection: "row", alignItems: "center", gap: 6, flex: 1,
+    padding: 6, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent",
+  },
+  drillBackText: { fontSize: 14, fontWeight: "700", color: ACCENT, flex: 1 },
+  drillSectionTitle: {
+    fontSize: 10, fontWeight: "800", color: Colors.dark.textSecondary, letterSpacing: 1.2,
+    paddingHorizontal: Spacing.sm, paddingTop: Spacing.md, paddingBottom: Spacing.xs,
+  },
+  hChips: { paddingHorizontal: Spacing.sm, gap: 10, paddingBottom: Spacing.sm },
+
+  artistCard: { width: 90, alignItems: "center", gap: 5 },
+  artistCardFocused: { backgroundColor: "rgba(255,102,0,0.08)", borderRadius: BorderRadius.md, padding: 4 },
+  artistAvatar: {
+    width: 70, height: 70, borderRadius: 35,
+    backgroundColor: "rgba(255,102,0,0.10)", borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.35)" as any,
+    justifyContent: "center", alignItems: "center",
+  },
+  artistAvatarFocused: { borderColor: ACCENT },
+  artistCardName: { fontSize: 11, fontWeight: "600", color: Colors.dark.text, textAlign: "center" },
+  artistCardGenre: { fontSize: 10, color: Colors.dark.textSecondary, textAlign: "center" },
+
+  albumCard: { width: 92 },
+  albumCardFocused: { opacity: 0.8 },
+  albumCardArt: { width: 92, height: 92, borderRadius: BorderRadius.md, marginBottom: 5 },
+  albumCardArtPh: { backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
+  albumCardName: { fontSize: 11, fontWeight: "600", color: Colors.dark.text },
+  albumCardMeta: { fontSize: 10, color: Colors.dark.textSecondary },
 
   // ── Add-to-playlist modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
