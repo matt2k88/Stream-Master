@@ -2444,23 +2444,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ── Resolve a track name → YouTube videoId (called when user taps Play)
-  app.get("/api/music/resolve", async (req, res) => {
-    const q = String(req.query.q ?? "").trim();
-    if (!q) return res.status(400).json({ error: "q required" });
-    try {
+  // Singleton Innertube + 24h LRU cache so hundreds of concurrent users
+  // share one YouTube client and repeated lookups never hit YouTube twice.
+  {
+    let _yt: any = null;
+    let _ytInit: Promise<any> | null = null;
+    async function getYT() {
+      if (_yt) return _yt;
+      if (_ytInit) return _ytInit;
       const { Innertube } = await import("youtubei.js");
-      const yt = await Innertube.create({ cache: undefined, retrieve_player: false });
-      // Append "audio" so YouTube favours music uploads over reaction/gaming videos
-      const search = await yt.search(`${q} audio`, { type: "video" });
-      const videos = search.videos ?? [];
-      const first = videos[0] as any;
-      if (!first?.id) throw new Error("No results");
-      res.json({ videoId: first.id as string });
-    } catch (err: any) {
-      console.error("[music:resolve]", err.message);
-      res.status(500).json({ error: "Could not find track on YouTube." });
+      _ytInit = Innertube.create({ cache: undefined, retrieve_player: false })
+        .then((instance: any) => { _yt = instance; _ytInit = null; return _yt; })
+        .catch((e: any) => { _ytInit = null; throw e; });
+      return _ytInit;
     }
-  });
+
+    // Simple 1000-entry LRU cache with 24h TTL
+    const resolveCache = new Map<string, { videoId: string; ts: number }>();
+    const CACHE_TTL = 24 * 60 * 60 * 1000;
+    const CACHE_MAX = 1000;
+
+    app.get("/api/music/resolve", async (req, res) => {
+      const q = String(req.query.q ?? "").trim();
+      if (!q) return res.status(400).json({ error: "q required" });
+      const key = q.toLowerCase();
+      const cached = resolveCache.get(key);
+      if (cached && Date.now() - cached.ts < CACHE_TTL) {
+        return res.json({ videoId: cached.videoId });
+      }
+      try {
+        const yt = await getYT();
+        const search = await yt.search(`${q} audio`, { type: "video" });
+        const videos = search.videos ?? [];
+        const first = videos[0] as any;
+        if (!first?.id) throw new Error("No results");
+        // Evict oldest entry if at capacity
+        if (resolveCache.size >= CACHE_MAX) {
+          resolveCache.delete(resolveCache.keys().next().value);
+        }
+        resolveCache.set(key, { videoId: first.id, ts: Date.now() });
+        res.json({ videoId: first.id as string });
+      } catch (err: any) {
+        console.error("[music:resolve]", err.message);
+        res.status(500).json({ error: "Could not find track on YouTube." });
+      }
+    });
+  }
 
   // ── Football Centre ───────────────────────────────────────────────────────
   // All Football Centre read endpoints are best-effort cache reads and never
