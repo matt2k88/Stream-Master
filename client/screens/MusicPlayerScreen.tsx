@@ -418,8 +418,8 @@ export default function MusicPlayerScreen() {
           renderItem={({ item }) => (
             <TrackRow
               track={item}
-              isActive={currentTrack?.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
-              isLoading={isLoading && currentTrack?.searchKey === item.searchKey}
+              isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+              isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
               onPress={() => handlePlayTrack(item)}
             />
           )}
