@@ -2412,49 +2412,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Music Player (YouTube search via youtubei.js) ────────────────────────
   // Playback is handled client-side by a hidden WebView (YouTube IFrame API)
   // so no stream/proxy endpoints are needed here.
+  // ── Music search via iTunes Search API (free, no key, real music metadata)
   app.get("/api/music/search", async (req, res) => {
+    const q = String(req.query.q ?? "").trim();
+    if (!q) return res.status(400).json({ error: "q required" });
+    try {
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&media=music&entity=song&limit=25&country=us`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`iTunes API ${r.status}`);
+      const data = await r.json() as any;
+      const results = (data.results ?? [])
+        .filter((t: any) => t.kind === "song" && t.trackName)
+        .slice(0, 20)
+        .map((t: any) => ({
+          // no videoId yet — resolved on play via /api/music/resolve
+          videoId: "",
+          title: t.trackName as string,
+          artist: t.artistName as string,
+          album: (t.collectionName ?? "") as string,
+          duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
+          // swap 100x100bb → 400x400bb for sharper artwork
+          thumbnail: ((t.artworkUrl100 ?? "") as string).replace("100x100bb", "400x400bb"),
+          // store for resolve query
+          searchKey: `${t.trackName} ${t.artistName}`,
+        }));
+      res.json(results);
+    } catch (err: any) {
+      console.error("[music:search]", err.message);
+      res.status(500).json({ error: "Search failed. Please try again." });
+    }
+  });
+
+  // ── Resolve a track name → YouTube videoId (called when user taps Play)
+  app.get("/api/music/resolve", async (req, res) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) return res.status(400).json({ error: "q required" });
     try {
       const { Innertube } = await import("youtubei.js");
       const yt = await Innertube.create({ cache: undefined, retrieve_player: false });
-      const search = await yt.search(q, { type: "video" });
+      // Append "audio" so YouTube favours music uploads over reaction/gaming videos
+      const search = await yt.search(`${q} audio`, { type: "video" });
       const videos = search.videos ?? [];
-      const results = videos.slice(0, 15).map((v: any) => {
-        const thumb =
-          (Array.isArray(v.thumbnails) && v.thumbnails.length > 0
-            ? v.thumbnails[v.thumbnails.length - 1]?.url
-            : null) ??
-          (Array.isArray(v.thumbnail) && v.thumbnail.length > 0
-            ? v.thumbnail[v.thumbnail.length - 1]?.url
-            : null) ??
-          "";
-        const durSec: number = (() => {
-          const raw = v.duration;
-          if (!raw) return 0;
-          if (typeof raw === "number") return raw;
-          if (typeof raw === "object" && raw !== null) {
-            if (typeof raw.seconds === "number") return raw.seconds;
-            if (typeof raw.text === "string") {
-              const parts = raw.text.split(":").map(Number);
-              if (parts.length === 2) return parts[0] * 60 + parts[1];
-              if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-            }
-          }
-          return 0;
-        })();
-        return {
-          videoId: v.id as string,
-          title: (v.title?.text ?? v.title ?? "Unknown") as string,
-          channel: (v.author?.name ?? v.author ?? "") as string,
-          duration: durSec,
-          thumbnail: thumb as string,
-        };
-      }).filter((r: any) => r.videoId);
-      res.json(results);
+      const first = videos[0] as any;
+      if (!first?.id) throw new Error("No results");
+      res.json({ videoId: first.id as string });
     } catch (err: any) {
-      console.error("[music:search]", err.message);
-      res.status(500).json({ error: "Search failed. Please try again." });
+      console.error("[music:resolve]", err.message);
+      res.status(500).json({ error: "Could not find track on YouTube." });
     }
   });
 

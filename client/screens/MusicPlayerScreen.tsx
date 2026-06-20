@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  LayoutChangeEvent,
+  GestureResponderEvent,
 } from "react-native";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,15 +20,17 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useNavigation } from "@react-navigation/native";
 import { getApiUrl } from "@/lib/query-client";
 
+// Track as returned by iTunes search — videoId is filled in on resolve
 interface Track {
-  videoId: string;
+  videoId: string;       // empty until resolved
   title: string;
-  channel: string;
+  artist: string;
+  album: string;
   duration: number;
   thumbnail: string;
+  searchKey: string;     // "trackName artistName" used to query YouTube
 }
 
-const YT_ENDED = 0;
 const YT_PLAYING = 1;
 const YT_PAUSED = 2;
 const YT_BUFFERING = 3;
@@ -39,8 +43,8 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Injected after onLoad. Finds the <video> (incl. Shadow DOM), relays events.
-// Posts 'play_ok' immediately when play() resolves so we can clear the load-timer.
+// Injected into the YouTube watch page after onLoad.
+// Posts play_ok when play() resolves so we can clear the load-timer early.
 const INJECT_JS = `(function() {
   function post(obj) {
     try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
@@ -103,11 +107,9 @@ const INJECT_JS = `(function() {
     v.addEventListener('error', function() {
       post({ type:'error', code: v.error ? v.error.code : -1 });
     });
-    // play_ok fires as soon as play() Promise resolves — clears the load-timer early
     v.play()
       .then(function(){ post({ type:'play_ok', duration:v.duration||0 }); })
       .catch(function(e){ post({ type:'play_err', msg: e.message }); });
-    post({ type:'attached', readyState:v.readyState });
   }
 
   function check() {
@@ -129,6 +131,7 @@ const INJECT_JS = `(function() {
   };
 })(); true;`;
 
+// ── Track row ────────────────────────────────────────────────────────────────
 function TrackRow({
   track,
   isActive,
@@ -166,6 +169,7 @@ function TrackRow({
           </View>
         )}
       </View>
+
       <View style={styles.trackInfo}>
         <ThemedText
           style={[styles.trackTitle, isActive && styles.trackTitleActive]}
@@ -173,15 +177,18 @@ function TrackRow({
         >
           {track.title}
         </ThemedText>
-        <ThemedText style={styles.trackChannel} numberOfLines={1}>
-          {track.channel}
+        <ThemedText style={styles.trackArtist} numberOfLines={1}>
+          {track.artist}
+          {track.album ? ` · ${track.album}` : ""}
         </ThemedText>
       </View>
+
       <ThemedText style={styles.trackDuration}>{fmtTime(track.duration)}</ThemedText>
     </Pressable>
   );
 }
 
+// ── Screen ───────────────────────────────────────────────────────────────────
 export default function MusicPlayerScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -191,8 +198,10 @@ export default function MusicPlayerScreen() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
 
+  // currentTrack has its videoId filled in after resolve
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [resolveError, setResolveError] = useState("");
   const [playerState, setPlayerState] = useState<number>(YT_UNSTARTED);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -201,27 +210,36 @@ export default function MusicPlayerScreen() {
   const inputRef = useRef<TextInput>(null);
   const webViewRef = useRef<WebView>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const progressBarWidth = useRef(0);
 
   const isPlaying = playerState === YT_PLAYING;
   const isBuffering = playerState === YT_BUFFERING;
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
 
   const clearLoadTimer = useCallback(() => {
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
-      loadTimeoutRef.current = null;
-    }
+    if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
     setIsLoading(false);
   }, []);
 
-  const jsPlay = useCallback(() => {
-    webViewRef.current?.injectJavaScript('window.ytCmd("play"); true;');
-  }, []);
-  const jsPause = useCallback(() => {
-    webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;');
-  }, []);
-  const jsSeek = useCallback((t: number) => {
-    webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`);
+  const jsPlay  = useCallback(() => webViewRef.current?.injectJavaScript('window.ytCmd("play"); true;'), []);
+  const jsPause = useCallback(() => webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;'), []);
+  const jsSeek  = useCallback((t: number) => webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`), []);
+
+  // Tappable progress bar — maps tap X position to a seek time
+  const handleProgressTap = useCallback(
+    (evt: GestureResponderEvent) => {
+      if (duration <= 0 || progressBarWidth.current <= 0) return;
+      const x = evt.nativeEvent.locationX;
+      const fraction = Math.max(0, Math.min(1, x / progressBarWidth.current));
+      const seekTo = fraction * duration;
+      setCurrentTime(seekTo);
+      jsSeek(seekTo);
+    },
+    [duration, jsSeek]
+  );
+
+  const handleProgressLayout = useCallback((e: LayoutChangeEvent) => {
+    progressBarWidth.current = e.nativeEvent.layout.width;
   }, []);
 
   const handleMessage = useCallback(
@@ -229,7 +247,6 @@ export default function MusicPlayerScreen() {
       try {
         const msg = JSON.parse(event.nativeEvent.data);
         if (msg.type === "play_ok") {
-          // play() Promise resolved — video is definitely going to play; clear timer now
           clearLoadTimer();
           if (msg.duration > 0) setDuration(msg.duration);
           setStreamError("");
@@ -249,11 +266,9 @@ export default function MusicPlayerScreen() {
           if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
           if (msg.duration > 0) setDuration(msg.duration);
         } else if (msg.type === "error") {
-          const code = msg.code ?? "?";
-          setStreamError(`Unavailable (${code}). Try another.`);
+          setStreamError(`Unavailable (${msg.code ?? "?"}). Try another.`);
           clearLoadTimer();
         }
-        // init / attached / debug → no state changes needed
       } catch {}
     },
     [clearLoadTimer]
@@ -279,28 +294,49 @@ export default function MusicPlayerScreen() {
   }, [query, searching]);
 
   const handlePlayTrack = useCallback(
-    (track: Track) => {
-      if (currentTrack?.videoId === track.videoId) {
+    async (track: Track) => {
+      // Toggle play/pause if same track already resolved and playing
+      if (currentTrack?.searchKey === track.searchKey && currentTrack.videoId) {
         isPlaying ? jsPause() : jsPlay();
         return;
       }
+
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-      setCurrentTrack(track);
       setIsLoading(true);
+      setResolveError("");
       setStreamError("");
       setPlayerState(YT_UNSTARTED);
       setCurrentTime(0);
       setDuration(track.duration || 0);
-      // 45s timeout — only fires if WebView never responds at all
-      loadTimeoutRef.current = setTimeout(() => {
+      // Optimistically set the track (shows thumbnail + title immediately)
+      setCurrentTrack({ ...track, videoId: "" });
+
+      try {
+        const r = await fetch(
+          `${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`
+        );
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "Resolve failed");
+        const videoId: string = data.videoId;
+        if (!videoId) throw new Error("No video found");
+
+        // Set resolved track — triggers WebView mount with the real videoId
+        setCurrentTrack({ ...track, videoId });
+
+        // 45s timeout covers cases where WebView never responds
+        loadTimeoutRef.current = setTimeout(() => {
+          setIsLoading(false);
+          setStreamError("Track timed out. Try another.");
+        }, 45_000);
+      } catch (err: any) {
+        setResolveError(err.message ?? "Could not find track");
         setIsLoading(false);
-        setStreamError("Track timed out. Try another.");
-      }, 45_000);
+      }
     },
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
-  const watchUrl = currentTrack
+  const watchUrl = currentTrack?.videoId
     ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
     : null;
 
@@ -314,7 +350,7 @@ export default function MusicPlayerScreen() {
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
-        <ThemedText style={styles.headerTitle}>Music Player</ThemedText>
+        <ThemedText style={styles.headerTitle}>Music</ThemedText>
         <View style={{ flex: 1 }} />
       </View>
 
@@ -352,7 +388,7 @@ export default function MusicPlayerScreen() {
         </Pressable>
       </View>
 
-      {/* ── Results ─────────────────────────────────────────────────── */}
+      {/* ── Results / empty / error states ──────────────────────────── */}
       {searchError ? (
         <View style={styles.centred}>
           <Feather name="alert-circle" size={30} color="#ef4444" />
@@ -366,13 +402,13 @@ export default function MusicPlayerScreen() {
           <Feather name="music" size={52} color="rgba(255,102,0,0.25)" />
           <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
           <ThemedText style={styles.emptySubtitle}>
-            Enter a song, artist or album above and tap Search
+            Uses Apple Music's catalogue — tap any track to play via YouTube
           </ThemedText>
         </View>
       ) : (
         <FlatList
           data={results}
-          keyExtractor={(t) => t.videoId}
+          keyExtractor={(t, i) => `${t.searchKey}-${i}`}
           style={styles.list}
           contentContainerStyle={[
             styles.listContent,
@@ -382,56 +418,63 @@ export default function MusicPlayerScreen() {
           renderItem={({ item }) => (
             <TrackRow
               track={item}
-              isActive={currentTrack?.videoId === item.videoId && (isPlaying || isBuffering)}
-              isLoading={isLoading && currentTrack?.videoId === item.videoId}
+              isActive={currentTrack?.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+              isLoading={isLoading && currentTrack?.searchKey === item.searchKey}
               onPress={() => handlePlayTrack(item)}
             />
           )}
         />
       )}
 
-      {/* ── Player ──────────────────────────────────────────────────── */}
-      {currentTrack && watchUrl ? (
+      {/* ── Player bar ──────────────────────────────────────────────── */}
+      {currentTrack ? (
         <View style={[styles.playerShell, { paddingBottom: insets.bottom, height: PLAYER_H + insets.bottom }]}>
-          {/* WebView runs audio — androidLayerType=software lets our View cover it */}
-          <WebView
-            key={currentTrack.videoId}
-            ref={webViewRef}
-            style={StyleSheet.absoluteFill}
-            source={{ uri: watchUrl }}
-            onLoad={() => { webViewRef.current?.injectJavaScript(INJECT_JS); }}
-            onMessage={handleMessage}
-            onShouldStartLoadWithRequest={(req) =>
-              req.url.startsWith("https://www.youtube.com") ||
-              req.url.startsWith("https://m.youtube.com") ||
-              req.url.startsWith("https://accounts.google.com") ||
-              req.url.startsWith("https://consent.youtube.com")
-            }
-            javaScriptEnabled
-            mediaPlaybackRequiresUserAction={false}
-            allowsInlineMediaPlayback
-            originWhitelist={["*"]}
-            thirdPartyCookiesEnabled
-            scrollEnabled={false}
-            bounces={false}
-            allowsFullscreenVideo={false}
-            androidLayerType="software"
-            userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          />
+          {/* Hidden WebView — only mounts once videoId is resolved */}
+          {watchUrl ? (
+            <WebView
+              key={currentTrack.videoId}
+              ref={webViewRef}
+              style={StyleSheet.absoluteFill}
+              source={{ uri: watchUrl }}
+              onLoad={() => { webViewRef.current?.injectJavaScript(INJECT_JS); }}
+              onMessage={handleMessage}
+              onShouldStartLoadWithRequest={(req) =>
+                req.url.startsWith("https://www.youtube.com") ||
+                req.url.startsWith("https://m.youtube.com") ||
+                req.url.startsWith("https://accounts.google.com") ||
+                req.url.startsWith("https://consent.youtube.com")
+              }
+              javaScriptEnabled
+              mediaPlaybackRequiresUserAction={false}
+              allowsInlineMediaPlayback
+              originWhitelist={["*"]}
+              thirdPartyCookiesEnabled
+              scrollEnabled={false}
+              bounces={false}
+              allowsFullscreenVideo={false}
+              androidLayerType="software"
+              userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            />
+          ) : null}
 
-          {/* Solid black cover — hides YouTube UI completely */}
+          {/* Solid cover — hides YouTube UI (works because androidLayerType=software) */}
           <View style={styles.playerCover} />
 
-          {/* Progress bar — sits above the cover */}
-          <View style={styles.progressWrap}>
+          {/* Tappable progress bar */}
+          <Pressable
+            style={styles.progressWrap}
+            onPress={handleProgressTap}
+            onLayout={handleProgressLayout}
+            hitSlop={{ top: 10, bottom: 10 }}
+          >
             <View style={styles.progressTrack}>
               <View style={[styles.progressFill, { flex: progress }]} />
               {progress > 0 && <View style={styles.progressDot} />}
-              <View style={{ flex: Math.max(0, 1 - progress) }} />
+              <View style={{ flex: Math.max(0.001, 1 - progress) }} />
             </View>
-          </View>
+          </Pressable>
 
-          {/* Controls row */}
+          {/* Controls */}
           <View style={styles.controlsRow}>
             {currentTrack.thumbnail ? (
               <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniThumb} />
@@ -442,18 +485,13 @@ export default function MusicPlayerScreen() {
             )}
 
             <View style={styles.trackMeta}>
-              <ThemedText style={styles.miniTitle} numberOfLines={1}>
-                {currentTrack.title}
+              <ThemedText style={styles.miniTitle} numberOfLines={1}>{currentTrack.title}</ThemedText>
+              <ThemedText style={styles.miniSub} numberOfLines={1}>
+                {streamError || resolveError
+                  ? (streamError || resolveError)
+                  : `${currentTrack.artist}${duration > 0 ? `  ·  ${fmtTime(currentTime)} / ${fmtTime(duration)}` : ""}`
+                }
               </ThemedText>
-              <ThemedText style={styles.miniChannel} numberOfLines={1}>
-                {currentTrack.channel}
-                {duration > 0 ? `  ·  ${fmtTime(currentTime)} / ${fmtTime(duration)}` : ""}
-              </ThemedText>
-              {streamError ? (
-                <ThemedText style={styles.streamError} numberOfLines={1}>
-                  {streamError}
-                </ThemedText>
-              ) : null}
             </View>
 
             {isLoading ? (
@@ -483,22 +521,15 @@ const ACCENT = Colors.dark.accent;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingBottom: Spacing.md, gap: Spacing.md,
-  },
+  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.md },
   backBtn: { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
 
-  searchWrap: {
-    flexDirection: "row", alignItems: "center",
-    gap: Spacing.sm, marginBottom: Spacing.md,
-  },
+  searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
   searchBar: {
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.dark.backgroundSecondary,
-    borderRadius: BorderRadius.md, borderWidth: 1,
-    borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     paddingHorizontal: Spacing.md, height: 44,
   },
   searchInput: { flex: 1, fontSize: 15, color: Colors.dark.text, paddingVertical: 0 },
@@ -518,35 +549,18 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md, marginBottom: 2, gap: Spacing.md,
   },
-  trackRowActive: {
-    backgroundColor: "rgba(255,102,0,0.12)",
-    borderWidth: 1, borderColor: "rgba(255,102,0,0.25)",
-  },
-  thumbWrap: {
-    width: 52, height: 52,
-    borderRadius: BorderRadius.sm, overflow: "hidden",
-  },
+  trackRowActive: { backgroundColor: "rgba(255,102,0,0.12)", borderWidth: 1, borderColor: "rgba(255,102,0,0.25)" },
+  thumbWrap: { width: 52, height: 52, borderRadius: BorderRadius.sm, overflow: "hidden" },
   thumbImg: { width: "100%", height: "100%" },
-  thumbPlaceholder: {
-    width: "100%", height: "100%",
-    backgroundColor: Colors.dark.backgroundSecondary,
-    justifyContent: "center", alignItems: "center",
-  },
-  thumbOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    justifyContent: "center", alignItems: "center",
-  },
+  thumbPlaceholder: { width: "100%", height: "100%", backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
+  thumbOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center" },
   trackInfo: { flex: 1, gap: 3 },
   trackTitle: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   trackTitleActive: { color: ACCENT },
-  trackChannel: { fontSize: 12, color: Colors.dark.textSecondary },
+  trackArtist: { fontSize: 12, color: Colors.dark.textSecondary },
   trackDuration: { fontSize: 12, color: Colors.dark.textSecondary, minWidth: 38, textAlign: "right" },
 
-  centred: {
-    flex: 1, justifyContent: "center", alignItems: "center",
-    gap: Spacing.md, paddingHorizontal: Spacing.xl,
-  },
+  centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
   emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
   errorText: { fontSize: 14, color: "#ef4444", textAlign: "center" },
@@ -557,48 +571,31 @@ const styles = StyleSheet.create({
   playerShell: {
     position: "absolute", left: 0, right: 0, bottom: 0,
     backgroundColor: "#111",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,102,0,0.2)",
+    borderTopWidth: 1, borderTopColor: "rgba(255,102,0,0.2)",
   },
-  // Solid opaque cover — sits on top of WebView SurfaceView (needs androidLayerType=software on the WebView)
-  playerCover: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#111",
-  },
-  progressWrap: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: 8,
-  },
+  playerCover: { ...StyleSheet.absoluteFillObject, backgroundColor: "#111" },
+
+  progressWrap: { paddingHorizontal: Spacing.lg, paddingTop: 8 },
   progressTrack: {
     flexDirection: "row", alignItems: "center",
-    height: 3, backgroundColor: "rgba(255,255,255,0.1)",
+    height: 4, backgroundColor: "rgba(255,255,255,0.12)",
     borderRadius: 2,
   },
-  progressFill: { height: 3, backgroundColor: ACCENT, borderRadius: 2 },
-  progressDot: {
-    width: 10, height: 10, borderRadius: 5,
-    backgroundColor: ACCENT, marginHorizontal: -5,
-  },
+  progressFill: { height: 4, backgroundColor: ACCENT, borderRadius: 2 },
+  progressDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: ACCENT, marginHorizontal: -6 },
+
   controlsRow: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: 8,
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg, paddingTop: 8, gap: Spacing.sm,
   },
   miniThumb: { width: 44, height: 44, borderRadius: BorderRadius.sm },
-  miniThumbPlaceholder: {
-    backgroundColor: Colors.dark.backgroundSecondary,
-    justifyContent: "center", alignItems: "center",
-  },
+  miniThumbPlaceholder: { backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
   trackMeta: { flex: 1, gap: 2 },
   miniTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.text },
-  miniChannel: { fontSize: 11, color: Colors.dark.textSecondary },
-  streamError: { fontSize: 11, color: "#ef4444" },
+  miniSub: { fontSize: 11, color: Colors.dark.textSecondary },
   ctrlBtn: { padding: Spacing.sm },
   playBtn: {
     width: 44, height: 44, borderRadius: 22,
-    backgroundColor: ACCENT,
-    justifyContent: "center", alignItems: "center",
-    elevation: 4,
+    backgroundColor: ACCENT, justifyContent: "center", alignItems: "center", elevation: 4,
   },
 });
