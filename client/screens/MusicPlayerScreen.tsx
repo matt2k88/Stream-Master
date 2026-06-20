@@ -191,19 +191,47 @@ function TrackRow({
   );
 }
 
+// ── Shared TV-focusable pressable ─────────────────────────────────────────────
+// "solid" variant (orange/coloured button) uses a white focus ring
+// default variant (icon/text button) uses an orange focus ring
+function FocusPressable({
+  style,
+  children,
+  variant = "default",
+  onFocus,
+  onBlur,
+  onHoverIn,
+  onHoverOut,
+  ...rest
+}: React.ComponentProps<typeof Pressable> & { variant?: "default" | "solid" }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      {...rest}
+      style={[style, focused && (variant === "solid" ? styles.focusSolid : styles.focusDefault)]}
+      onFocus={(e) => { setFocused(true); onFocus?.(e as any); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e as any); }}
+      onHoverIn={(e) => { setFocused(true); onHoverIn?.(e as any); }}
+      onHoverOut={(e) => { setFocused(false); onHoverOut?.(e as any); }}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 // ── Info button + modal ───────────────────────────────────────────────────────
 function InfoButton() {
   const [visible, setVisible] = useState(false);
   return (
     <>
-      <Pressable
+      <FocusPressable
         onPress={() => setVisible(true)}
         hitSlop={12}
         style={styles.infoBtn}
         accessibilityLabel="About search results"
       >
         <Feather name="info" size={18} color={Colors.dark.textSecondary} />
-      </Pressable>
+      </FocusPressable>
 
       <Modal
         visible={visible}
@@ -225,9 +253,9 @@ function InfoButton() {
               If the first result isn't quite right, try a more specific search (e.g. include
               "radio edit" or the artist name) to narrow it down.
             </ThemedText>
-            <Pressable style={styles.infoCardClose} onPress={() => setVisible(false)}>
+            <FocusPressable variant="solid" style={styles.infoCardClose} onPress={() => setVisible(false)}>
               <ThemedText style={styles.infoCardCloseText}>Got it</ThemedText>
-            </Pressable>
+            </FocusPressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -465,9 +493,9 @@ export default function MusicPlayerScreen() {
     <ThemedView style={styles.root}>
       {/* ── Header ──────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padTop, paddingHorizontal: Spacing.lg }]}>
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
+        <FocusPressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
-        </Pressable>
+        </FocusPressable>
         <ThemedText style={styles.headerTitle}>Music</ThemedText>
         {showMusicBetaBadge ? (
           <View style={styles.betaBadge}>
@@ -495,12 +523,13 @@ export default function MusicPlayerScreen() {
             autoCorrect={false}
           />
           {query.length > 0 && (
-            <Pressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }}>
+            <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }} style={styles.clearBtn}>
               <Feather name="x" size={15} color={Colors.dark.textSecondary} />
-            </Pressable>
+            </FocusPressable>
           )}
         </View>
-        <Pressable
+        <FocusPressable
+          variant="solid"
           style={[styles.searchBtn, (!query.trim() || searching) && styles.searchBtnDisabled]}
           onPress={handleSearch}
           disabled={!query.trim() || searching}
@@ -509,7 +538,7 @@ export default function MusicPlayerScreen() {
             ? <ActivityIndicator size="small" color="#fff" />
             : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
           }
-        </Pressable>
+        </FocusPressable>
       </View>
 
       {/* ── Results / empty / error states ──────────────────────────── */}
@@ -517,9 +546,9 @@ export default function MusicPlayerScreen() {
         <View style={styles.centred}>
           <Feather name="alert-circle" size={30} color="#ef4444" />
           <ThemedText style={styles.errorText}>{searchError}</ThemedText>
-          <Pressable style={styles.retryBtn} onPress={handleSearch}>
+          <FocusPressable variant="solid" style={styles.retryBtn} onPress={handleSearch}>
             <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-          </Pressable>
+          </FocusPressable>
         </View>
       ) : results.length === 0 && !searching ? (
         <View style={styles.centred}>
@@ -600,22 +629,22 @@ export default function MusicPlayerScreen() {
 
           {/* Repeat / Shuffle toggles */}
           <View style={styles.toggleRow}>
-            <Pressable
+            <FocusPressable
               style={[styles.toggleBtn, repeat && styles.toggleBtnActive]}
               onPress={() => setRepeat((r) => !r)}
               hitSlop={8}
             >
               <Feather name="repeat" size={14} color={repeat ? Colors.dark.accent : Colors.dark.textSecondary} />
               <ThemedText style={[styles.toggleLabel, repeat && styles.toggleLabelActive]}>Repeat</ThemedText>
-            </Pressable>
-            <Pressable
+            </FocusPressable>
+            <FocusPressable
               style={[styles.toggleBtn, shuffle && styles.toggleBtnActive]}
               onPress={() => setShuffle((s) => !s)}
               hitSlop={8}
             >
               <Feather name="shuffle" size={14} color={shuffle ? Colors.dark.accent : Colors.dark.textSecondary} />
               <ThemedText style={[styles.toggleLabel, shuffle && styles.toggleLabelActive]}>Shuffle</ThemedText>
-            </Pressable>
+            </FocusPressable>
           </View>
 
           {/* Controls */}
@@ -642,21 +671,21 @@ export default function MusicPlayerScreen() {
               <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: 12 }} />
             ) : (
               <>
-                <Pressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={8}>
+                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={8}>
                   <Feather name="skip-back" size={18} color={Colors.dark.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
+                </FocusPressable>
+                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
                   <Feather name="rotate-ccw" size={16} color={Colors.dark.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
+                </FocusPressable>
+                <FocusPressable variant="solid" style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
                   <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
-                </Pressable>
-                <Pressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
+                </FocusPressable>
+                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
                   <Feather name="rotate-cw" size={16} color={Colors.dark.textSecondary} />
-                </Pressable>
-                <Pressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={8}>
+                </FocusPressable>
+                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={8}>
                   <Feather name="skip-forward" size={18} color={Colors.dark.textSecondary} />
-                </Pressable>
+                </FocusPressable>
               </>
             )}
           </View>
@@ -672,7 +701,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
   header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.sm },
-  backBtn: { padding: 4 },
+  backBtn: { padding: 6, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
   betaBadge: {
     backgroundColor: "rgba(255,102,0,0.18)",
@@ -682,7 +711,18 @@ const styles = StyleSheet.create({
   },
   betaBadgeText: { fontSize: 9, fontWeight: "800", color: Colors.dark.accent, letterSpacing: 0.8 },
 
-  infoBtn: { padding: 4 },
+  focusDefault: {
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  focusSolid: {
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.75)",
+  },
+
+  infoBtn: { padding: 6, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
+  clearBtn: { padding: 4, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
   infoOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
     justifyContent: "center", alignItems: "center",
@@ -793,9 +833,10 @@ const styles = StyleSheet.create({
   trackMeta: { flex: 1, gap: 2 },
   miniTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.text },
   miniSub: { fontSize: 11, color: Colors.dark.textSecondary },
-  ctrlBtn: { padding: Spacing.sm },
+  ctrlBtn: { padding: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
   playBtn: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: ACCENT, justifyContent: "center", alignItems: "center", elevation: 4,
+    borderWidth: 1.5, borderColor: "transparent",
   },
 });
