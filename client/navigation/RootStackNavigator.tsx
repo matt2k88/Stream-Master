@@ -85,6 +85,7 @@ export type RootStackParamList = {
     queue?: Array<{ videoId: string; title: string; artist: string; album: string; duration: number; thumbnail: string; searchKey: string; }>;
     startIndex?: number;
     contextName?: string;
+    initialQuery?: string;
   } | undefined;
   PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
 };

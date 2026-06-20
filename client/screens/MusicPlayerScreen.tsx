@@ -318,11 +318,11 @@ export default function MusicPlayerScreen() {
   const insets = useSafeAreaInsets();
   const { showMusicBetaBadge } = useAppTheme();
   const route = useRoute<RouteProp<RootStackParamList, "MusicPlayer">>();
-  const { queue: initQueue, startIndex: initIndex = 0, contextName } = route.params ?? {};
+  const { queue: initQueue, startIndex: initIndex = 0, contextName, initialQuery } = route.params ?? {};
   const { activeProfile } = useProfile();
   const profileId = activeProfile?.id;
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
@@ -471,6 +471,24 @@ export default function MusicPlayerScreen() {
       setSearching(false);
     }
   }, [query, searching]);
+
+  // Auto-run search when arriving from MusicHomeScreen with a query
+  useEffect(() => {
+    if (!initialQuery?.trim()) return;
+    const q = initialQuery.trim();
+    setSearching(true);
+    setSearchError("");
+    fetch(`${getApiUrl()}/api/music/search?q=${encodeURIComponent(q)}`)
+      .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok) throw new Error(data.error ?? "Search failed");
+        setRichResults(data);
+        setResults(data.songs ?? []);
+      })
+      .catch((err: any) => setSearchError(err.message ?? "Search failed"))
+      .finally(() => setSearching(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleArtistDrill = useCallback(async (artist: ArtistResult) => {
     setDrill({ type: "artist", id: artist.artistId, name: artist.artistName });

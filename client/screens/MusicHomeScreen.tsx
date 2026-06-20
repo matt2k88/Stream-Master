@@ -429,6 +429,7 @@ export default function MusicHomeScreen() {
       queue,
       startIndex: startIndex >= 0 ? startIndex : 0,
       contextName,
+      initialQuery: query.trim() || undefined,
     });
   }, [navigation]);
 
