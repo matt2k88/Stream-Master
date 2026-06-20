@@ -1,7 +1,8 @@
 -- Migration 028: Music playlists per profile
 -- Run in Supabase SQL Editor
--- Fully idempotent: safe to re-run if a previous attempt partially succeeded.
+-- Fully idempotent: safe to re-run regardless of how much was done previously.
 
+-- ── music_playlists ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS music_playlists (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   profile_id  UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -10,26 +11,26 @@ CREATE TABLE IF NOT EXISTS music_playlists (
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Add is_liked_songs if the table was created without it (partial previous run)
-ALTER TABLE music_playlists
-  ADD COLUMN IF NOT EXISTS is_liked_songs BOOLEAN DEFAULT false;
+-- Patch columns that may be missing from a partial earlier run
+ALTER TABLE music_playlists ADD COLUMN IF NOT EXISTS is_liked_songs BOOLEAN DEFAULT false;
 
+-- ── music_playlist_tracks ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS music_playlist_tracks (
   id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   playlist_id UUID        NOT NULL REFERENCES music_playlists(id) ON DELETE CASCADE,
   title       TEXT        NOT NULL,
   artist      TEXT        NOT NULL,
-  album       TEXT        DEFAULT '',
-  duration_sec INTEGER    DEFAULT 0,
-  thumbnail   TEXT        DEFAULT '',
-  position    INTEGER     DEFAULT 0,
   added_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Add search_key if the table was created without it (partial previous run)
-ALTER TABLE music_playlist_tracks
-  ADD COLUMN IF NOT EXISTS search_key TEXT NOT NULL DEFAULT '';
+-- Patch every optional column individually (idempotent ADD COLUMN IF NOT EXISTS)
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS album        TEXT    DEFAULT '';
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS duration_sec INTEGER DEFAULT 0;
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS thumbnail    TEXT    DEFAULT '';
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS position     INTEGER DEFAULT 0;
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS search_key   TEXT    NOT NULL DEFAULT '';
 
+-- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_music_playlists_profile
   ON music_playlists(profile_id);
 

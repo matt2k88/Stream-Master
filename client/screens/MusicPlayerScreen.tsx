@@ -794,6 +794,30 @@ export default function MusicPlayerScreen() {
               </ThemedText>
             </View>
 
+            {/* Like + add buttons for currently playing track */}
+            {likedPlaylistId ? (
+              <Pressable
+                onPress={() => handleLike(currentTrack)}
+                hitSlop={8}
+                style={styles.ctrlBtn}
+              >
+                <Feather
+                  name="heart"
+                  size={18}
+                  color={likedKeys.has(currentTrack.searchKey) ? "#e11d48" : Colors.dark.textSecondary}
+                />
+              </Pressable>
+            ) : null}
+            {playlists.length > 0 ? (
+              <Pressable
+                onPress={() => { setPlaylistAdded(new Set()); setTrackAddModal(currentTrack); }}
+                hitSlop={8}
+                style={styles.ctrlBtn}
+              >
+                <Feather name="plus-circle" size={18} color={Colors.dark.textSecondary} />
+              </Pressable>
+            ) : null}
+
             {isLoading ? (
               <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: 12 }} />
             ) : (
