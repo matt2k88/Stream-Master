@@ -2420,9 +2420,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const base = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&country=us`;
       const [songRes, artistRes, albumRes] = await Promise.all([
-        fetch(`${base}&media=music&entity=song&limit=10`),
+        fetch(`${base}&media=music&entity=song&limit=50`),
         fetch(`${base}&media=music&entity=musicArtist&limit=4`),
-        fetch(`${base}&media=music&entity=album&limit=5`),
+        fetch(`${base}&media=music&entity=album&limit=25`),
       ]);
       const [songData, artistData, albumData]: any[] = await Promise.all([
         songRes.json(), artistRes.json(), albumRes.json(),
@@ -2463,8 +2463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const toArtwork = (u: string) => (u ?? "").replace("100x100bb", "400x400bb");
       const [sRes, aRes] = await Promise.all([
-        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=song&limit=20&country=us`),
-        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=album&limit=10&country=us`),
+        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=song&limit=50&country=us`),
+        fetch(`https://itunes.apple.com/lookup?id=${id}&entity=album&limit=25&country=us`),
       ]);
       const [sData, aData]: any[] = await Promise.all([sRes.json(), aRes.json()]);
       const songs = (sData.results ?? [])
