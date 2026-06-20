@@ -27,7 +27,7 @@ interface Track {
   thumbnail: string;
 }
 
-// YouTube IFrame API player states
+// YouTube embed player states (mirrors IFrame API)
 const YT_UNSTARTED = -1;
 const YT_ENDED = 0;
 const YT_PLAYING = 1;
@@ -41,62 +41,60 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function buildPlayerHtml(videoId: string): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:#000; overflow:hidden; width:1px; height:1px; }
-#p { position:absolute; top:0; left:0; width:1px; height:1px; }
-</style>
-</head>
-<body>
-<div id="p"></div>
-<script>
-var tag = document.createElement('script');
-tag.src = 'https://www.youtube.com/iframe_api';
-document.head.appendChild(tag);
-var player, timer;
-function post(obj) {
-  try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
-}
-function onYouTubeIframeAPIReady() {
-  player = new YT.Player('p', {
-    height: '1', width: '1',
-    videoId: '${videoId}',
-    playerVars: { autoplay:1, controls:0, playsinline:1, rel:0, showinfo:0, enablejsapi:1 },
-    events: {
-      onReady: function(e) {
-        e.target.unMute();
-        e.target.setVolume(100);
-        e.target.playVideo();
-        post({ type:'ready', duration: e.target.getDuration() });
-        timer = setInterval(function() {
-          if (!player || !player.getCurrentTime) return;
-          post({ type:'progress', currentTime: player.getCurrentTime(), duration: player.getDuration() });
-        }, 500);
-      },
-      onStateChange: function(e) {
-        post({ type:'state', state: e.data,
-          currentTime: player.getCurrentTime ? player.getCurrentTime() : 0,
-          duration: player.getDuration ? player.getDuration() : 0 });
-      },
-      onError: function(e) { post({ type:'error', code: e.data }); }
-    }
+// Injected into the YouTube embed page to monitor the <video> element
+// and relay events back to React Native via postMessage.
+const INJECT_JS = `(function() {
+  function post(obj) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
+  }
+  var vid = null;
+  var lastFloor = -1;
+
+  function attach(v) {
+    if (vid === v) return;
+    vid = v;
+    v.addEventListener('playing', function() {
+      post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
+    });
+    v.addEventListener('pause', function() {
+      post({ type:'state', state:2, currentTime:v.currentTime, duration:v.duration||0 });
+    });
+    v.addEventListener('ended', function() {
+      post({ type:'state', state:0, currentTime:v.currentTime, duration:v.duration||0 });
+    });
+    v.addEventListener('waiting', function() {
+      post({ type:'state', state:3, currentTime:v.currentTime, duration:v.duration||0 });
+    });
+    v.addEventListener('canplay', function() {
+      post({ type:'ready', duration:v.duration||0 });
+      v.play().catch(function(){});
+    });
+    v.addEventListener('timeupdate', function() {
+      var f = Math.floor(v.currentTime);
+      if (f !== lastFloor) { lastFloor = f; post({ type:'progress', currentTime:v.currentTime, duration:v.duration||0 }); }
+    });
+    v.addEventListener('error', function() {
+      post({ type:'error', code: v.error ? v.error.code : -1, msg: v.error ? v.error.message : '' });
+    });
+    v.play().catch(function(){});
+    if (v.readyState >= 1 && !isNaN(v.duration)) post({ type:'ready', duration:v.duration||0 });
+  }
+
+  var obs = new MutationObserver(function() {
+    var v = document.querySelector('video');
+    if (v) attach(v);
   });
-}
-window.ytCmd = function(cmd, val) {
-  if (!player) return;
-  if (cmd==='play') player.playVideo();
-  else if (cmd==='pause') player.pauseVideo();
-  else if (cmd==='seek') player.seekTo(val, true);
-};
-</script>
-</body>
-</html>`;
-}
+  obs.observe(document.documentElement, { childList:true, subtree:true });
+  var v = document.querySelector('video');
+  if (v) attach(v);
+
+  window.ytCmd = function(cmd, val) {
+    if (!vid) return;
+    if (cmd==='play') vid.play().catch(function(){});
+    else if (cmd==='pause') vid.pause();
+    else if (cmd==='seek') { vid.currentTime = val; }
+  };
+})(); true;`;
 
 function TrackRow({
   track,
@@ -184,41 +182,35 @@ export default function MusicPlayerScreen() {
     webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;');
   }, []);
   const jsSeek = useCallback((t: number) => {
-    webViewRef.current?.injectJavaScript(`window.ytCmd("seek", ${t}); true;`);
+    webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`);
   }, []);
 
-  const handleMessage = useCallback(
-    (event: WebViewMessageEvent) => {
-      try {
-        const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === "ready") {
-          if (msg.duration) setDuration(msg.duration);
-        } else if (msg.type === "state") {
-          setPlayerState(msg.state);
-          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-          if (msg.duration) setDuration(msg.duration);
-          if (msg.state === YT_PLAYING) {
-            setLoadingTrackId(null);
-            if (loadTimeoutRef.current) {
-              clearTimeout(loadTimeoutRef.current);
-              loadTimeoutRef.current = null;
-            }
-          }
-        } else if (msg.type === "progress") {
-          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-          if (msg.duration) setDuration(msg.duration);
-        } else if (msg.type === "error") {
-          setStreamError("Track unavailable. Try another.");
+  const handleMessage = useCallback((event: WebViewMessageEvent) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === "ready") {
+        if (msg.duration) setDuration(msg.duration);
+        setLoadingTrackId(null);
+        if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
+      } else if (msg.type === "state") {
+        setPlayerState(msg.state);
+        if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+        if (msg.duration) setDuration(msg.duration);
+        if (msg.state === YT_PLAYING) {
           setLoadingTrackId(null);
-          if (loadTimeoutRef.current) {
-            clearTimeout(loadTimeoutRef.current);
-            loadTimeoutRef.current = null;
-          }
+          if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
         }
-      } catch {}
-    },
-    []
-  );
+      } else if (msg.type === "progress") {
+        if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+        if (msg.duration) setDuration(msg.duration);
+      } else if (msg.type === "error") {
+        const code = msg.code ?? "?";
+        setStreamError(`Unavailable (${code}). Try another track.`);
+        setLoadingTrackId(null);
+        if (loadTimeoutRef.current) { clearTimeout(loadTimeoutRef.current); loadTimeoutRef.current = null; }
+      }
+    } catch {}
+  }, []);
 
   const handleSearch = useCallback(async () => {
     const q = query.trim();
@@ -228,9 +220,7 @@ export default function MusicPlayerScreen() {
     setResults([]);
     inputRef.current?.blur();
     try {
-      const r = await fetch(
-        `${getApiUrl()}/api/music/search?q=${encodeURIComponent(q)}`
-      );
+      const r = await fetch(`${getApiUrl()}/api/music/search?q=${encodeURIComponent(q)}`);
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Search failed");
       setResults(data);
@@ -254,7 +244,6 @@ export default function MusicPlayerScreen() {
       setPlayerState(YT_UNSTARTED);
       setCurrentTime(0);
       setDuration(track.duration || 0);
-      // Timeout: if nothing plays in 30s, surface an error
       loadTimeoutRef.current = setTimeout(() => {
         setLoadingTrackId((id) => {
           if (id === track.videoId) {
@@ -268,27 +257,36 @@ export default function MusicPlayerScreen() {
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
+  // Build the YouTube embed URL — loaded as top-level WebView page,
+  // NOT inside an <iframe>, so embedding restrictions don't apply.
+  const embedUrl = currentTrack
+    ? `https://www.youtube.com/embed/${currentTrack.videoId}?autoplay=1&playsinline=1&controls=0&rel=0&fs=0&modestbranding=1`
+    : null;
+
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
   return (
     <ThemedView style={styles.root}>
-      {/* Hidden YouTube IFrame player — rendered on device, bypasses server IP block */}
-      {currentTrack ? (
+      {/* Hidden YouTube player — 1×1 pixel, off-screen, pointerEvents blocked */}
+      {embedUrl ? (
         <View style={styles.hiddenPlayer} pointerEvents="none">
           <WebView
-            key={currentTrack.videoId}
+            key={currentTrack!.videoId}
             ref={webViewRef}
             style={styles.webView}
-            source={{ html: buildPlayerHtml(currentTrack.videoId) }}
+            source={{ uri: embedUrl }}
+            injectedJavaScript={INJECT_JS}
             onMessage={handleMessage}
             javaScriptEnabled
             mediaPlaybackRequiresUserAction={false}
             allowsInlineMediaPlayback
             originWhitelist={["*"]}
+            thirdPartyCookiesEnabled
             scrollEnabled={false}
             bounces={false}
             startInLoadingState={false}
             allowsFullscreenVideo={false}
+            userAgent="Mozilla/5.0 (Linux; Android 11; Fire HD 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36"
           />
         </View>
       ) : null}
@@ -333,14 +331,7 @@ export default function MusicPlayerScreen() {
             autoCorrect={false}
           />
           {query.length > 0 && (
-            <Pressable
-              hitSlop={8}
-              onPress={() => {
-                setQuery("");
-                setResults([]);
-                setSearchError("");
-              }}
-            >
+            <Pressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }}>
               <Feather name="x" size={15} color={Colors.dark.textSecondary} />
             </Pressable>
           )}
@@ -482,14 +473,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundRoot,
   },
 
-  // Hidden WebView — positioned off-screen so the audio context stays alive
+  // Tiny 1×1 offscreen slot — keeps WebView alive without any visible surface
   hiddenPlayer: {
     position: "absolute",
-    top: -10,
-    left: -10,
+    bottom: 0,
+    right: 0,
     width: 1,
     height: 1,
-    opacity: 0,
     overflow: "hidden",
   },
   webView: {
@@ -505,9 +495,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.md,
     gap: Spacing.md,
   },
-  backBtn: {
-    padding: 4,
-  },
+  backBtn: { padding: 4 },
   headerTitle: {
     fontSize: 20,
     fontWeight: "700",
@@ -560,9 +548,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     minWidth: 80,
   },
-  searchBtnDisabled: {
-    opacity: 0.4,
-  },
+  searchBtnDisabled: { opacity: 0.4 },
   searchBtnText: {
     fontSize: 14,
     fontWeight: "700",
@@ -570,12 +556,8 @@ const styles = StyleSheet.create({
   },
 
   // ── Results list
-  list: {
-    flex: 1,
-  },
-  listContent: {
-    paddingHorizontal: Spacing.lg,
-  },
+  list: { flex: 1 },
+  listContent: { paddingHorizontal: Spacing.lg },
 
   // ── Track row
   trackRow: {
@@ -599,10 +581,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     position: "relative",
   },
-  thumbImg: {
-    width: "100%",
-    height: "100%",
-  },
+  thumbImg: { width: "100%", height: "100%" },
   thumbPlaceholder: {
     width: "100%",
     height: "100%",
@@ -616,18 +595,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  trackInfo: {
-    flex: 1,
-    gap: 3,
-  },
+  trackInfo: { flex: 1, gap: 3 },
   trackTitle: {
     fontSize: 14,
     fontWeight: "600",
     color: Colors.dark.text,
   },
-  trackTitleActive: {
-    color: ACCENT,
-  },
+  trackTitleActive: { color: ACCENT },
   trackChannel: {
     fontSize: 12,
     color: Colors.dark.textSecondary,
@@ -700,7 +674,6 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: ACCENT,
     marginHorizontal: -5,
-    marginTop: 0,
   },
   playerRow: {
     flexDirection: "row",
@@ -735,9 +708,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#ef4444",
   },
-  controlBtn: {
-    padding: Spacing.sm,
-  },
+  controlBtn: { padding: Spacing.sm },
   playBtn: {
     width: 44,
     height: 44,
