@@ -1131,6 +1131,16 @@ export default function MusicPlayerScreen() {
               data={playlists}
               keyExtractor={(p) => p.id}
               style={styles.modalList}
+              ListHeaderComponent={
+                <FocusPressable
+                  style={styles.modalNewPlaylist}
+                  onPress={() => { setTrackAddModal(null); navigation.navigate("MusicHome" as any); }}
+                  hasTVPreferredFocus
+                >
+                  <Feather name="plus-circle" size={18} color={Colors.dark.accent} />
+                  <ThemedText style={styles.modalNewPlaylistText}>Create New Playlist</ThemedText>
+                </FocusPressable>
+              }
               renderItem={({ item }) => (
                 <FocusPressable
                   style={[styles.modalPlaylistRow, playlistAdded.has(item.id) && { opacity: 0.7 }]}
@@ -1438,6 +1448,13 @@ const styles = StyleSheet.create({
   modalPlaylistIconLiked: { backgroundColor: "#e11d48" },
   modalPlaylistName: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   modalPlaylistCount: { fontSize: 12, color: Colors.dark.textSecondary },
+  modalNewPlaylist: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,102,0,0.18)",
+    borderWidth: 1, borderColor: "transparent", borderRadius: 4,
+  },
+  modalNewPlaylistText: { fontSize: 14, color: Colors.dark.accent, fontWeight: "600" },
 
   // ── Exit confirmation dialog
   exitOverlay: {

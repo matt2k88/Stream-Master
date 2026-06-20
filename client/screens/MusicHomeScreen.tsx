@@ -151,7 +151,7 @@ function SearchResultRow({
   isLiked: boolean;
 }) {
   return (
-    <Pressable style={styles.searchRow} onPress={onPress}>
+    <FocusPressable style={styles.searchRow} onPress={onPress}>
       {track.thumbnail ? (
         <Image source={{ uri: track.thumbnail }} style={styles.searchRowThumb} resizeMode="cover" />
       ) : (
@@ -171,7 +171,7 @@ function SearchResultRow({
       <FocusPressable onPress={onAdd} hitSlop={10} style={styles.searchRowBtn}>
         <Feather name="plus-circle" size={20} color={Colors.dark.textSecondary} />
       </FocusPressable>
-    </Pressable>
+    </FocusPressable>
   );
 }
 
@@ -274,8 +274,18 @@ function AddToPlaylistModal({
             data={playlists}
             keyExtractor={(p) => p.id}
             style={styles.modalList}
+            ListHeaderComponent={
+              <FocusPressable
+                style={styles.modalNewPlaylist}
+                onPress={onCreateNew}
+                hasTVPreferredFocus
+              >
+                <Feather name="plus-circle" size={18} color={Colors.dark.accent} />
+                <ThemedText style={styles.modalNewPlaylistText}>Create New Playlist</ThemedText>
+              </FocusPressable>
+            }
             renderItem={({ item }) => (
-              <Pressable
+              <FocusPressable
                 style={[styles.modalPlaylistRow, added.has(item.id) && styles.modalPlaylistRowAdded]}
                 onPress={() => !added.has(item.id) && handleAdd(item.id)}
               >
@@ -291,14 +301,8 @@ function AddToPlaylistModal({
                 ) : (
                   <Feather name="plus" size={16} color={Colors.dark.textSecondary} />
                 )}
-              </Pressable>
+              </FocusPressable>
             )}
-            ListFooterComponent={
-              <Pressable style={styles.modalNewPlaylist} onPress={onCreateNew}>
-                <Feather name="plus-circle" size={18} color={Colors.dark.accent} />
-                <ThemedText style={styles.modalNewPlaylistText}>Create New Playlist</ThemedText>
-              </Pressable>
-            }
           />
         </Pressable>
       </Pressable>
