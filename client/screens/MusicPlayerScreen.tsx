@@ -10,6 +10,8 @@ import {
   Image,
   Platform,
   Modal,
+  Alert,
+  BackHandler,
   LayoutChangeEvent,
   GestureResponderEvent,
 } from "react-native";
@@ -323,7 +325,7 @@ export default function MusicPlayerScreen() {
   const profileId = activeProfile?.id;
 
   // ── Left-panel mode: "queue" shows album track list; "search" shows search UI
-  const [leftMode, setLeftMode] = useState<"queue" | "search">(albumId ? "queue" : "search");
+  const [leftMode, setLeftMode] = useState<"queue" | "search">((albumId || (initQueue?.length ?? 0) > 0) ? "queue" : "search");
   const [albumContext, setAlbumContext] = useState<{ id: number; name: string; tracks: Track[] } | null>(null);
   const [albumLoading, setAlbumLoading] = useState(false);
 
@@ -553,6 +555,38 @@ export default function MusicPlayerScreen() {
     }
   }, []);
 
+  // Ref so BackHandler always sees latest track without stale closures
+  const currentTrackRef = useRef<Track | null>(null);
+  currentTrackRef.current = currentTrack;
+
+  const handleExit = useCallback(() => {
+    if (currentTrackRef.current) {
+      Alert.alert(
+        "Exit Music Player",
+        "Are you sure? This will stop playback.",
+        [
+          { text: "Keep Listening", style: "cancel" },
+          { text: "Exit", style: "destructive", onPress: () => navigation.goBack() },
+        ],
+        { cancelable: true }
+      );
+    } else {
+      navigation.goBack();
+    }
+  }, [navigation]);
+
+  // Android hardware back button confirmation
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (currentTrackRef.current) {
+        handleExit();
+        return true; // prevent default back
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [handleExit]);
+
   const handlePlayTrack = useCallback(
     async (track: Track) => {
       if (currentTrack?.searchKey === track.searchKey && currentTrack.videoId) {
@@ -594,6 +628,12 @@ export default function MusicPlayerScreen() {
     queueInitDone.current = true;
     const tracks = initQueue as Track[];
     setResults(tracks);
+    resultsRef.current = tracks;
+    // Populate Queue tab with the playlist/queue tracks (only if no albumId — album fetch handles that case)
+    if (!albumId) {
+      setAlbumContext({ id: 0, name: contextName ?? "Queue", tracks });
+      setLeftMode("queue");
+    }
     const track = tracks[initIndex] ?? tracks[0];
     if (track) setTimeout(() => { playTrackRef.current?.(track); }, 80);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -708,7 +748,7 @@ export default function MusicPlayerScreen() {
     <ThemedView style={styles.root}>
       {/* ── Header ──────────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padTop, paddingHorizontal: Spacing.lg }]}>
-        <FocusPressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
+        <FocusPressable style={styles.backBtn} onPress={handleExit} hitSlop={10}>
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </FocusPressable>
         <ThemedText style={styles.headerTitle}>Music</ThemedText>
@@ -928,12 +968,13 @@ export default function MusicPlayerScreen() {
 
         {/* ══ RIGHT: player ═══════════════════════════════════════════ */}
         <View style={styles.rightPanel}>
-          {/* Hidden WebView — absolutely positioned, covered by solid overlay */}
-          {watchUrl ? (
+          {/* Hidden WebView — in its own absoluteFill shell so it can never affect flow layout */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {watchUrl ? (
             <WebView
               key={currentTrack!.videoId}
               ref={webViewRef}
-              style={StyleSheet.absoluteFill}
+              style={{ flex: 1 }}
               source={{ uri: watchUrl }}
               onLoad={() => { webViewRef.current?.injectJavaScript(INJECT_JS); }}
               onMessage={handleMessage}
@@ -954,7 +995,8 @@ export default function MusicPlayerScreen() {
               androidLayerType="software"
               userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             />
-          ) : null}
+            ) : null}
+          </View>
           {/* Solid cover — hides YouTube UI */}
           <View style={styles.playerCover} />
 
