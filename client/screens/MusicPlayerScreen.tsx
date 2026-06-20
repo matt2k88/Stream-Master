@@ -15,7 +15,7 @@ import {
   LayoutChangeEvent,
   GestureResponderEvent,
 } from "react-native";
-import WebView, { WebViewMessageEvent } from "react-native-webview";
+import { useVideoPlayer, VideoView } from "@/lib/video-player";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -40,12 +40,6 @@ interface Track {
 interface ArtistResult { artistId: number; artistName: string; primaryGenreName: string; }
 interface AlbumResult { collectionId: number; collectionName: string; artistName: string; artwork: string; trackCount: number; releaseYear: number | null; }
 
-const YT_PLAYING = 1;
-const YT_PAUSED = 2;
-const YT_BUFFERING = 3;
-const YT_UNSTARTED = -1;
-const YT_ENDED = 0;
-
 function fmtTime(sec: number): string {
   if (!sec || isNaN(sec) || sec < 0) return "--:--";
   const m = Math.floor(sec / 60);
@@ -53,145 +47,6 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const INJECT_JS = `(function() {
-  function post(obj) {
-    try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
-  }
-  post({ type:'init', url: window.location.href });
-
-  function findVideo(root) {
-    if (!root) return null;
-    var v = root.querySelector('video');
-    if (v) return v;
-    var all = root.querySelectorAll('*');
-    for (var i = 0; i < all.length; i++) {
-      if (all[i].shadowRoot) { var f = findVideo(all[i].shadowRoot); if (f) return f; }
-    }
-    return null;
-  }
-
-  function dismissOverlays() {
-    try {
-      ['button[aria-label*="Accept"]','button[aria-label*="Agree"]',
-       '.consent-bump-v2-lightbox button','ytm-consent-bump-v2-renderer button'].forEach(function(s){
-        var el = document.querySelector(s); if (el) el.click();
-      });
-      document.querySelectorAll('button').forEach(function(b){
-        var t = (b.textContent||'').trim().toLowerCase();
-        if (t==='accept all'||t==='i agree'||t==='agree') b.click();
-      });
-    } catch(e) {}
-  }
-
-  var vid = null;
-  var lastFloor = -1;
-
-  function unmute(v) {
-    // Mobile YouTube auto-mutes itself to satisfy browser autoplay policy.
-    // Force unmute every time we touch the player.
-    try { v.muted = false; v.volume = 1; } catch(e) {}
-    // Also try the YouTube player API's own mute controls
-    try {
-      var p = document.querySelector('.html5-video-player');
-      if (p && p.unMute) p.unMute();
-    } catch(e) {}
-  }
-
-  function attach(v) {
-    if (vid === v) return;
-    vid = v;
-    // Clear the load-timer immediately (duration:0 so we don't set a bad value
-    // from a preview/thumbnail video that may have been found first).
-    post({ type:'ready', duration:0 });
-    unmute(v);
-    v.addEventListener('playing', function() {
-      if (vid !== v) return;
-      unmute(v);
-      post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
-    });
-    v.addEventListener('pause', function() {
-      if (vid !== v) return;
-      if (!v.ended) post({ type:'state', state:2, currentTime:v.currentTime, duration:v.duration||0 });
-    });
-    v.addEventListener('ended', function() {
-      if (vid !== v) return;
-      post({ type:'state', state:0, currentTime:v.currentTime, duration:v.duration||0 });
-    });
-    v.addEventListener('waiting', function() {
-      if (vid !== v) return;
-      post({ type:'state', state:3, currentTime:v.currentTime, duration:v.duration||0 });
-    });
-    v.addEventListener('canplay', function() {
-      if (vid !== v) return;
-      // If the duration is very short this is a YouTube preview/thumbnail video,
-      // not the real player — detach and let check() find the real one.
-      if (v.duration > 0 && v.duration < 30) { vid = null; return; }
-      unmute(v);
-      post({ type:'ready', duration:v.duration||0 });
-      v.play().catch(function(){});
-    });
-    v.addEventListener('timeupdate', function() {
-      if (vid !== v) return;
-      var f = Math.floor(v.currentTime);
-      if (f !== lastFloor) {
-        lastFloor = f;
-        post({ type:'progress', currentTime:v.currentTime, duration:v.duration||0 });
-      }
-    });
-    v.addEventListener('error', function() {
-      if (vid !== v) return;
-      post({ type:'error', code: v.error ? v.error.code : -1 });
-    });
-    unmute(v);
-    v.play().catch(function(){});
-  }
-
-  function check() {
-    dismissOverlays();
-    var v = findVideo(document.documentElement);
-    if (v && v !== vid) attach(v);
-  }
-
-  new MutationObserver(check).observe(document.documentElement, { childList:true, subtree:true });
-  var n = 0;
-  var poll = setInterval(function() { check(); if (++n > 60) clearInterval(poll); }, 500);
-  check();
-
-  // Find YouTube's native play/pause toggle button in the DOM.
-  // Clicking it goes through YouTube's own event handlers (no browser gesture
-  // check), which is more reliable than calling vid.play() from injected JS
-  // on Android / Fire Stick's Silk engine.
-  function findYTPBtn() {
-    // Desktop YouTube selectors
-    return document.querySelector('.ytp-large-play-button')
-        || document.querySelector('.ytp-play-button')
-        // Mobile YouTube (m.youtube.com) — same player engine, slightly different DOM
-        || document.querySelector('.player-controls-play-pause')
-        || document.querySelector('button.player-play-pause')
-        // Generic aria-label fallbacks (works on both layouts)
-        || document.querySelector('button[aria-label="Play"]')
-        || document.querySelector('button[aria-label="Pause"]')
-        || document.querySelector('button[aria-label="Play video"]')
-        || document.querySelector('button[aria-label="Pause video"]');
-  }
-
-  window.ytCmd = function(cmd, val) {
-    if (cmd === 'play') {
-      if (vid) unmute(vid);
-      var btn = findYTPBtn();
-      if (btn) {
-        if (!vid || vid.paused) btn.click();
-      }
-      if (vid) vid.play().catch(function(){});
-    } else if (cmd === 'pause') {
-      var btn2 = findYTPBtn();
-      if (btn2 && vid && !vid.paused) btn2.click();
-      if (vid) vid.pause();
-    } else if (cmd === 'seek') {
-      if (vid) vid.currentTime = val;
-    }
-  };
-})(); true;`;
 
 // ── Shared TV-focusable pressable ─────────────────────────────────────────────
 function FocusPressable({
@@ -400,10 +255,12 @@ export default function MusicPlayerScreen() {
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
-  const [playerState, setPlayerState] = useState<number>(YT_UNSTARTED);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [streamError, setStreamError] = useState("");
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
 
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
@@ -426,12 +283,9 @@ export default function MusicPlayerScreen() {
   shuffleRef.current = shuffle;
 
   const inputRef = useRef<TextInput>(null);
-  const webViewRef = useRef<WebView>(null);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const progressBarWidth = useRef(0);
 
-  const isPlaying = playerState === YT_PLAYING;
-  const isBuffering = playerState === YT_BUFFERING;
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
 
   const clearLoadTimer = useCallback(() => {
@@ -439,19 +293,70 @@ export default function MusicPlayerScreen() {
     setIsLoading(false);
   }, []);
 
-  const jsPlay  = useCallback(() => webViewRef.current?.injectJavaScript('window.ytCmd("play"); true;'), []);
-  const jsPause = useCallback(() => webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;'), []);
-  const jsSeek  = useCallback((t: number) => webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`), []);
+  // expo-video player (ExoPlayer on Android/Fire TV — works without gesture unlock)
+  const player = useVideoPlayer(streamUrl ?? null, (p) => { try { p.play(); } catch {} }, { engine: "expo" });
+
+  // Mirror player events → local state
+  useEffect(() => {
+    const subs = [
+      player.addListener("statusChange", (e: any) => {
+        if (e.status === "readyToPlay") {
+          clearLoadTimer();
+          setStreamError("");
+          setIsBuffering(false);
+          try { const dur = player.duration; if (dur && dur > 0) setDuration(dur); } catch {}
+        } else if (e.status === "loading") {
+          setIsBuffering(true);
+        } else if (e.status === "error") {
+          setStreamError("Playback error. Try another.");
+          setIsBuffering(false);
+          clearLoadTimer();
+        }
+      }),
+      player.addListener("timeUpdate", (e: any) => {
+        if (e.currentTime !== undefined) setCurrentTime(e.currentTime);
+        try { const dur = player.duration; if (dur && dur > 0) setDuration(dur); } catch {}
+      }),
+      player.addListener("playingChange", (e: any) => {
+        setIsPlaying(!!e.isPlaying);
+        setIsBuffering(false);
+      }),
+      player.addListener("playToEnd", () => {
+        setCurrentTrack((curr) => {
+          if (!curr) return curr;
+          const list = resultsRef.current;
+          if (!list.length) return curr;
+          let next: Track;
+          if (repeatRef.current) {
+            next = curr;
+          } else if (shuffleRef.current) {
+            const others = list.filter((t) => t.searchKey !== curr.searchKey);
+            next = others.length ? others[Math.floor(Math.random() * others.length)] : list[0];
+          } else {
+            const idx = list.findIndex((t) => t.searchKey === curr.searchKey);
+            next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : list[0];
+          }
+          setTimeout(() => { playTrackRef.current?.(next); }, 100);
+          return curr;
+        });
+      }),
+    ];
+    return () => { subs.forEach((s) => { try { s.remove(); } catch {} }); };
+  }, [player, clearLoadTimer]);
+
+  const playerPlay  = useCallback(() => { try { player.play();  setIsPlaying(true);  } catch {} }, [player]);
+  const playerPause = useCallback(() => { try { player.pause(); setIsPlaying(false); } catch {} }, [player]);
+  const playerSeek  = useCallback((t: number) => { try { player.currentTime = t; } catch {} }, [player]);
 
   const handleProgressTap = useCallback(
     (evt: GestureResponderEvent) => {
       if (duration <= 0 || progressBarWidth.current <= 0) return;
       const x = evt.nativeEvent.locationX;
       const fraction = Math.max(0, Math.min(1, x / progressBarWidth.current));
-      jsSeek(fraction * duration);
+      playerSeek(fraction * duration);
       setCurrentTime(fraction * duration);
     },
-    [duration, jsSeek]
+    [duration, playerSeek]
   );
 
   const handleProgressLayout = useCallback((e: LayoutChangeEvent) => {
@@ -459,58 +364,6 @@ export default function MusicPlayerScreen() {
   }, []);
 
   const playTrackRef = useRef<((track: Track) => Promise<void>) | null>(null);
-
-  const handleMessage = useCallback(
-    (event: WebViewMessageEvent) => {
-      try {
-        const msg = JSON.parse(event.nativeEvent.data);
-        if (msg.type === "play_ok") {
-          clearLoadTimer();
-          if (msg.duration > 0) setDuration(msg.duration);
-          setStreamError("");
-        } else if (msg.type === "play_err") {
-          setStreamError("Playback blocked. Try another.");
-          clearLoadTimer();
-        } else if (msg.type === "ready") {
-          if (msg.duration > 0) setDuration(msg.duration);
-          clearLoadTimer();
-          setStreamError("");
-        } else if (msg.type === "state") {
-          setPlayerState(msg.state);
-          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-          if (msg.duration > 0) setDuration(msg.duration);
-          if (msg.state === YT_PLAYING) { clearLoadTimer(); setStreamError(""); }
-          if (msg.state === YT_ENDED) {
-            webViewRef.current?.injectJavaScript('if(window.ytCmd) window.ytCmd("pause"); true;');
-            setCurrentTrack((curr) => {
-              if (!curr) return curr;
-              const list = resultsRef.current;
-              if (!list.length) return curr;
-              let next: Track;
-              if (repeatRef.current) {
-                next = curr;
-              } else if (shuffleRef.current) {
-                const others = list.filter((t) => t.searchKey !== curr.searchKey);
-                next = others.length ? others[Math.floor(Math.random() * others.length)] : list[0];
-              } else {
-                const idx = list.findIndex((t) => t.searchKey === curr.searchKey);
-                next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : list[0];
-              }
-              setTimeout(() => { playTrackRef.current?.(next); }, 100);
-              return curr;
-            });
-          }
-        } else if (msg.type === "progress") {
-          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
-          if (msg.duration > 0) setDuration(msg.duration);
-        } else if (msg.type === "error") {
-          setStreamError(`Unavailable (${msg.code ?? "?"}). Try another.`);
-          clearLoadTimer();
-        }
-      } catch {}
-    },
-    [clearLoadTimer]
-  );
 
   const handleSearch = useCallback(async () => {
     const q = query.trim();
@@ -639,34 +492,42 @@ export default function MusicPlayerScreen() {
   const handlePlayTrack = useCallback(
     async (track: Track) => {
       if (currentTrack?.searchKey === track.searchKey && currentTrack.videoId) {
-        isPlaying ? jsPause() : jsPlay();
+        isPlaying ? playerPause() : playerPlay();
         return;
       }
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       setIsLoading(true);
+      setIsPlaying(false);
+      setIsBuffering(false);
       setResolveError("");
       setStreamError("");
-      setPlayerState(YT_UNSTARTED);
       setCurrentTime(0);
       setDuration(track.duration || 0);
       setCurrentTrack({ ...track, videoId: "" });
+      setStreamUrl(null);
       try {
         const r = await fetch(`${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`);
         const data = await r.json();
         if (!r.ok) throw new Error(data.error ?? "Resolve failed");
         const videoId: string = data.videoId;
         if (!videoId) throw new Error("No video found");
+        // Fetch direct audio stream URL from server (Innertube)
+        const sr = await fetch(`${getApiUrl()}/api/music/stream?id=${encodeURIComponent(videoId)}`);
+        const sd = await sr.json();
+        if (!sr.ok) throw new Error(sd.error ?? "Stream unavailable");
         setCurrentTrack({ ...track, videoId });
+        setStreamUrl(sd.url);
+        // Safety timeout: expo-video fires statusChange reliably; this is just a guard
         loadTimeoutRef.current = setTimeout(() => {
           setIsLoading(false);
           setStreamError("Track timed out. Try another.");
-        }, 45_000);
+        }, 30_000);
       } catch (err: any) {
         setResolveError(err.message ?? "Could not find track");
         setIsLoading(false);
       }
     },
-    [currentTrack, isPlaying, jsPlay, jsPause]
+    [currentTrack, isPlaying, playerPlay, playerPause]
   );
 
   playTrackRef.current = handlePlayTrack;
@@ -819,7 +680,7 @@ export default function MusicPlayerScreen() {
 
   const handleSkipPrev = useCallback(() => {
     if (!results.length || !currentTrack) return;
-    if (currentTime > 3) { jsSeek(0); return; }
+    if (currentTime > 3) { playerSeek(0); return; }
     if (shuffle) {
       const others = results.filter((t) => t.searchKey !== currentTrack.searchKey);
       handlePlayTrack(others.length ? others[Math.floor(Math.random() * others.length)] : results[0]);
@@ -827,14 +688,8 @@ export default function MusicPlayerScreen() {
       const idx = results.findIndex((t) => t.searchKey === currentTrack.searchKey);
       handlePlayTrack(idx > 0 ? results[idx - 1] : results[results.length - 1]);
     }
-  }, [results, currentTrack, currentTime, shuffle, jsSeek, handlePlayTrack]);
+  }, [results, currentTrack, currentTime, shuffle, playerSeek, handlePlayTrack]);
 
-  // Use m.youtube.com directly — Silk on Fire Stick always serves the mobile
-  // site regardless of UA, so we target it explicitly to get a consistent
-  // player layout on every device.
-  const watchUrl = currentTrack?.videoId
-    ? `https://m.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
-    : null;
 
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
@@ -1154,39 +1009,13 @@ export default function MusicPlayerScreen() {
 
         {/* ══ RIGHT: player ═══════════════════════════════════════════ */}
         <View style={[styles.rightPanel, isPortrait && styles.rightPanelPortrait]}>
-          {/* Hidden WebView — in its own absoluteFill shell so it can never affect flow layout */}
-          <View style={StyleSheet.absoluteFill} pointerEvents="none">
-            {watchUrl ? (
-            <WebView
-              key={currentTrack!.videoId}
-              ref={webViewRef}
-              style={{ flex: 1 }}
-              focusable={false}
-              importantForAccessibility="no-hide-descendants"
-              source={{ uri: watchUrl }}
-              onLoad={() => { webViewRef.current?.injectJavaScript(INJECT_JS); }}
-              onMessage={handleMessage}
-              onShouldStartLoadWithRequest={(req) =>
-                req.url.startsWith("https://www.youtube.com") ||
-                req.url.startsWith("https://m.youtube.com") ||
-                req.url.startsWith("https://accounts.google.com") ||
-                req.url.startsWith("https://consent.youtube.com")
-              }
-              javaScriptEnabled
-              mediaPlaybackRequiresUserAction={false}
-              allowsInlineMediaPlayback
-              originWhitelist={["*"]}
-              thirdPartyCookiesEnabled
-              scrollEnabled={false}
-              bounces={false}
-              allowsFullscreenVideo={false}
-              androidLayerType="software"
-              userAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-            />
-            ) : null}
-          </View>
-          {/* Solid cover — hides YouTube UI */}
-          <View style={styles.playerCover} />
+          {/* Hidden audio player — 0×0 view; ExoPlayer plays audio without a visible surface */}
+          <VideoView
+            player={player}
+            engine="expo"
+            style={{ width: 0, height: 0, position: "absolute" }}
+            nativeControls={false}
+          />
 
           {currentTrack ? (
             <View style={[styles.playerContent, isPortrait && styles.playerContentPortrait, { paddingBottom: insets.bottom + 8 }]}>
@@ -1246,16 +1075,15 @@ export default function MusicPlayerScreen() {
                 <FocusPressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={10}>
                   <Feather name="skip-back" size={22} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={10}>
+                <FocusPressable style={styles.ctrlBtn} onPress={() => playerSeek(Math.max(0, currentTime - 10))} hitSlop={10}>
                   <Feather name="rotate-ccw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
                 <FocusPressable variant="solid" style={styles.playBtn} hasTVPreferredFocus onPress={() => {
-                  if (isPlaying) { setPlayerState(YT_PAUSED); jsPause(); }
-                  else { setPlayerState(YT_PLAYING); jsPlay(); }
+                  isPlaying ? playerPause() : playerPlay();
                 }}>
                   <Feather name={isPlaying ? "pause" : "play"} size={26} color="#fff" />
                 </FocusPressable>
-                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={10}>
+                <FocusPressable style={styles.ctrlBtn} onPress={() => playerSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={10}>
                   <Feather name="rotate-cw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
                 <FocusPressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={10}>
@@ -1442,7 +1270,6 @@ const styles = StyleSheet.create({
     height: 310,
   },
 
-  playerCover: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.dark.backgroundRoot },
 
   playerContent: {
     flex: 1,

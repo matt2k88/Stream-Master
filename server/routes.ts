@@ -2576,9 +2576,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resolveCache.set(key, { videoId: first.id, ts: Date.now() });
         res.json({ videoId: first.id as string });
       } catch (err: any) {
-        _yt = null; // Reset so next request gets a fresh authenticated client
+        _yt = null;
         console.error("[music:resolve]", err.message);
         res.status(500).json({ error: "Could not find track on YouTube." });
+      }
+    });
+
+    // ── GET /api/music/stream?id=<videoId>
+    // Returns a direct audio stream URL for the given YouTube video ID.
+    // The client plays it with expo-video (ExoPlayer) directly — no WebView.
+    // URLs are cached for 3h (YouTube CDN links expire in ~6h).
+    const streamCache = new Map<string, { url: string; mimeType: string; ts: number }>();
+    const STREAM_CACHE_TTL = 3 * 60 * 60 * 1000;
+    const STREAM_CACHE_MAX = 200;
+
+    app.get("/api/music/stream", async (req, res) => {
+      const id = String(req.query.id ?? "").trim();
+      if (!id) return res.status(400).json({ error: "id required" });
+      const cached = streamCache.get(id);
+      if (cached && Date.now() - cached.ts < STREAM_CACHE_TTL) {
+        return res.json({ url: cached.url, mimeType: cached.mimeType });
+      }
+      try {
+        const yt = await getYT();
+        const info = await yt.getInfo(id);
+        const formats: any[] = info.streaming_data?.adaptive_formats ?? [];
+        const audioFormats = formats.filter((f: any) => f.has_audio && !f.has_video);
+        // Prefer m4a/aac (itag 140) — broadest device compatibility
+        const m4a = audioFormats.find((f: any) =>
+          (f.mime_type ?? "").includes("audio/mp4") || (f.mime_type ?? "").includes("audio/m4a")
+        );
+        const best = m4a ?? audioFormats.sort((a: any, b: any) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0];
+        if (!best?.url) throw new Error("No audio stream found");
+        if (streamCache.size >= STREAM_CACHE_MAX) streamCache.delete(streamCache.keys().next().value!);
+        streamCache.set(id, { url: best.url, mimeType: best.mime_type ?? "audio/mp4", ts: Date.now() });
+        res.json({ url: best.url, mimeType: best.mime_type ?? "audio/mp4" });
+      } catch (err: any) {
+        _yt = null;
+        console.error("[music:stream]", err.message);
+        res.status(500).json({ error: "Could not get stream." });
       }
     });
   }
