@@ -89,6 +89,9 @@ const INJECT_JS = `(function() {
   function attach(v) {
     if (vid === v) return;
     vid = v;
+    // Fire 'ready' immediately so the load-timer is cleared the moment we find
+    // the video element — works even when autoplay/buffering needs user gesture.
+    post({ type:'ready', duration:v.duration||0 });
     v.addEventListener('playing', function() {
       post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
     });
@@ -115,19 +118,13 @@ const INJECT_JS = `(function() {
     v.addEventListener('error', function() {
       post({ type:'error', code: v.error ? v.error.code : -1 });
     });
-    v.play()
-      .then(function(){ post({ type:'play_ok', duration:v.duration||0 }); })
-      .catch(function(e){
-        if (e && e.name === 'NotAllowedError') {
-          // Autoplay blocked (Fire Stick / Silk WebView policy). The video has
-          // loaded and buffered fine — signal ready so the load-timer is cleared.
-          // The user can start playback with the on-screen play button.
-          post({ type:'ready', duration:v.duration||0 });
-        } else {
-          // Real playback failure (codec, DRM, network, etc.)
-          post({ type:'play_err', msg: e ? e.message : 'play failed' });
-        }
-      });
+    // Attempt autoplay — silently catch ALL rejections here.
+    // • Autoplay blocks (Fire Stick / Silk, desktop browsers) must NOT trigger
+    //   an error banner — the user can press play manually.
+    // • Real failures (codec, network, DRM) are already reported by the
+    //   'error' event listener above.
+    // • Successful playback is confirmed by the 'playing' state event below.
+    v.play().catch(function(){});
   }
 
   function check() {
