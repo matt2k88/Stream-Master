@@ -1,49 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
-import https from "node:https";
-import http from "node:http";
-import { spawn } from "node:child_process";
-import { writeFile } from "node:fs/promises";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
 
-// ── yt-dlp helpers ────────────────────────────────────────────────────────────
-
-const COOKIES_PATH = "/tmp/yt_music_cookies.txt";
-
-async function ensureCookiesFile(): Promise<string | null> {
-  const raw = process.env.YT_COOKIES_TXT ?? "";
-  if (!raw.trim()) return null;
-  // Replit Secrets strips ALL newlines but preserves tabs.
-  // Strip any surviving line-endings, then re-insert \n before every
-  // Netscape cookie row (domain immediately followed by \tTRUE|\tFALSE).
-  const stripped = raw.replace(/\r?\n|\r/g, "");
-  const withNewlines = stripped.replace(
-    /((?:#HttpOnly_)?\.?[a-zA-Z][a-zA-Z0-9._-]+\t(?:TRUE|FALSE)\t)/g,
-    "\n$1"
-  );
-  await writeFile(
-    COOKIES_PATH,
-    "# Netscape HTTP Cookie File\n" + withNewlines.trimStart() + "\n",
-    "utf8"
-  );
-  return COOKIES_PATH;
-}
-
-function ytdlp(args: string[], timeoutMs = 35_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn("yt-dlp", args, { env: { ...process.env } });
-    let out = "", err = "";
-    child.stdout.on("data", (d: Buffer) => (out += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (err += d.toString()));
-    const timer = setTimeout(() => { child.kill(); reject(new Error("yt-dlp timeout")); }, timeoutMs);
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error(err.slice(-300) || `yt-dlp exit ${code}`));
-      else resolve(out);
-    });
-  });
-}
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
 // Reduces Supabase egress for high-frequency polling endpoints.
@@ -2450,67 +2409,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ── Music Player (YouTube audio via yt-dlp) ──────────────────────────────
+  // ── Music Player (YouTube search via youtubei.js) ────────────────────────
+  // Playback is handled client-side by a hidden WebView (YouTube IFrame API)
+  // so no stream/proxy endpoints are needed here.
   app.get("/api/music/search", async (req, res) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) return res.status(400).json({ error: "q required" });
     try {
-      const cookiesPath = await ensureCookiesFile();
-      const args = [
-        `ytsearch15:${q}`,
-        "--dump-json", "--flat-playlist", "--no-playlist",
-        "--quiet", "--no-warnings",
-      ];
-      if (cookiesPath) args.push("--cookies", cookiesPath);
-      const stdout = await ytdlp(args, 35_000);
-      const results = stdout.trim().split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          try {
-            const d = JSON.parse(line);
-            const thumb =
-              (Array.isArray(d.thumbnails) && d.thumbnails.length > 0
-                ? d.thumbnails[d.thumbnails.length - 1]?.url
-                : null) ?? d.thumbnail ?? "";
-            return {
-              videoId: d.id as string,
-              title: (d.title ?? "Unknown") as string,
-              channel: (d.uploader ?? d.channel ?? "") as string,
-              duration: (d.duration ?? 0) as number,
-              thumbnail: thumb as string,
-            };
-          } catch { return null; }
-        })
-        .filter(Boolean);
+      const { Innertube } = await import("youtubei.js");
+      const yt = await Innertube.create({ cache: undefined, retrieve_player: false });
+      const search = await yt.search(q, { type: "video" });
+      const videos = search.videos ?? [];
+      const results = videos.slice(0, 15).map((v: any) => {
+        const thumb =
+          (Array.isArray(v.thumbnails) && v.thumbnails.length > 0
+            ? v.thumbnails[v.thumbnails.length - 1]?.url
+            : null) ??
+          (Array.isArray(v.thumbnail) && v.thumbnail.length > 0
+            ? v.thumbnail[v.thumbnail.length - 1]?.url
+            : null) ??
+          "";
+        const durSec: number = (() => {
+          const raw = v.duration;
+          if (!raw) return 0;
+          if (typeof raw === "number") return raw;
+          if (typeof raw === "object" && raw !== null) {
+            if (typeof raw.seconds === "number") return raw.seconds;
+            if (typeof raw.text === "string") {
+              const parts = raw.text.split(":").map(Number);
+              if (parts.length === 2) return parts[0] * 60 + parts[1];
+              if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            }
+          }
+          return 0;
+        })();
+        return {
+          videoId: v.id as string,
+          title: (v.title?.text ?? v.title ?? "Unknown") as string,
+          channel: (v.author?.name ?? v.author ?? "") as string,
+          duration: durSec,
+          thumbnail: thumb as string,
+        };
+      }).filter((r: any) => r.videoId);
       res.json(results);
     } catch (err: any) {
       console.error("[music:search]", err.message);
       res.status(500).json({ error: "Search failed. Please try again." });
-    }
-  });
-
-  app.get("/api/music/stream", async (req, res) => {
-    const videoId = String(req.query.videoId ?? "").trim();
-    if (!videoId || !/^[a-zA-Z0-9_-]{6,20}$/.test(videoId)) {
-      return res.status(400).json({ error: "Invalid videoId" });
-    }
-    try {
-      const cookiesPath = await ensureCookiesFile();
-      const args = [
-        `https://www.youtube.com/watch?v=${videoId}`,
-        "-f", "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
-        "-g", "--quiet", "--no-warnings",
-      ];
-      if (cookiesPath) args.push("--cookies", cookiesPath);
-      const stdout = await ytdlp(args, 35_000);
-      const url = stdout.trim().split("\n")[0];
-      if (!url?.startsWith("http")) {
-        return res.status(500).json({ error: "No stream URL found" });
-      }
-      res.json({ url });
-    } catch (err: any) {
-      console.error("[music:stream]", err.message);
-      res.status(500).json({ error: "Could not load track. Please try another." });
     }
   });
 

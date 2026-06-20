@@ -1,35 +1,37 @@
 ---
 name: YouTube audio extraction on server
-description: How to reliably extract YouTube audio stream URLs from a server-side Node.js process when YouTube is enforcing JS challenges + bot walls.
+description: Server-side YouTube streaming is blocked by PO tokens since 2025. Use hidden WebView IFrame API for playback and youtubei.js for search.
 ---
 
-YouTube blocks unauthenticated cloud IPs with a "Sign in to confirm you're not a bot" wall, AND requires solving a JavaScript signature/`n`-parameter challenge to get usable media URLs.
+## Current architecture (June 2026)
 
-**Two independent pieces are needed — solving only one is not enough:**
+**Search:** `youtubei.js` v17 on the Express server — no PO token needed for metadata.
+```typescript
+const { Innertube } = await import('youtubei.js');
+const yt = await Innertube.create({ cache: undefined, retrieve_player: false });
+const results = await yt.search(q, { type: 'video' });
+// v.id, v.title?.text, v.author?.name, v.duration (object with .seconds or .text), v.thumbnails[]
+```
 
-1. **Cookies** (defeats the bot wall): export a logged-in browser session as Netscape `cookies.txt`. Pass `--cookies` to yt-dlp and a `Cookie:` header to ytdl-core / youtubei.js.
-2. **JS challenge solver** (gets non-storyboard formats): yt-dlp needs the `yt-dlp-ejs` pip plugin **plus Deno 2.x** on PATH. Deno 1.x is detected but marked `(unsupported)`. Without the solver, `yt-dlp -F` only returns `sb0/sb1/...` storyboard images.
+**Playback:** Hidden `react-native-webview` on the device (not server-side).
+- Build HTML string with YouTube IFrame API; `height/width: 1`, `autoplay: 1`, `playsinline: 1`
+- Call `e.target.unMute(); e.target.setVolume(100); e.target.playVideo()` in `onReady`
+- Use `key={videoId}` on the WebView to remount it when the track changes
+- Progress: `setInterval` in the iframe posts `{type:'progress', currentTime, duration}`
+- Controls: `webViewRef.current.injectJavaScript('window.ytCmd("play"); true;')`
+- States: PLAYING=1, PAUSED=2, BUFFERING=3, ENDED=0, UNSTARTED=-1
 
-**Why:** YouTube migrated the web client to SABR (server-side ABR). Adaptive formats no longer ship a `url` or `signature_cipher` field — they ship a `cipher` blob that requires executing a piece of JS from YouTube's player script. yt-dlp's built-in interpreters can't keep up; the EJS plugin offloads JS execution to Deno. youtubei.js and `@distube/ytdl-core` also fail (they throw "No valid URL to decipher") because their bundled player scripts go stale quickly.
+**Why device-side works:** Residential/consumer device IPs are trusted by YouTube's IFrame API. Replit data-center IPs are blocked by PO token enforcement added 2025.
 
-**How to apply:**
-- Dev/prod must both have: `python` + `uv` + `yt-dlp` + `yt-dlp-ejs` (pip), and the Replit `deno-2` module (not the older nix `deno`).
-- Spawn as `uv run yt-dlp ...` so the plugin resolves inside the uv-managed venv.
-- Replit Cloud Run deployments do NOT auto-run `uv sync` — add it to the deployment build command (`uv sync --frozen && ...`) or the venv won't exist in prod.
-- Verify with `yt-dlp --verbose ...` and look for `Optional libraries: yt_dlp_ejs-...` and `JS runtimes: deno-2.x.x` (no "(unsupported)" tag).
+## Historical note (pre-2025 approach — no longer works)
+yt-dlp with `--cookies` + yt-dlp-ejs (Deno 2 for JS cipher) could extract stream URLs. Now YouTube additionally requires a Proof-of-Origin (PO) token from BotGuard (requires real browser context). yt-dlp-ejs 0.8.0 + Deno 2.6.4 are installed but only solve cipher, not PO. See `youtube-pot-wall.md`.
 
-**Replit Secrets UI gotcha:** pasting a multi-line cookies.txt strips ALL newlines but preserves tabs. Re-insert newlines on the server. The correct normalization pattern:
+**Replit Secrets UI gotcha (still relevant for cookies passed to youtubei.js):** Secrets UI strips ALL newlines but preserves tabs. To reformat cookie files:
 ```ts
 const stripped = raw.replace(/\r?\n|\r/g, "");
 const fixed = stripped.replace(
   /((?:#HttpOnly_)?\.?[a-zA-Z][a-zA-Z0-9._-]+\t(?:TRUE|FALSE)\t)/g,
   "\n$1"
 );
-await writeFile(path, "# Netscape HTTP Cookie File\n" + fixed.trimStart() + "\n");
 ```
-**Critical**: use an unconditional replacement (no lookbehind on the preceding character). The comment section ends with spaces before the first domain, so any regex requiring a non-whitespace char immediately before the domain will silently fail and leave everything on one line — yt-dlp then rejects it as "invalid Netscape format".
-
-**Symptom → cause cheat sheet:**
-- "Sign in to confirm you're not a bot" → cookies missing/expired.
-- "Requested format is not available" + `-F` shows only `sb*` → JS challenge unsolved (missing EJS plugin or wrong Deno version).
-- "[music/cookies] 0 youtube cookies parsed" → newline-stripped secret, regex normalization didn't fire.
+Use unconditional replace (no lookbehind) — comment section ends with spaces before first domain row.

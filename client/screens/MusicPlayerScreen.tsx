@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
 } from "react-native";
+import WebView, { WebViewMessageEvent } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -16,7 +17,6 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useNavigation } from "@react-navigation/native";
 import { getApiUrl } from "@/lib/query-client";
-import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { LinearGradient } from "expo-linear-gradient";
 
 interface Track {
@@ -27,11 +27,75 @@ interface Track {
   thumbnail: string;
 }
 
+// YouTube IFrame API player states
+const YT_UNSTARTED = -1;
+const YT_ENDED = 0;
+const YT_PLAYING = 1;
+const YT_PAUSED = 2;
+const YT_BUFFERING = 3;
+
 function fmtTime(sec: number): string {
-  if (!sec || isNaN(sec)) return "--:--";
+  if (!sec || isNaN(sec) || sec < 0) return "--:--";
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function buildPlayerHtml(videoId: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; width:1px; height:1px; }
+#p { position:absolute; top:0; left:0; width:1px; height:1px; }
+</style>
+</head>
+<body>
+<div id="p"></div>
+<script>
+var tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+document.head.appendChild(tag);
+var player, timer;
+function post(obj) {
+  try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
+}
+function onYouTubeIframeAPIReady() {
+  player = new YT.Player('p', {
+    height: '1', width: '1',
+    videoId: '${videoId}',
+    playerVars: { autoplay:1, controls:0, playsinline:1, rel:0, showinfo:0, enablejsapi:1 },
+    events: {
+      onReady: function(e) {
+        e.target.unMute();
+        e.target.setVolume(100);
+        e.target.playVideo();
+        post({ type:'ready', duration: e.target.getDuration() });
+        timer = setInterval(function() {
+          if (!player || !player.getCurrentTime) return;
+          post({ type:'progress', currentTime: player.getCurrentTime(), duration: player.getDuration() });
+        }, 500);
+      },
+      onStateChange: function(e) {
+        post({ type:'state', state: e.data,
+          currentTime: player.getCurrentTime ? player.getCurrentTime() : 0,
+          duration: player.getDuration ? player.getDuration() : 0 });
+      },
+      onError: function(e) { post({ type:'error', code: e.data }); }
+    }
+  });
+}
+window.ytCmd = function(cmd, val) {
+  if (!player) return;
+  if (cmd==='play') player.playVideo();
+  else if (cmd==='pause') player.pauseVideo();
+  else if (cmd==='seek') player.seekTo(val, true);
+};
+</script>
+</body>
+</html>`;
 }
 
 function TrackRow({
@@ -99,18 +163,62 @@ export default function MusicPlayerScreen() {
   const [searchError, setSearchError] = useState("");
 
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [streamLoading, setStreamLoading] = useState(false);
+  const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
+  const [playerState, setPlayerState] = useState<number>(YT_UNSTARTED);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [streamError, setStreamError] = useState("");
 
   const inputRef = useRef<TextInput>(null);
+  const webViewRef = useRef<WebView>(null);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const player = useAudioPlayer(null);
-  const status = useAudioPlayerStatus(player);
-
-  const isPlaying = status?.playing ?? false;
-  const currentTime = status?.currentTime ?? 0;
-  const duration = status?.duration ?? 0;
+  const isPlaying = playerState === YT_PLAYING;
+  const isBuffering = playerState === YT_BUFFERING;
   const progress = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+
+  const jsPlay = useCallback(() => {
+    webViewRef.current?.injectJavaScript('window.ytCmd("play"); true;');
+  }, []);
+  const jsPause = useCallback(() => {
+    webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;');
+  }, []);
+  const jsSeek = useCallback((t: number) => {
+    webViewRef.current?.injectJavaScript(`window.ytCmd("seek", ${t}); true;`);
+  }, []);
+
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      try {
+        const msg = JSON.parse(event.nativeEvent.data);
+        if (msg.type === "ready") {
+          if (msg.duration) setDuration(msg.duration);
+        } else if (msg.type === "state") {
+          setPlayerState(msg.state);
+          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+          if (msg.duration) setDuration(msg.duration);
+          if (msg.state === YT_PLAYING) {
+            setLoadingTrackId(null);
+            if (loadTimeoutRef.current) {
+              clearTimeout(loadTimeoutRef.current);
+              loadTimeoutRef.current = null;
+            }
+          }
+        } else if (msg.type === "progress") {
+          if (msg.currentTime !== undefined) setCurrentTime(msg.currentTime);
+          if (msg.duration) setDuration(msg.duration);
+        } else if (msg.type === "error") {
+          setStreamError("Track unavailable. Try another.");
+          setLoadingTrackId(null);
+          if (loadTimeoutRef.current) {
+            clearTimeout(loadTimeoutRef.current);
+            loadTimeoutRef.current = null;
+          }
+        }
+      } catch {}
+    },
+    []
+  );
 
   const handleSearch = useCallback(async () => {
     const q = query.trim();
@@ -134,37 +242,57 @@ export default function MusicPlayerScreen() {
   }, [query, searching]);
 
   const handlePlayTrack = useCallback(
-    async (track: Track) => {
-      if (streamLoading) return;
+    (track: Track) => {
       if (currentTrack?.videoId === track.videoId) {
-        isPlaying ? player.pause() : player.play();
+        isPlaying ? jsPause() : jsPlay();
         return;
       }
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       setCurrentTrack(track);
+      setLoadingTrackId(track.videoId);
       setStreamError("");
-      setStreamLoading(true);
-      try {
-        const r = await fetch(
-          `${getApiUrl()}/api/music/stream?videoId=${track.videoId}`
-        );
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error ?? "Could not load track");
-        player.replace({ uri: data.url });
-        player.play();
-      } catch (err: any) {
-        setStreamError(err.message ?? "Playback failed");
-        setCurrentTrack(null);
-      } finally {
-        setStreamLoading(false);
-      }
+      setPlayerState(YT_UNSTARTED);
+      setCurrentTime(0);
+      setDuration(track.duration || 0);
+      // Timeout: if nothing plays in 30s, surface an error
+      loadTimeoutRef.current = setTimeout(() => {
+        setLoadingTrackId((id) => {
+          if (id === track.videoId) {
+            setStreamError("Track took too long to load. Try another.");
+            return null;
+          }
+          return id;
+        });
+      }, 30_000);
     },
-    [streamLoading, currentTrack, isPlaying, player]
+    [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
   return (
     <ThemedView style={styles.root}>
+      {/* Hidden YouTube IFrame player — rendered on device, bypasses server IP block */}
+      {currentTrack ? (
+        <View style={styles.hiddenPlayer} pointerEvents="none">
+          <WebView
+            key={currentTrack.videoId}
+            ref={webViewRef}
+            style={styles.webView}
+            source={{ html: buildPlayerHtml(currentTrack.videoId) }}
+            onMessage={handleMessage}
+            javaScriptEnabled
+            mediaPlaybackRequiresUserAction={false}
+            allowsInlineMediaPlayback
+            originWhitelist={["*"]}
+            scrollEnabled={false}
+            bounces={false}
+            startInLoadingState={false}
+            allowsFullscreenVideo={false}
+          />
+        </View>
+      ) : null}
+
       {/* ── Header ────────────────────────────────────────────── */}
       <View style={[styles.header, { paddingTop: padTop, paddingHorizontal: Spacing.lg }]}>
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={10}>
@@ -260,8 +388,8 @@ export default function MusicPlayerScreen() {
           renderItem={({ item }) => (
             <TrackRow
               track={item}
-              isActive={currentTrack?.videoId === item.videoId && (isPlaying || streamLoading)}
-              isLoading={currentTrack?.videoId === item.videoId && streamLoading}
+              isActive={currentTrack?.videoId === item.videoId && (isPlaying || isBuffering)}
+              isLoading={loadingTrackId === item.videoId}
               onPress={() => handlePlayTrack(item)}
             />
           )}
@@ -313,26 +441,26 @@ export default function MusicPlayerScreen() {
               ) : null}
             </View>
 
-            {streamLoading ? (
+            {loadingTrackId === currentTrack?.videoId ? (
               <ActivityIndicator color={Colors.dark.accent} size="small" style={styles.controlBtn} />
             ) : (
               <>
                 <Pressable
                   style={styles.controlBtn}
-                  onPress={() => player.seekTo(Math.max(0, currentTime - 10))}
+                  onPress={() => jsSeek(Math.max(0, currentTime - 10))}
                   hitSlop={8}
                 >
                   <Feather name="rotate-ccw" size={18} color={Colors.dark.textSecondary} />
                 </Pressable>
                 <Pressable
                   style={styles.playBtn}
-                  onPress={() => (isPlaying ? player.pause() : player.play())}
+                  onPress={() => (isPlaying ? jsPause() : jsPlay())}
                 >
                   <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
                 </Pressable>
                 <Pressable
                   style={styles.controlBtn}
-                  onPress={() => player.seekTo(Math.min(duration, currentTime + 10))}
+                  onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))}
                   hitSlop={8}
                 >
                   <Feather name="rotate-cw" size={18} color={Colors.dark.textSecondary} />
@@ -352,6 +480,22 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.dark.backgroundRoot,
+  },
+
+  // Hidden WebView — positioned off-screen so the audio context stays alive
+  hiddenPlayer: {
+    position: "absolute",
+    top: -10,
+    left: -10,
+    width: 1,
+    height: 1,
+    opacity: 0,
+    overflow: "hidden",
+  },
+  webView: {
+    width: 1,
+    height: 1,
+    backgroundColor: "#000",
   },
 
   // ── Header
