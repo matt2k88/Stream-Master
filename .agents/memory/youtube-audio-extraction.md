@@ -25,7 +25,7 @@ const streamUrl = best.url ?? await best.decipher(yt.session.player);
 
 **decipher fallback:** `best.url ?? await best.decipher(yt.session.player)` — covers any remaining signature-cipher formats. Player is available when `retrieve_player` is not explicitly false (default is true).
 
-**How to apply:** Always pass `{ client: 'IOS' }` to `yt.getInfo()` when extracting stream URLs for music playback.
+**How to apply:** Try clients in sequence — `IOS → TV_EMBEDDED → ANDROID → ANDROID_VR`. The Replit dev IP may accept IOS while the production IP rejects it; the fallback chain ensures at least one client works. Only reset `_yt = null` if ALL clients fail (not on per-video errors).
 
 ## Search (metadata only)
 
