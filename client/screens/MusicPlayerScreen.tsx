@@ -117,7 +117,12 @@ const INJECT_JS = `(function() {
     });
     v.play()
       .then(function(){ post({ type:'play_ok', duration:v.duration||0 }); })
-      .catch(function(e){ post({ type:'play_err', msg: e.message }); });
+      .catch(function(){
+        // Autoplay may be blocked by the browser/WebView policy (e.g. Fire Stick).
+        // This is NOT a real playback failure — the video element still loads and
+        // the 'canplay' event will fire 'ready' once buffered.
+        // Real errors are reported by the video 'error' event listener above.
+      });
   }
 
   function check() {

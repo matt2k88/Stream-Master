@@ -55,7 +55,7 @@ function PlaylistCard({
 }) {
   const isLiked = playlist.isLikedSongs;
   return (
-    <Pressable style={styles.playlistCard} onPress={onPress}>
+    <FocusPressable style={styles.playlistCard} onPress={onPress}>
       <LinearGradient
         colors={isLiked ? ["#e11d48", "#9f1239"] : ["#FF6600", "#cc3300"]}
         style={styles.playlistCardGrad}
@@ -66,18 +66,18 @@ function PlaylistCard({
       <ThemedText style={styles.playlistCardCount}>
         {playlist.trackCount ?? 0} {(playlist.trackCount ?? 0) === 1 ? "song" : "songs"}
       </ThemedText>
-    </Pressable>
+    </FocusPressable>
   );
 }
 
 function NewPlaylistCard({ onPress }: { onPress: () => void }) {
   return (
-    <Pressable style={styles.newPlaylistCard} onPress={onPress}>
+    <FocusPressable style={styles.newPlaylistCard} onPress={onPress}>
       <View style={styles.newPlaylistIcon}>
         <Feather name="plus" size={28} color={Colors.dark.accent} />
       </View>
       <ThemedText style={styles.playlistCardName}>New{"\n"}Playlist</ThemedText>
-    </Pressable>
+    </FocusPressable>
   );
 }
 
@@ -115,7 +115,7 @@ function BrowseTrackCard({
   isLiked: boolean;
 }) {
   return (
-    <Pressable style={styles.browseCard} onPress={onPress}>
+    <FocusPressable style={styles.browseCard} onPress={onPress}>
       {track.thumbnail ? (
         <Image source={{ uri: track.thumbnail }} style={styles.browseCardArt} resizeMode="cover" />
       ) : (
@@ -133,7 +133,7 @@ function BrowseTrackCard({
           <Feather name="plus-circle" size={18} color={Colors.dark.textSecondary} />
         </FocusPressable>
       </View>
-    </Pressable>
+    </FocusPressable>
   );
 }
 
