@@ -478,7 +478,21 @@ export default function MusicPlayerScreen() {
 
   const handleLike = useCallback(async (track: Track) => {
     if (!likedPlaylistId) return;
-    if (likedKeys.has(track.searchKey)) return;
+
+    if (likedKeys.has(track.searchKey)) {
+      // Unlike: remove from Liked Songs
+      setLikedKeys((prev) => { const n = new Set(prev); n.delete(track.searchKey); return n; });
+      try {
+        await fetch(
+          `${getApiUrl()}/api/music/playlists/${likedPlaylistId}/tracks/by-key?search_key=${encodeURIComponent(track.searchKey)}`,
+          { method: "DELETE" }
+        );
+      } catch {
+        setLikedKeys((prev) => new Set([...prev, track.searchKey]));
+      }
+      return;
+    }
+
     setLikedKeys((prev) => new Set([...prev, track.searchKey]));
     try {
       await fetch(`${getApiUrl()}/api/music/playlists/${likedPlaylistId}/tracks`, {
@@ -732,7 +746,10 @@ export default function MusicPlayerScreen() {
                 <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={10}>
                   <Feather name="rotate-ccw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-                <FocusPressable variant="solid" style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
+                <FocusPressable variant="solid" style={styles.playBtn} onPress={() => {
+                  if (isPlaying) { setPlayerState(YT_PAUSED); jsPause(); }
+                  else { setPlayerState(YT_PLAYING); jsPlay(); }
+                }}>
                   <Feather name={isPlaying ? "pause" : "play"} size={26} color="#fff" />
                 </FocusPressable>
                 <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={10}>

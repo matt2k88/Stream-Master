@@ -2631,6 +2631,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // DELETE /api/music/playlists/:id/tracks/by-key?search_key=... (must be before :trackId route)
+  app.delete("/api/music/playlists/:id/tracks/by-key", async (req, res) => {
+    const { id } = req.params;
+    const search_key = req.query.search_key as string | undefined;
+    if (!search_key) return res.status(400).json({ error: "search_key required" });
+    try {
+      const { error } = await supabase
+        .from("music_playlist_tracks").delete()
+        .eq("playlist_id", id).eq("search_key", search_key);
+      if (error) throw error;
+      return res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[music:playlist-tracks:delete-by-key]", err.message);
+      res.status(500).json({ error: "Failed to remove track" });
+    }
+  });
+
   // DELETE /api/music/playlists/:id/tracks/:trackId
   app.delete("/api/music/playlists/:id/tracks/:trackId", async (req, res) => {
     const { id, trackId } = req.params;

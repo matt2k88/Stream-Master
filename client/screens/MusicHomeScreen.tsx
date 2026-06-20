@@ -438,7 +438,23 @@ export default function MusicHomeScreen() {
     if (!liked) return;
 
     const alreadyLiked = likedKeys.has(track.searchKey);
-    if (alreadyLiked) return; // don't remove from heart-tap (use playlist detail for removal)
+
+    if (alreadyLiked) {
+      // Unlike: remove from Liked Songs
+      setLikedKeys((prev) => { const n = new Set(prev); n.delete(track.searchKey); return n; });
+      try {
+        await fetch(
+          `${getApiUrl()}/api/music/playlists/${liked.id}/tracks/by-key?search_key=${encodeURIComponent(track.searchKey)}`,
+          { method: "DELETE" }
+        );
+        setPlaylists((prev) =>
+          prev.map((p) => p.id === liked.id ? { ...p, trackCount: Math.max(0, p.trackCount - 1) } : p)
+        );
+      } catch {
+        setLikedKeys((prev) => new Set([...prev, track.searchKey]));
+      }
+      return;
+    }
 
     setLikedKeys((prev) => new Set([...prev, track.searchKey]));
     try {
@@ -603,7 +619,9 @@ export default function MusicHomeScreen() {
           {/* My Playlists */}
           {!isGuest ? (
             <View style={styles.section}>
-              <ThemedText style={styles.sectionTitle}>MY PLAYLISTS</ThemedText>
+              <View style={styles.sectionRow}>
+                <ThemedText style={styles.sectionTitle}>MY PLAYLISTS</ThemedText>
+              </View>
               {playlistsLoading ? (
                 <ActivityIndicator color={Colors.dark.accent} style={{ marginLeft: Spacing.lg }} />
               ) : (
