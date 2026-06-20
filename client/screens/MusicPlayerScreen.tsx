@@ -150,11 +150,34 @@ const INJECT_JS = `(function() {
   var poll = setInterval(function() { check(); if (++n > 60) clearInterval(poll); }, 500);
   check();
 
+  // Find YouTube's native play/pause toggle button in the DOM.
+  // Clicking it goes through YouTube's own event handlers (no browser gesture
+  // check), which is more reliable than calling vid.play() from injected JS
+  // on Android / Fire Stick's Silk engine.
+  function findYTPBtn() {
+    return document.querySelector('.ytp-large-play-button')
+        || document.querySelector('.ytp-play-button')
+        || document.querySelector('button[aria-label="Play"]')
+        || document.querySelector('button[aria-label="Pause"]');
+  }
+
   window.ytCmd = function(cmd, val) {
-    if (!vid) return;
-    if (cmd==='play') vid.play().catch(function(){});
-    else if (cmd==='pause') vid.pause();
-    else if (cmd==='seek') vid.currentTime = val;
+    if (cmd === 'play') {
+      var btn = findYTPBtn();
+      if (btn) {
+        // Only click if the video is actually paused (button is in "play" state)
+        if (!vid || vid.paused) btn.click();
+      }
+      // Belt-and-suspenders: also call vid.play() — works fine when
+      // mediaPlaybackRequiresUserAction=false is set on the WebView.
+      if (vid) vid.play().catch(function(){});
+    } else if (cmd === 'pause') {
+      var btn2 = findYTPBtn();
+      if (btn2 && vid && !vid.paused) btn2.click();
+      if (vid) vid.pause();
+    } else if (cmd === 'seek') {
+      if (vid) vid.currentTime = val;
+    }
   };
 })(); true;`;
 
