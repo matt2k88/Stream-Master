@@ -271,7 +271,7 @@ function SearchHeaderButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function MusicPlayerButton({ onPress }: { onPress: () => void }) {
+function MusicPlayerButton({ onPress, showBadge }: { onPress: () => void; showBadge?: boolean }) {
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = pressed || focused;
@@ -281,6 +281,8 @@ function MusicPlayerButton({ onPress }: { onPress: () => void }) {
       style={[
         styles.headerBtn,
         isActive && styles.headerBtnActive,
+        showBadge && styles.headerBtnAlert,
+        showBadge && { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
         isActive && { borderColor: accent.accent, backgroundColor: accent.accentDim },
       ]}
       onPress={onPress}
@@ -291,7 +293,10 @@ function MusicPlayerButton({ onPress }: { onPress: () => void }) {
       onHoverIn={() => setFocused(true)}
       onHoverOut={() => setFocused(false)}
     >
-      <Feather name="music" size={18} color={isActive ? accent.accent : Colors.dark.textSecondary} />
+      <Feather name="music" size={18} color={showBadge || isActive ? accent.accent : Colors.dark.textSecondary} />
+      {showBadge ? (
+        <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
+      ) : null}
     </Pressable>
   );
 }
@@ -903,7 +908,7 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
+  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showMusicBadge } = useAppTheme();
   const { scores } = useFootball();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
@@ -1308,7 +1313,7 @@ export default function HomeScreen() {
               <View style={styles.sidebarDivider} />
 
               <SidebarItem label="Search" icon="search" onPress={() => navigation.navigate("Search")} />
-              <SidebarItem label="Music Player" icon="music" onPress={() => navigation.navigate("MusicPlayer")} />
+              <SidebarItem label="Music Player" icon="music" isNew={showMusicBadge} onPress={() => navigation.navigate("MusicPlayer")} />
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
@@ -1445,7 +1450,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-              <MusicPlayerButton onPress={() => navigation.navigate("MusicPlayer")} />
+              <MusicPlayerButton onPress={() => navigation.navigate("MusicPlayer")} showBadge={showMusicBadge} />
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
               <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
               <VpnButton />

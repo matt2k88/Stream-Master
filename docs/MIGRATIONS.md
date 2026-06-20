@@ -30,4 +30,6 @@ degrade gracefully until run (endpoints return `[]`, defaults kick in).
 
 - `026_avatar_image.sql` — adds nullable `avatar_image text` to `profiles`. Stores a base64-encoded 320×320 JPEG uploaded via the QR-code photo flow in the Edit Profile screen. When set, the photo overrides the icon+colour avatar everywhere in the app (profile picker, home bar, dropdown). Until run, the column does not exist and avatar uploads fail silently (the PUT drops `avatar_image`); icon/colour avatars continue to work normally.
 
+- `027_music_badges.sql` — adds `show_music_badge boolean default true` and `show_music_beta_badge boolean default true` to `app_theme`. Admin flips either to `false` in Supabase to hide the NEW badge on the Music Player menu item or the BETA badge inside the Music Player screen respectively. Both endpoints fall back to `true` until this migration is run so both badges show immediately on deploy.
+
 > **Note on numbering**: gaps (005–006, 010–011) were intentionally skipped during earlier development; ordering above reflects application order.

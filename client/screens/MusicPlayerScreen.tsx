@@ -19,6 +19,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useNavigation } from "@react-navigation/native";
 import { getApiUrl } from "@/lib/query-client";
+import { useAppTheme } from "@/contexts/ThemeContext";
 
 // Track as returned by iTunes search — videoId is filled in on resolve
 interface Track {
@@ -192,6 +193,7 @@ function TrackRow({
 export default function MusicPlayerScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const { showMusicBetaBadge } = useAppTheme();
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Track[]>([]);
@@ -351,6 +353,11 @@ export default function MusicPlayerScreen() {
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Music</ThemedText>
+        {showMusicBetaBadge ? (
+          <View style={styles.betaBadge}>
+            <ThemedText style={styles.betaBadgeText}>BETA</ThemedText>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }} />
       </View>
 
@@ -521,9 +528,16 @@ const ACCENT = Colors.dark.accent;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.md },
+  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.sm },
   backBtn: { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
+  betaBadge: {
+    backgroundColor: "rgba(255,102,0,0.18)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.45)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  betaBadgeText: { fontSize: 9, fontWeight: "800", color: Colors.dark.accent, letterSpacing: 0.8 },
 
   searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
   searchBar: {

@@ -17,6 +17,10 @@ interface ThemeContextValue {
   showTopPicksBadge: boolean;
   /** Admin-controlled toggle: whether the NEW badge shows on Ultra Tube. Defaults true. */
   showUltraTubeBadge: boolean;
+  /** Admin-controlled toggle: whether the NEW badge shows on Music Player menu item. Defaults true. */
+  showMusicBadge: boolean;
+  /** Admin-controlled toggle: whether the BETA badge shows inside the Music Player screen. Defaults true. */
+  showMusicBetaBadge: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -27,6 +31,8 @@ const ThemeContext = createContext<ThemeContextValue>({
   refetch: async () => {},
   showTopPicksBadge: true,
   showUltraTubeBadge: true,
+  showMusicBadge: true,
+  showMusicBetaBadge: true,
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -79,6 +85,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [showTopPicksBadge, setShowTopPicksBadge] = useState(true);
   const [showUltraTubeBadge, setShowUltraTubeBadge] = useState(true);
+  const [showMusicBadge, setShowMusicBadge] = useState(true);
+  const [showMusicBetaBadge, setShowMusicBetaBadge] = useState(true);
 
   const fetchTheme = React.useCallback(async () => {
     try {
@@ -97,8 +105,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         applyPalette(next);
         return next.key;
       });
-      // show_top_picks_badge defaults to true when the column is missing
+      // badge fields default to true when the column is missing (migration not yet run)
       setShowTopPicksBadge(data?.show_top_picks_badge !== false);
+      setShowMusicBadge(data?.show_music_badge !== false);
+      setShowMusicBetaBadge(data?.show_music_beta_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -145,8 +155,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       refetch: fetchTheme,
       showTopPicksBadge,
       showUltraTubeBadge,
+      showMusicBadge,
+      showMusicBetaBadge,
     };
-  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge]);
+  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showMusicBadge, showMusicBetaBadge]);
 
   return (
     <ThemeContext.Provider value={value}>
