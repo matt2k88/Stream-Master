@@ -29,6 +29,10 @@ ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS duration_sec INTEGER 
 ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS thumbnail    TEXT    DEFAULT '';
 ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS position     INTEGER DEFAULT 0;
 ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS search_key   TEXT    NOT NULL DEFAULT '';
+-- itunes_track_id may exist from an earlier schema attempt — make it nullable with a default
+ALTER TABLE music_playlist_tracks ADD COLUMN IF NOT EXISTS itunes_track_id TEXT DEFAULT '';
+ALTER TABLE music_playlist_tracks ALTER COLUMN itunes_track_id DROP NOT NULL;
+ALTER TABLE music_playlist_tracks ALTER COLUMN itunes_track_id SET DEFAULT '';
 
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_music_playlists_profile

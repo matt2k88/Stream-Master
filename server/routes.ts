@@ -2614,7 +2614,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from("music_playlist_tracks")
         .upsert({ playlist_id: id, title: String(title), artist: String(artist ?? ""),
           album: String(album ?? ""), duration_sec: Number(duration_sec ?? 0),
-          thumbnail: String(thumbnail ?? ""), search_key: String(search_key), position },
+          thumbnail: String(thumbnail ?? ""), search_key: String(search_key),
+          // itunes_track_id may exist with NOT NULL from an earlier schema — pass search_key as fallback
+          itunes_track_id: String(search_key),
+          position },
           { onConflict: "playlist_id,search_key" })
         .select().single();
       if (error) throw error;
