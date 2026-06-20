@@ -24,15 +24,14 @@ import { useAppTheme } from "@/contexts/ThemeContext";
 import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
-// Track as returned by iTunes search — videoId is filled in on resolve
 interface Track {
-  videoId: string;       // empty until resolved
+  videoId: string;
   title: string;
   artist: string;
   album: string;
   duration: number;
   thumbnail: string;
-  searchKey: string;     // "trackName artistName" used to query YouTube
+  searchKey: string;
 }
 
 const YT_PLAYING = 1;
@@ -48,8 +47,6 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// Injected into the YouTube watch page after onLoad.
-// Posts play_ok when play() resolves so we can clear the load-timer early.
 const INJECT_JS = `(function() {
   function post(obj) {
     try { window.ReactNativeWebView.postMessage(JSON.stringify(obj)); } catch(e) {}
@@ -136,6 +133,32 @@ const INJECT_JS = `(function() {
   };
 })(); true;`;
 
+// ── Shared TV-focusable pressable ─────────────────────────────────────────────
+function FocusPressable({
+  style,
+  children,
+  variant = "default",
+  onFocus,
+  onBlur,
+  onHoverIn,
+  onHoverOut,
+  ...rest
+}: React.ComponentProps<typeof Pressable> & { variant?: "default" | "solid" }) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      {...rest}
+      style={[style, focused && (variant === "solid" ? styles.focusSolid : styles.focusDefault)]}
+      onFocus={(e) => { setFocused(true); onFocus?.(e as any); }}
+      onBlur={(e) => { setFocused(false); onBlur?.(e as any); }}
+      onHoverIn={(e) => { setFocused(true); onHoverIn?.(e as any); }}
+      onHoverOut={(e) => { setFocused(false); onHoverOut?.(e as any); }}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 // ── Track row ────────────────────────────────────────────────────────────────
 function TrackRow({
   track,
@@ -182,58 +205,26 @@ function TrackRow({
       </View>
 
       <View style={styles.trackInfo}>
-        <ThemedText
-          style={[styles.trackTitle, isActive && styles.trackTitleActive]}
-          numberOfLines={1}
-        >
+        <ThemedText style={[styles.trackTitle, isActive && styles.trackTitleActive]} numberOfLines={1}>
           {track.title}
         </ThemedText>
         <ThemedText style={styles.trackArtist} numberOfLines={1}>
-          {track.artist}
-          {track.album ? ` · ${track.album}` : ""}
+          {track.artist}{track.album ? ` · ${track.album}` : ""}
         </ThemedText>
       </View>
 
       <ThemedText style={styles.trackDuration}>{fmtTime(track.duration)}</ThemedText>
 
       {onAdd ? (
-        <Pressable onPress={(e) => { onAdd(); }} hitSlop={8} style={styles.trackIconBtn}>
-          <Feather name="plus-circle" size={16} color={Colors.dark.textSecondary} />
-        </Pressable>
+        <FocusPressable onPress={onAdd} hitSlop={12} style={styles.trackIconBtn}>
+          <Feather name="plus-circle" size={20} color={Colors.dark.textSecondary} />
+        </FocusPressable>
       ) : null}
       {onLike ? (
-        <Pressable onPress={(e) => { onLike(); }} hitSlop={8} style={styles.trackIconBtn}>
-          <Feather name="heart" size={16} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
-        </Pressable>
+        <FocusPressable onPress={onLike} hitSlop={12} style={styles.trackIconBtn}>
+          <Feather name="heart" size={20} color={isLiked ? "#e11d48" : Colors.dark.textSecondary} />
+        </FocusPressable>
       ) : null}
-    </Pressable>
-  );
-}
-
-// ── Shared TV-focusable pressable ─────────────────────────────────────────────
-// "solid" variant (orange/coloured button) uses a white focus ring
-// default variant (icon/text button) uses an orange focus ring
-function FocusPressable({
-  style,
-  children,
-  variant = "default",
-  onFocus,
-  onBlur,
-  onHoverIn,
-  onHoverOut,
-  ...rest
-}: React.ComponentProps<typeof Pressable> & { variant?: "default" | "solid" }) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <Pressable
-      {...rest}
-      style={[style, focused && (variant === "solid" ? styles.focusSolid : styles.focusDefault)]}
-      onFocus={(e) => { setFocused(true); onFocus?.(e as any); }}
-      onBlur={(e) => { setFocused(false); onBlur?.(e as any); }}
-      onHoverIn={(e) => { setFocused(true); onHoverIn?.(e as any); }}
-      onHoverOut={(e) => { setFocused(false); onHoverOut?.(e as any); }}
-    >
-      {children}
     </Pressable>
   );
 }
@@ -243,22 +234,10 @@ function InfoButton() {
   const [visible, setVisible] = useState(false);
   return (
     <>
-      <FocusPressable
-        onPress={() => setVisible(true)}
-        hitSlop={12}
-        style={styles.infoBtn}
-        accessibilityLabel="About search results"
-      >
+      <FocusPressable onPress={() => setVisible(true)} hitSlop={12} style={styles.infoBtn}>
         <Feather name="info" size={18} color={Colors.dark.textSecondary} />
       </FocusPressable>
-
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setVisible(false)}
-        statusBarTranslucent
-      >
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)} statusBarTranslucent>
         <Pressable style={styles.infoOverlay} onPress={() => setVisible(false)}>
           <Pressable style={styles.infoCard} onPress={() => {}}>
             <View style={styles.infoCardHeader}>
@@ -297,7 +276,6 @@ export default function MusicPlayerScreen() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
 
-  // currentTrack has its videoId filled in after resolve
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [resolveError, setResolveError] = useState("");
@@ -309,7 +287,6 @@ export default function MusicPlayerScreen() {
   const [repeat, setRepeat] = useState(false);
   const [shuffle, setShuffle] = useState(false);
 
-  // Liked songs + playlist state
   const [likedKeys, setLikedKeys] = useState<Set<string>>(new Set());
   const [likedPlaylistId, setLikedPlaylistId] = useState<string | null>(null);
   const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; isLikedSongs: boolean; trackCount: number }>>([]);
@@ -317,8 +294,9 @@ export default function MusicPlayerScreen() {
   const trackAddModalRef = useRef<Track | null>(null);
   trackAddModalRef.current = trackAddModal;
   const [playlistAdded, setPlaylistAdded] = useState<Set<string>>(new Set());
+  // Timer ref so rapid modal re-opens don't get killed by a stale close timer
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Keep a stable ref to results/shuffle/repeat for use inside handleMessage
   const resultsRef = useRef<Track[]>([]);
   const repeatRef = useRef(false);
   const shuffleRef = useRef(false);
@@ -344,15 +322,13 @@ export default function MusicPlayerScreen() {
   const jsPause = useCallback(() => webViewRef.current?.injectJavaScript('window.ytCmd("pause"); true;'), []);
   const jsSeek  = useCallback((t: number) => webViewRef.current?.injectJavaScript(`window.ytCmd("seek",${t}); true;`), []);
 
-  // Tappable progress bar — maps tap X position to a seek time
   const handleProgressTap = useCallback(
     (evt: GestureResponderEvent) => {
       if (duration <= 0 || progressBarWidth.current <= 0) return;
       const x = evt.nativeEvent.locationX;
       const fraction = Math.max(0, Math.min(1, x / progressBarWidth.current));
-      const seekTo = fraction * duration;
-      setCurrentTime(seekTo);
-      jsSeek(seekTo);
+      jsSeek(fraction * duration);
+      setCurrentTime(fraction * duration);
     },
     [duration, jsSeek]
   );
@@ -361,7 +337,6 @@ export default function MusicPlayerScreen() {
     progressBarWidth.current = e.nativeEvent.layout.width;
   }, []);
 
-  // Internal play-by-track — used by auto-advance and skip buttons
   const playTrackRef = useRef<((track: Track) => Promise<void>) | null>(null);
 
   const handleMessage = useCallback(
@@ -385,9 +360,7 @@ export default function MusicPlayerScreen() {
           if (msg.duration > 0) setDuration(msg.duration);
           if (msg.state === YT_PLAYING) { clearLoadTimer(); setStreamError(""); }
           if (msg.state === YT_ENDED) {
-            // Immediately pause to block YouTube auto-queueing its own next video
             webViewRef.current?.injectJavaScript('if(window.ytCmd) window.ytCmd("pause"); true;');
-            // Auto-advance: repeat → replay same; shuffle → random; else → next
             setCurrentTrack((curr) => {
               if (!curr) return curr;
               const list = resultsRef.current;
@@ -402,9 +375,8 @@ export default function MusicPlayerScreen() {
                 const idx = list.findIndex((t) => t.searchKey === curr.searchKey);
                 next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : list[0];
               }
-              // Trigger play via the stable ref (avoids stale closure on handlePlayTrack)
               setTimeout(() => { playTrackRef.current?.(next); }, 100);
-              return curr; // keep showing current track until new one loads
+              return curr;
             });
           }
         } else if (msg.type === "progress") {
@@ -440,12 +412,10 @@ export default function MusicPlayerScreen() {
 
   const handlePlayTrack = useCallback(
     async (track: Track) => {
-      // Toggle play/pause if same track already resolved and playing
       if (currentTrack?.searchKey === track.searchKey && currentTrack.videoId) {
         isPlaying ? jsPause() : jsPlay();
         return;
       }
-
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       setIsLoading(true);
       setResolveError("");
@@ -453,23 +423,14 @@ export default function MusicPlayerScreen() {
       setPlayerState(YT_UNSTARTED);
       setCurrentTime(0);
       setDuration(track.duration || 0);
-      // Optimistically set the track (shows thumbnail + title immediately)
       setCurrentTrack({ ...track, videoId: "" });
-
-
       try {
-        const r = await fetch(
-          `${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`
-        );
+        const r = await fetch(`${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`);
         const data = await r.json();
         if (!r.ok) throw new Error(data.error ?? "Resolve failed");
         const videoId: string = data.videoId;
         if (!videoId) throw new Error("No video found");
-
-        // Set resolved track — triggers WebView mount with the real videoId
         setCurrentTrack({ ...track, videoId });
-
-        // 45s timeout covers cases where WebView never responds
         loadTimeoutRef.current = setTimeout(() => {
           setIsLoading(false);
           setStreamError("Track timed out. Try another.");
@@ -482,10 +443,8 @@ export default function MusicPlayerScreen() {
     [currentTrack, isPlaying, jsPlay, jsPause]
   );
 
-  // Keep ref in sync so auto-advance can call it without a stale closure
   playTrackRef.current = handlePlayTrack;
 
-  // ── Load queue from navigation params (once on mount) ─────────────────────
   const queueInitDone = useRef(false);
   useEffect(() => {
     if (queueInitDone.current || !initQueue?.length) return;
@@ -496,7 +455,6 @@ export default function MusicPlayerScreen() {
     if (track) setTimeout(() => { playTrackRef.current?.(track); }, 80);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch liked-songs playlist on mount ────────────────────────────────────
   useEffect(() => {
     if (!profileId || profileId === GUEST_PROFILE_ID) return;
     (async () => {
@@ -505,10 +463,7 @@ export default function MusicPlayerScreen() {
         if (!r.ok) return;
         const data: any[] = await r.json();
         const liked = data.find((p) => p.is_liked_songs);
-        setPlaylists(data.map((p) => ({
-          id: p.id, name: p.name,
-          isLikedSongs: p.is_liked_songs, trackCount: p.trackCount ?? 0,
-        })));
+        setPlaylists(data.map((p) => ({ id: p.id, name: p.name, isLikedSongs: p.is_liked_songs, trackCount: p.trackCount ?? 0 })));
         if (liked) {
           setLikedPlaylistId(liked.id);
           const tr = await fetch(`${getApiUrl()}/api/music/playlists/${liked.id}/tracks`);
@@ -523,17 +478,13 @@ export default function MusicPlayerScreen() {
 
   const handleLike = useCallback(async (track: Track) => {
     if (!likedPlaylistId) return;
-    if (likedKeys.has(track.searchKey)) return; // already liked
+    if (likedKeys.has(track.searchKey)) return;
     setLikedKeys((prev) => new Set([...prev, track.searchKey]));
     try {
       await fetch(`${getApiUrl()}/api/music/playlists/${likedPlaylistId}/tracks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: track.title, artist: track.artist, album: track.album,
-          duration_sec: track.duration, thumbnail: track.thumbnail,
-          search_key: track.searchKey,
-        }),
+        body: JSON.stringify({ title: track.title, artist: track.artist, album: track.album, duration_sec: track.duration, thumbnail: track.thumbnail, search_key: track.searchKey }),
       });
     } catch {
       setLikedKeys((prev) => { const n = new Set(prev); n.delete(track.searchKey); return n; });
@@ -541,7 +492,6 @@ export default function MusicPlayerScreen() {
   }, [likedPlaylistId, likedKeys]);
 
   const handleAddToPlaylist = useCallback(async (playlistId: string) => {
-    // Use ref so we always have the current track regardless of re-render timing
     const track = trackAddModalRef.current;
     if (!track) return;
     setPlaylistAdded((prev) => new Set([...prev, playlistId]));
@@ -549,20 +499,22 @@ export default function MusicPlayerScreen() {
       await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: track.title, artist: track.artist, album: track.album,
-          duration_sec: track.duration, thumbnail: track.thumbnail,
-          search_key: track.searchKey,
-        }),
+        body: JSON.stringify({ title: track.title, artist: track.artist, album: track.album, duration_sec: track.duration, thumbnail: track.thumbnail, search_key: track.searchKey }),
       });
-      setPlaylists((prev) => prev.map((p) =>
-        p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p
-      ));
-      // Auto-close after a moment so the user sees the checkmark
-      setTimeout(() => setTrackAddModal(null), 700);
+      setPlaylists((prev) => prev.map((p) => p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p));
+      // Clear any stale close timer before starting a new one — prevents killing a freshly-opened modal
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = setTimeout(() => { closeTimerRef.current = null; setTrackAddModal(null); }, 700);
     } catch {
       setPlaylistAdded((prev) => { const n = new Set(prev); n.delete(playlistId); return n; });
     }
+  }, []);
+
+  const openAddModal = useCallback((track: Track) => {
+    // Cancel any pending auto-close from the previous add
+    if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+    setPlaylistAdded(new Set());
+    setTrackAddModal(track);
   }, []);
 
   const handleSkipNext = useCallback(() => {
@@ -573,26 +525,19 @@ export default function MusicPlayerScreen() {
       handlePlayTrack(next);
     } else {
       const idx = results.findIndex((t) => t.searchKey === currentTrack.searchKey);
-      const next = idx >= 0 && idx < results.length - 1 ? results[idx + 1] : results[0];
-      handlePlayTrack(next);
+      handlePlayTrack(idx >= 0 && idx < results.length - 1 ? results[idx + 1] : results[0]);
     }
   }, [results, currentTrack, shuffle, handlePlayTrack]);
 
   const handleSkipPrev = useCallback(() => {
     if (!results.length || !currentTrack) return;
-    // If more than 3s in, restart; otherwise go to previous
-    if (currentTime > 3) {
-      jsSeek(0);
-      return;
-    }
+    if (currentTime > 3) { jsSeek(0); return; }
     if (shuffle) {
       const others = results.filter((t) => t.searchKey !== currentTrack.searchKey);
-      const prev = others.length ? others[Math.floor(Math.random() * others.length)] : results[0];
-      handlePlayTrack(prev);
+      handlePlayTrack(others.length ? others[Math.floor(Math.random() * others.length)] : results[0]);
     } else {
       const idx = results.findIndex((t) => t.searchKey === currentTrack.searchKey);
-      const prev = idx > 0 ? results[idx - 1] : results[results.length - 1];
-      handlePlayTrack(prev);
+      handlePlayTrack(idx > 0 ? results[idx - 1] : results[results.length - 1]);
     }
   }, [results, currentTrack, currentTime, shuffle, jsSeek, handlePlayTrack]);
 
@@ -600,7 +545,6 @@ export default function MusicPlayerScreen() {
     ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1&rel=0`
     : null;
 
-  const PLAYER_H = 112;
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
 
   return (
@@ -620,89 +564,89 @@ export default function MusicPlayerScreen() {
         <InfoButton />
       </View>
 
-      {/* ── Search bar ──────────────────────────────────────────────── */}
-      <View style={[styles.searchWrap, { paddingHorizontal: Spacing.lg }]}>
-        <View style={styles.searchBar}>
-          <Feather name="search" size={17} color={Colors.dark.textSecondary} style={{ marginRight: Spacing.sm }} />
-          <TextInput
-            ref={inputRef}
-            style={styles.searchInput}
-            placeholder="Search songs, artists, albums…"
-            placeholderTextColor={Colors.dark.border}
-            value={query}
-            onChangeText={setQuery}
-            returnKeyType="search"
-            onSubmitEditing={handleSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {query.length > 0 && (
-            <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }} style={styles.clearBtn}>
-              <Feather name="x" size={15} color={Colors.dark.textSecondary} />
-            </FocusPressable>
-          )}
-        </View>
-        <FocusPressable
-          variant="solid"
-          style={[styles.searchBtn, (!query.trim() || searching) && styles.searchBtnDisabled]}
-          onPress={handleSearch}
-          disabled={!query.trim() || searching}
-        >
-          {searching
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
-          }
-        </FocusPressable>
-      </View>
+      {/* ── 50/50 body ──────────────────────────────────────────────── */}
+      <View style={styles.body}>
 
-      {/* ── Results / empty / error states ──────────────────────────── */}
-      {searchError ? (
-        <View style={styles.centred}>
-          <Feather name="alert-circle" size={30} color="#ef4444" />
-          <ThemedText style={styles.errorText}>{searchError}</ThemedText>
-          <FocusPressable variant="solid" style={styles.retryBtn} onPress={handleSearch}>
-            <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-          </FocusPressable>
-        </View>
-      ) : results.length === 0 && !searching ? (
-        <View style={styles.centred}>
-          <Feather name="music" size={52} color="rgba(255,102,0,0.25)" />
-          <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>
-            Uses Apple Music's catalogue — tap any track to play via YouTube
-          </ThemedText>
-        </View>
-      ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(t, i) => `${t.searchKey}-${i}`}
-          style={styles.list}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: currentTrack ? PLAYER_H + insets.bottom + 16 : insets.bottom + 16 },
-          ]}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => (
-            <TrackRow
-              track={item}
-              isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
-              isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
-              onPress={() => handlePlayTrack(item)}
-              onLike={likedPlaylistId ? () => handleLike(item) : undefined}
-              onAdd={playlists.length > 0 ? () => { setPlaylistAdded(new Set()); setTrackAddModal(item); } : undefined}
-              isLiked={likedKeys.has(item.searchKey)}
+        {/* ══ LEFT: search + results ══════════════════════════════════ */}
+        <View style={styles.leftPanel}>
+          <View style={[styles.searchWrap, { paddingHorizontal: Spacing.md }]}>
+            <View style={styles.searchBar}>
+              <Feather name="search" size={17} color={Colors.dark.textSecondary} style={{ marginRight: Spacing.sm }} />
+              <TextInput
+                ref={inputRef}
+                style={styles.searchInput}
+                placeholder="Search songs, artists, albums…"
+                placeholderTextColor={Colors.dark.border}
+                value={query}
+                onChangeText={setQuery}
+                returnKeyType="search"
+                onSubmitEditing={handleSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {query.length > 0 && (
+                <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setSearchError(""); }} style={styles.clearBtn}>
+                  <Feather name="x" size={15} color={Colors.dark.textSecondary} />
+                </FocusPressable>
+              )}
+            </View>
+            <FocusPressable
+              variant="solid"
+              style={[styles.searchBtn, (!query.trim() || searching) && styles.searchBtnDisabled]}
+              onPress={handleSearch}
+              disabled={!query.trim() || searching}
+            >
+              {searching
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
+              }
+            </FocusPressable>
+          </View>
+
+          {searchError ? (
+            <View style={styles.centred}>
+              <Feather name="alert-circle" size={30} color="#ef4444" />
+              <ThemedText style={styles.errorText}>{searchError}</ThemedText>
+              <FocusPressable variant="solid" style={styles.retryBtn} onPress={handleSearch}>
+                <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
+              </FocusPressable>
+            </View>
+          ) : results.length === 0 && !searching ? (
+            <View style={styles.centred}>
+              <Feather name="music" size={48} color="rgba(255,102,0,0.2)" />
+              <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
+              <ThemedText style={styles.emptySubtitle}>
+                Uses Apple Music's catalogue — tap any track to play via YouTube
+              </ThemedText>
+            </View>
+          ) : (
+            <FlatList
+              data={results}
+              keyExtractor={(t, i) => `${t.searchKey}-${i}`}
+              style={styles.list}
+              contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + 16 }]}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => (
+                <TrackRow
+                  track={item}
+                  isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+                  isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
+                  onPress={() => handlePlayTrack(item)}
+                  onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+                  onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
+                  isLiked={likedKeys.has(item.searchKey)}
+                />
+              )}
             />
           )}
-        />
-      )}
+        </View>
 
-      {/* ── Player bar ──────────────────────────────────────────────── */}
-      {currentTrack ? (
-        <View style={[styles.playerShell, { paddingBottom: insets.bottom, height: PLAYER_H + insets.bottom }]}>
-          {/* Hidden WebView — only mounts once videoId is resolved */}
+        {/* ══ RIGHT: player ═══════════════════════════════════════════ */}
+        <View style={styles.rightPanel}>
+          {/* Hidden WebView — absolutely positioned, covered by solid overlay */}
           {watchUrl ? (
             <WebView
-              key={currentTrack.videoId}
+              key={currentTrack!.videoId}
               ref={webViewRef}
               style={StyleSheet.absoluteFill}
               source={{ uri: watchUrl }}
@@ -726,124 +670,121 @@ export default function MusicPlayerScreen() {
               userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             />
           ) : null}
-
-          {/* Solid cover — hides YouTube UI (works because androidLayerType=software) */}
+          {/* Solid cover — hides YouTube UI */}
           <View style={styles.playerCover} />
 
-          {/* Tappable progress bar */}
-          <Pressable
-            style={styles.progressWrap}
-            onPress={handleProgressTap}
-            onLayout={handleProgressLayout}
-            hitSlop={{ top: 10, bottom: 10 }}
-          >
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { flex: progress }]} />
-              {progress > 0 && <View style={styles.progressDot} />}
-              <View style={{ flex: Math.max(0.001, 1 - progress) }} />
-            </View>
-          </Pressable>
+          {currentTrack ? (
+            <View style={[styles.playerContent, { paddingBottom: insets.bottom + 8 }]}>
+              {/* Album art */}
+              {currentTrack.thumbnail ? (
+                <Image source={{ uri: currentTrack.thumbnail }} style={styles.bigArt} resizeMode="cover" />
+              ) : (
+                <View style={[styles.bigArt, styles.bigArtPlaceholder]}>
+                  <Feather name="music" size={52} color={Colors.dark.accent} />
+                </View>
+              )}
 
-          {/* Context name chip — shown when queue comes from a playlist/browse category */}
-          {contextName ? (
-            <View style={styles.contextChip}>
-              <Feather name="music" size={10} color={Colors.dark.accent} />
-              <ThemedText style={styles.contextChipText} numberOfLines={1}>
-                From: {contextName}
-              </ThemedText>
-            </View>
-          ) : null}
+              {/* Loading spinner overlay on art */}
+              {isLoading ? (
+                <View style={styles.artLoadingOverlay}>
+                  <ActivityIndicator color={Colors.dark.accent} size="large" />
+                </View>
+              ) : null}
 
-          {/* Repeat / Shuffle toggles */}
-          <View style={styles.toggleRow}>
-            <FocusPressable
-              style={[styles.toggleBtn, repeat && styles.toggleBtnActive]}
-              onPress={() => setRepeat((r) => !r)}
-              hitSlop={8}
-            >
-              <Feather name="repeat" size={14} color={repeat ? Colors.dark.accent : Colors.dark.textSecondary} />
-              <ThemedText style={[styles.toggleLabel, repeat && styles.toggleLabelActive]}>Repeat</ThemedText>
-            </FocusPressable>
-            <FocusPressable
-              style={[styles.toggleBtn, shuffle && styles.toggleBtnActive]}
-              onPress={() => setShuffle((s) => !s)}
-              hitSlop={8}
-            >
-              <Feather name="shuffle" size={14} color={shuffle ? Colors.dark.accent : Colors.dark.textSecondary} />
-              <ThemedText style={[styles.toggleLabel, shuffle && styles.toggleLabelActive]}>Shuffle</ThemedText>
-            </FocusPressable>
-          </View>
-
-          {/* Controls */}
-          <View style={styles.controlsRow}>
-            {currentTrack.thumbnail ? (
-              <Image source={{ uri: currentTrack.thumbnail }} style={styles.miniThumb} />
-            ) : (
-              <View style={[styles.miniThumb, styles.miniThumbPlaceholder]}>
-                <Feather name="music" size={14} color={Colors.dark.accent} />
+              {/* Track title + artist */}
+              <View style={styles.trackMetaBlock}>
+                <ThemedText style={styles.bigTitle} numberOfLines={2}>{currentTrack.title}</ThemedText>
+                <ThemedText style={styles.bigArtist} numberOfLines={1}>
+                  {currentTrack.artist}{currentTrack.album ? ` · ${currentTrack.album}` : ""}
+                </ThemedText>
               </View>
-            )}
 
-            <View style={styles.trackMeta}>
-              <ThemedText style={styles.miniTitle} numberOfLines={1}>{currentTrack.title}</ThemedText>
-              <ThemedText style={styles.miniSub} numberOfLines={1}>
-                {streamError || resolveError
-                  ? (streamError || resolveError)
-                  : `${currentTrack.artist}${duration > 0 ? `  ·  ${fmtTime(currentTime)} / ${fmtTime(duration)}` : ""}`
-                }
-              </ThemedText>
-            </View>
-
-            {/* Like + add buttons for currently playing track */}
-            {likedPlaylistId ? (
+              {/* Progress bar */}
               <Pressable
-                onPress={() => handleLike(currentTrack)}
-                hitSlop={8}
-                style={styles.ctrlBtn}
+                style={styles.progressWrap}
+                onPress={handleProgressTap}
+                onLayout={handleProgressLayout}
+                hitSlop={{ top: 12, bottom: 12 }}
               >
-                <Feather
-                  name="heart"
-                  size={18}
-                  color={likedKeys.has(currentTrack.searchKey) ? "#e11d48" : Colors.dark.textSecondary}
-                />
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { flex: progress }]} />
+                  {progress > 0 && <View style={styles.progressDot} />}
+                  <View style={{ flex: Math.max(0.001, 1 - progress) }} />
+                </View>
               </Pressable>
-            ) : null}
-            {playlists.length > 0 ? (
-              <Pressable
-                onPress={() => { setPlaylistAdded(new Set()); setTrackAddModal(currentTrack); }}
-                hitSlop={8}
-                style={styles.ctrlBtn}
-              >
-                <Feather name="plus-circle" size={18} color={Colors.dark.textSecondary} />
-              </Pressable>
-            ) : null}
 
-            {isLoading ? (
-              <ActivityIndicator color={Colors.dark.accent} size="small" style={{ marginHorizontal: 12 }} />
-            ) : (
-              <>
-                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={8}>
-                  <Feather name="skip-back" size={18} color={Colors.dark.textSecondary} />
+              {/* Time row */}
+              <View style={styles.timeRow}>
+                <ThemedText style={styles.timeText}>{fmtTime(currentTime)}</ThemedText>
+                <ThemedText style={styles.timeText}>{fmtTime(duration)}</ThemedText>
+              </View>
+
+              {/* Error */}
+              {(streamError || resolveError) ? (
+                <ThemedText style={styles.miniError} numberOfLines={1}>{streamError || resolveError}</ThemedText>
+              ) : null}
+
+              {/* Controls */}
+              <View style={styles.controlsRow}>
+                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipPrev} hitSlop={10}>
+                  <Feather name="skip-back" size={22} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={8}>
-                  <Feather name="rotate-ccw" size={16} color={Colors.dark.textSecondary} />
+                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={10}>
+                  <Feather name="rotate-ccw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
                 <FocusPressable variant="solid" style={styles.playBtn} onPress={() => (isPlaying ? jsPause() : jsPlay())}>
-                  <Feather name={isPlaying ? "pause" : "play"} size={22} color="#fff" />
+                  <Feather name={isPlaying ? "pause" : "play"} size={26} color="#fff" />
                 </FocusPressable>
-                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={8}>
-                  <Feather name="rotate-cw" size={16} color={Colors.dark.textSecondary} />
+                <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.min(duration || 999999, currentTime + 10))} hitSlop={10}>
+                  <Feather name="rotate-cw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={8}>
-                  <Feather name="skip-forward" size={18} color={Colors.dark.textSecondary} />
+                <FocusPressable style={styles.ctrlBtn} onPress={handleSkipNext} hitSlop={10}>
+                  <Feather name="skip-forward" size={22} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-              </>
-            )}
-          </View>
-        </View>
-      ) : null}
+              </View>
 
-      {/* ── Add-to-playlist modal ─────────────────────────────────────── */}
+              {/* Repeat / Shuffle + Like / Add  */}
+              <View style={styles.secondaryRow}>
+                <FocusPressable style={[styles.toggleBtn, repeat && styles.toggleBtnActive]} onPress={() => setRepeat((r) => !r)} hitSlop={10}>
+                  <Feather name="repeat" size={16} color={repeat ? Colors.dark.accent : Colors.dark.textSecondary} />
+                  <ThemedText style={[styles.toggleLabel, repeat && styles.toggleLabelActive]}>Repeat</ThemedText>
+                </FocusPressable>
+                <FocusPressable style={[styles.toggleBtn, shuffle && styles.toggleBtnActive]} onPress={() => setShuffle((s) => !s)} hitSlop={10}>
+                  <Feather name="shuffle" size={16} color={shuffle ? Colors.dark.accent : Colors.dark.textSecondary} />
+                  <ThemedText style={[styles.toggleLabel, shuffle && styles.toggleLabelActive]}>Shuffle</ThemedText>
+                </FocusPressable>
+                <View style={styles.secondaryDivider} />
+                {likedPlaylistId ? (
+                  <FocusPressable style={styles.actionBtn} onPress={() => handleLike(currentTrack)} hitSlop={12}>
+                    <Feather name="heart" size={22} color={likedKeys.has(currentTrack.searchKey) ? "#e11d48" : Colors.dark.textSecondary} />
+                  </FocusPressable>
+                ) : null}
+                {playlists.length > 0 ? (
+                  <FocusPressable style={styles.actionBtn} onPress={() => openAddModal(currentTrack)} hitSlop={12}>
+                    <Feather name="plus-circle" size={22} color={Colors.dark.textSecondary} />
+                  </FocusPressable>
+                ) : null}
+              </View>
+
+              {/* Context chip */}
+              {contextName ? (
+                <View style={styles.contextChip}>
+                  <Feather name="music" size={10} color={Colors.dark.accent} />
+                  <ThemedText style={styles.contextChipText} numberOfLines={1}>From: {contextName}</ThemedText>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.playerEmpty}>
+              <Feather name="music" size={64} color="rgba(255,102,0,0.12)" />
+              <ThemedText style={styles.playerEmptyTitle}>Nothing Playing</ThemedText>
+              <ThemedText style={styles.playerEmptyHint}>Search and select a track on the left</ThemedText>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* ── Add-to-playlist modal ──────────────────────────────────── */}
       <Modal
         visible={trackAddModal !== null}
         transparent
@@ -865,7 +806,7 @@ export default function MusicPlayerScreen() {
               keyExtractor={(p) => p.id}
               style={styles.modalList}
               renderItem={({ item }) => (
-                <Pressable
+                <FocusPressable
                   style={[styles.modalPlaylistRow, playlistAdded.has(item.id) && { opacity: 0.7 }]}
                   onPress={() => { if (!playlistAdded.has(item.id)) handleAddToPlaylist(item.id); }}
                 >
@@ -878,7 +819,7 @@ export default function MusicPlayerScreen() {
                     ? <Feather name="check" size={15} color="#22c55e" />
                     : <Feather name="plus" size={15} color={Colors.dark.textSecondary} />
                   }
-                </Pressable>
+                </FocusPressable>
               )}
             />
           </Pressable>
@@ -893,7 +834,7 @@ const ACCENT = Colors.dark.accent;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
 
-  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.md, gap: Spacing.sm },
+  header: { flexDirection: "row", alignItems: "center", paddingBottom: Spacing.sm, gap: Spacing.sm },
   backBtn: { padding: 6, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
   headerTitle: { fontSize: 20, fontWeight: "700", color: Colors.dark.text },
   betaBadge: {
@@ -904,108 +845,150 @@ const styles = StyleSheet.create({
   },
   betaBadgeText: { fontSize: 9, fontWeight: "800", color: Colors.dark.accent, letterSpacing: 0.8 },
 
-  focusDefault: {
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    backgroundColor: "rgba(255,102,0,0.08)",
-  },
-  focusSolid: {
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.75)",
-  },
+  focusDefault: { borderWidth: 1.5, borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.1)" },
+  focusSolid: { borderWidth: 1.5, borderColor: "rgba(255,255,255,0.75)" },
 
   infoBtn: { padding: 6, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
   clearBtn: { padding: 4, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
-  infoOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.72)",
-    justifyContent: "center", alignItems: "center",
-    paddingHorizontal: Spacing.xl,
-  },
-  infoCard: {
-    width: "100%", maxWidth: 420,
-    backgroundColor: "#161616",
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
-    padding: Spacing.xl,
-    gap: Spacing.md,
-  },
+  infoOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", paddingHorizontal: Spacing.xl },
+  infoCard: { width: "100%", maxWidth: 420, backgroundColor: "#161616", borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", padding: Spacing.xl, gap: Spacing.md },
   infoCardHeader: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   infoCardTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
   infoCardBody: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20 },
-  infoCardClose: {
-    alignSelf: "flex-end",
-    marginTop: Spacing.xs,
-    backgroundColor: Colors.dark.accent,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.lg, paddingVertical: 8,
-  },
+  infoCardClose: { alignSelf: "flex-end", marginTop: Spacing.xs, backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.lg, paddingVertical: 8 },
   infoCardCloseText: { fontSize: 13, fontWeight: "700", color: "#fff" },
 
-  toggleRow: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg, paddingTop: 6, paddingBottom: 2,
+  // ── Layout
+  body: { flex: 1, flexDirection: "row" },
+
+  leftPanel: {
+    flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255,255,255,0.06)",
   },
+
+  rightPanel: {
+    flex: 1,
+    overflow: "hidden",
+  },
+
+  playerCover: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.dark.backgroundRoot },
+
+  playerContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+    gap: 10,
+  },
+
+  bigArt: {
+    width: 168,
+    height: 168,
+    borderRadius: BorderRadius.lg,
+  },
+  bigArtPlaceholder: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  artLoadingOverlay: {
+    position: "absolute",
+    width: 168,
+    height: 168,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1,
+  },
+
+  trackMetaBlock: { alignItems: "center", gap: 4, width: "100%" },
+  bigTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
+  bigArtist: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center" },
+
+  progressWrap: { width: "100%", paddingHorizontal: 4 },
+  progressTrack: { flexDirection: "row", alignItems: "center", height: 4, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 2 },
+  progressFill: { height: 4, backgroundColor: ACCENT, borderRadius: 2 },
+  progressDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: ACCENT, marginHorizontal: -6 },
+
+  timeRow: { flexDirection: "row", justifyContent: "space-between", width: "100%", paddingHorizontal: 4 },
+  timeText: { fontSize: 11, color: Colors.dark.textSecondary },
+
+  miniError: { fontSize: 11, color: "#ef4444", textAlign: "center" },
+
+  controlsRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  ctrlBtn: { padding: 9, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: "transparent" },
+  playBtn: {
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: ACCENT, justifyContent: "center", alignItems: "center",
+    elevation: 4, borderWidth: 1.5, borderColor: "transparent",
+  },
+
+  secondaryRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexWrap: "wrap", justifyContent: "center" },
+  secondaryDivider: { width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.1)", marginHorizontal: 4 },
   toggleBtn: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: "transparent",
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: "transparent",
   },
-  toggleBtnActive: {
-    borderColor: "rgba(255,102,0,0.35)",
-    backgroundColor: "rgba(255,102,0,0.10)",
-  },
+  toggleBtnActive: { borderColor: "rgba(255,102,0,0.35)", backgroundColor: "rgba(255,102,0,0.10)" },
   toggleLabel: { fontSize: 11, color: Colors.dark.textSecondary },
   toggleLabelActive: { color: Colors.dark.accent, fontWeight: "600" },
+  actionBtn: { padding: 9, borderRadius: BorderRadius.md, borderWidth: 1.5, borderColor: "transparent" },
 
-  searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.md },
+  contextChip: { flexDirection: "row", alignItems: "center", gap: 5 },
+  contextChipText: { fontSize: 10, color: Colors.dark.accent, fontWeight: "600" },
+
+  playerEmpty: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
+  playerEmptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
+  playerEmptyHint: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center" },
+
+  // ── Search
+  searchWrap: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: Spacing.sm },
   searchBar: {
     flex: 1, flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.dark.backgroundSecondary,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
-    paddingHorizontal: Spacing.md, height: 44,
+    paddingHorizontal: Spacing.md, height: 42,
   },
-  searchInput: { flex: 1, fontSize: 15, color: Colors.dark.text, paddingVertical: 0 },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.dark.text, paddingVertical: 0 },
   searchBtn: {
     backgroundColor: ACCENT, borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.lg, height: 44,
-    justifyContent: "center", alignItems: "center", minWidth: 80,
+    paddingHorizontal: Spacing.lg, height: 42,
+    justifyContent: "center", alignItems: "center", minWidth: 72,
+    borderWidth: 1.5, borderColor: "transparent",
   },
   searchBtnDisabled: { opacity: 0.4 },
-  searchBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  searchBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
 
   list: { flex: 1 },
-  listContent: { paddingHorizontal: Spacing.lg },
+  listContent: { paddingHorizontal: Spacing.sm },
 
   trackRow: {
     flexDirection: "row", alignItems: "center",
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md, marginBottom: 2, gap: Spacing.md,
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md, marginBottom: 2, gap: Spacing.sm,
+    borderWidth: 1, borderColor: "transparent",
   },
-  trackRowActive: { backgroundColor: "rgba(255,102,0,0.12)", borderWidth: 1, borderColor: "rgba(255,102,0,0.25)" },
-  thumbWrap: { width: 52, height: 52, borderRadius: BorderRadius.sm, overflow: "hidden" },
+  trackRowActive: { backgroundColor: "rgba(255,102,0,0.10)", borderColor: "rgba(255,102,0,0.22)" },
+  thumbWrap: { width: 46, height: 46, borderRadius: BorderRadius.sm, overflow: "hidden" },
   thumbImg: { width: "100%", height: "100%" },
   thumbPlaceholder: { width: "100%", height: "100%", backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
   thumbOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", alignItems: "center" },
-  trackInfo: { flex: 1, gap: 3 },
-  trackTitle: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
+  trackInfo: { flex: 1, gap: 2 },
+  trackTitle: { fontSize: 13, fontWeight: "600", color: Colors.dark.text },
   trackTitleActive: { color: ACCENT },
-  trackArtist: { fontSize: 12, color: Colors.dark.textSecondary },
-  trackDuration: { fontSize: 12, color: Colors.dark.textSecondary, minWidth: 38, textAlign: "right" },
-  trackIconBtn: { padding: 5, borderRadius: BorderRadius.sm },
+  trackArtist: { fontSize: 11, color: Colors.dark.textSecondary },
+  trackDuration: { fontSize: 11, color: Colors.dark.textSecondary, minWidth: 34, textAlign: "right" },
+  trackIconBtn: { padding: 8, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
 
   centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
-  emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
-  emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
-  errorText: { fontSize: 14, color: "#ef4444", textAlign: "center" },
-  retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
+  emptySubtitle: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 18 },
+  errorText: { fontSize: 13, color: "#ef4444", textAlign: "center" },
+  retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, borderWidth: 1.5, borderColor: "transparent" },
   retryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
-
-  contextChip: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: Spacing.lg, paddingTop: 6, paddingBottom: 0,
-  },
-  contextChipText: { fontSize: 10, color: Colors.dark.accent, fontWeight: "600" },
 
   // ── Add-to-playlist modal
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
@@ -1015,58 +998,18 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "ios" ? 34 : 16,
     maxHeight: "70%",
   },
-  modalHandle: {
-    width: 40, height: 4, borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignSelf: "center", marginTop: 12, marginBottom: 14,
-  },
+  modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.2)", alignSelf: "center", marginTop: 12, marginBottom: 14 },
   modalTitle: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, paddingHorizontal: 20, marginBottom: 3 },
   modalTrackName: { fontSize: 12, color: Colors.dark.textSecondary, paddingHorizontal: 20, marginBottom: 14 },
   modalList: { flexGrow: 0 },
   modalPlaylistRow: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingVertical: 12,
+    paddingHorizontal: 20, paddingVertical: 13,
     borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)", gap: 12,
+    borderWidth: 1, borderColor: "transparent", borderRadius: 4,
   },
-  modalPlaylistIcon: {
-    width: 32, height: 32, borderRadius: 7,
-    backgroundColor: Colors.dark.accent,
-    justifyContent: "center", alignItems: "center",
-  },
+  modalPlaylistIcon: { width: 32, height: 32, borderRadius: 7, backgroundColor: Colors.dark.accent, justifyContent: "center", alignItems: "center" },
   modalPlaylistIconLiked: { backgroundColor: "#e11d48" },
   modalPlaylistName: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.dark.text },
   modalPlaylistCount: { fontSize: 12, color: Colors.dark.textSecondary },
-
-  // ── Player
-  playerShell: {
-    position: "absolute", left: 0, right: 0, bottom: 0,
-    backgroundColor: "#111",
-    borderTopWidth: 1, borderTopColor: "rgba(255,102,0,0.2)",
-  },
-  playerCover: { ...StyleSheet.absoluteFillObject, backgroundColor: "#111" },
-
-  progressWrap: { paddingHorizontal: Spacing.lg, paddingTop: 8 },
-  progressTrack: {
-    flexDirection: "row", alignItems: "center",
-    height: 4, backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 2,
-  },
-  progressFill: { height: 4, backgroundColor: ACCENT, borderRadius: 2 },
-  progressDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: ACCENT, marginHorizontal: -6 },
-
-  controlsRow: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: Spacing.lg, paddingTop: 8, gap: Spacing.sm,
-  },
-  miniThumb: { width: 44, height: 44, borderRadius: BorderRadius.sm },
-  miniThumbPlaceholder: { backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
-  trackMeta: { flex: 1, gap: 2 },
-  miniTitle: { fontSize: 13, fontWeight: "700", color: Colors.dark.text },
-  miniSub: { fontSize: 11, color: Colors.dark.textSecondary },
-  ctrlBtn: { padding: Spacing.sm, borderRadius: BorderRadius.sm, borderWidth: 1.5, borderColor: "transparent" },
-  playBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: ACCENT, justifyContent: "center", alignItems: "center", elevation: 4,
-    borderWidth: 1.5, borderColor: "transparent",
-  },
 });
