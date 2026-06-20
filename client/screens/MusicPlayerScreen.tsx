@@ -328,7 +328,8 @@ export default function MusicPlayerScreen() {
   const { width, height } = useWindowDimensions();
   const isPortrait = height > width;
 
-  const [leftMode, setLeftMode] = useState<"queue" | "search">((albumId || (initQueue?.length ?? 0) > 0) ? "queue" : "search");
+  const [leftMode, setLeftMode] = useState<"queue" | "search" | "playlists">((albumId || (initQueue?.length ?? 0) > 0) ? "queue" : "playlists");
+  const [playlistLoading, setPlaylistLoading] = useState(false);
   const [albumContext, setAlbumContext] = useState<{ id: number; name: string; tracks: Track[] } | null>(null);
   const [albumLoading, setAlbumLoading] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
@@ -710,6 +711,31 @@ export default function MusicPlayerScreen() {
     setTrackAddModal(track);
   }, []);
 
+  const handleLoadPlaylist = useCallback(async (playlistId: string, playlistName: string) => {
+    setPlaylistLoading(true);
+    try {
+      const r = await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`);
+      if (!r.ok) throw new Error("Failed to load");
+      const data: any[] = await r.json();
+      const tracks: Track[] = data.map((row) => ({
+        videoId: "",
+        title: row.title ?? "",
+        artist: row.artist ?? "",
+        album: row.album ?? "",
+        duration: row.duration_sec ?? 0,
+        thumbnail: row.thumbnail ?? "",
+        searchKey: row.search_key ?? "",
+      }));
+      setAlbumContext({ id: 0, name: playlistName, tracks });
+      setLeftMode("queue");
+      if (tracks.length > 0) handlePlayTrack(tracks[0]);
+    } catch {
+      // stay on playlists tab silently
+    } finally {
+      setPlaylistLoading(false);
+    }
+  }, [handlePlayTrack]);
+
   const handleSkipNext = useCallback(() => {
     if (!results.length || !currentTrack) return;
     if (shuffle) {
@@ -773,6 +799,13 @@ export default function MusicPlayerScreen() {
               <ThemedText style={[styles.modeTabText, leftMode === "queue" && styles.modeTabTextActive]}>
                 {albumContext ? albumContext.name : "Queue"}
               </ThemedText>
+            </FocusPressable>
+            <FocusPressable
+              style={[styles.modeTab, leftMode === "playlists" && styles.modeTabActive]}
+              onPress={() => setLeftMode("playlists")}
+            >
+              <Feather name="bookmark" size={14} color={leftMode === "playlists" ? ACCENT : Colors.dark.textSecondary} />
+              <ThemedText style={[styles.modeTabText, leftMode === "playlists" && styles.modeTabTextActive]}>Playlists</ThemedText>
             </FocusPressable>
             <FocusPressable
               style={[styles.modeTab, leftMode === "search" && styles.modeTabActive]}
@@ -955,6 +988,41 @@ export default function MusicPlayerScreen() {
                       ))}
                     </View>
                   )}
+                </ScrollView>
+              )}
+            </View>
+          )}
+
+          {/* ── Playlists panel ── */}
+          {leftMode === "playlists" && (
+            <View style={{ flex: 1 }}>
+              {playlistLoading ? (
+                <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
+              ) : playlists.length === 0 ? (
+                <View style={styles.centred}>
+                  <Feather name="bookmark" size={40} color="rgba(255,102,0,0.18)" />
+                  <ThemedText style={styles.emptyTitle}>No playlists yet</ThemedText>
+                  <ThemedText style={[styles.emptySubtitle, { marginTop: 4 }]}>Add songs to a playlist from the Search tab</ThemedText>
+                </View>
+              ) : (
+                <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+                  {playlists.map((pl, i) => (
+                    <FocusPressable
+                      key={pl.id}
+                      hasTVPreferredFocus={i === 0}
+                      style={styles.plRow}
+                      onPress={() => handleLoadPlaylist(pl.id, pl.name)}
+                    >
+                      <View style={[styles.plIcon, pl.isLikedSongs && styles.plIconLiked]}>
+                        <Feather name={pl.isLikedSongs ? "heart" : "music"} size={16} color="#fff" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <ThemedText style={styles.plName} numberOfLines={1}>{pl.name}</ThemedText>
+                        <ThemedText style={styles.plCount}>{pl.trackCount} {pl.trackCount === 1 ? "track" : "tracks"}</ThemedText>
+                      </View>
+                      <Feather name="play-circle" size={20} color={ACCENT} />
+                    </FocusPressable>
+                  ))}
                 </ScrollView>
               )}
             </View>
@@ -1389,6 +1457,21 @@ const styles = StyleSheet.create({
   },
   modeTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
   modeTabTextActive: { color: ACCENT },
+
+  // ── Playlists panel rows
+  plRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: Spacing.md, paddingVertical: 11,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1.5, borderColor: "transparent", borderRadius: 4,
+  },
+  plIcon: {
+    width: 36, height: 36, borderRadius: 8,
+    backgroundColor: Colors.dark.accent, justifyContent: "center", alignItems: "center",
+  },
+  plIconLiked: { backgroundColor: "#e11d48" },
+  plName: { fontSize: 13, fontWeight: "600", color: Colors.dark.text },
+  plCount: { fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2 },
 
   // ── Drill / rich results
   drillHeader: {
