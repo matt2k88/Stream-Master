@@ -1313,7 +1313,7 @@ export default function HomeScreen() {
               <View style={styles.sidebarDivider} />
 
               <SidebarItem label="Search" icon="search" onPress={() => navigation.navigate("Search")} />
-              <SidebarItem label="Music Player" icon="music" isNew={showMusicBadge} onPress={() => navigation.navigate("MusicHome")} />
+              {/* Music Player — hidden until playback fixed: <SidebarItem label="Music Player" icon="music" isNew={showMusicBadge} onPress={() => navigation.navigate("MusicHome")} /> */}
               {/* Football Centre stays reachable regardless of the kill-switch —
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
@@ -1450,7 +1450,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.portraitActions}>
               <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-              <MusicPlayerButton onPress={() => navigation.navigate("MusicHome")} showBadge={showMusicBadge} />
+              {/* Music Player — hidden until playback fixed: <MusicPlayerButton onPress={() => navigation.navigate("MusicHome")} showBadge={showMusicBadge} /> */}
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
               <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
               <VpnButton />
