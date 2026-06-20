@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
+import { useAppTheme } from "@/contexts/ThemeContext";
 import { getApiUrl } from "@/lib/query-client";
 import { useProfile, GUEST_PROFILE_ID } from "@/contexts/ProfileContext";
 import type { MusicTrack, MusicPlaylist } from "@/lib/music-types";
@@ -371,6 +372,7 @@ function CreatePlaylistModal({
 export default function MusicHomeScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { showMusicBetaBadge } = useAppTheme();
   const { activeProfile } = useProfile();
   const profileId = activeProfile?.id ?? null;
   const isGuest = !profileId || profileId === GUEST_PROFILE_ID;
@@ -628,6 +630,11 @@ export default function MusicHomeScreen() {
           <Feather name="arrow-left" size={22} color={Colors.dark.text} />
         </Pressable>
         <ThemedText style={styles.headerTitle}>Music</ThemedText>
+        {showMusicBetaBadge ? (
+          <View style={styles.betaBadge}>
+            <ThemedText style={styles.betaBadgeText}>BETA</ThemedText>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }} />
       </View>
 
@@ -873,6 +880,13 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 6, borderRadius: BorderRadius.sm },
   headerTitle: { fontSize: 22, fontWeight: "800", color: Colors.dark.text },
+  betaBadge: {
+    backgroundColor: "rgba(255,102,0,0.18)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.45)",
+    borderRadius: BorderRadius.xs,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  betaBadgeText: { fontSize: 9, fontWeight: "800", color: Colors.dark.accent, letterSpacing: 0.8 },
 
   searchWrap: {
     flexDirection: "row", alignItems: "center",
