@@ -155,10 +155,17 @@ const INJECT_JS = `(function() {
   // check), which is more reliable than calling vid.play() from injected JS
   // on Android / Fire Stick's Silk engine.
   function findYTPBtn() {
+    // Desktop YouTube selectors
     return document.querySelector('.ytp-large-play-button')
         || document.querySelector('.ytp-play-button')
+        // Mobile YouTube (m.youtube.com) — same player engine, slightly different DOM
+        || document.querySelector('.player-controls-play-pause')
+        || document.querySelector('button.player-play-pause')
+        // Generic aria-label fallbacks (works on both layouts)
         || document.querySelector('button[aria-label="Play"]')
-        || document.querySelector('button[aria-label="Pause"]');
+        || document.querySelector('button[aria-label="Pause"]')
+        || document.querySelector('button[aria-label="Play video"]')
+        || document.querySelector('button[aria-label="Pause video"]');
   }
 
   window.ytCmd = function(cmd, val) {
@@ -817,8 +824,11 @@ export default function MusicPlayerScreen() {
     }
   }, [results, currentTrack, currentTime, shuffle, jsSeek, handlePlayTrack]);
 
+  // Use m.youtube.com directly — Silk on Fire Stick always serves the mobile
+  // site regardless of UA, so we target it explicitly to get a consistent
+  // player layout on every device.
   const watchUrl = currentTrack?.videoId
-    ? `https://www.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1&rel=0`
+    ? `https://m.youtube.com/watch?v=${currentTrack.videoId}&autoplay=1`
     : null;
 
   const padTop = insets.top + (Platform.OS === "android" ? 8 : 4);
@@ -1166,7 +1176,7 @@ export default function MusicPlayerScreen() {
               bounces={false}
               allowsFullscreenVideo={false}
               androidLayerType="software"
-              userAgent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              userAgent="Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
             />
             ) : null}
           </View>
