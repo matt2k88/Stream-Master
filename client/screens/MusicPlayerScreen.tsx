@@ -89,9 +89,9 @@ const INJECT_JS = `(function() {
   function attach(v) {
     if (vid === v) return;
     vid = v;
-    // Fire 'ready' immediately so the load-timer is cleared the moment we find
-    // the video element — works even when autoplay/buffering needs user gesture.
-    post({ type:'ready', duration:v.duration||0 });
+    // Clear the load-timer immediately (duration:0 so we don't set a bad value
+    // from a preview/thumbnail video that may have been found first).
+    post({ type:'ready', duration:0 });
     v.addEventListener('playing', function() {
       post({ type:'state', state:1, currentTime:v.currentTime, duration:v.duration||0 });
     });
@@ -105,6 +105,9 @@ const INJECT_JS = `(function() {
       post({ type:'state', state:3, currentTime:v.currentTime, duration:v.duration||0 });
     });
     v.addEventListener('canplay', function() {
+      // If the duration is very short this is a YouTube preview/thumbnail video,
+      // not the real player — detach and let check() find the real one.
+      if (v.duration > 0 && v.duration < 30) { vid = null; return; }
       post({ type:'ready', duration:v.duration||0 });
       v.play().catch(function(){});
     });
@@ -1111,6 +1114,8 @@ export default function MusicPlayerScreen() {
               key={currentTrack!.videoId}
               ref={webViewRef}
               style={{ flex: 1 }}
+              focusable={false}
+              importantForAccessibility="no-hide-descendants"
               source={{ uri: watchUrl }}
               onLoad={() => { webViewRef.current?.injectJavaScript(INJECT_JS); }}
               onMessage={handleMessage}
@@ -1197,7 +1202,7 @@ export default function MusicPlayerScreen() {
                 <FocusPressable style={styles.ctrlBtn} onPress={() => jsSeek(Math.max(0, currentTime - 10))} hitSlop={10}>
                   <Feather name="rotate-ccw" size={20} color={Colors.dark.textSecondary} />
                 </FocusPressable>
-                <FocusPressable variant="solid" style={styles.playBtn} onPress={() => {
+                <FocusPressable variant="solid" style={styles.playBtn} hasTVPreferredFocus onPress={() => {
                   if (isPlaying) { setPlayerState(YT_PAUSED); jsPause(); }
                   else { setPlayerState(YT_PLAYING); jsPlay(); }
                 }}>
