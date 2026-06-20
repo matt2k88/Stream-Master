@@ -394,9 +394,10 @@ export default function MusicHomeScreen() {
       try {
         const r = await fetch(`${getApiUrl()}/api/music/search?q=${encodeURIComponent(cat.query)}`);
         const data = await r.json();
-        if (r.ok && Array.isArray(data)) {
-          _catCache.set(cat.id, { tracks: data, ts: Date.now() });
-          setCategoryTracks((prev) => ({ ...prev, [cat.id]: data }));
+        const tracks = Array.isArray(data) ? data : (data.songs ?? []);
+        if (r.ok && tracks.length >= 0) {
+          _catCache.set(cat.id, { tracks, ts: Date.now() });
+          setCategoryTracks((prev) => ({ ...prev, [cat.id]: tracks }));
         }
       } catch {}
       setLoadingCats((prev) => ({ ...prev, [cat.id]: false }));
@@ -414,7 +415,7 @@ export default function MusicHomeScreen() {
       const r = await fetch(`${getApiUrl()}/api/music/search?q=${encodeURIComponent(term)}`);
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Search failed");
-      setSearchResults(data);
+      setSearchResults(Array.isArray(data) ? data : (data.songs ?? []));
     } catch (err: any) {
       setSearchError(err.message ?? "Search failed");
     }
