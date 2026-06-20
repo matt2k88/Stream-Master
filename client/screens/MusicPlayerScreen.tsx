@@ -314,6 +314,8 @@ export default function MusicPlayerScreen() {
   const [likedPlaylistId, setLikedPlaylistId] = useState<string | null>(null);
   const [playlists, setPlaylists] = useState<Array<{ id: string; name: string; isLikedSongs: boolean; trackCount: number }>>([]);
   const [trackAddModal, setTrackAddModal] = useState<Track | null>(null);
+  const trackAddModalRef = useRef<Track | null>(null);
+  trackAddModalRef.current = trackAddModal;
   const [playlistAdded, setPlaylistAdded] = useState<Set<string>>(new Set());
 
   // Keep a stable ref to results/shuffle/repeat for use inside handleMessage
@@ -539,7 +541,8 @@ export default function MusicPlayerScreen() {
   }, [likedPlaylistId, likedKeys]);
 
   const handleAddToPlaylist = useCallback(async (playlistId: string) => {
-    const track = trackAddModal;
+    // Use ref so we always have the current track regardless of re-render timing
+    const track = trackAddModalRef.current;
     if (!track) return;
     setPlaylistAdded((prev) => new Set([...prev, playlistId]));
     try {
@@ -555,10 +558,12 @@ export default function MusicPlayerScreen() {
       setPlaylists((prev) => prev.map((p) =>
         p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p
       ));
+      // Auto-close after a moment so the user sees the checkmark
+      setTimeout(() => setTrackAddModal(null), 700);
     } catch {
       setPlaylistAdded((prev) => { const n = new Set(prev); n.delete(playlistId); return n; });
     }
-  }, [trackAddModal]);
+  }, []);
 
   const handleSkipNext = useCallback(() => {
     if (!results.length || !currentTrack) return;

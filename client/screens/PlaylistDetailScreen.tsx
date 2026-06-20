@@ -10,7 +10,7 @@ import {
   Modal,
   Alert,
 } from "react-native";
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -90,7 +90,8 @@ export default function PlaylistDetailScreen() {
     setLoading(false);
   }, [playlistId]);
 
-  useEffect(() => { fetchTracks(); }, [fetchTracks]);
+  // Re-fetch every time this screen comes into focus (e.g. after adding from player)
+  useFocusEffect(useCallback(() => { fetchTracks(); }, [fetchTracks]));
 
   const handleRemove = useCallback(async (trackId: string) => {
     setRemoving(trackId);

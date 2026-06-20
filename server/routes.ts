@@ -2508,16 +2508,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .order("created_at", { ascending: true });
       if ((error as any)?.code === "42P01") return res.json([]);
       if (error) throw error;
-      // Auto-create "Liked Songs" for brand-new profiles
+      // Auto-create "Liked Songs" if it doesn't exist yet for this profile
       let list = data ?? [];
-      if (!list.length) {
+      if (!list.find((p: any) => p.is_liked_songs)) {
         const { data: created, error: ce } = await supabase
           .from("music_playlists")
           .insert({ profile_id: profileId, name: "Liked Songs", is_liked_songs: true })
           .select().single();
-        if (ce) throw ce;
-        return res.json([{ ...created, trackCount: 0 }]);
+        if (!ce && created) list = [created, ...list];
       }
+      if (!list.length) return res.json([]);
       // Attach track counts
       const ids = list.map((p: any) => p.id);
       const { data: counts } = await supabase

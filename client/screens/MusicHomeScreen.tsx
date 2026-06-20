@@ -311,6 +311,8 @@ export default function MusicHomeScreen() {
   const [searchError, setSearchError] = useState("");
 
   const [addModal, setAddModal] = useState<{ track: MusicTrack; visible: boolean } | null>(null);
+  const addModalRef = useRef<{ track: MusicTrack; visible: boolean } | null>(null);
+  addModalRef.current = addModal;
   const [createModal, setCreateModal] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
@@ -432,24 +434,29 @@ export default function MusicHomeScreen() {
 
   // ── Add to playlist ───────────────────────────────────────────────────────
   const handleAddToPlaylist = useCallback(async (playlistId: string) => {
-    const track = addModal?.track;
+    // Use ref so we always have the current track regardless of re-render timing
+    const track = addModalRef.current?.track;
     if (!track) return;
-    await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: track.title,
-        artist: track.artist,
-        album: track.album,
-        duration_sec: track.duration,
-        thumbnail: track.thumbnail,
-        search_key: track.searchKey,
-      }),
-    });
-    setPlaylists((prev) =>
-      prev.map((p) => p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p)
-    );
-  }, [addModal]);
+    try {
+      await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          duration_sec: track.duration,
+          thumbnail: track.thumbnail,
+          search_key: track.searchKey,
+        }),
+      });
+      setPlaylists((prev) =>
+        prev.map((p) => p.id === playlistId ? { ...p, trackCount: p.trackCount + 1 } : p)
+      );
+      // Close modal after brief checkmark flash
+      setTimeout(() => setAddModal(null), 700);
+    } catch {}
+  }, []);
 
   const handleCreatePlaylist = useCallback(async (name: string) => {
     if (!profileId) return;
