@@ -7,7 +7,7 @@ import {
   TextInput,
   ActivityIndicator,
   Image,
-  Alert,
+  Modal,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -58,7 +58,6 @@ function TrackItem({
         </ThemedText>
       </View>
       <ThemedText style={styles.trackDuration}>{fmtTime(track.duration_sec)}</ThemedText>
-      {!isLikedSongs ? null : null}
       <Pressable style={styles.removeBtn} onPress={onRemove} hitSlop={8}>
         <Feather name="trash-2" size={16} color="rgba(239,68,68,0.7)" />
       </Pressable>
@@ -78,6 +77,8 @@ export default function PlaylistDetailScreen() {
   const [newName, setNewName] = useState(playlistName);
   const [nameInput, setNameInput] = useState(playlistName);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchTracks = useCallback(async () => {
     setLoading(true);
@@ -89,7 +90,6 @@ export default function PlaylistDetailScreen() {
     setLoading(false);
   }, [playlistId]);
 
-  // Re-fetch every time this screen comes into focus (e.g. after adding from player)
   useFocusEffect(useCallback(() => { fetchTracks(); }, [fetchTracks]));
 
   const handleRemove = useCallback(async (trackId: string) => {
@@ -101,25 +101,17 @@ export default function PlaylistDetailScreen() {
     setRemoving(null);
   }, [playlistId]);
 
-  const handleDelete = useCallback(async () => {
-    Alert.alert(
-      "Delete Playlist",
-      `Are you sure you want to delete "${newName}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}`, { method: "DELETE" });
-              navigation.goBack();
-            } catch {}
-          },
-        },
-      ]
-    );
-  }, [playlistId, newName, navigation]);
+  const handleDeleteConfirmed = useCallback(async () => {
+    setDeleting(true);
+    try {
+      await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}`, { method: "DELETE" });
+      setShowDeleteConfirm(false);
+      navigation.goBack();
+    } catch {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }, [playlistId, navigation]);
 
   const handleRename = useCallback(async () => {
     const name = nameInput.trim();
@@ -200,7 +192,7 @@ export default function PlaylistDetailScreen() {
           <ThemedText style={styles.playAllText}>Play All</ThemedText>
         </Pressable>
         {!isLikedSongs ? (
-          <Pressable style={styles.deleteBtn} onPress={handleDelete} hitSlop={10}>
+          <Pressable style={styles.deleteBtn} onPress={() => setShowDeleteConfirm(true)} hitSlop={10}>
             <Feather name="trash-2" size={18} color="rgba(239,68,68,0.75)" />
           </Pressable>
         ) : null}
@@ -259,6 +251,39 @@ export default function PlaylistDetailScreen() {
           }
         />
       )}
+
+      {/* ── Delete confirmation modal ── */}
+      <Modal visible={showDeleteConfirm} transparent animationType="fade" onRequestClose={() => setShowDeleteConfirm(false)}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmBox}>
+            <Feather name="trash-2" size={28} color="rgba(239,68,68,0.85)" style={{ marginBottom: 12 }} />
+            <ThemedText style={styles.confirmTitle}>Delete Playlist</ThemedText>
+            <ThemedText style={styles.confirmBody}>
+              Delete &ldquo;{newName}&rdquo;? This will remove the playlist and all its tracks. This cannot be undone.
+            </ThemedText>
+            <View style={styles.confirmBtns}>
+              <Pressable
+                style={[styles.confirmBtn, styles.confirmBtnCancel]}
+                onPress={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+              >
+                <ThemedText style={styles.confirmBtnCancelText}>Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                style={[styles.confirmBtn, styles.confirmBtnDelete, deleting && { opacity: 0.5 }]}
+                onPress={handleDeleteConfirmed}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <ThemedText style={styles.confirmBtnDeleteText}>Delete</ThemedText>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -316,4 +341,35 @@ const styles = StyleSheet.create({
   centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text },
   emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
+
+  // ── Delete confirm modal
+  confirmOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center", alignItems: "center", padding: Spacing.xl,
+  },
+  confirmBox: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    width: "100%", maxWidth: 380,
+    alignItems: "center",
+    borderWidth: 1, borderColor: "rgba(239,68,68,0.25)",
+  },
+  confirmTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, marginBottom: 10 },
+  confirmBody: {
+    fontSize: 13, color: Colors.dark.textSecondary,
+    textAlign: "center", lineHeight: 20, marginBottom: Spacing.xl,
+  },
+  confirmBtns: { flexDirection: "row", gap: Spacing.md, width: "100%" },
+  confirmBtn: {
+    flex: 1, borderRadius: BorderRadius.md,
+    paddingVertical: 12, alignItems: "center", justifyContent: "center",
+  },
+  confirmBtnCancel: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
+  },
+  confirmBtnCancelText: { fontSize: 14, fontWeight: "600", color: Colors.dark.text },
+  confirmBtnDelete: { backgroundColor: "rgba(239,68,68,0.85)" },
+  confirmBtnDeleteText: { fontSize: 14, fontWeight: "700", color: "#fff" },
 });

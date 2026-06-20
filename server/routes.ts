@@ -2639,6 +2639,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/music/playlists/:id", async (req, res) => {
     const { id } = req.params;
     try {
+      // Delete tracks first to avoid FK constraint violations
+      const { error: tracksErr } = await supabase
+        .from("music_playlist_tracks").delete().eq("playlist_id", id);
+      if (tracksErr && (tracksErr as any).code !== "42P01") throw tracksErr;
       const { error } = await supabase
         .from("music_playlists").delete().eq("id", id).neq("is_liked_songs", true);
       if (error) throw error;
