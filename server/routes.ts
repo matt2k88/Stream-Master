@@ -2433,7 +2433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .slice(0, 10)
         .map((t: any) => ({
           videoId: "", title: t.trackName, artist: t.artistName,
-          album: t.collectionName ?? "", duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
+          album: t.collectionName ?? "", collectionId: t.collectionId ?? 0,
+          duration: Math.round((t.trackTimeMillis ?? 0) / 1000),
           thumbnail: toArtwork(t.artworkUrl100 ?? ""),
           searchKey: `${t.trackName} ${t.artistName}`,
         }));

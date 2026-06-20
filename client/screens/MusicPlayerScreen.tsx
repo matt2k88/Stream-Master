@@ -318,9 +318,14 @@ export default function MusicPlayerScreen() {
   const insets = useSafeAreaInsets();
   const { showMusicBetaBadge } = useAppTheme();
   const route = useRoute<RouteProp<RootStackParamList, "MusicPlayer">>();
-  const { queue: initQueue, startIndex: initIndex = 0, contextName, initialQuery } = route.params ?? {};
+  const { queue: initQueue, startIndex: initIndex = 0, contextName, initialQuery, albumId } = route.params ?? {};
   const { activeProfile } = useProfile();
   const profileId = activeProfile?.id;
+
+  // ── Left-panel mode: "queue" shows album track list; "search" shows search UI
+  const [leftMode, setLeftMode] = useState<"queue" | "search">(albumId ? "queue" : "search");
+  const [albumContext, setAlbumContext] = useState<{ id: number; name: string; tracks: Track[] } | null>(null);
+  const [albumLoading, setAlbumLoading] = useState(false);
 
   const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<Track[]>([]);
@@ -472,9 +477,28 @@ export default function MusicPlayerScreen() {
     }
   }, [query, searching]);
 
-  // Auto-run search when arriving from MusicHomeScreen with a query
+  // Fetch album tracks when arriving with an albumId
   useEffect(() => {
-    if (!initialQuery?.trim()) return;
+    if (!albumId) return;
+    const name = contextName ?? "Album";
+    setAlbumLoading(true);
+    fetch(`${getApiUrl()}/api/music/album/${albumId}`)
+      .then((r) => r.json())
+      .then((tracks: Track[]) => {
+        const list = Array.isArray(tracks) ? tracks : [];
+        setAlbumContext({ id: albumId, name, tracks: list });
+        setResults(list);
+        resultsRef.current = list;
+        setLeftMode("queue");
+      })
+      .catch(() => {})
+      .finally(() => setAlbumLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-run search when arriving from MusicHomeScreen with a query (only if no albumId)
+  useEffect(() => {
+    if (!initialQuery?.trim() || albumId) return;
     const q = initialQuery.trim();
     setSearching(true);
     setSearchError("");
@@ -700,83 +724,188 @@ export default function MusicPlayerScreen() {
       {/* ── 50/50 body ──────────────────────────────────────────────── */}
       <View style={styles.body}>
 
-        {/* ══ LEFT: search + results ══════════════════════════════════ */}
+        {/* ══ LEFT: album queue OR search ═════════════════════════════ */}
         <View style={styles.leftPanel}>
-          <View style={[styles.searchWrap, { paddingHorizontal: Spacing.md }]}>
-            <View style={styles.searchBar}>
-              <Feather name="search" size={17} color={Colors.dark.textSecondary} style={{ marginRight: Spacing.sm }} />
-              <TextInput
-                ref={inputRef}
-                style={styles.searchInput}
-                placeholder="Search songs, artists, albums…"
-                placeholderTextColor={Colors.dark.border}
-                value={query}
-                onChangeText={setQuery}
-                returnKeyType="search"
-                onSubmitEditing={handleSearch}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {query.length > 0 && (
-                <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setRichResults(null); setSearchError(""); setDrill(null); setDrillSongs([]); setDrillAlbums([]); }} style={styles.clearBtn}>
-                  <Feather name="x" size={15} color={Colors.dark.textSecondary} />
-                </FocusPressable>
-              )}
-            </View>
+
+          {/* ── Mode toggle strip ── */}
+          <View style={styles.modeStrip}>
             <FocusPressable
-              variant="solid"
-              style={[styles.searchBtn, (!query.trim() || searching) && styles.searchBtnDisabled]}
-              onPress={handleSearch}
-              disabled={!query.trim() || searching}
+              style={[styles.modeTab, leftMode === "queue" && styles.modeTabActive]}
+              onPress={() => setLeftMode("queue")}
             >
-              {searching
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
-              }
+              <Feather name="list" size={14} color={leftMode === "queue" ? ACCENT : Colors.dark.textSecondary} />
+              <ThemedText style={[styles.modeTabText, leftMode === "queue" && styles.modeTabTextActive]}>
+                {albumContext ? albumContext.name : "Queue"}
+              </ThemedText>
+            </FocusPressable>
+            <FocusPressable
+              style={[styles.modeTab, leftMode === "search" && styles.modeTabActive]}
+              onPress={() => setLeftMode("search")}
+            >
+              <Feather name="search" size={14} color={leftMode === "search" ? ACCENT : Colors.dark.textSecondary} />
+              <ThemedText style={[styles.modeTabText, leftMode === "search" && styles.modeTabTextActive]}>Search</ThemedText>
             </FocusPressable>
           </View>
 
-          {searchError ? (
+          {/* ── Queue / album track list ── */}
+          {leftMode === "queue" && albumLoading && (
+            <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
+          )}
+          {leftMode === "queue" && !albumLoading && albumContext && albumContext.tracks.length > 0 && (
+            <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+              {albumContext.tracks.map((item, i) => {
+                const isActive = !!currentTrack && currentTrack.searchKey === item.searchKey && (isPlaying || isBuffering);
+                return (
+                  <TrackRow
+                    key={`${item.searchKey}-${i}`}
+                    track={item}
+                    isActive={isActive}
+                    isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
+                    onPress={() => handlePlayTrack(item)}
+                    onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+                    onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
+                    isLiked={likedKeys.has(item.searchKey)}
+                  />
+                );
+              })}
+            </ScrollView>
+          )}
+          {leftMode === "queue" && !albumLoading && !(albumContext && albumContext.tracks.length > 0) && (
             <View style={styles.centred}>
-              <Feather name="alert-circle" size={30} color="#ef4444" />
-              <ThemedText style={styles.errorText}>{searchError}</ThemedText>
-              <FocusPressable variant="solid" style={styles.retryBtn} onPress={handleSearch}>
-                <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
-              </FocusPressable>
+              <Feather name="music" size={40} color="rgba(255,102,0,0.18)" />
+              <ThemedText style={styles.emptyTitle}>No tracks</ThemedText>
             </View>
-          ) : !richResults && !searching ? (
-            <View style={styles.centred}>
-              <Feather name="music" size={48} color="rgba(255,102,0,0.2)" />
-              <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
-              <ThemedText style={styles.emptySubtitle}>
-                Artists, albums &amp; songs from Apple Music — tap to play via YouTube
-              </ThemedText>
-            </View>
-          ) : drill ? (
-            /* ── Drill view (artist or album) ── */
-            <View style={styles.list}>
-              <View style={styles.drillHeader}>
+          )}
+
+          {/* ── Search UI ── */}
+          {leftMode === "search" && (
+            <View style={{ flex: 1 }}>
+              <View style={[styles.searchWrap, { paddingHorizontal: Spacing.md }]}>
+                <View style={styles.searchBar}>
+                  <Feather name="search" size={17} color={Colors.dark.textSecondary} style={{ marginRight: Spacing.sm }} />
+                  <TextInput
+                    ref={inputRef}
+                    style={styles.searchInput}
+                    placeholder="Search songs, artists, albums…"
+                    placeholderTextColor={Colors.dark.border}
+                    value={query}
+                    onChangeText={setQuery}
+                    returnKeyType="search"
+                    onSubmitEditing={handleSearch}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  {query.length > 0 && (
+                    <FocusPressable hitSlop={8} onPress={() => { setQuery(""); setResults([]); setRichResults(null); setSearchError(""); setDrill(null); setDrillSongs([]); setDrillAlbums([]); }} style={styles.clearBtn}>
+                      <Feather name="x" size={15} color={Colors.dark.textSecondary} />
+                    </FocusPressable>
+                  )}
+                </View>
                 <FocusPressable
-                  style={styles.drillBack}
-                  hitSlop={8}
-                  onPress={() => { setDrill(null); setDrillSongs([]); setDrillAlbums([]); setResults(richResults?.songs ?? []); }}
+                  variant="solid"
+                  style={[styles.searchBtn, (!query.trim() || searching) && styles.searchBtnDisabled]}
+                  onPress={handleSearch}
+                  disabled={!query.trim() || searching}
                 >
-                  <Feather name="arrow-left" size={15} color={ACCENT} />
-                  <ThemedText style={styles.drillBackText} numberOfLines={1}>{drill.name}</ThemedText>
+                  {searching
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <ThemedText style={styles.searchBtnText}>Search</ThemedText>
+                  }
                 </FocusPressable>
               </View>
-              {drillLoading ? (
-                <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
-              ) : drillError ? (
-                <View style={styles.centred}><ThemedText style={styles.errorText}>{drillError}</ThemedText></View>
+
+              {searchError ? (
+                <View style={styles.centred}>
+                  <Feather name="alert-circle" size={30} color="#ef4444" />
+                  <ThemedText style={styles.errorText}>{searchError}</ThemedText>
+                  <FocusPressable variant="solid" style={styles.retryBtn} onPress={handleSearch}>
+                    <ThemedText style={styles.retryBtnText}>Retry</ThemedText>
+                  </FocusPressable>
+                </View>
+              ) : !richResults && !searching ? (
+                <View style={styles.centred}>
+                  <Feather name="music" size={48} color="rgba(255,102,0,0.2)" />
+                  <ThemedText style={styles.emptyTitle}>Search for Music</ThemedText>
+                  <ThemedText style={styles.emptySubtitle}>
+                    Artists, albums &amp; songs from Apple Music — tap to play via YouTube
+                  </ThemedText>
+                </View>
+              ) : drill ? (
+                <View style={styles.list}>
+                  <View style={styles.drillHeader}>
+                    <FocusPressable
+                      style={styles.drillBack}
+                      hitSlop={8}
+                      onPress={() => { setDrill(null); setDrillSongs([]); setDrillAlbums([]); setResults(richResults?.songs ?? []); }}
+                    >
+                      <Feather name="arrow-left" size={15} color={ACCENT} />
+                      <ThemedText style={styles.drillBackText} numberOfLines={1}>{drill.name}</ThemedText>
+                    </FocusPressable>
+                  </View>
+                  {drillLoading ? (
+                    <View style={styles.centred}><ActivityIndicator color={ACCENT} size="large" /></View>
+                  ) : drillError ? (
+                    <View style={styles.centred}><ThemedText style={styles.errorText}>{drillError}</ThemedText></View>
+                  ) : (
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+                      {drillSongs.length > 0 && (
+                        <View>
+                          <ThemedText style={styles.drillSectionTitle}>
+                            {drill.type === "artist" ? "TOP SONGS" : "TRACKS"}
+                          </ThemedText>
+                          {drillSongs.map((item, i) => (
+                            <TrackRow
+                              key={`${item.searchKey}-${i}`}
+                              track={item}
+                              isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
+                              isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
+                              onPress={() => handlePlayTrack(item)}
+                              onLike={likedPlaylistId ? () => handleLike(item) : undefined}
+                              onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
+                              isLiked={likedKeys.has(item.searchKey)}
+                            />
+                          ))}
+                        </View>
+                      )}
+                      {drill.type === "artist" && drillAlbums.length > 0 && (
+                        <View>
+                          <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                            {drillAlbums.map((a) => (
+                              <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                    </ScrollView>
+                  )}
+                </View>
               ) : (
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
-                  {drillSongs.length > 0 && (
+                <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+                  {(richResults?.artists ?? []).length > 0 && (
                     <View>
-                      <ThemedText style={styles.drillSectionTitle}>
-                        {drill.type === "artist" ? "TOP SONGS" : "TRACKS"}
-                      </ThemedText>
-                      {drillSongs.map((item, i) => (
+                      <ThemedText style={styles.drillSectionTitle}>ARTISTS</ThemedText>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                        {richResults!.artists.map((a) => (
+                          <ArtistCard key={String(a.artistId)} artist={a} onPress={() => handleArtistDrill(a)} />
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                  {(richResults?.albums ?? []).length > 0 && (
+                    <View>
+                      <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
+                        {richResults!.albums.map((a) => (
+                          <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                  {(richResults?.songs ?? []).length > 0 && (
+                    <View>
+                      <ThemedText style={styles.drillSectionTitle}>SONGS</ThemedText>
+                      {richResults!.songs.map((item, i) => (
                         <TrackRow
                           key={`${item.searchKey}-${i}`}
                           track={item}
@@ -790,61 +919,11 @@ export default function MusicPlayerScreen() {
                       ))}
                     </View>
                   )}
-                  {drill.type === "artist" && drillAlbums.length > 0 && (
-                    <View>
-                      <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
-                        {drillAlbums.map((a) => (
-                          <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
                 </ScrollView>
               )}
             </View>
-          ) : (
-            /* ── Rich search results ── */
-            <ScrollView style={styles.list} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
-              {(richResults?.artists ?? []).length > 0 && (
-                <View>
-                  <ThemedText style={styles.drillSectionTitle}>ARTISTS</ThemedText>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
-                    {richResults!.artists.map((a) => (
-                      <ArtistCard key={String(a.artistId)} artist={a} onPress={() => handleArtistDrill(a)} />
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-              {(richResults?.albums ?? []).length > 0 && (
-                <View>
-                  <ThemedText style={styles.drillSectionTitle}>ALBUMS</ThemedText>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hChips}>
-                    {richResults!.albums.map((a) => (
-                      <AlbumCard key={String(a.collectionId)} album={a} onPress={() => handleAlbumDrill(a)} />
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-              {(richResults?.songs ?? []).length > 0 && (
-                <View>
-                  <ThemedText style={styles.drillSectionTitle}>SONGS</ThemedText>
-                  {richResults!.songs.map((item, i) => (
-                    <TrackRow
-                      key={`${item.searchKey}-${i}`}
-                      track={item}
-                      isActive={!!currentTrack && currentTrack.searchKey === item.searchKey && currentTrack.videoId !== "" && (isPlaying || isBuffering)}
-                      isLoading={isLoading && !!currentTrack && currentTrack.searchKey === item.searchKey}
-                      onPress={() => handlePlayTrack(item)}
-                      onLike={likedPlaylistId ? () => handleLike(item) : undefined}
-                      onAdd={playlists.length > 0 ? () => openAddModal(item) : undefined}
-                      isLiked={likedKeys.has(item.searchKey)}
-                    />
-                  ))}
-                </View>
-              )}
-            </ScrollView>
           )}
+
         </View>
 
         {/* ══ RIGHT: player ═══════════════════════════════════════════ */}
@@ -1198,6 +1277,21 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 13, color: "#ef4444", textAlign: "center" },
   retryBtn: { backgroundColor: ACCENT, borderRadius: BorderRadius.md, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, borderWidth: 1.5, borderColor: "transparent" },
   retryBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+
+  // ── Mode toggle strip
+  modeStrip: {
+    flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.07)",
+  },
+  modeTab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 9,
+    borderWidth: 1.5, borderColor: "transparent", borderRadius: 0,
+  },
+  modeTabActive: {
+    borderBottomColor: ACCENT,
+  },
+  modeTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
+  modeTabTextActive: { color: ACCENT },
 
   // ── Drill / rich results
   drillHeader: {

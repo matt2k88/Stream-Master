@@ -3,6 +3,7 @@ export interface MusicTrack {
   title: string;
   artist: string;
   album: string;
+  collectionId?: number;
   duration: number;
   thumbnail: string;
   searchKey: string;
