@@ -890,16 +890,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUrl = entry.serverUrl.replace(/\/$/, "") + "/player_api.php?username=" + encodeURIComponent(username) + "&password=" + encodeURIComponent(password);
       const authRes = await fetch(authUrl, { signal: AbortSignal.timeout(12_000) });
-      if (!authRes.ok) throw new Error("provider_unreachable");
-      const authData = await authRes.json() as any;
+      let authData: any = null;
+      try { authData = await authRes.json(); } catch { /* non-JSON body */ }
       if (!authData?.user_info?.auth) {
-        return res.json({ ok: false, error: "Invalid credentials. Please check your username and password and try again." });
+        return res.json({ ok: false, error: "Login failed. Please check your username and password and try again." });
       }
-    } catch (err: any) {
-      if (err?.name === "TimeoutError" || err?.message === "provider_unreachable") {
-        return res.json({ ok: false, error: "Could not reach the server to verify credentials. Please check your connection and try again." });
-      }
-      return res.json({ ok: false, error: "Verification failed. Please try again." });
+    } catch {
+      return res.json({ ok: false, error: "Login failed. Please try again." });
     }
     // Credentials verified — store and signal TV app
     entry.username = username;
