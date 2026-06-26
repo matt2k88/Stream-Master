@@ -353,14 +353,20 @@ const ChannelChip = memo(function ChannelChip({
       style={[
         styles.chip,
         matched ? styles.chipMatched : styles.chipUnmatched,
-        active && matched && { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.2)" },
+        active && matched && styles.chipMatchedActive,
+        active && !matched && styles.chipUnmatchedActive,
       ]}
     >
       {matched ? (
-        <Feather name="tv" size={8} color={active ? ACCENT : ACCENT} style={{ marginRight: 3 }} />
+        <Feather name="tv" size={8} color={active ? "#fff" : ACCENT} style={{ marginRight: 3 }} />
       ) : null}
       <ThemedText
-        style={[styles.chipText, matched ? styles.chipTextMatched : styles.chipTextUnmatched]}
+        style={[
+          styles.chipText,
+          matched ? styles.chipTextMatched : styles.chipTextUnmatched,
+          active && matched && { color: "#fff" },
+          active && !matched && { color: Colors.dark.text },
+        ]}
         numberOfLines={1}
       >
         {label}
@@ -716,7 +722,7 @@ function FilterTabs({
                     color={lit ? "#fff" : Colors.dark.textSecondary}
                     style={{ marginRight: 5 }}
                   />
-                  <ThemedText style={[styles.filterTabText, active && styles.filterTabTextActive]}>
+                  <ThemedText style={[styles.filterTabText, lit && styles.filterTabTextActive]}>
                     {tab.label}
                   </ThemedText>
                 </>
@@ -1190,7 +1196,7 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD,
   },
   filterTabActive: { backgroundColor: ACCENT, borderColor: ACCENT },
-  filterTabHover: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.12)" },
+  filterTabHover: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.22)" },
   filterTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
   filterTabTextActive: { color: "#fff" },
 
@@ -1383,6 +1389,14 @@ const styles = StyleSheet.create({
   chipUnmatched: {
     borderColor: BORDER,
     backgroundColor: Colors.dark.backgroundTertiary,
+  },
+  chipMatchedActive: {
+    borderColor: ACCENT,
+    backgroundColor: ACCENT,
+  },
+  chipUnmatchedActive: {
+    borderColor: Colors.dark.textSecondary + "99",
+    backgroundColor: "rgba(255,255,255,0.12)",
   },
   chipText: { fontSize: 11, fontWeight: "600" },
   chipTextMatched: { color: ACCENT },
