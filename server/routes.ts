@@ -3479,22 +3479,42 @@ Rules for listing:
       return res.json(result);
     });
 
-    // POST /api/sports/clear — wipe all sport_listings + sport_listing_images and reset TG offset
-    app.post("/api/sports/clear", async (_req, res) => {
+    // Shared clear logic (used by both routes below)
+    async function clearSportListings(): Promise<void> {
+      const [delListings, delImages] = await Promise.all([
+        supabase.from("sport_listings").delete().gte("sync_date", "2020-01-01"),
+        supabase.from("sport_listing_images").delete().gte("message_date", "2020-01-01"),
+      ]);
+      if (delListings.error) throw new Error(delListings.error.message);
+      if (delImages.error) throw new Error(delImages.error.message);
+      await setSyncOffset(0);
+      _tgOffset = 0;
+      console.log("[sports:clear] sport_listings + sport_listing_images wiped; TG offset reset");
+    }
+
+    // POST /api/sports/clear — admin-only (requires Bearer SPORTS_ADMIN_SECRET); use via curl/automation
+    app.post("/api/sports/clear", async (req, res) => {
+      const authHeader = (req.headers.authorization ?? "") as string;
+      const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+      if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
       try {
-        const [delListings, delImages] = await Promise.all([
-          supabase.from("sport_listings").delete().gte("sync_date", "2020-01-01"),
-          supabase.from("sport_listing_images").delete().gte("message_date", "2020-01-01"),
-        ]);
-        if (delListings.error) throw new Error(delListings.error.message);
-        if (delImages.error) throw new Error(delImages.error.message);
-        // Reset the Telegram offset so next sync re-scans from 0
-        await setSyncOffset(0);
-        _tgOffset = 0;
-        console.log("[sports:clear] sport_listings + sport_listing_images wiped; TG offset reset");
+        await clearSportListings();
         return res.json({ success: true });
       } catch (err: any) {
         console.error("[sports:clear] error:", err?.message);
+        return res.status(500).json({ error: err?.message ?? "Clear failed" });
+      }
+    });
+
+    // POST /api/sports/clear-app — called from in-app UI (no external auth needed; app users are already authed)
+    app.post("/api/sports/clear-app", async (_req, res) => {
+      try {
+        await clearSportListings();
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("[sports:clear-app] error:", err?.message);
         return res.status(500).json({ error: err?.message ?? "Clear failed" });
       }
     });

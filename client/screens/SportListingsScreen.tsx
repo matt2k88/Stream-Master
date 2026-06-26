@@ -310,7 +310,7 @@ export default function SportListingsScreen() {
     setClearing(true);
     (async () => {
       try {
-        const url = new URL("/api/sports/clear", getApiUrl());
+        const url = new URL("/api/sports/clear-app", getApiUrl());
         await fetch(url.toString(), { method: "POST" });
         await fetchListings();
       } catch (_) {
