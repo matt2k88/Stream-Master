@@ -39,8 +39,6 @@ import FootballCentreScreen from "@/screens/FootballCentreScreen";
 import TopPicksScreen from "@/screens/TopPicksScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
 import UltraTubeScreen from "@/screens/UltraTubeScreen";
-import MusicPlayerScreen from "@/screens/MusicPlayerScreen";
-import MusicHomeScreen from "@/screens/MusicHomeScreen";
 import PlaylistDetailScreen from "@/screens/PlaylistDetailScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
 
@@ -81,17 +79,6 @@ export type RootStackParamList = {
   TopPicks: undefined;
   Referrals: undefined;
   UltraTube: undefined;
-  MusicHome: undefined;
-  MusicPlayer: {
-    queue?: Array<{ videoId: string; title: string; artist: string; album: string; duration: number; thumbnail: string; searchKey: string; }>;
-    startIndex?: number;
-    contextName?: string;
-    initialQuery?: string;
-    albumId?: number;
-    openPlaylistId?: string;
-    openPlaylistName?: string;
-    openIsLikedSongs?: boolean;
-  } | undefined;
   PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
   SportListings: undefined;
 };
@@ -167,8 +154,6 @@ export default function RootStackNavigator() {
             <Stack.Screen name="TopPicks" component={TopPicksScreen} />
             <Stack.Screen name="Referrals" component={ReferralsScreen} />
             <Stack.Screen name="UltraTube" component={UltraTubeScreen} />
-            <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
-            <Stack.Screen name="MusicPlayer" component={MusicPlayerScreen} />
             <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
           </>

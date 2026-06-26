@@ -16,7 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
-import type { MusicPlaylistTrack, MusicTrack } from "@/lib/music-types";
+import type { MusicPlaylistTrack } from "@/lib/music-types";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type RouteParams = RouteProp<RootStackParamList, "PlaylistDetail">;
@@ -127,23 +127,6 @@ export default function PlaylistDetailScreen() {
     setRenaming(false);
   }, [nameInput, newName, playlistId]);
 
-  const handlePlayAll = useCallback((startIndex = 0) => {
-    if (!tracks.length) return;
-    const queue: MusicTrack[] = tracks.map((t) => ({
-      videoId: "",
-      title: t.title,
-      artist: t.artist,
-      album: t.album,
-      duration: t.duration_sec,
-      thumbnail: t.thumbnail,
-      searchKey: t.search_key,
-    }));
-    navigation.navigate("MusicPlayer", {
-      queue,
-      startIndex,
-      contextName: newName,
-    });
-  }, [tracks, newName, navigation]);
 
   const padTop = insets.top + 8;
 
@@ -182,15 +165,6 @@ export default function PlaylistDetailScreen() {
           </Pressable>
         )}
 
-        <Pressable
-          style={[styles.playAllBtn, !tracks.length && { opacity: 0.4 }]}
-          onPress={() => handlePlayAll(0)}
-          disabled={!tracks.length}
-          hitSlop={8}
-        >
-          <Feather name="play" size={14} color="#fff" />
-          <ThemedText style={styles.playAllText}>Play All</ThemedText>
-        </Pressable>
         {!isLikedSongs ? (
           <Pressable style={styles.deleteBtn} onPress={() => setShowDeleteConfirm(true)} hitSlop={10}>
             <Feather name="trash-2" size={18} color="rgba(239,68,68,0.75)" />
@@ -203,16 +177,7 @@ export default function PlaylistDetailScreen() {
         <ThemedText style={styles.trackCount}>
           {tracks.length} {tracks.length === 1 ? "song" : "songs"}
         </ThemedText>
-        {tracks.length > 1 ? (
-          <Pressable
-            style={styles.shuffleBtn}
-            onPress={() => handlePlayAll(Math.floor(Math.random() * tracks.length))}
-            hitSlop={8}
-          >
-            <Feather name="shuffle" size={13} color={Colors.dark.accent} />
-            <ThemedText style={styles.shuffleBtnText}>Shuffle</ThemedText>
-          </Pressable>
-        ) : null}
+
       </View>
 
       {loading ? (
@@ -245,7 +210,7 @@ export default function PlaylistDetailScreen() {
                 index={index}
                 isLikedSongs={!!isLikedSongs}
                 onRemove={() => handleRemove(item.id)}
-                onPlay={() => handlePlayAll(index)}
+                onPlay={() => {}}
               />
             )
           }
