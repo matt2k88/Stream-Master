@@ -148,6 +148,41 @@ function isMatchLive(ukTime: string): boolean {
   return getMatchStatus(ukTime) === "live";
 }
 
+// ── Sport sort order ──────────────────────────────────────────────────────────
+// Priority list — entries are checked against sport_key via startsWith/includes.
+const SPORT_SORT_ORDER = [
+  // Football
+  "football",
+  // Combat sports
+  "boxing", "ufc", "mma", "combat", "wrestling", "wwe", "aew", "bare_knuckle",
+  // Rugby
+  "rugby_league", "super_league", "rugby_union", "rugby",
+  // Motorsport
+  "formula_1", "formula_2", "formula_3", "motogp", "motorsport", "rally", "nascar", "wrc", "f1",
+  // Individual sports
+  "darts",
+  "golf",
+  "cricket",
+  "tennis",
+  "snooker", "pool",
+  // PPV
+  "ppv",
+  // US Sports
+  "nfl", "mlb", "baseball", "nba", "basketball", "nhl", "ice_hockey",
+  // Other
+  "horse_racing",
+  "athletics",
+  "olympics",
+  "cycling",
+  "afl",
+];
+
+function sportSortIndex(key: string): number {
+  const k = key.toLowerCase();
+  const idx = SPORT_SORT_ORDER.findIndex((s) => k === s || k.startsWith(s) || s.startsWith(k));
+  return idx === -1 ? 998 : idx;
+}
+
 // ── Sport icon map ─────────────────────────────────────────────────────────────
 const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
   football:     "target",
@@ -365,11 +400,11 @@ function SportCard({
         onPress={() => setExpanded(false)}
         style={styles.expandedHeader}
       >
-        <View style={styles.sportIconCircleLg}>
-          <Feather name={icon} size={20} color="#fff" />
+        <View style={styles.sportIconCircle}>
+          <Feather name={icon} size={16} color="#fff" />
         </View>
         <View style={styles.expandedHeaderMeta}>
-          <ThemedText style={styles.expandedSportLabel}>{group.sport_label}</ThemedText>
+          <ThemedText style={styles.collapsedLabel}>{group.sport_label}</ThemedText>
           {group.competitions.length === 1 ? (
             <ThemedText style={styles.expandedCompLabel}>{group.competitions[0].name}</ThemedText>
           ) : null}
@@ -601,7 +636,9 @@ export default function SportListingsScreen() {
   const isSearching = q.length > 0;
 
   const filteredListings = useMemo<SportGroup[]>(() => {
-    let result = listings;
+    let result = [...listings].sort(
+      (a, b) => sportSortIndex(a.sport_key) - sportSortIndex(b.sport_key),
+    );
 
     // Sport filter
     if (sportFilter === "live") {
@@ -657,14 +694,18 @@ export default function SportListingsScreen() {
           <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
         <View style={styles.topBarCenter}>
-          <ThemedText style={styles.pageTitle}>Sports on TV</ThemedText>
+          <View style={styles.pageTitleRow}>
+            <ThemedText style={styles.pageTitle}>Sports on TV</ThemedText>
+            <View style={styles.todayBadge}>
+              <ThemedText style={styles.todayBadgeText}>TODAY</ThemedText>
+            </View>
+          </View>
           <ThemedText style={styles.pageSubtitle}>
-            Live and upcoming coverage from all your favourite sports
+            {todayLong}  •  Live and upcoming TV coverage
           </ThemedText>
         </View>
         <View style={styles.topBarRight}>
           {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
-          <ThemedText style={styles.dateText}>{todayLong}</ThemedText>
           <Pressable
             onPress={fetchListings}
             style={[styles.refreshBtn, loading && { opacity: 0.4 }]}
@@ -799,15 +840,21 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD, flexShrink: 0, marginTop: 2,
   },
   topBarCenter: { flex: 1 },
+  pageTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   pageTitle: {
     fontSize: 22, fontWeight: "800", color: Colors.dark.text, letterSpacing: -0.3,
   },
+  todayBadge: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    backgroundColor: ACCENT,
+  },
+  todayBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
   pageSubtitle: {
-    fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2,
+    fontSize: 12, color: Colors.dark.textSecondary, marginTop: 3,
   },
   topBarRight: { alignItems: "flex-end", gap: 2, flexShrink: 0 },
   clockText: { fontSize: 20, fontWeight: "700", color: Colors.dark.text, fontVariant: ["tabular-nums"] },
-  dateText: { fontSize: 12, color: Colors.dark.textSecondary },
   refreshBtn: {
     width: 30, height: 30,
     borderRadius: BorderRadius.sm,
