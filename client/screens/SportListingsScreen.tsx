@@ -256,11 +256,6 @@ function computeLiveOwners(groups: SportGroup[]): Set<string> {
   return new Set(Array.from(channelOwner.values()).map((v) => v.key));
 }
 
-// ── Pre-computed channel resolution context ───────────────────────────────────
-type ResolvedChannel = { displayLabel: string; linkable: boolean; stream: LiveStream | undefined };
-type ChannelResolution = { resolved: ResolvedChannel[]; extraChip: { label: string; stream: LiveStream } | null };
-const ChannelResolutionCtx = createContext<Map<string, ChannelResolution>>(new Map());
-
 // ── Sport sort order ──────────────────────────────────────────────────────────
 // Canonical keys only — matches the approved sport list order.
 const SPORT_SORT_ORDER = [
@@ -483,12 +478,7 @@ const MatchRow = memo(function MatchRow({
       ? null
       : rawStatus;
 
-  const resolutionCtx = useContext(ChannelResolutionCtx);
   const { resolved, extraChip } = useMemo(() => {
-    const ctxKey = `${sportKey}|${competition}|${match.uk_time}|${match.teams}`;
-    const cached = resolutionCtx.get(ctxKey);
-    if (cached) return cached;
-    // Fallback (first render before context is populated)
     const resolved = match.uk_channels.map((ch) => {
       const { displayLabel, linkable } = resolveChannelDisplay(ch);
       const stream = linkable ? findStream(ch, streams) : undefined;
@@ -505,7 +495,7 @@ const MatchRow = memo(function MatchRow({
       }
     }
     return { resolved, extraChip };
-  }, [match.uk_channels, match.uk_time, match.teams, streams, sportKey, competition, resolutionCtx]);
+  }, [match.uk_channels, streams]);
 
   return (
     <View style={[styles.matchRow, !isFirst && styles.matchRowBorder]}>
@@ -571,6 +561,7 @@ const SportCard = memo(function SportCard({
 }) {
   const [hovered, setHovered] = useState(false);
   const [headerHovered, setHeaderHovered] = useState(false);
+  const [expanding, setExpanding] = useState(false);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
@@ -593,7 +584,12 @@ const SportCard = memo(function SportCard({
   if (!expanded) {
     return (
       <Pressable
-        onPress={onExpand}
+        onPress={() => {
+          if (expanding) return;
+          setExpanding(true);
+          // Let the spinner render first, then trigger the expand
+          setTimeout(() => onExpand(), 30);
+        }}
         hasTVPreferredFocus={isFocusTarget && Platform.OS !== "web"}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
@@ -618,7 +614,11 @@ const SportCard = memo(function SportCard({
           <View style={styles.countBadge}>
             <ThemedText style={styles.countBadgeText}>{totalMatches} EVENTS</ThemedText>
           </View>
-          <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} style={{ marginLeft: 8 }} />
+          {expanding ? (
+            <ActivityIndicator size="small" color={ACCENT} style={{ marginLeft: 8, width: 20 }} />
+          ) : (
+            <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} style={{ marginLeft: 8 }} />
+          )}
         </View>
       </Pressable>
     );
@@ -741,8 +741,8 @@ const LoadingBar = memo(function LoadingBar({ label }: { label: string }) {
 type FilterTab = { key: string; label: string; icon: keyof typeof Feather.glyphMap };
 
 const FilterTabItem = memo(function FilterTabItem({
-  tab, active, onSelect,
-}: { tab: FilterTab; active: boolean; onSelect: (key: string) => void }) {
+  tab, active, onSelect, isLoading,
+}: { tab: FilterTab; active: boolean; onSelect: (key: string) => void; isLoading?: boolean }) {
   const [lit, setLit] = useState(false);
   const isLit = active || lit;
   return (
@@ -760,12 +760,16 @@ const FilterTabItem = memo(function FilterTabItem({
         !active && lit && styles.filterTabHover,
       ]}
     >
-      <Feather
-        name={tab.icon}
-        size={12}
-        color={isLit ? "#fff" : Colors.dark.textSecondary}
-        style={{ marginRight: 5 }}
-      />
+      {isLoading ? (
+        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 5, width: 12, height: 12 }} />
+      ) : (
+        <Feather
+          name={tab.icon}
+          size={12}
+          color={isLit ? "#fff" : Colors.dark.textSecondary}
+          style={{ marginRight: 5 }}
+        />
+      )}
       <ThemedText style={[styles.filterTabText, isLit && styles.filterTabTextActive]}>
         {tab.label}
       </ThemedText>
@@ -774,12 +778,13 @@ const FilterTabItem = memo(function FilterTabItem({
 });
 
 function FilterTabs({
-  sports, selected, onSelect, hasLive,
+  sports, selected, onSelect, hasLive, loadingKey,
 }: {
   sports: SportGroup[];
   selected: string;
   onSelect: (key: string) => void;
   hasLive: boolean;
+  loadingKey: string | null;
 }) {
   const tabs: FilterTab[] = [
     { key: "all", label: "All Sports", icon: "grid" },
@@ -796,7 +801,13 @@ function FilterTabs({
       keyboardShouldPersistTaps="handled"
     >
       {tabs.map((tab) => (
-        <FilterTabItem key={tab.key} tab={tab} active={selected === tab.key} onSelect={onSelect} />
+        <FilterTabItem
+          key={tab.key}
+          tab={tab}
+          active={selected === tab.key}
+          onSelect={onSelect}
+          isLoading={loadingKey === tab.key}
+        />
       ))}
     </ScrollView>
   );
@@ -816,6 +827,8 @@ export default function SportListingsScreen() {
   const [expandedSportKey, setExpandedSportKey] = useState<string | null>(null);
   const [justToggledKey, setJustToggledKey] = useState<string | null>(null);
   const toggleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [filterLoadingKey, setFilterLoadingKey] = useState<string | null>(null);
+  const filterLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clockStr, setClockStr] = useState("");
   const inputRef = useRef<TextInput>(null);
 
@@ -922,37 +935,6 @@ export default function SportListingsScreen() {
 
   // ── Channel ownership (computed from full listings so "live" filter uses it) ──
   const liveOwners = useMemo(() => computeLiveOwners(listings), [listings]);
-
-  // ── Pre-compute all channel→stream resolutions when data/streams change ───────
-  // Stored in a Map keyed by "sportKey|compName|time|teams" so MatchRow just
-  // does a single O(1) lookup instead of running findStream() on every mount.
-  const channelResolutions = useMemo(() => {
-    const map = new Map<string, ChannelResolution>();
-    for (const g of listings) {
-      for (const comp of g.competitions) {
-        for (const m of comp.matches) {
-          const key = `${g.sport_key}|${comp.name}|${m.uk_time}|${m.teams}`;
-          const resolved: ResolvedChannel[] = m.uk_channels.map((ch) => {
-            const { displayLabel, linkable } = resolveChannelDisplay(ch);
-            const stream = linkable ? findStream(ch, liveStreams) : undefined;
-            return { displayLabel, linkable, stream };
-          });
-          const hasDirectLink = resolved.some((r) => r.linkable && r.stream);
-          let extraChip: { label: string; stream: LiveStream } | null = null;
-          if (!hasDirectLink) {
-            for (const ch of m.uk_channels) {
-              const { displayLabel, linkable } = resolveChannelDisplay(ch);
-              if (!linkable) continue;
-              const s = findStream(ch, liveStreams);
-              if (s) { extraChip = { label: displayLabel, stream: s }; break; }
-            }
-          }
-          map.set(key, { resolved, extraChip });
-        }
-      }
-    }
-    return map;
-  }, [listings, liveStreams]);
 
   // Helper: is this match effectively live (owns at least one channel) ──────────
   const isEffLive = useCallback(
@@ -1197,16 +1179,22 @@ export default function SportListingsScreen() {
           sports={listings}
           selected={sportFilter}
           onSelect={(k) => {
-            setSportFilter(k);
-            setQuery("");
-            // Auto-expand the single sport when a specific filter is chosen
-            if (k !== "all" && k !== "live") {
-              setExpandedSportKey(k);
-            } else {
-              setExpandedSportKey(null);
-            }
+            // Show spinner on the tapped tab briefly before applying filter
+            setFilterLoadingKey(k);
+            if (filterLoadingTimerRef.current) clearTimeout(filterLoadingTimerRef.current);
+            filterLoadingTimerRef.current = setTimeout(() => {
+              setFilterLoadingKey(null);
+              setSportFilter(k);
+              setQuery("");
+              if (k !== "all" && k !== "live") {
+                setExpandedSportKey(k);
+              } else {
+                setExpandedSportKey(null);
+              }
+            }, 40);
           }}
           hasLive={hasLive}
+          loadingKey={filterLoadingKey}
         />
       ) : null}
 
@@ -1247,42 +1235,40 @@ export default function SportListingsScreen() {
         </View>
       ) : (
         <LiveOwnersCtx.Provider value={liveOwners}>
-          <ChannelResolutionCtx.Provider value={channelResolutions}>
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {filteredListings.map((group) => {
-                const isExpanded =
-                  expandedSportKey === group.sport_key ||
-                  (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1);
-                return (
-                  <SportCard
-                    key={group.sport_key}
-                    group={group}
-                    streams={liveStreams}
-                    onChannel={handleChannel}
-                    expanded={isExpanded}
-                    isFocusTarget={justToggledKey === group.sport_key}
-                    onExpand={() => {
-                      setExpandedSportKey(group.sport_key);
-                      if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
-                      setJustToggledKey(group.sport_key);
-                      toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
-                    }}
-                    onCollapse={() => {
-                      setExpandedSportKey(null);
-                      if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
-                      setJustToggledKey(group.sport_key);
-                      toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
-                    }}
-                  />
-                );
-              })}
-            </ScrollView>
-          </ChannelResolutionCtx.Provider>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {filteredListings.map((group) => {
+              const isExpanded =
+                expandedSportKey === group.sport_key ||
+                (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1);
+              return (
+                <SportCard
+                  key={group.sport_key}
+                  group={group}
+                  streams={liveStreams}
+                  onChannel={handleChannel}
+                  expanded={isExpanded}
+                  isFocusTarget={justToggledKey === group.sport_key}
+                  onExpand={() => {
+                    setExpandedSportKey(group.sport_key);
+                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                    setJustToggledKey(group.sport_key);
+                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                  }}
+                  onCollapse={() => {
+                    setExpandedSportKey(null);
+                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                    setJustToggledKey(group.sport_key);
+                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                  }}
+                />
+              );
+            })}
+          </ScrollView>
         </LiveOwnersCtx.Provider>
       )}
     </View>
