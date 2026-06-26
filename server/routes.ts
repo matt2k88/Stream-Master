@@ -3093,20 +3093,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let _tgOffset: number | null = null;
 
     const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
-1. A "header" — a decorative logo, branding, or title card for a sport (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork). It will NOT contain a table of match times and channels.
+1. A "header" — a decorative logo, branding, or title card for a sport or tournament (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork). It will NOT contain a table of match times and channels.
 2. A "listing" — a card showing one or more match/event rows, each with times and TV channel information.
 
 Respond with a single JSON object only — no markdown, no prose.
 
 If header:
-{"type":"header","sport":"Football"}
-sport must be one of: Football, Formula 1, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <name>"
+{"type":"header","sport":"Football","competition":"FIFA World Cup 2026"}
+- sport must be one of: Football, Formula 1, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <name>"
+- competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible (e.g. "FIFA World Cup 2026", "UEFA Champions League", "Premier League"). Omit the field if it is a generic sport logo with no specific tournament name.
 
 If listing:
-{"type":"listing","competition":"Premier League","matches":[{"uk_time":"20:00","teams":"Arsenal v Chelsea","uk_channels":["Sky Sports Main Event"]}]}
+{"type":"listing","competition":"FIFA World Cup 2026","matches":[{"uk_time":"20:00","teams":"Arsenal v Chelsea","uk_channels":["Sky Sports Main Event"]}]}
 
 Rules for listing:
-- competition: the league/tournament name shown on the card.
+- competition: the league/tournament name. Look for it anywhere on the card — in the title, broadcaster names (e.g. "FIFA World Cup Channel" → "FIFA World Cup 2026"), or surrounding branding. Only use "Unknown" if there is genuinely no competition context at all.
 - uk_time: HH:MM in UK time (BST = UTC+1 in summer, GMT = UTC+0 in winter). Convert from other zones if needed.
 - teams: the two teams (or event name for non-team sports). Include all matches shown on the card.
 - uk_channels: UK-only channels. UK channels include any Sky Sports, BBC, ITV, Channel 4, Channel 5, BT Sport, TNT Sports, Premier Sports, FreeSports, Eurosport. If NO UK channels are listed for a match, include the first non-UK channel shown as a fallback.`;
@@ -3273,6 +3274,14 @@ Rules for listing:
           });
         }
 
+        // Optional: pass ?reprocess=true to wipe existing GPT results and re-classify
+        const reprocess = String((req.query as any).reprocess ?? (req.body as any)?.reprocess ?? "") === "true";
+        if (reprocess) {
+          await supabase.from("sport_listing_images").update({ gpt_result: null }).eq("message_date", today);
+          allImages.forEach((img: any) => { img.gpt_result = null; });
+          diag.steps.push("reprocess: cleared gpt_result for all today's images");
+        }
+
         // ── Step 3: GPT-4o Vision for unprocessed images ──────────────────
         for (const img of allImages) {
           if (img.gpt_result) continue;
@@ -3348,6 +3357,7 @@ Rules for listing:
 
         const sportGroups: SportGroup[] = [];
         let currentSportKey: string | null = null;
+        let currentCompetition: string | null = null;
         let displayOrder = 0;
 
         for (const img of allImages) {
@@ -3358,6 +3368,9 @@ Rules for listing:
             const label = String(r.sport ?? "Other");
             const key = toKey(label);
             currentSportKey = key;
+            // Capture competition from header (e.g. FIFA World Cup logo) for
+            // use as fallback on subsequent listing images that lack a name.
+            currentCompetition = r.competition ? String(r.competition) : null;
             if (!sportGroups.find((g) => g.sport_key === key)) {
               sportGroups.push({
                 sport_key: key,
@@ -3369,7 +3382,15 @@ Rules for listing:
           } else if (r.type === "listing" && currentSportKey) {
             const group = sportGroups.find((g) => g.sport_key === currentSportKey);
             if (!group) continue;
-            const comp = String(r.competition ?? "Unknown");
+
+            // Use GPT's competition name; fall back to the header's competition
+            // if GPT returned nothing useful (blank / "Unknown").
+            const rawComp = String(r.competition ?? "").trim();
+            const comp =
+              rawComp && rawComp.toLowerCase() !== "unknown"
+                ? rawComp
+                : (currentCompetition ?? "Unknown");
+
             if (!group.competitions.has(comp)) group.competitions.set(comp, []);
             const matches: any[] = Array.isArray(r.matches) ? r.matches : [];
             for (const m of matches) {
