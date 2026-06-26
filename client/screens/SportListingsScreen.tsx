@@ -20,6 +20,7 @@ import { useData } from "@/contexts/DataContext";
 import { useAccent, withAlpha } from "@/contexts/ThemeContext";
 import { xtreamApi } from "@/lib/xtream-api";
 import type { LiveStream } from "@/lib/xtream-api";
+import SideMenuButton from "@/components/SideMenuButton";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -734,6 +735,7 @@ export default function SportListingsScreen() {
 
       {/* ── Top header ── */}
       <View style={styles.topBar}>
+        <SideMenuButton />
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
           <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>

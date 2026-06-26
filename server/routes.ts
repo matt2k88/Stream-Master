@@ -1219,13 +1219,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { data, error } = await supabase
         .from("app_theme")
-        .select("id, theme_key, show_top_picks_badge, show_music_badge, show_music_beta_badge, updated_at")
+        .select("id, theme_key, show_top_picks_badge, show_music_badge, show_music_beta_badge, show_sports_tv_badge, updated_at")
         .eq("id", 1)
         .maybeSingle();
       // Gracefully fall back to default when table is missing (migration
       // 004 not yet applied) or no row exists, so clients always get a
       // valid theme instead of an error.
-      const DEFAULTS = { id: 1, theme_key: "default", show_top_picks_badge: true, show_music_badge: true, show_music_beta_badge: true, updated_at: null };
+      const DEFAULTS = { id: 1, theme_key: "default", show_top_picks_badge: true, show_music_badge: true, show_music_beta_badge: true, show_sports_tv_badge: true, updated_at: null };
       if (error && error.code !== "PGRST116") {
         return res.json(DEFAULTS);
       }

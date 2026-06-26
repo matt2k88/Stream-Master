@@ -106,7 +106,7 @@ export default function SideMenuDrawer() {
   const { liveCategories } = useData();
   const { isOpen, transparent, close } = useSideMenu();
   const { scores } = useFootball();
-  const { showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
+  const { showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge } = useAppTheme();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
     return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
@@ -289,6 +289,13 @@ export default function SideMenuDrawer() {
               active={routeName === "FootballCentre"}
               isLive={hasLiveGame}
               onPress={() => navTo(() => navigationRef.navigate("FootballCentre"))}
+            />
+            <MenuItem
+              label="Sports on TV"
+              icon="tv"
+              isNew={showSportsTvBadge}
+              active={routeName === "SportListings"}
+              onPress={() => navTo(() => navigationRef.navigate("SportListings" as never))}
             />
             <MenuItem
               label="Top Picks"

@@ -879,7 +879,7 @@ export default function HomeScreen() {
   const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
-  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge } = useAppTheme();
+  const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge } = useAppTheme();
   const { scores } = useFootball();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
@@ -1288,7 +1288,7 @@ export default function HomeScreen() {
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
               <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
-              <SidebarItem label="Sports Listings" icon="tv" onPress={() => navigation.navigate("SportListings")} />
+              <SidebarItem label="Sports on TV" icon="tv" isNew={showSportsTvBadge} onPress={() => navigation.navigate("SportListings")} />
               <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
               <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
