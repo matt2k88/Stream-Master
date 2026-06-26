@@ -198,8 +198,13 @@ function MatchRow({
 
     let extraChip: { label: string; stream: LiveStream } | null = null;
     if (!hasDirectLink) {
+      // Only try linkable channels (not on-demand / section channels).
+      // Non-linkable names like "ITV X" or "Sky Sports+ (Streaming)" can
+      // partially match live IPTV streams via the fuzzy matcher — skipping
+      // them here ensures we only fall back to real broadcast channels.
       for (const ch of match.uk_channels) {
-        const { displayLabel } = resolveChannelDisplay(ch);
+        const { displayLabel, linkable } = resolveChannelDisplay(ch);
+        if (!linkable) continue;
         const s = findStream(ch, streams);
         if (s) { extraChip = { label: displayLabel, stream: s }; break; }
       }
