@@ -3205,22 +3205,41 @@ Rules for listing:
           let maxId = offset - 1;
           for (const upd of body.result) {
             if (upd.update_id > maxId) maxId = upd.update_id;
-            const msg = upd.message;
-            if (!msg?.photo || !msg.chat) continue;
+            // Channels send channel_post; groups/DMs send message
+            const msg = upd.message ?? upd.channel_post;
+            if (!msg?.chat) continue;
+
+            // Accept compressed photos OR images sent "as file" (document)
+            let fileId: string | null = null;
+            let fileUniqueId: string | null = null;
+            if (msg.photo && Array.isArray(msg.photo) && msg.photo.length > 0) {
+              const biggest = msg.photo[msg.photo.length - 1];
+              fileId = biggest.file_id;
+              fileUniqueId = biggest.file_unique_id;
+            } else if (
+              msg.document &&
+              typeof msg.document.mime_type === "string" &&
+              msg.document.mime_type.startsWith("image/")
+            ) {
+              fileId = msg.document.file_id;
+              fileUniqueId = msg.document.file_unique_id;
+            }
+
+            if (!fileId || !fileUniqueId) continue;
             tgPhotos++;
+
             if (String(msg.chat.id) !== tgChatId) { tgChatMismatch++; continue; }
             const msgDateUK = getUKDate(msg.date);
             if (msgDateUK !== today) { tgDateMismatch++; continue; }
 
-            const biggest = msg.photo[msg.photo.length - 1];
             const { error: upsertErr } = await supabase
               .from("sport_listing_images")
               .upsert(
                 {
                   message_date: today,
                   telegram_msg_id: msg.message_id,
-                  file_unique_id: biggest.file_unique_id,
-                  file_id: biggest.file_id,
+                  file_unique_id: fileUniqueId,
+                  file_id: fileId,
                 },
                 { onConflict: "message_date,file_unique_id", ignoreDuplicates: true },
               );
