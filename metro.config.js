@@ -23,8 +23,8 @@ config.resolver = {
 };
 
 // Use more parallel transform workers to speed up production builds.
-// Default is CPU count / 2; bump to a fixed 4 for the build container.
-config.maxWorkers = 4;
+// Default is CPU count / 2; bump to a fixed 8 for the build container.
+config.maxWorkers = 8;
 
 // Target the Hermes-stable transform profile — Expo SDK 54 uses Hermes by
 // default on Android and iOS.  Metro can skip several Babel passes that

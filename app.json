@@ -94,7 +94,7 @@
       "expo-audio"
     ],
     "experiments": {
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "extra": {
       "apiUrl": "https://stream-master--matt2k88.replit.app",
