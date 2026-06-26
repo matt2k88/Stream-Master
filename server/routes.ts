@@ -3165,29 +3165,55 @@ Rules for listing:
 
       try {
         const today = getUKDate();
+        const diag: Record<string, any> = { today, steps: [] };
+
+        // Optional: pass ?resetOffset=true to force re-scan from update_id 0
+        const resetOffset = String((req.query as any).resetOffset ?? (req.body as any)?.resetOffset ?? "") === "true";
+        if (resetOffset) {
+          await setSyncOffset(0);
+          _tgOffset = 0;
+          diag.steps.push("resetOffset: tg_offset reset to 0");
+        }
+
         let offset = await getSyncOffset();
+        diag.offsetAtStart = offset;
 
         // ── Step 1: Drain Telegram updates, store today's photos ───────────
+        let tgBatches = 0;
+        let tgUpdatesTotal = 0;
+        let tgPhotos = 0;
+        let tgChatMismatch = 0;
+        let tgDateMismatch = 0;
+        let tgSaved = 0;
         let keepFetching = true;
         while (keepFetching) {
           const r = await fetch(
             `https://api.telegram.org/bot${tgToken}/getUpdates?offset=${offset}&limit=100&timeout=0`,
           );
-          if (!r.ok) break;
+          if (!r.ok) {
+            diag.steps.push(`tg getUpdates HTTP ${r.status}`);
+            break;
+          }
           const body = (await r.json()) as any;
-          if (!body.ok || !Array.isArray(body.result) || body.result.length === 0) break;
+          if (!body.ok || !Array.isArray(body.result) || body.result.length === 0) {
+            diag.steps.push(`tg getUpdates ok=${body.ok} results=${body.result?.length ?? 0}`);
+            break;
+          }
+          tgBatches++;
+          tgUpdatesTotal += body.result.length;
 
           let maxId = offset - 1;
           for (const upd of body.result) {
             if (upd.update_id > maxId) maxId = upd.update_id;
             const msg = upd.message;
             if (!msg?.photo || !msg.chat) continue;
-            if (String(msg.chat.id) !== tgChatId) continue;
+            tgPhotos++;
+            if (String(msg.chat.id) !== tgChatId) { tgChatMismatch++; continue; }
             const msgDateUK = getUKDate(msg.date);
-            if (msgDateUK !== today) continue;
+            if (msgDateUK !== today) { tgDateMismatch++; continue; }
 
             const biggest = msg.photo[msg.photo.length - 1];
-            await supabase
+            const { error: upsertErr } = await supabase
               .from("sport_listing_images")
               .upsert(
                 {
@@ -3198,19 +3224,25 @@ Rules for listing:
                 },
                 { onConflict: "message_date,file_unique_id", ignoreDuplicates: true },
               );
+            if (upsertErr) diag.steps.push(`upsert error: ${upsertErr.message}`);
+            else tgSaved++;
           }
 
           offset = maxId + 1;
           await setSyncOffset(offset);
           if (body.result.length < 100) break;
         }
+        diag.tg = { batches: tgBatches, updatesTotal: tgUpdatesTotal, photos: tgPhotos, chatMismatch: tgChatMismatch, dateMismatch: tgDateMismatch, savedToDb: tgSaved, offsetAfter: offset };
 
         // ── Step 2: Query all of today's images ordered by message id ──────
-        const { data: allImages } = await supabase
+        const { data: allImages, error: imgQueryErr } = await supabase
           .from("sport_listing_images")
           .select("id, telegram_msg_id, file_id, file_unique_id, gpt_result")
           .eq("message_date", today)
           .order("telegram_msg_id", { ascending: true });
+
+        if (imgQueryErr) diag.steps.push(`sport_listing_images query error: ${imgQueryErr.message}`);
+        diag.imagesInDb = allImages?.length ?? 0;
 
         if (!allImages || allImages.length === 0) {
           return res.json({
@@ -3218,6 +3250,7 @@ Rules for listing:
             message: "No images found for today.",
             sportsFound: 0,
             matchesFound: 0,
+            diag,
           });
         }
 
@@ -3362,6 +3395,7 @@ Rules for listing:
           imagesProcessed: allImages.filter((i: any) => i.gpt_result).length,
           sportsFound: sportGroups.length,
           matchesFound: totalMatches,
+          diag,
         });
       } catch (err: any) {
         console.error("[sports:sync] ERROR:", err?.message);
