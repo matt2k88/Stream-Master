@@ -3092,19 +3092,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
   {
     let _tgOffset: number | null = null;
 
+    // ── Canonical sport mapping ────────────────────────────────────────────────
+    // Maps any label GPT might return (lowercase, normalised spaces) to the
+    // canonical sport_key and display label used throughout the app.
+    const SPORT_KEY_MAP: Record<string, { key: string; label: string }> = {
+      // Football
+      "football":                        { key: "football",    label: "Football" },
+      // Combat
+      "combat sports":                   { key: "combat",      label: "Combat Sports" },
+      "combat":                          { key: "combat",      label: "Combat Sports" },
+      "boxing":                          { key: "combat",      label: "Combat Sports" },
+      "ufc":                             { key: "combat",      label: "Combat Sports" },
+      "mma":                             { key: "combat",      label: "Combat Sports" },
+      "wrestling":                       { key: "combat",      label: "Combat Sports" },
+      "wwe":                             { key: "combat",      label: "Combat Sports" },
+      "aew":                             { key: "combat",      label: "Combat Sports" },
+      "bare knuckle":                    { key: "combat",      label: "Combat Sports" },
+      "bare knuckle boxing":             { key: "combat",      label: "Combat Sports" },
+      // Rugby
+      "rugby":                           { key: "rugby",       label: "Rugby" },
+      "rugby league":                    { key: "rugby",       label: "Rugby" },
+      "rugby union":                     { key: "rugby",       label: "Rugby" },
+      "super league":                    { key: "rugby",       label: "Rugby" },
+      // Motorsport (F1/F2/F3/MotoGP/WRC all grouped)
+      "motorsport":                      { key: "motorsport",  label: "Motorsport" },
+      "formula 1":                       { key: "motorsport",  label: "Motorsport" },
+      "formula 2":                       { key: "motorsport",  label: "Motorsport" },
+      "formula 3":                       { key: "motorsport",  label: "Motorsport" },
+      "f1":                              { key: "motorsport",  label: "Motorsport" },
+      "f2":                              { key: "motorsport",  label: "Motorsport" },
+      "f3":                              { key: "motorsport",  label: "Motorsport" },
+      "motogp":                          { key: "motorsport",  label: "Motorsport" },
+      "nascar":                          { key: "motorsport",  label: "Motorsport" },
+      "wrc":                             { key: "motorsport",  label: "Motorsport" },
+      "rally":                           { key: "motorsport",  label: "Motorsport" },
+      "fia world rally championship":    { key: "motorsport",  label: "Motorsport" },
+      "world rally championship":        { key: "motorsport",  label: "Motorsport" },
+      "indycar":                         { key: "motorsport",  label: "Motorsport" },
+      "superbike":                       { key: "motorsport",  label: "Motorsport" },
+      "superbikes":                      { key: "motorsport",  label: "Motorsport" },
+      // Darts
+      "darts":                           { key: "darts",       label: "Darts" },
+      // Golf
+      "golf":                            { key: "golf",        label: "Golf" },
+      // Cricket
+      "cricket":                         { key: "cricket",     label: "Cricket" },
+      // Tennis
+      "tennis":                          { key: "tennis",      label: "Tennis" },
+      // Snooker/Pool
+      "snooker":                         { key: "snooker",     label: "Snooker/Pool" },
+      "pool":                            { key: "snooker",     label: "Snooker/Pool" },
+      "snooker/pool":                    { key: "snooker",     label: "Snooker/Pool" },
+      "snooker pool":                    { key: "snooker",     label: "Snooker/Pool" },
+      // PPV Events
+      "ppv events":                      { key: "ppv",         label: "PPV Events" },
+      "ppv":                             { key: "ppv",         label: "PPV Events" },
+      "pay per view":                    { key: "ppv",         label: "PPV Events" },
+      "pay-per-view":                    { key: "ppv",         label: "PPV Events" },
+      // US Sports
+      "us sports":                       { key: "us_sports",   label: "US Sports" },
+      "nfl":                             { key: "us_sports",   label: "US Sports" },
+      "mlb":                             { key: "us_sports",   label: "US Sports" },
+      "nba":                             { key: "us_sports",   label: "US Sports" },
+      "nhl":                             { key: "us_sports",   label: "US Sports" },
+      "basketball":                      { key: "us_sports",   label: "US Sports" },
+      "baseball":                        { key: "us_sports",   label: "US Sports" },
+      "ice hockey":                      { key: "us_sports",   label: "US Sports" },
+      "american football":               { key: "us_sports",   label: "US Sports" },
+      // Horse Racing
+      "horse racing":                    { key: "horse_racing", label: "Horse Racing" },
+      "horseracing":                     { key: "horse_racing", label: "Horse Racing" },
+      // Athletics
+      "athletics":                       { key: "athletics",   label: "Athletics" },
+      "track and field":                 { key: "athletics",   label: "Athletics" },
+      // Olympics
+      "olympics":                        { key: "olympics",    label: "Olympics" },
+      "olympic games":                   { key: "olympics",    label: "Olympics" },
+      // Cycling
+      "cycling":                         { key: "cycling",     label: "Cycling" },
+      // AFL
+      "afl":                             { key: "afl",         label: "AFL" },
+      "australian football":             { key: "afl",         label: "AFL" },
+      "australian rules football":       { key: "afl",         label: "AFL" },
+      // Other — explicit catch-all
+      "other":                           { key: "other",       label: "Other" },
+    };
+
     const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
-1. A "header" — a decorative logo, branding, or title card for a sport or tournament (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork, anniversary graphic). It will NOT contain a table of match times and channels.
+1. A "header" — a decorative logo, branding, or title card for a sport or tournament (e.g. FIFA World Cup logo, Premier League banner, promotional artwork, anniversary graphic). It will NOT contain a table of match times and channels.
 2. A "listing" — a card showing one or more match/event rows, each with times and TV channel information.
 
 Respond with a single JSON object only — no markdown, no prose.
 
 If header:
 {"type":"header","sport":"Football","competition":"FIFA World Cup 2026"}
-- sport must be exactly one of: Football, Formula 1, Formula 2, Formula 3, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball — OR the closest real sport name if it does not match those (e.g. "Motorsport", "Rally", "Rowing", "Volleyball", "Triathlon", "Equestrian", "Wrestling", "Table Tennis", "Netball", "Handball"). NEVER use "Other", "Other: ...", or any variant of "Other" as the sport name under any circumstances.
-- F1/F2/F3 — distinguish carefully: "Formula 1" = the FIA F1 World Championship; "Formula 2" = FIA Formula 2 Championship (F2); "Formula 3" = FIA Formula 3 Championship (F3). Do NOT lump F2 or F3 under Formula 1.
-- Super League — if the image shows Super League (the top-tier European rugby league competition, including any anniversary variant such as "30 Years of Super League" or "Super League 30"), return sport="Rugby League" and competition="Super League".
-- Anniversary / celebratory images — if a sport or competition is celebrating a milestone (e.g. "30 Years"), classify by the SPORT and COMPETITION it represents, not the milestone text. If the image is purely a TV channel brand with no identifiable sport, use "Motorsport" as a safe fallback — still never "Other".
-- competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible. Omit the field if it is a generic sport logo with no specific tournament name.
+
+sport MUST be exactly one of these values — no other values are allowed:
+  Football, Combat Sports, Rugby, Motorsport, Darts, Golf, Cricket, Tennis, Snooker, PPV Events, US Sports, Horse Racing, Athletics, Olympics, Cycling, AFL, Other
+
+Grouping rules (IMPORTANT — these override all other instincts):
+- Combat Sports = Boxing, UFC, MMA, WWE, AEW, Bare Knuckle, any fighting/combat sport. Use "Combat Sports".
+- Rugby = Rugby League, Rugby Union, Super League, any rugby variant. Use "Rugby".
+- Motorsport = Formula 1 (F1), Formula 2 (F2), Formula 3 (F3), MotoGP, NASCAR, WRC, FIA World Rally Championship, any racing/motorsport. Use "Motorsport".
+- Snooker = Snooker, Pool. Use "Snooker".
+- US Sports = NFL, NBA, MLB, NHL, Basketball, Baseball, Ice Hockey, American Football. Use "US Sports".
+- AFL = Australian Football, Australian Rules Football. Use "AFL".
+- Other = use ONLY when the image genuinely does not match any of the above 16 categories.
+- Super League anniversary (e.g. "30 Years of Super League") → sport="Rugby", competition="Super League".
+- Anniversary/celebratory images → classify by the sport shown, not the milestone text.
+
+competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible.
 
 If listing:
 {"type":"listing","competition":"FIFA World Cup 2026","matches":[{"uk_time":"20:00","teams":"Arsenal v Chelsea","uk_channels":["Sky Sports Main Event"]}]}
@@ -3368,11 +3465,14 @@ Rules for listing:
           if (!r) continue;
 
           if (r.type === "header") {
-            // Strip any "Other: " prefix GPT may have used before the prompt was updated.
-            // e.g. "Other: FIA World Rally Championship" → "FIA World Rally Championship"
-            const rawLabel = String(r.sport ?? "Sport");
-            const label = rawLabel.replace(/^other:\s*/i, "").trim() || "Sport";
-            const key = toKey(label);
+            // Normalise GPT's sport name → canonical key + label via SPORT_KEY_MAP.
+            // Strips any legacy "Other: " prefix before lookup.
+            const rawLabel = String(r.sport ?? "");
+            const stripped = rawLabel.replace(/^other:\s*/i, "").trim();
+            const normalised = stripped.toLowerCase().replace(/\s+/g, " ");
+            const mapped = SPORT_KEY_MAP[normalised];
+            const key = mapped ? mapped.key : "other";
+            const displayLabel = mapped ? mapped.label : (stripped || "Other");
             currentSportKey = key;
             // Capture competition from header (e.g. FIFA World Cup logo) for
             // use as fallback on subsequent listing images that lack a name.
@@ -3380,7 +3480,7 @@ Rules for listing:
             if (!sportGroups.find((g) => g.sport_key === key)) {
               sportGroups.push({
                 sport_key: key,
-                sport_label: label,
+                sport_label: displayLabel,
                 display_order: displayOrder++,
                 competitions: new Map(),
               });

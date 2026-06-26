@@ -138,31 +138,46 @@ function ukNowMinutes(): number {
 // Without EPG we can't know the true end time, so we err on the side of
 // keeping the badge on rather than dropping it prematurely.
 const SPORT_DURATION: Array<[RegExp, number]> = [
-  [/football/i,                          115], // 90 + ~25 (HT + stoppages)
-  [/rugby/i,                             100], // 80 + HT + stoppages
-  [/formula[_\s]?1/i,                    200], // race ~90m + formation/podium
-  [/formula[_\s]?[23]/i,                 100],
-  [/motogp/i,                            120],
-  [/nascar/i,                            240], // long races
-  [/wrc|rally/i,                         480], // day-long stage rally
-  [/motorsport/i,                        180],
-  [/boxing/i,                            300], // undercard + main event
-  [/ufc|mma|combat/i,                    300],
-  [/wrestling|wwe|aew|bare.?knuckle/i,   240],
-  [/cricket/i,                           600], // all-day Tests / 50-over
-  [/snooker|pool/i,                      360], // session can be 6h
-  [/golf/i,                              480], // round ~4-5h
-  [/tennis/i,                            180], // best-of-3 ~3h; 5-setters longer
-  [/cycling/i,                           300], // grand tour stage ~4-5h
-  [/horse.?racing/i,                      30], // each race is short
-  [/darts/i,                             120],
-  [/athletics/i,                         180],
-  [/nfl|american.?football/i,            210], // ~3.5h
-  [/mlb|baseball/i,                      210],
-  [/nba|basketball/i,                    150],
-  [/nhl|ice.?hockey/i,                   180],
-  [/olympics/i,                          480],
-  [/afl/i,                               130],
+  // ── Canonical keys (new) ──────────────────────────────────────────────────
+  [/^football$/,          115], // 90 min + HT + stoppages
+  [/^combat$/,            300], // undercard + main event
+  [/^rugby$/,             100], // 80 min + HT + stoppages
+  [/^motorsport$/,        200], // F1 race ~90m + formation/podium
+  [/^darts$/,             120],
+  [/^golf$/,              480], // round ~4-5h
+  [/^cricket$/,           600], // all-day Tests / 50-over
+  [/^tennis$/,            180], // best-of-3 ~3h
+  [/^snooker$/,           360], // session can be 6h
+  [/^ppv$/,               300],
+  [/^us_sports$/,         210], // NFL ~3.5h; NBA/MLB/NHL similar
+  [/^horse_racing$/,       30], // each race is short
+  [/^athletics$/,         180],
+  [/^olympics$/,          480],
+  [/^cycling$/,           300], // grand tour stage ~4-5h
+  [/^afl$/,               130],
+  // ── Legacy fallbacks (old keys in DB before re-sync) ─────────────────────
+  [/formula[_\s]?1/i,     200],
+  [/formula[_\s]?[23]/i,  100],
+  [/motogp/i,             120],
+  [/nascar/i,             240],
+  [/wrc|rally/i,          480],
+  [/boxing/i,             300],
+  [/ufc|mma/i,            300],
+  [/wrestling|wwe|aew|bare.?knuckle/i, 240],
+  [/rugby/i,              100],
+  [/horse.?racing/i,       30],
+  [/nfl|american.?football/i, 210],
+  [/mlb|baseball/i,       210],
+  [/nba|basketball/i,     150],
+  [/nhl|ice.?hockey/i,    180],
+  [/cycling/i,            300],
+  [/athletics/i,          180],
+  [/olympics/i,           480],
+  [/cricket/i,            600],
+  [/snooker|pool/i,       360],
+  [/golf/i,               480],
+  [/darts/i,              120],
+  [/afl/i,                130],
 ];
 
 const DEFAULT_DURATION = 120; // fallback for anything not in the list
@@ -192,63 +207,76 @@ function isMatchLive(ukTime: string, sportKey = ""): boolean {
 }
 
 // ── Sport sort order ──────────────────────────────────────────────────────────
-// Priority list — entries are checked against sport_key via startsWith/includes.
+// Canonical keys only — matches the approved sport list order.
 const SPORT_SORT_ORDER = [
-  // Football
   "football",
-  // Combat sports
-  "boxing", "ufc", "mma", "combat", "wrestling", "wwe", "aew", "bare_knuckle",
-  // Rugby
-  "rugby_league", "super_league", "rugby_union", "rugby",
-  // Motorsport
-  "formula_1", "formula_2", "formula_3", "motogp", "motorsport", "rally", "nascar", "wrc", "f1",
-  // Individual sports
+  "combat",
+  "rugby",
+  "motorsport",
   "darts",
   "golf",
   "cricket",
   "tennis",
-  "snooker", "pool",
-  // PPV
+  "snooker",
   "ppv",
-  // US Sports
-  "nfl", "mlb", "baseball", "nba", "basketball", "nhl", "ice_hockey",
-  // Other
+  "us_sports",
   "horse_racing",
   "athletics",
   "olympics",
   "cycling",
   "afl",
+  "other",
 ];
 
 function sportSortIndex(key: string): number {
   const k = key.toLowerCase();
-  const idx = SPORT_SORT_ORDER.findIndex((s) => k === s || k.startsWith(s) || s.startsWith(k));
-  return idx === -1 ? 998 : idx;
+  // Exact match (canonical keys)
+  const exact = SPORT_SORT_ORDER.indexOf(k);
+  if (exact !== -1) return exact;
+  // Fuzzy fallback for any legacy keys still in the DB
+  const fuzzy = SPORT_SORT_ORDER.findIndex((s) => k.startsWith(s) || s.startsWith(k));
+  return fuzzy === -1 ? 997 : fuzzy;
 }
 
 // ── Sport icon map ─────────────────────────────────────────────────────────────
 const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
+  // Canonical keys
   football:     "target",
+  combat:       "zap",
+  rugby:        "activity",
+  motorsport:   "zap",
+  darts:        "crosshair",
+  golf:         "flag",
+  cricket:      "activity",
+  tennis:       "activity",
+  snooker:      "circle",
+  ppv:          "star",
+  us_sports:    "award",
+  horse_racing: "wind",
+  athletics:    "wind",
+  olympics:     "award",
+  cycling:      "wind",
+  afl:          "activity",
+  other:        "tv",
+  // Legacy fallbacks (old DB rows before re-sync)
   formula_1:    "zap",
   formula_2:    "zap",
   formula_3:    "zap",
   motogp:       "zap",
-  motorsport:   "zap",
   rally:        "zap",
-  tennis:       "activity",
-  cricket:      "activity",
+  nascar:       "zap",
+  boxing:       "zap",
+  ufc:          "zap",
+  mma:          "zap",
+  wrestling:    "zap",
   rugby_league: "activity",
   rugby_union:  "activity",
-  boxing:       "activity",
-  darts:        "crosshair",
-  snooker:      "circle",
-  cycling:      "wind",
-  athletics:    "wind",
-  golf:         "flag",
+  super_league: "activity",
   basketball:   "circle",
-  rowing:       "wind",
-  swimming:     "wind",
-  triathlon:    "wind",
+  nfl:          "award",
+  nba:          "award",
+  mlb:          "award",
+  nhl:          "award",
 };
 
 function sportIcon(key: string): keyof typeof Feather.glyphMap {
