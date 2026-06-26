@@ -3147,6 +3147,12 @@ Rules for listing:
 
     // POST /api/sports/sync
     app.post("/api/sports/sync", async (req, res) => {
+      const authHeader = (req.headers.authorization ?? "") as string;
+      const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+      if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
       const tgToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
       const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
       const openaiKey = process.env.OPENAI_API_KEY ?? "";
