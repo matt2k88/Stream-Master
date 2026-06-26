@@ -132,20 +132,62 @@ function ukNowMinutes(): number {
   return h * 60 + min;
 }
 
+// ── Per-sport estimated durations (minutes) ───────────────────────────────────
+// These are generous upper-bounds so we don't drop the LIVE badge too early.
+// Without EPG we can't know the true end time, so we err on the side of
+// keeping the badge on rather than dropping it prematurely.
+const SPORT_DURATION: Array<[RegExp, number]> = [
+  [/football/i,                          115], // 90 + ~25 (HT + stoppages)
+  [/rugby/i,                             100], // 80 + HT + stoppages
+  [/formula[_\s]?1/i,                    200], // race ~90m + formation/podium
+  [/formula[_\s]?[23]/i,                 100],
+  [/motogp/i,                            120],
+  [/nascar/i,                            240], // long races
+  [/wrc|rally/i,                         480], // day-long stage rally
+  [/motorsport/i,                        180],
+  [/boxing/i,                            300], // undercard + main event
+  [/ufc|mma|combat/i,                    300],
+  [/wrestling|wwe|aew|bare.?knuckle/i,   240],
+  [/cricket/i,                           600], // all-day Tests / 50-over
+  [/snooker|pool/i,                      360], // session can be 6h
+  [/golf/i,                              480], // round ~4-5h
+  [/tennis/i,                            180], // best-of-3 ~3h; 5-setters longer
+  [/cycling/i,                           300], // grand tour stage ~4-5h
+  [/horse.?racing/i,                      30], // each race is short
+  [/darts/i,                             120],
+  [/athletics/i,                         180],
+  [/nfl|american.?football/i,            210], // ~3.5h
+  [/mlb|baseball/i,                      210],
+  [/nba|basketball/i,                    150],
+  [/nhl|ice.?hockey/i,                   180],
+  [/olympics/i,                          480],
+  [/afl/i,                               130],
+];
+
+const DEFAULT_DURATION = 120; // fallback for anything not in the list
+
+function estimatedDuration(sportKey: string): number {
+  for (const [pattern, mins] of SPORT_DURATION) {
+    if (pattern.test(sportKey)) return mins;
+  }
+  return DEFAULT_DURATION;
+}
+
 type MatchStatus = "live" | "soon" | null;
 
-function getMatchStatus(ukTime: string): MatchStatus {
+function getMatchStatus(ukTime: string, sportKey = ""): MatchStatus {
   const mins = parseHHMM(ukTime);
   if (mins === null) return null;
   const now = ukNowMinutes();
-  const diff = mins - now;
-  if (diff <= 0 && diff > -120) return "live";
+  const diff = mins - now; // positive = future, negative = past
+  const duration = estimatedDuration(sportKey);
+  if (diff <= 0 && diff > -duration) return "live";
   if (diff > 0 && diff <= 30) return "soon";
   return null;
 }
 
-function isMatchLive(ukTime: string): boolean {
-  return getMatchStatus(ukTime) === "live";
+function isMatchLive(ukTime: string, sportKey = ""): boolean {
+  return getMatchStatus(ukTime, sportKey) === "live";
 }
 
 // ── Sport sort order ──────────────────────────────────────────────────────────
@@ -259,15 +301,16 @@ function ChannelChip({
 
 // ── MatchRow ───────────────────────────────────────────────────────────────────
 function MatchRow({
-  match, competition, streams, onChannel, isFirst,
+  match, competition, sportKey, streams, onChannel, isFirst,
 }: {
   match: SportMatch;
   competition: string;
+  sportKey: string;
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
   isFirst?: boolean;
 }) {
-  const status = getMatchStatus(match.uk_time);
+  const status = getMatchStatus(match.uk_time, sportKey);
 
   const { resolved, extraChip } = useMemo(() => {
     const resolved = match.uk_channels.map((ch) => {
@@ -354,7 +397,7 @@ function SportCard({
   );
   const liveCount = useMemo(
     () => group.competitions.reduce(
-      (n, c) => n + c.matches.filter((m) => isMatchLive(m.uk_time)).length, 0,
+      (n, c) => n + c.matches.filter((m) => isMatchLive(m.uk_time, group.sport_key)).length, 0,
     ),
     [group],
   );
@@ -431,6 +474,7 @@ function SportCard({
               key={`${ci}-${mi}`}
               match={match}
               competition={comp.name}
+              sportKey={group.sport_key}
               streams={streams}
               onChannel={onChannel}
               isFirst={ci === 0 && mi === 0}
@@ -616,7 +660,7 @@ export default function SportListingsScreen() {
       for (const comp of g.competitions) {
         for (const m of comp.matches) {
           totalEvents++;
-          if (isMatchLive(m.uk_time)) hasLive = true;
+          if (isMatchLive(m.uk_time, g.sport_key)) hasLive = true;
           const mins = parseHHMM(m.uk_time);
           if (mins !== null) {
             const diff = mins - now;
@@ -646,7 +690,7 @@ export default function SportListingsScreen() {
         .map((g) => ({
           ...g,
           competitions: g.competitions
-            .map((c) => ({ ...c, matches: c.matches.filter((m) => isMatchLive(m.uk_time)) }))
+            .map((c) => ({ ...c, matches: c.matches.filter((m) => isMatchLive(m.uk_time, g.sport_key)) }))
             .filter((c) => c.matches.length > 0),
         }))
         .filter((g) => g.competitions.length > 0);
