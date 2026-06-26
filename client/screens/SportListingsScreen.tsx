@@ -141,21 +141,6 @@ function ChannelChip({
   };
 
   if (isSection) {
-    if (onPress) {
-      return (
-        <Pressable
-          onPress={onPress}
-          {...pressProps}
-          style={[
-            styles.chipSection,
-            active && { borderColor: "#8aabdf", backgroundColor: "rgba(58,90,138,0.32)" },
-          ]}
-        >
-          <Feather name="tv" size={8} color={active ? "#8aabdf" : "#6b8fc7"} style={{ marginRight: 3 }} />
-          <ThemedText style={[styles.chipTextSection, active && { color: "#8aabdf" }]} numberOfLines={1}>{label}</ThemedText>
-        </Pressable>
-      );
-    }
     return (
       <View style={styles.chipSection}>
         <Feather name="radio" size={8} color="#6b8fc7" style={{ marginRight: 3 }} />
@@ -199,18 +184,28 @@ function MatchRow({
   onChannel: (s: LiveStream) => void;
   isLast?: boolean;
 }) {
-  const fallbackStream = useMemo(() => {
-    for (const ch of match.uk_channels) {
-      const { linkable } = resolveChannelDisplay(ch);
-      if (!linkable) continue;
-      const s = findStream(ch, streams);
-      if (s) return s;
+  // Resolve each channel: section chips are always static.
+  // If NO linkable channel finds a direct match, try non-linkable names as a
+  // last resort so we can inject one extra orange chip below the blue ones.
+  const { resolved, extraChip } = useMemo(() => {
+    const resolved = match.uk_channels.map((ch) => {
+      const { displayLabel, linkable } = resolveChannelDisplay(ch);
+      const stream = linkable ? findStream(ch, streams) : undefined;
+      return { displayLabel, linkable, stream };
+    });
+
+    const hasDirectLink = resolved.some((r) => r.linkable && r.stream);
+
+    let extraChip: { label: string; stream: LiveStream } | null = null;
+    if (!hasDirectLink) {
+      for (const ch of match.uk_channels) {
+        const { displayLabel } = resolveChannelDisplay(ch);
+        const s = findStream(ch, streams);
+        if (s) { extraChip = { label: displayLabel, stream: s }; break; }
+      }
     }
-    for (const ch of match.uk_channels) {
-      const s = findStream(ch, streams);
-      if (s) return s;
-    }
-    return undefined;
+
+    return { resolved, extraChip };
   }, [match.uk_channels, streams]);
 
   return (
@@ -227,20 +222,23 @@ function MatchRow({
         <ThemedText style={styles.matchTeams} numberOfLines={1}>{match.teams}</ThemedText>
         {match.uk_channels.length > 0 ? (
           <View style={styles.chipRow}>
-            {match.uk_channels.map((ch, i) => {
-              const { displayLabel, linkable } = resolveChannelDisplay(ch);
-              const stream = linkable ? findStream(ch, streams) : undefined;
-              const effectiveStream = stream ?? fallbackStream;
-              return (
-                <ChannelChip
-                  key={i}
-                  label={displayLabel}
-                  matched={!!stream}
-                  isSection={!linkable}
-                  onPress={effectiveStream ? () => onChannel(effectiveStream!) : undefined}
-                />
-              );
-            })}
+            {resolved.map(({ displayLabel, linkable, stream }, i) => (
+              <ChannelChip
+                key={i}
+                label={displayLabel}
+                matched={!!stream}
+                isSection={!linkable}
+                onPress={stream ? () => onChannel(stream!) : undefined}
+              />
+            ))}
+            {extraChip ? (
+              <ChannelChip
+                key="extra"
+                label={extraChip.label}
+                matched={true}
+                onPress={() => onChannel(extraChip!.stream)}
+              />
+            ) : null}
           </View>
         ) : null}
       </View>
