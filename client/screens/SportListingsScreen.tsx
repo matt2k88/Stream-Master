@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext, memo } from "react";
 import {
   View,
   StyleSheet,
@@ -314,7 +314,7 @@ function sportIcon(key: string): keyof typeof Feather.glyphMap {
 }
 
 // ── ChannelChip ────────────────────────────────────────────────────────────────
-function ChannelChip({
+const ChannelChip = memo(function ChannelChip({
   label, matched, onPress, isSection = false,
 }: {
   label: string; matched: boolean; onPress?: () => void; isSection?: boolean;
@@ -356,10 +356,10 @@ function ChannelChip({
       </ThemedText>
     </Pressable>
   );
-}
+});
 
 // ── CompetitionSection ─────────────────────────────────────────────────────────
-function CompetitionSection({
+const CompetitionSection = memo(function CompetitionSection({
   comp, sportKey, streams, onChannel, defaultExpanded,
 }: {
   comp: { name: string; matches: SportMatch[] };
@@ -428,10 +428,10 @@ function CompetitionSection({
       ) : null}
     </View>
   );
-}
+});
 
 // ── MatchRow ───────────────────────────────────────────────────────────────────
-function MatchRow({
+const MatchRow = memo(function MatchRow({
   match, competition, sportKey, streams, onChannel, isFirst, hideCompetitionLabel,
 }: {
   match: SportMatch;
@@ -519,10 +519,10 @@ function MatchRow({
       </View>
     </View>
   );
-}
+});
 
 // ── SportCard ──────────────────────────────────────────────────────────────────
-function SportCard({
+const SportCard = memo(function SportCard({
   group, streams, onChannel, defaultExpanded,
 }: {
   group: SportGroup;
@@ -533,6 +533,7 @@ function SportCard({
   const [expanded, setExpanded] = useState(!!defaultExpanded);
   const [hovered, setHovered] = useState(false);
   const [headerHovered, setHeaderHovered] = useState(false);
+  const expandedHeaderRef = useRef<any>(null);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
@@ -555,7 +556,12 @@ function SportCard({
   if (!expanded) {
     return (
       <Pressable
-        onPress={() => setExpanded(true)}
+        onPress={() => {
+          setExpanded(true);
+          if (Platform.OS !== "web") {
+            setTimeout(() => { expandedHeaderRef.current?.focus?.(); }, 80);
+          }
+        }}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
         onFocus={() => setHovered(true)}
@@ -590,6 +596,7 @@ function SportCard({
     <View style={styles.expandedCard}>
       {/* Expanded header */}
       <Pressable
+        ref={expandedHeaderRef}
         onPress={() => setExpanded(false)}
         onHoverIn={() => setHeaderHovered(true)}
         onHoverOut={() => setHeaderHovered(false)}
@@ -651,57 +658,7 @@ function SportCard({
       </View>
     </View>
   );
-}
-
-// ── Stats strip ────────────────────────────────────────────────────────────────
-function StatsStrip({
-  totalEvents, totalSports, nextUp,
-}: {
-  totalEvents: number;
-  totalSports: number;
-  nextUp: { teams: string; time: string } | null;
-}) {
-  return (
-    <View style={styles.statsStrip}>
-      <View style={styles.statBox}>
-        <Feather name="tv" size={16} color={ACCENT} />
-        <ThemedText style={styles.statNum}>{totalEvents}</ThemedText>
-        <ThemedText style={styles.statLabel}>Events</ThemedText>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statBox}>
-        <Feather name="grid" size={16} color={ACCENT} />
-        <ThemedText style={styles.statNum}>{totalSports}</ThemedText>
-        <ThemedText style={styles.statLabel}>Sports</ThemedText>
-      </View>
-      {nextUp ? (
-        <>
-          <View style={styles.statDivider} />
-          <View style={[styles.statBox, styles.statBoxNext]}>
-            <Feather name="clock" size={14} color={ACCENT} style={{ marginRight: 6 }} />
-            <View>
-              <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
-              <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
-              <ThemedText style={[styles.statNextTime, { color: ACCENT }]}>{nextUp.time}</ThemedText>
-            </View>
-          </View>
-        </>
-      ) : null}
-    </View>
-  );
-}
-
-// ── Disclaimer ─────────────────────────────────────────────────────────────────
-function DisclaimerBanner() {
-  return (
-    <View style={styles.disclaimer}>
-      <Feather name="info" size={12} color="#b89a30" style={{ marginRight: 6, flexShrink: 0 }} />
-      <ThemedText style={styles.disclaimerText}>
-        TV channel information may not always be accurate. Please check official broadcaster websites for precise scheduling.
-      </ThemedText>
-    </View>
-  );
-}
+});
 
 // ── Sport filter tabs ──────────────────────────────────────────────────────────
 function FilterTabs({
@@ -923,7 +880,7 @@ export default function SportListingsScreen() {
   return (
     <View style={[styles.root, { paddingTop: pt }]}>
 
-      {/* ── Top header ── */}
+      {/* ── Top bar ── */}
       <View style={styles.topBar}>
         <SideMenuButton />
         <Pressable
@@ -936,16 +893,57 @@ export default function SportListingsScreen() {
         >
           <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
-        <View style={styles.topBarCenter}>
-          <View style={styles.pageTitleRow}>
-            <ThemedText style={styles.pageTitle}>Sports on TV</ThemedText>
-            <View style={styles.todayBadge}>
-              <ThemedText style={styles.todayBadgeText}>TODAY</ThemedText>
-            </View>
+        {/* Compact title + badge */}
+        <View style={styles.topBarTitle}>
+          <ThemedText style={styles.pageTitle}>Sports on TV</ThemedText>
+          <View style={styles.todayBadge}>
+            <ThemedText style={styles.todayBadgeText}>TODAY</ThemedText>
           </View>
-          <ThemedText style={styles.dateText}>{todayLong}</ThemedText>
-          <ThemedText style={styles.pageSubtitle}>Live and upcoming TV coverage</ThemedText>
         </View>
+        {/* Inline search — only when data is present */}
+        {!loading && !error && listings.length > 0 ? (
+          <View style={styles.headerSearchWrap}>
+            <Pressable
+              style={({ pressed, focused, hovered }: any) => [
+                styles.headerSearchBar,
+                (pressed || focused || hovered) && styles.searchBarFocus,
+              ]}
+              onPress={() => inputRef.current?.focus()}
+            >
+              <Feather name="search" size={13} color={Colors.dark.textSecondary} style={{ marginRight: 6 }} />
+              <TextInput
+                ref={inputRef}
+                style={styles.searchInput}
+                placeholder="Search teams, channels, sports…"
+                placeholderTextColor={Colors.dark.textSecondary}
+                value={query}
+                onChangeText={setQuery}
+                returnKeyType="search"
+                autoCorrect={false}
+                autoCapitalize="none"
+                {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
+              />
+              {query.length > 0 ? (
+                <ThemedText style={styles.resultCountInline}>
+                  {totalFiltered === 0 ? "0" : `${totalFiltered}`}
+                </ThemedText>
+              ) : null}
+              {query.length > 0 ? (
+                <Pressable
+                  onPress={() => setQuery("")}
+                  hitSlop={8}
+                  style={({ pressed, focused, hovered }: any) => [
+                    styles.clearBtn,
+                    (pressed || focused || hovered) && styles.clearBtnFocus,
+                  ]}
+                >
+                  <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+                </Pressable>
+              ) : null}
+            </Pressable>
+          </View>
+        ) : null}
+        {/* Clock + refresh */}
         <View style={styles.topBarRight}>
           {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
           <Pressable
@@ -963,55 +961,40 @@ export default function SportListingsScreen() {
         </View>
       </View>
 
-      {/* ── Stats + disclaimer (only when data loaded) ── */}
+      {/* ── Compact info row: stats + disclaimer on one line ── */}
       {!loading && !error && listings.length > 0 ? (
-        <>
-          <StatsStrip totalEvents={totalEvents} totalSports={totalSports} nextUp={nextUp} />
-          <DisclaimerBanner />
-        </>
-      ) : null}
-
-      {/* ── Search bar ── */}
-      {!loading && !error && listings.length > 0 ? (
-        <View style={styles.searchWrap}>
-          <Pressable
-            style={({ pressed, focused, hovered }: any) => [
-              styles.searchBar,
-              (pressed || focused || hovered) && styles.searchBarFocus,
-            ]}
-            onPress={() => inputRef.current?.focus()}
-          >
-            <Feather name="search" size={14} color={Colors.dark.textSecondary} style={{ marginRight: 8 }} />
-            <TextInput
-              ref={inputRef}
-              style={styles.searchInput}
-              placeholder="Search teams, channels, sports…"
-              placeholderTextColor={Colors.dark.textSecondary}
-              value={query}
-              onChangeText={setQuery}
-              returnKeyType="search"
-              autoCorrect={false}
-              autoCapitalize="none"
-              {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
-            />
-            {query.length > 0 ? (
-              <Pressable
-                onPress={() => setQuery("")}
-                hitSlop={8}
-                style={({ pressed, focused, hovered }: any) => [
-                  styles.clearBtn,
-                  (pressed || focused || hovered) && styles.clearBtnFocus,
-                ]}
-              >
-                <Feather name="x" size={12} color={Colors.dark.textSecondary} />
-              </Pressable>
-            ) : null}
-          </Pressable>
-          {isSearching ? (
-            <ThemedText style={styles.resultCount}>
-              {totalFiltered === 0 ? "No results" : `${totalFiltered} match${totalFiltered !== 1 ? "es" : ""}`}
-            </ThemedText>
+        <View style={styles.infoRow}>
+          <View style={styles.statBox}>
+            <Feather name="tv" size={13} color={ACCENT} />
+            <ThemedText style={styles.statNum}>{totalEvents}</ThemedText>
+            <ThemedText style={styles.statLabel}>Events</ThemedText>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Feather name="grid" size={13} color={ACCENT} />
+            <ThemedText style={styles.statNum}>{totalSports}</ThemedText>
+            <ThemedText style={styles.statLabel}>Sports</ThemedText>
+          </View>
+          {nextUp ? (
+            <>
+              <View style={styles.statDivider} />
+              <View style={[styles.statBox, styles.statBoxNext]}>
+                <Feather name="clock" size={11} color={ACCENT} style={{ marginRight: 4 }} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
+                  <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
+                </View>
+                <ThemedText style={[styles.statNextTime, { color: ACCENT, marginLeft: 6 }]}>{nextUp.time}</ThemedText>
+              </View>
+            </>
           ) : null}
+          <View style={styles.statDivider} />
+          <View style={styles.infoDisclaimer}>
+            <Feather name="info" size={11} color="#b89a30" style={{ marginRight: 5, flexShrink: 0 }} />
+            <ThemedText style={styles.disclaimerText} numberOfLines={2}>
+              TV channel info may not always be accurate. Check broadcaster websites for exact scheduling.
+            </ThemedText>
+          </View>
         </View>
       ) : null}
 
@@ -1094,9 +1077,9 @@ const styles = StyleSheet.create({
   // ── Top bar ──────────────────────────────────────────────────────────────────
   topBar: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
     gap: Spacing.md,
   },
   backBtn: {
@@ -1107,10 +1090,9 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD, flexShrink: 0, marginTop: 2,
   },
   iconBtnFocus: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.15)" },
-  topBarCenter: { flex: 1 },
-  pageTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  topBarTitle: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   pageTitle: {
-    fontSize: 22, fontWeight: "800", color: Colors.dark.text, letterSpacing: -0.3,
+    fontSize: 18, fontWeight: "800", color: Colors.dark.text, letterSpacing: -0.3,
   },
   todayBadge: {
     paddingHorizontal: 8, paddingVertical: 3,
@@ -1118,24 +1100,31 @@ const styles = StyleSheet.create({
     backgroundColor: ACCENT,
   },
   todayBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
-  dateText: {
-    fontSize: 16, fontWeight: "700", color: Colors.dark.text, marginTop: 3, letterSpacing: -0.2,
+  headerSearchWrap: { flex: 1 },
+  headerSearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: BG_CARD,
+    borderWidth: 1, borderColor: BORDER,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    height: 38,
   },
-  pageSubtitle: {
-    fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2,
+  resultCountInline: {
+    fontSize: 11, fontWeight: "700", color: ACCENT, marginRight: 6,
   },
-  topBarRight: { alignItems: "flex-end", gap: 2, flexShrink: 0 },
-  clockText: { fontSize: 20, fontWeight: "700", color: Colors.dark.text, fontVariant: ["tabular-nums"] },
+  topBarRight: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexShrink: 0 },
+  clockText: { fontSize: 18, fontWeight: "700", color: Colors.dark.text, fontVariant: ["tabular-nums"] },
   refreshBtn: {
     width: 30, height: 30,
     borderRadius: BorderRadius.sm,
     borderWidth: 1, borderColor: BORDER,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: BG_CARD, marginTop: 4,
+    backgroundColor: BG_CARD,
   },
 
-  // ── Stats strip ───────────────────────────────────────────────────────────────
-  statsStrip: {
+  // ── Combined info row (stats + disclaimer) ───────────────────────────────────
+  infoRow: {
     flexDirection: "row",
     alignItems: "center",
     marginHorizontal: Spacing.lg,
@@ -1146,49 +1135,28 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   statBox: {
-    flex: 1, flexDirection: "row", alignItems: "center",
-    paddingVertical: 10, paddingHorizontal: Spacing.md, gap: 6,
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: 7, paddingHorizontal: Spacing.md, gap: 5,
   },
   statBoxNext: { flex: 2 },
-  statDivider: { width: 1, height: 32, backgroundColor: BORDER },
-  statNum: { fontSize: 20, fontWeight: "800", color: Colors.dark.text },
-  statLabel: { fontSize: 11, color: Colors.dark.textSecondary },
-  statNextLabel: { fontSize: 10, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
-  statNextTeams: { fontSize: 12, fontWeight: "700", color: Colors.dark.text, maxWidth: 180 },
-  statNextTime: { fontSize: 13, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  statDivider: { width: 1, height: 26, backgroundColor: BORDER },
+  statNum: { fontSize: 16, fontWeight: "800", color: Colors.dark.text },
+  statLabel: { fontSize: 10, color: Colors.dark.textSecondary },
+  statNextLabel: { fontSize: 9, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  statNextTeams: { fontSize: 11, fontWeight: "700", color: Colors.dark.text, maxWidth: 160 },
+  statNextTime: { fontSize: 12, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  infoDisclaimer: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    paddingVertical: 7, paddingHorizontal: Spacing.md,
+    borderLeftWidth: 1, borderLeftColor: "rgba(184,154,48,0.25)",
+    backgroundColor: "rgba(184,154,48,0.05)",
+  },
+  disclaimerText: { fontSize: 10, color: "#b89a30", lineHeight: 14, flex: 1 },
 
-  // ── Disclaimer ────────────────────────────────────────────────────────────────
-  disclaimer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: "rgba(184,154,48,0.3)",
-    backgroundColor: "rgba(184,154,48,0.08)",
-  },
-  disclaimerText: { fontSize: 11, color: "#b89a30", lineHeight: 16, flex: 1 },
-
-  // ── Search ────────────────────────────────────────────────────────────────────
-  searchWrap: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
-    gap: 4,
-  },
-  searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: BG_CARD,
-    borderWidth: 1, borderColor: BORDER,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    height: 42,
-  },
+  // ── Search (in header — shared focus style) ───────────────────────────────────
   searchBarFocus: { borderColor: ACCENT, backgroundColor: BG_CARD_ALT },
   searchInput: {
-    flex: 1, fontSize: 14, color: Colors.dark.text,
+    flex: 1, fontSize: 13, color: Colors.dark.text,
     ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
   },
   clearBtn: {
@@ -1199,7 +1167,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   clearBtnFocus: { backgroundColor: ACCENT + "44" },
-  resultCount: { fontSize: 11, color: Colors.dark.textSecondary, paddingLeft: 4 },
 
   // ── Filter tabs ───────────────────────────────────────────────────────────────
   filterScroll: { flexGrow: 0, marginBottom: Spacing.sm },
