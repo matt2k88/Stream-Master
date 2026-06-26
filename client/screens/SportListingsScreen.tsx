@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -18,11 +18,18 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { getApiUrl } from "@/lib/query-client";
 import { useData } from "@/contexts/DataContext";
 import { useAccent, withAlpha } from "@/contexts/ThemeContext";
-import { LinearGradient } from "expo-linear-gradient";
 import { xtreamApi } from "@/lib/xtream-api";
 import type { LiveStream } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const ACCENT = "#FF6600";
+const BG_ROOT = "#080808";
+const BG_CARD = "#141414";
+const BG_CARD_ALT = "#1a1a1a";
+const BORDER = "#252525";
+const LIVE_GREEN = "#22c55e";
+const SOON_AMBER = "#f59e0b";
 
 interface SportMatch {
   uk_time: string;
@@ -40,9 +47,7 @@ interface SportGroup {
   competitions: SportCompetition[];
 }
 
-// ── Non-linkable channel patterns ────────────────────────────────────────────
-// label: fixed display string (Section channels).
-// no label: raw channel name shown as-is (on-demand / catch-up services).
+// ── Non-linkable channel patterns ─────────────────────────────────────────────
 const NON_LINKABLE: Array<{ pattern: RegExp; label?: string }> = [
   { pattern: /sky\s*sports?\+\s*\(streaming\)/i, label: "Sky Sports+ Section" },
   { pattern: /superleague\+/i,                   label: "SuperLeague+ Section" },
@@ -64,7 +69,6 @@ function resolveChannelDisplay(raw: string): { displayLabel: string; linkable: b
   return { displayLabel: display || trimmed, linkable: true };
 }
 
-// ── Channel alias map ────────────────────────────────────────────────────────
 const CHANNEL_ALIASES: Array<[RegExp, string]> = [
   [/\s*\(tv\)\s*/gi, ""],
   [/sky\s*sports?\s*/gi, "SkySp "],
@@ -94,7 +98,6 @@ function findStream(channelName: string, streams: LiveStream[]): LiveStream | un
   const variants = Array.from(new Set([channelName, applyAliases(channelName)]));
   const needles = variants.map(norm).filter(Boolean);
   if (!needles.length) return undefined;
-
   const candidates: Array<{ stream: LiveStream; matchScore: number }> = [];
   for (const s of streams) {
     const hay = norm(s.name);
@@ -116,28 +119,75 @@ function findStream(channelName: string, streams: LiveStream[]): LiveStream | un
   return candidates[0].stream;
 }
 
-// ── ChannelChip ──────────────────────────────────────────────────────────────
+// ── Time utilities ─────────────────────────────────────────────────────────────
+function parseHHMM(t: string): number | null {
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  return m ? +m[1] * 60 + +m[2] : null;
+}
+
+function ukNowMinutes(): number {
+  const d = new Date();
+  const h = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "numeric", hour12: false }).format(d);
+  const min = +new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", minute: "2-digit" }).format(d);
+  return h * 60 + min;
+}
+
+type MatchStatus = "live" | "soon" | null;
+
+function getMatchStatus(ukTime: string): MatchStatus {
+  const mins = parseHHMM(ukTime);
+  if (mins === null) return null;
+  const now = ukNowMinutes();
+  const diff = mins - now;
+  if (diff <= 0 && diff > -120) return "live";
+  if (diff > 0 && diff <= 30) return "soon";
+  return null;
+}
+
+function isMatchLive(ukTime: string): boolean {
+  return getMatchStatus(ukTime) === "live";
+}
+
+// ── Sport icon map ─────────────────────────────────────────────────────────────
+const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
+  football:     "target",
+  formula_1:    "zap",
+  formula_2:    "zap",
+  formula_3:    "zap",
+  motogp:       "zap",
+  motorsport:   "zap",
+  rally:        "zap",
+  tennis:       "activity",
+  cricket:      "activity",
+  rugby_league: "activity",
+  rugby_union:  "activity",
+  boxing:       "activity",
+  darts:        "crosshair",
+  snooker:      "circle",
+  cycling:      "wind",
+  athletics:    "wind",
+  golf:         "flag",
+  basketball:   "circle",
+  rowing:       "wind",
+  swimming:     "wind",
+  triathlon:    "wind",
+};
+
+function sportIcon(key: string): keyof typeof Feather.glyphMap {
+  return SPORT_ICON[key.toLowerCase().replace(/\s+/g, "_")] ?? "tv";
+}
+
+// ── ChannelChip ────────────────────────────────────────────────────────────────
 function ChannelChip({
-  label,
-  matched,
-  onPress,
-  isSection = false,
+  label, matched, onPress, isSection = false,
 }: {
-  label: string;
-  matched: boolean;
-  onPress?: () => void;
-  isSection?: boolean;
+  label: string; matched: boolean; onPress?: () => void; isSection?: boolean;
 }) {
   const [active, setActive] = useState(false);
-  const accent = useAccent();
-
   const pressProps = {
-    onPressIn:  () => setActive(true),
-    onPressOut: () => setActive(false),
-    onFocus:    () => setActive(true),
-    onBlur:     () => setActive(false),
-    onHoverIn:  () => setActive(true),
-    onHoverOut: () => setActive(false),
+    onPressIn: () => setActive(true), onPressOut: () => setActive(false),
+    onFocus: () => setActive(true), onBlur: () => setActive(false),
+    onHoverIn: () => setActive(true), onHoverOut: () => setActive(false),
   };
 
   if (isSection) {
@@ -156,14 +206,14 @@ function ChannelChip({
       style={[
         styles.chip,
         matched ? styles.chipMatched : styles.chipUnmatched,
-        active && matched && { borderColor: accent.accent, backgroundColor: withAlpha(accent.accent, 0.2) },
+        active && matched && { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.2)" },
       ]}
     >
       {matched ? (
-        <Feather name="tv" size={8} color={active ? accent.accent : Colors.dark.accent} style={{ marginRight: 3 }} />
+        <Feather name="tv" size={8} color={active ? ACCENT : ACCENT} style={{ marginRight: 3 }} />
       ) : null}
       <ThemedText
-        style={[styles.chipText, matched ? styles.chipTextMatched : styles.chipTextUnmatched, active && matched && { color: accent.accent }]}
+        style={[styles.chipText, matched ? styles.chipTextMatched : styles.chipTextUnmatched]}
         numberOfLines={1}
       >
         {label}
@@ -172,36 +222,27 @@ function ChannelChip({
   );
 }
 
-// ── MatchRow ─────────────────────────────────────────────────────────────────
+// ── MatchRow ───────────────────────────────────────────────────────────────────
 function MatchRow({
-  match,
-  streams,
-  onChannel,
-  isLast,
+  match, competition, streams, onChannel, isFirst,
 }: {
   match: SportMatch;
+  competition: string;
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
-  isLast?: boolean;
+  isFirst?: boolean;
 }) {
-  // Resolve each channel: section chips are always static.
-  // If NO linkable channel finds a direct match, try non-linkable names as a
-  // last resort so we can inject one extra orange chip below the blue ones.
+  const status = getMatchStatus(match.uk_time);
+
   const { resolved, extraChip } = useMemo(() => {
     const resolved = match.uk_channels.map((ch) => {
       const { displayLabel, linkable } = resolveChannelDisplay(ch);
       const stream = linkable ? findStream(ch, streams) : undefined;
       return { displayLabel, linkable, stream };
     });
-
     const hasDirectLink = resolved.some((r) => r.linkable && r.stream);
-
     let extraChip: { label: string; stream: LiveStream } | null = null;
     if (!hasDirectLink) {
-      // Only try linkable channels (not on-demand / section channels).
-      // Non-linkable names like "ITV X" or "Sky Sports+ (Streaming)" can
-      // partially match live IPTV streams via the fuzzy matcher — skipping
-      // them here ensures we only fall back to real broadcast channels.
       for (const ch of match.uk_channels) {
         const { displayLabel, linkable } = resolveChannelDisplay(ch);
         if (!linkable) continue;
@@ -209,22 +250,31 @@ function MatchRow({
         if (s) { extraChip = { label: displayLabel, stream: s }; break; }
       }
     }
-
     return { resolved, extraChip };
   }, [match.uk_channels, streams]);
 
   return (
-    <View style={[styles.matchRow, isLast && styles.matchRowLast]}>
-      {/* Time */}
-      <View style={styles.matchTimePill}>
-        <ThemedText style={styles.matchTimeText} numberOfLines={1}>
+    <View style={[styles.matchRow, !isFirst && styles.matchRowBorder]}>
+      {/* Time column */}
+      <View style={styles.matchTimeCol}>
+        <ThemedText style={[styles.matchTime, status === "live" && { color: LIVE_GREEN }]}>
           {match.uk_time || "TBC"}
         </ThemedText>
+        {status === "live" ? (
+          <View style={styles.statusBadgeLive}>
+            <ThemedText style={styles.statusBadgeText}>LIVE</ThemedText>
+          </View>
+        ) : status === "soon" ? (
+          <View style={styles.statusBadgeSoon}>
+            <ThemedText style={styles.statusBadgeText}>SOON</ThemedText>
+          </View>
+        ) : null}
       </View>
 
-      {/* Teams + chips */}
-      <View style={styles.matchBody}>
+      {/* Info column */}
+      <View style={styles.matchInfo}>
         <ThemedText style={styles.matchTeams} numberOfLines={1}>{match.teams}</ThemedText>
+        <ThemedText style={styles.matchComp} numberOfLines={1}>{competition}</ThemedText>
         {match.uk_channels.length > 0 ? (
           <View style={styles.chipRow}>
             {resolved.map(({ displayLabel, linkable, stream }, i) => (
@@ -251,176 +301,245 @@ function MatchRow({
   );
 }
 
-// ── SportCard ────────────────────────────────────────────────────────────────
-const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
-  football:     "circle",
-  formula_1:    "zap",
-  formula_2:    "zap",
-  formula_3:    "zap",
-  motogp:       "zap",
-  tennis:       "activity",
-  cricket:      "activity",
-  rugby_league: "activity",
-  rugby_union:  "activity",
-  boxing:       "activity",
-  darts:        "crosshair",
-  snooker:      "circle",
-  cycling:      "wind",
-  athletics:    "wind",
-  golf:         "flag",
-  basketball:   "circle",
-};
-
+// ── SportCard ──────────────────────────────────────────────────────────────────
 function SportCard({
-  group,
-  streams,
-  onChannel,
-  forceExpanded,
+  group, streams, onChannel, defaultExpanded,
 }: {
   group: SportGroup;
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
-  forceExpanded?: boolean;
+  defaultExpanded?: boolean;
 }) {
-  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
-  const accent = useAccent();
-  const [active, setActive] = useState(false);
-  const icon = SPORT_ICON[group.sport_key] ?? "tv";
-
-  const expanded = forceExpanded ?? manualExpanded ?? false;
+  const [expanded, setExpanded] = useState(!!defaultExpanded);
+  const [hovered, setHovered] = useState(false);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
     [group],
   );
+  const liveCount = useMemo(
+    () => group.competitions.reduce(
+      (n, c) => n + c.matches.filter((m) => isMatchLive(m.uk_time)).length, 0,
+    ),
+    [group],
+  );
 
-  return (
-    <View style={styles.sportCard}>
+  const icon = sportIcon(group.sport_key);
+
+  if (!expanded) {
+    return (
       <Pressable
-        onPress={() => setManualExpanded((e) => !(e ?? forceExpanded ?? false))}
-        onPressIn={() => setActive(true)}
-        onPressOut={() => setActive(false)}
-        onFocus={() => setActive(true)}
-        onBlur={() => setActive(false)}
-        onHoverIn={() => setActive(true)}
-        onHoverOut={() => setActive(false)}
-        style={[styles.sportHeader, active && { backgroundColor: withAlpha(accent.accent, 0.07) }]}
+        onPress={() => setExpanded(true)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={[styles.collapsedRow, hovered && styles.collapsedRowHover]}
       >
-        {active ? (
-          <LinearGradient
-            colors={[withAlpha(accent.accent, 0.08), "transparent"]}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-          />
-        ) : null}
-        <View style={[styles.sportIconWrap, { backgroundColor: withAlpha(accent.accent, 0.12) }]}>
-          <Feather name={icon} size={14} color={accent.accent} />
+        <View style={styles.sportIconCircle}>
+          <Feather name={icon} size={16} color="#fff" />
         </View>
-        <ThemedText style={[styles.sportLabel, active && { color: accent.accent }]}>
-          {group.sport_label}
-        </ThemedText>
-        <View style={styles.sportMeta}>
-          <View style={styles.matchCountBadge}>
-            <ThemedText style={styles.matchCountText}>{totalMatches}</ThemedText>
+        <View style={styles.collapsedMeta}>
+          <ThemedText style={styles.collapsedLabel}>{group.sport_label}</ThemedText>
+          <ThemedText style={styles.collapsedSub}>
+            {totalMatches} event{totalMatches !== 1 ? "s" : ""} today
+            {liveCount > 0 ? `  •  ${liveCount} live` : ""}
+          </ThemedText>
+        </View>
+        <View style={styles.collapsedRight}>
+          {liveCount > 0 ? (
+            <View style={styles.liveDot} />
+          ) : null}
+          <View style={styles.countBadge}>
+            <ThemedText style={styles.countBadgeText}>{totalMatches} EVENTS</ThemedText>
           </View>
-          <Feather
-            name={expanded ? "chevron-up" : "chevron-down"}
-            size={14}
-            color={active ? accent.accent : Colors.dark.textSecondary}
-          />
+          <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} style={{ marginLeft: 8 }} />
+        </View>
+      </Pressable>
+    );
+  }
+
+  // Expanded card
+  return (
+    <View style={styles.expandedCard}>
+      {/* Expanded header */}
+      <Pressable
+        onPress={() => setExpanded(false)}
+        style={styles.expandedHeader}
+      >
+        <View style={styles.sportIconCircleLg}>
+          <Feather name={icon} size={20} color="#fff" />
+        </View>
+        <View style={styles.expandedHeaderMeta}>
+          <ThemedText style={styles.expandedSportLabel}>{group.sport_label}</ThemedText>
+          {group.competitions.length === 1 ? (
+            <ThemedText style={styles.expandedCompLabel}>{group.competitions[0].name}</ThemedText>
+          ) : null}
+        </View>
+        <View style={styles.expandedHeaderRight}>
+          {liveCount > 0 ? (
+            <View style={styles.liveCountBadge}>
+              <View style={styles.liveDotSm} />
+              <ThemedText style={styles.liveCountText}>{liveCount} LIVE</ThemedText>
+            </View>
+          ) : null}
+          <View style={styles.eventCountBadge}>
+            <ThemedText style={styles.eventCountText}>{totalMatches} EVENTS TODAY</ThemedText>
+          </View>
+          <Feather name="chevron-up" size={16} color={Colors.dark.textSecondary} style={{ marginLeft: 10 }} />
         </View>
       </Pressable>
 
-      {expanded ? (
-        <View style={styles.sportBody}>
-          {group.competitions.map((comp, ci) => (
-            <View key={ci}>
-              <View style={[styles.compHeader, ci > 0 && styles.compHeaderBorder]}>
-                <ThemedText style={styles.compName} numberOfLines={1}>{comp.name}</ThemedText>
-              </View>
-              {comp.matches.map((match, mi) => (
-                <MatchRow
-                  key={mi}
-                  match={match}
-                  streams={streams}
-                  onChannel={onChannel}
-                  isLast={mi === comp.matches.length - 1}
-                />
-              ))}
+      {/* Matches */}
+      <View style={styles.expandedBody}>
+        {group.competitions.map((comp, ci) =>
+          comp.matches.map((match, mi) => (
+            <MatchRow
+              key={`${ci}-${mi}`}
+              match={match}
+              competition={comp.name}
+              streams={streams}
+              onChannel={onChannel}
+              isFirst={ci === 0 && mi === 0}
+            />
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+// ── Stats strip ────────────────────────────────────────────────────────────────
+function StatsStrip({
+  totalEvents, totalSports, nextUp,
+}: {
+  totalEvents: number;
+  totalSports: number;
+  nextUp: { teams: string; time: string } | null;
+}) {
+  return (
+    <View style={styles.statsStrip}>
+      <View style={styles.statBox}>
+        <Feather name="tv" size={16} color={ACCENT} />
+        <ThemedText style={styles.statNum}>{totalEvents}</ThemedText>
+        <ThemedText style={styles.statLabel}>Events</ThemedText>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statBox}>
+        <Feather name="grid" size={16} color={ACCENT} />
+        <ThemedText style={styles.statNum}>{totalSports}</ThemedText>
+        <ThemedText style={styles.statLabel}>Sports</ThemedText>
+      </View>
+      {nextUp ? (
+        <>
+          <View style={styles.statDivider} />
+          <View style={[styles.statBox, styles.statBoxNext]}>
+            <Feather name="clock" size={14} color={ACCENT} style={{ marginRight: 6 }} />
+            <View>
+              <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
+              <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
+              <ThemedText style={[styles.statNextTime, { color: ACCENT }]}>{nextUp.time}</ThemedText>
             </View>
-          ))}
-        </View>
+          </View>
+        </>
       ) : null}
     </View>
   );
 }
 
-// ── Search bar ───────────────────────────────────────────────────────────────
-function SearchBar({
-  value,
-  onChange,
-  onClear,
-  resultCount,
-  isSearching,
+// ── Disclaimer ─────────────────────────────────────────────────────────────────
+function DisclaimerBanner() {
+  return (
+    <View style={styles.disclaimer}>
+      <Feather name="info" size={12} color="#b89a30" style={{ marginRight: 6, flexShrink: 0 }} />
+      <ThemedText style={styles.disclaimerText}>
+        TV channel information may not always be accurate. Please check official broadcaster websites for precise scheduling.
+      </ThemedText>
+    </View>
+  );
+}
+
+// ── Sport filter tabs ──────────────────────────────────────────────────────────
+function FilterTabs({
+  sports, selected, onSelect, hasLive,
 }: {
-  value: string;
-  onChange: (t: string) => void;
-  onClear: () => void;
-  resultCount: number;
-  isSearching: boolean;
+  sports: SportGroup[];
+  selected: string;
+  onSelect: (key: string) => void;
+  hasLive: boolean;
 }) {
-  const inputRef = useRef<TextInput>(null);
-  const accent = useAccent();
-  const [focused, setFocused] = useState(false);
+  const tabs: Array<{ key: string; label: string; icon: keyof typeof Feather.glyphMap }> = [
+    { key: "all", label: "All Sports", icon: "grid" },
+    ...(hasLive ? [{ key: "live", label: "Live Now", icon: "radio" as keyof typeof Feather.glyphMap }] : []),
+    ...sports.map((g) => ({ key: g.sport_key, label: g.sport_label, icon: sportIcon(g.sport_key) })),
+  ];
 
   return (
-    <View style={styles.searchWrap}>
-      <Pressable
-        style={[styles.searchBar, focused && { borderColor: withAlpha(accent.accent, 0.5) }]}
-        onPress={() => inputRef.current?.focus()}
-      >
-        <Feather name="search" size={14} color={focused ? accent.accent : Colors.dark.textSecondary} style={{ marginRight: 8 }} />
-        <TextInput
-          ref={inputRef}
-          style={styles.searchInput}
-          placeholder="Search teams, channels, sports…"
-          placeholderTextColor={Colors.dark.textSecondary}
-          value={value}
-          onChangeText={onChange}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          returnKeyType="search"
-          clearButtonMode="never"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {value.length > 0 ? (
-          <Pressable onPress={onClear} style={styles.clearBtn} hitSlop={8}>
-            <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.filterScroll}
+      contentContainerStyle={styles.filterContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      {tabs.map((tab) => {
+        const active = selected === tab.key;
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => onSelect(tab.key)}
+            style={[styles.filterTab, active && styles.filterTabActive]}
+          >
+            <Feather
+              name={tab.icon}
+              size={12}
+              color={active ? "#fff" : Colors.dark.textSecondary}
+              style={{ marginRight: 5 }}
+            />
+            <ThemedText style={[styles.filterTabText, active && styles.filterTabTextActive]}>
+              {tab.label}
+            </ThemedText>
           </Pressable>
-        ) : null}
-      </Pressable>
-      {isSearching ? (
-        <ThemedText style={styles.resultCount}>
-          {resultCount === 0 ? "No results" : `${resultCount} match${resultCount !== 1 ? "es" : ""}`}
-        </ThemedText>
-      ) : null}
-    </View>
+        );
+      })}
+    </ScrollView>
   );
 }
 
-// ── Main screen ──────────────────────────────────────────────────────────────
+// ── Main screen ────────────────────────────────────────────────────────────────
 export default function SportListingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
   const { liveStreams } = useData();
-  const accent = useAccent();
 
   const [listings, setListings] = useState<SportGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [sportFilter, setSportFilter] = useState("all");
+  const [clockStr, setClockStr] = useState("");
+  const inputRef = useRef<TextInput>(null);
+
+  // Live UK clock (HH:MM)
+  useEffect(() => {
+    const fmt = () =>
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(new Date());
+    setClockStr(fmt());
+    const id = setInterval(() => setClockStr(fmt()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const todayLong = useMemo(() =>
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London",
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(new Date()),
+  []);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -440,35 +559,67 @@ export default function SportListingsScreen() {
 
   useFocusEffect(useCallback(() => { fetchListings(); }, [fetchListings]));
 
-  const handleChannel = useCallback(
-    (stream: LiveStream) => {
-      navigation.navigate("LivePreview", {
-        streamId: stream.stream_id,
-        name: stream.name,
-        streamUrl: xtreamApi.getLiveStreamUrl(stream.stream_id),
-        thumbnail: stream.stream_icon ?? undefined,
-        streamIcon: stream.stream_icon ?? undefined,
-      });
-    },
-    [navigation],
-  );
+  const handleChannel = useCallback((stream: LiveStream) => {
+    navigation.navigate("LivePreview", {
+      streamId: stream.stream_id,
+      name: stream.name,
+      streamUrl: xtreamApi.getLiveStreamUrl(stream.stream_id),
+      thumbnail: stream.stream_icon ?? undefined,
+      streamIcon: stream.stream_icon ?? undefined,
+    });
+  }, [navigation]);
 
-  const todayLabel = useMemo(() => {
-    return new Intl.DateTimeFormat("en-GB", {
-      timeZone: "Europe/London",
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    }).format(new Date());
-  }, []);
+  // ── Computed stats ───────────────────────────────────────────────────────────
+  const { totalEvents, totalSports, nextUp, hasLive } = useMemo(() => {
+    let totalEvents = 0;
+    let hasLive = false;
+    let nextUp: { teams: string; time: string } | null = null;
+    const now = ukNowMinutes();
+    let bestDiff = Infinity;
 
-  // ── Search filter ──────────────────────────────────────────────────────────
+    for (const g of listings) {
+      for (const comp of g.competitions) {
+        for (const m of comp.matches) {
+          totalEvents++;
+          if (isMatchLive(m.uk_time)) hasLive = true;
+          const mins = parseHHMM(m.uk_time);
+          if (mins !== null) {
+            const diff = mins - now;
+            if (diff > 0 && diff < bestDiff) {
+              bestDiff = diff;
+              nextUp = { teams: m.teams, time: m.uk_time };
+            }
+          }
+        }
+      }
+    }
+    return { totalEvents, totalSports: listings.length, nextUp, hasLive };
+  }, [listings]);
+
+  // ── Filtering ────────────────────────────────────────────────────────────────
   const q = query.trim().toLowerCase();
   const isSearching = q.length > 0;
 
   const filteredListings = useMemo<SportGroup[]>(() => {
-    if (!q) return listings;
-    return listings
+    let result = listings;
+
+    // Sport filter
+    if (sportFilter === "live") {
+      result = result
+        .map((g) => ({
+          ...g,
+          competitions: g.competitions
+            .map((c) => ({ ...c, matches: c.matches.filter((m) => isMatchLive(m.uk_time)) }))
+            .filter((c) => c.matches.length > 0),
+        }))
+        .filter((g) => g.competitions.length > 0);
+    } else if (sportFilter !== "all") {
+      result = result.filter((g) => g.sport_key === sportFilter);
+    }
+
+    // Search filter
+    if (!q) return result;
+    return result
       .map((group) => {
         const sportHit = group.sport_label.toLowerCase().includes(q);
         const filteredComps = group.competitions
@@ -486,9 +637,9 @@ export default function SportListingsScreen() {
         return filteredComps.length > 0 ? { ...group, competitions: filteredComps } : null;
       })
       .filter((g): g is SportGroup => g !== null);
-  }, [listings, q]);
+  }, [listings, sportFilter, q]);
 
-  const totalFilteredMatches = useMemo(
+  const totalFiltered = useMemo(
     () => filteredListings.reduce((n, g) => n + g.competitions.reduce((m, c) => m + c.matches.length, 0), 0),
     [filteredListings],
   );
@@ -496,46 +647,88 @@ export default function SportListingsScreen() {
   const pt = insets.top + Spacing.sm;
   const pb = insets.bottom + Spacing["2xl"];
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { paddingTop: pt }]}>
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          style={styles.iconBtn}
-          hitSlop={8}
-        >
-          <Feather name="arrow-left" size={17} color={Colors.dark.text} />
+
+      {/* ── Top header ── */}
+      <View style={styles.topBar}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
+          <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
-        <View style={styles.headerCenter}>
-          <ThemedText style={styles.screenTitle}>Sports on TV</ThemedText>
-          <ThemedText style={styles.dateLabel}>{todayLabel}</ThemedText>
+        <View style={styles.topBarCenter}>
+          <ThemedText style={styles.pageTitle}>Sports on TV</ThemedText>
+          <ThemedText style={styles.pageSubtitle}>
+            Live and upcoming coverage from all your favourite sports
+          </ThemedText>
         </View>
-        <Pressable
-          onPress={fetchListings}
-          style={[styles.iconBtn, loading && { opacity: 0.4 }]}
-          disabled={loading}
-          hitSlop={8}
-        >
-          <Feather name="refresh-cw" size={15} color={Colors.dark.textSecondary} />
-        </Pressable>
+        <View style={styles.topBarRight}>
+          {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
+          <ThemedText style={styles.dateText}>{todayLong}</ThemedText>
+          <Pressable
+            onPress={fetchListings}
+            style={[styles.refreshBtn, loading && { opacity: 0.4 }]}
+            disabled={loading}
+            hitSlop={8}
+          >
+            <Feather name="refresh-cw" size={13} color={Colors.dark.textSecondary} />
+          </Pressable>
+        </View>
       </View>
 
-      {/* Search */}
+      {/* ── Stats + disclaimer (only when data loaded) ── */}
       {!loading && !error && listings.length > 0 ? (
-        <SearchBar
-          value={query}
-          onChange={setQuery}
-          onClear={() => setQuery("")}
-          resultCount={totalFilteredMatches}
-          isSearching={isSearching}
+        <>
+          <StatsStrip totalEvents={totalEvents} totalSports={totalSports} nextUp={nextUp} />
+          <DisclaimerBanner />
+        </>
+      ) : null}
+
+      {/* ── Search bar ── */}
+      {!loading && !error && listings.length > 0 ? (
+        <View style={styles.searchWrap}>
+          <Pressable style={styles.searchBar} onPress={() => inputRef.current?.focus()}>
+            <Feather name="search" size={14} color={Colors.dark.textSecondary} style={{ marginRight: 8 }} />
+            <TextInput
+              ref={inputRef}
+              style={styles.searchInput}
+              placeholder="Search teams, channels, sports…"
+              placeholderTextColor={Colors.dark.textSecondary}
+              value={query}
+              onChangeText={setQuery}
+              returnKeyType="search"
+              autoCorrect={false}
+              autoCapitalize="none"
+              {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
+            />
+            {query.length > 0 ? (
+              <Pressable onPress={() => setQuery("")} style={styles.clearBtn} hitSlop={8}>
+                <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+              </Pressable>
+            ) : null}
+          </Pressable>
+          {isSearching ? (
+            <ThemedText style={styles.resultCount}>
+              {totalFiltered === 0 ? "No results" : `${totalFiltered} match${totalFiltered !== 1 ? "es" : ""}`}
+            </ThemedText>
+          ) : null}
+        </View>
+      ) : null}
+
+      {/* ── Filter tabs ── */}
+      {!loading && !error && listings.length > 0 ? (
+        <FilterTabs
+          sports={listings}
+          selected={sportFilter}
+          onSelect={(k) => { setSportFilter(k); setQuery(""); }}
+          hasLive={hasLive}
         />
       ) : null}
 
-      {/* Content */}
+      {/* ── Content ── */}
       {loading ? (
         <View style={styles.centre}>
-          <ActivityIndicator color={Colors.dark.accent} size="large" />
+          <ActivityIndicator color={ACCENT} size="large" />
           <ThemedText style={styles.emptySubtitle}>Loading listings…</ThemedText>
         </View>
       ) : error ? (
@@ -543,9 +736,9 @@ export default function SportListingsScreen() {
           <Feather name="wifi-off" size={38} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>Could not load</ThemedText>
           <ThemedText style={styles.emptySubtitle}>{error}</ThemedText>
-          <Pressable style={[styles.retryBtn, { borderColor: withAlpha(accent.accent, 0.4) }]} onPress={fetchListings}>
-            <Feather name="refresh-cw" size={12} color={accent.accent} style={{ marginRight: 5 }} />
-            <ThemedText style={[styles.retryText, { color: accent.accent }]}>Try again</ThemedText>
+          <Pressable style={styles.retryBtn} onPress={fetchListings}>
+            <Feather name="refresh-cw" size={12} color={ACCENT} style={{ marginRight: 5 }} />
+            <ThemedText style={[styles.retryText, { color: ACCENT }]}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : listings.length === 0 ? (
@@ -556,11 +749,13 @@ export default function SportListingsScreen() {
             Check back after the next sync, or ask your admin to trigger one.
           </ThemedText>
         </View>
-      ) : isSearching && filteredListings.length === 0 ? (
+      ) : filteredListings.length === 0 ? (
         <View style={styles.centre}>
-          <Feather name="search" size={38} color={Colors.dark.textSecondary} />
+          <Feather name="search" size={36} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>No results</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>Try a different team, sport, or channel name.</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>
+            {sportFilter === "live" ? "No events are live right now." : "Try a different search term."}
+          </ThemedText>
         </View>
       ) : (
         <ScrollView
@@ -569,13 +764,13 @@ export default function SportListingsScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {filteredListings.map((group) => (
+          {filteredListings.map((group, i) => (
             <SportCard
               key={group.sport_key}
               group={group}
               streams={liveStreams}
               onChannel={handleChannel}
-              forceExpanded={isSearching ? true : undefined}
+              defaultExpanded={i === 0 || isSearching || sportFilter !== "all"}
             />
           ))}
         </ScrollView>
@@ -584,278 +779,274 @@ export default function SportListingsScreen() {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
+  root: { flex: 1, backgroundColor: BG_ROOT },
+
+  // ── Top bar ──────────────────────────────────────────────────────────────────
+  topBar: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  backBtn: {
+    width: 36, height: 36,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: BORDER,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: BG_CARD, flexShrink: 0, marginTop: 2,
+  },
+  topBarCenter: { flex: 1 },
+  pageTitle: {
+    fontSize: 22, fontWeight: "800", color: Colors.dark.text, letterSpacing: -0.3,
+  },
+  pageSubtitle: {
+    fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2,
+  },
+  topBarRight: { alignItems: "flex-end", gap: 2, flexShrink: 0 },
+  clockText: { fontSize: 20, fontWeight: "700", color: Colors.dark.text, fontVariant: ["tabular-nums"] },
+  dateText: { fontSize: 12, color: Colors.dark.textSecondary },
+  refreshBtn: {
+    width: 30, height: 30,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: BORDER,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: BG_CARD, marginTop: 4,
   },
 
-  // ── Header ─────────────────────────────────────────────────────────────────
-  headerRow: {
+  // ── Stats strip ───────────────────────────────────────────────────────────────
+  statsStrip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: BORDER,
+    backgroundColor: BG_CARD,
+    overflow: "hidden",
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
+  statBox: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    paddingVertical: 10, paddingHorizontal: Spacing.md, gap: 6,
   },
-  screenTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Colors.dark.text,
-  },
-  dateLabel: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-    marginTop: 1,
-  },
-  iconBtn: {
-    width: 34,
-    height: 34,
+  statBoxNext: { flex: 2 },
+  statDivider: { width: 1, height: 32, backgroundColor: BORDER },
+  statNum: { fontSize: 20, fontWeight: "800", color: Colors.dark.text },
+  statLabel: { fontSize: 11, color: Colors.dark.textSecondary },
+  statNextLabel: { fontSize: 10, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  statNextTeams: { fontSize: 12, fontWeight: "700", color: Colors.dark.text, maxWidth: 180 },
+  statNextTime: { fontSize: 13, fontWeight: "800", fontVariant: ["tabular-nums"] },
+
+  // ── Disclaimer ────────────────────────────────────────────────────────────────
+  disclaimer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    padding: Spacing.sm,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: Colors.dark.backgroundSecondary,
-    flexShrink: 0,
+    borderColor: "rgba(184,154,48,0.3)",
+    backgroundColor: "rgba(184,154,48,0.08)",
   },
+  disclaimerText: { fontSize: 11, color: "#b89a30", lineHeight: 16, flex: 1 },
 
-  // ── Search ─────────────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────────
   searchWrap: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.sm,
-    gap: 5,
+    gap: 4,
   },
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.dark.backgroundSecondary,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    borderRadius: BorderRadius.sm,
+    backgroundColor: BG_CARD,
+    borderWidth: 1, borderColor: BORDER,
+    borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
-    height: 38,
+    height: 42,
   },
   searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.dark.text,
+    flex: 1, fontSize: 14, color: Colors.dark.text,
     ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
   },
   clearBtn: {
-    width: 20,
-    height: 20,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 20, height: 20,
+    alignItems: "center", justifyContent: "center",
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundTertiary,
     marginLeft: 4,
   },
-  resultCount: {
-    fontSize: 11,
-    color: Colors.dark.textSecondary,
-    paddingLeft: 4,
-  },
+  resultCount: { fontSize: 11, color: Colors.dark.textSecondary, paddingLeft: 4 },
 
-  // ── Scroll ─────────────────────────────────────────────────────────────────
+  // ── Filter tabs ───────────────────────────────────────────────────────────────
+  filterScroll: { flexGrow: 0, marginBottom: Spacing.sm },
+  filterContent: { paddingHorizontal: Spacing.lg, gap: 6, flexDirection: "row" },
+  filterTab: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: BORDER,
+    backgroundColor: BG_CARD,
+  },
+  filterTabActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  filterTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
+  filterTabTextActive: { color: "#fff" },
+
+  // ── Scroll ────────────────────────────────────────────────────────────────────
   scroll: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: 2,
-    gap: 6,
-  },
+  scrollContent: { paddingHorizontal: Spacing.lg, paddingTop: 2, gap: 2 },
 
-  // ── Sport card ─────────────────────────────────────────────────────────────
-  sportCard: {
-    borderRadius: BorderRadius.md,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.backgroundSecondary,
-  },
-  sportHeader: {
+  // ── Collapsed row ─────────────────────────────────────────────────────────────
+  collapsedRow: {
     flexDirection: "row",
     alignItems: "center",
+    paddingVertical: 12,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 9,
-    gap: Spacing.sm,
-    overflow: "hidden",
+    backgroundColor: BG_CARD,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: BORDER,
+    gap: Spacing.md,
   },
-  sportIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: BorderRadius.xs,
-    alignItems: "center",
-    justifyContent: "center",
+  collapsedRowHover: { backgroundColor: BG_CARD_ALT },
+  sportIconCircle: {
+    width: 40, height: 40,
+    borderRadius: 20,
+    backgroundColor: ACCENT,
+    alignItems: "center", justifyContent: "center",
     flexShrink: 0,
   },
-  sportLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.dark.text,
+  collapsedMeta: { flex: 1, gap: 2 },
+  collapsedLabel: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
+  collapsedSub: { fontSize: 11, color: Colors.dark.textSecondary },
+  collapsedRight: { flexDirection: "row", alignItems: "center", flexShrink: 0 },
+  liveDot: {
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: LIVE_GREEN, marginRight: 8,
   },
-  sportMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  matchCountBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+  countBadge: {
+    paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.backgroundTertiary,
   },
-  matchCountText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: Colors.dark.textSecondary,
-  },
-  sportBody: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
-  },
+  countBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.dark.textSecondary },
 
-  // ── Competition header ──────────────────────────────────────────────────────
-  compHeader: {
+  // ── Expanded card ─────────────────────────────────────────────────────────────
+  expandedCard: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: ACCENT + "55",
+    backgroundColor: BG_CARD,
+    overflow: "hidden",
+    borderLeftWidth: 3, borderLeftColor: ACCENT,
+  },
+  expandedHeader: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    backgroundColor: Colors.dark.backgroundTertiary,
+    paddingVertical: 12,
+    gap: Spacing.md,
+    backgroundColor: "rgba(255,102,0,0.06)",
+    borderBottomWidth: 1, borderBottomColor: BORDER,
   },
-  compHeaderBorder: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border,
+  sportIconCircleLg: {
+    width: 48, height: 48,
+    borderRadius: 24,
+    backgroundColor: ACCENT,
+    alignItems: "center", justifyContent: "center",
+    flexShrink: 0,
   },
-  compName: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: Colors.dark.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
+  expandedHeaderMeta: { flex: 1, gap: 3 },
+  expandedSportLabel: { fontSize: 18, fontWeight: "800", color: Colors.dark.text },
+  expandedCompLabel: { fontSize: 13, color: ACCENT, fontWeight: "600" },
+  expandedHeaderRight: { flexDirection: "row", alignItems: "center", flexShrink: 0, gap: 8 },
+  liveCountBadge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(34,197,94,0.15)",
+    borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
   },
+  liveDotSm: { width: 6, height: 6, borderRadius: 3, backgroundColor: LIVE_GREEN },
+  liveCountText: { fontSize: 10, fontWeight: "700", color: LIVE_GREEN },
+  eventCountBadge: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(255,102,0,0.15)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
+  },
+  eventCountText: { fontSize: 10, fontWeight: "700", color: ACCENT },
 
-  // ── Match row ──────────────────────────────────────────────────────────────
+  // ── Match body ────────────────────────────────────────────────────────────────
+  expandedBody: {},
   matchRow: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 7,
+    alignItems: "flex-start",
+    paddingVertical: 12,
     paddingHorizontal: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.dark.border,
-    gap: Spacing.sm,
+    gap: Spacing.md,
   },
-  matchRowLast: {},
-  matchTimePill: {
-    minWidth: 48,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
+  matchRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: BORDER },
+  matchTimeCol: { width: 58, alignItems: "center", flexShrink: 0, gap: 4 },
+  matchTime: {
+    fontSize: 16, fontWeight: "800", color: ACCENT,
+    fontVariant: ["tabular-nums"], textAlign: "center",
+  },
+  statusBadgeLive: {
+    paddingHorizontal: 6, paddingVertical: 2,
     borderRadius: BorderRadius.xs,
-    backgroundColor: Colors.dark.backgroundTertiary,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
+    backgroundColor: LIVE_GREEN,
   },
-  matchTimeText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: Colors.dark.accent,
-    fontVariant: ["tabular-nums"],
+  statusBadgeSoon: {
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+    backgroundColor: SOON_AMBER,
   },
-  matchBody: {
-    flex: 1,
-    gap: 4,
-    minWidth: 0,
-  },
-  matchTeams: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.dark.text,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-  },
+  statusBadgeText: { fontSize: 8, fontWeight: "800", color: "#000" },
+  matchInfo: { flex: 1, gap: 3 },
+  matchTeams: { fontSize: 14, fontWeight: "700", color: Colors.dark.text },
+  matchComp: { fontSize: 11, color: Colors.dark.textSecondary },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 },
 
-  // ── Channel chips ───────────────────────────────────────────────────────────
+  // ── Chips ─────────────────────────────────────────────────────────────────────
   chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full, borderWidth: 1,
   },
   chipMatched: {
-    borderColor: Colors.dark.accent + "66",
-    backgroundColor: Colors.dark.accentDim,
+    borderColor: ACCENT + "88",
+    backgroundColor: "rgba(255,102,0,0.12)",
   },
   chipUnmatched: {
-    borderColor: Colors.dark.border,
+    borderColor: BORDER,
     backgroundColor: Colors.dark.backgroundTertiary,
   },
-  chipText: {
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  chipTextMatched: {
-    color: Colors.dark.accent,
-  },
-  chipTextUnmatched: {
-    color: Colors.dark.textSecondary,
-  },
+  chipText: { fontSize: 11, fontWeight: "600" },
+  chipTextMatched: { color: ACCENT },
+  chipTextUnmatched: { color: Colors.dark.textSecondary },
   chipSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full, borderWidth: 1,
     borderColor: "#3a5a8a",
     backgroundColor: "rgba(58,90,138,0.18)",
   },
-  chipTextSection: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#6b8fc7",
-  },
+  chipTextSection: { fontSize: 11, fontWeight: "600", color: "#6b8fc7" },
 
-  // ── States ─────────────────────────────────────────────────────────────────
+  // ── States ────────────────────────────────────────────────────────────────────
   centre: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: Spacing["4xl"],
-    gap: Spacing.md,
+    flex: 1, alignItems: "center", justifyContent: "center",
+    padding: Spacing["4xl"], gap: Spacing.md,
   },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: Colors.dark.text,
-    textAlign: "center",
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: Colors.dark.textSecondary,
-    textAlign: "center",
-    lineHeight: 19,
-  },
+  emptyTitle: { fontSize: 17, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
+  emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
   retryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: ACCENT + "66",
     marginTop: Spacing.xs,
   },
-  retryText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
+  retryText: { fontSize: 13, fontWeight: "600" },
 });
