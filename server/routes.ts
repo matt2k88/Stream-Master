@@ -3478,6 +3478,26 @@ Rules for listing:
       );
       return res.json(result);
     });
+
+    // POST /api/sports/clear — wipe all sport_listings + sport_listing_images and reset TG offset
+    app.post("/api/sports/clear", async (_req, res) => {
+      try {
+        const [delListings, delImages] = await Promise.all([
+          supabase.from("sport_listings").delete().gte("sync_date", "2020-01-01"),
+          supabase.from("sport_listing_images").delete().gte("message_date", "2020-01-01"),
+        ]);
+        if (delListings.error) throw new Error(delListings.error.message);
+        if (delImages.error) throw new Error(delImages.error.message);
+        // Reset the Telegram offset so next sync re-scans from 0
+        await setSyncOffset(0);
+        _tgOffset = 0;
+        console.log("[sports:clear] sport_listings + sport_listing_images wiped; TG offset reset");
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("[sports:clear] error:", err?.message);
+        return res.status(500).json({ error: err?.message ?? "Clear failed" });
+      }
+    });
   }
   // ── END Sports Listings ──────────────────────────────────────────────────────
 

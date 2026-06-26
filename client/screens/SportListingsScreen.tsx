@@ -38,23 +38,68 @@ interface SportGroup {
   competitions: SportCompetition[];
 }
 
+// ── Channel name aliases ─────────────────────────────────────────────────────
+// Maps broadcast channel names (as GPT extracts them) to the naming
+// convention used on the IPTV service, so the fuzzy matcher can find them.
+const CHANNEL_ALIASES: Array<[RegExp, string]> = [
+  // "Sky Sports X" → "SkySp X"  (handles "Sky Sport X" too)
+  [/sky\s*sports?\s*/gi, "SkySp "],
+  // Add more aliases here as needed, e.g.:
+  // [/bt\s*sport\s*/gi, "BT Sport "],
+];
+
+function applyAliases(name: string): string {
+  let result = name;
+  for (const [pattern, replacement] of CHANNEL_ALIASES) {
+    result = result.replace(pattern, replacement);
+  }
+  return result.trim();
+}
+
+// Quality tier: higher = better.  FHD / FH beat HD, SD is lowest.
+function qualityTier(streamName: string): number {
+  const u = streamName.toUpperCase();
+  if (u.includes(" FHD") || /\bFH\b/.test(u)) return 3;
+  if (u.includes(" HD")) return 2;
+  if (u.includes(" SD")) return 0;
+  return 1; // no explicit quality tag
+}
+
 // ── Channel fuzzy-matcher ───────────────────────────────────────────────────
 function norm(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
+
 function findStream(channelName: string, streams: LiveStream[]): LiveStream | undefined {
-  const needle = norm(channelName);
-  if (!needle) return undefined;
-  let best: LiveStream | undefined;
-  let bestLen = 0;
+  // Build a set of name variants to try (original + alias-transformed)
+  const variants = Array.from(new Set([channelName, applyAliases(channelName)]));
+  const needles = variants.map(norm).filter(Boolean);
+  if (!needles.length) return undefined;
+
+  const candidates: Array<{ stream: LiveStream; matchScore: number }> = [];
+
   for (const s of streams) {
     const hay = norm(s.name);
     if (!hay) continue;
-    if (hay === needle) return s;
-    if (hay.includes(needle) && needle.length > bestLen) { best = s; bestLen = needle.length; }
-    else if (needle.includes(hay) && hay.length > bestLen) { best = s; bestLen = hay.length; }
+    let matchScore = 0;
+    for (const needle of needles) {
+      if (hay === needle) { matchScore = Math.max(matchScore, 3); break; }
+      if (hay.includes(needle) && needle.length > 2) matchScore = Math.max(matchScore, 2);
+      else if (needle.includes(hay) && hay.length > 2) matchScore = Math.max(matchScore, 1);
+    }
+    if (matchScore > 0) candidates.push({ stream: s, matchScore });
   }
-  return best;
+
+  if (!candidates.length) return undefined;
+
+  // Prefer higher match score, then highest quality (FHD > HD > SD)
+  candidates.sort((a, b) =>
+    b.matchScore !== a.matchScore
+      ? b.matchScore - a.matchScore
+      : qualityTier(b.stream.name) - qualityTier(a.stream.name),
+  );
+
+  return candidates[0].stream;
 }
 
 // ── ChannelChip ─────────────────────────────────────────────────────────────
@@ -229,6 +274,9 @@ export default function SportListingsScreen() {
   const [listings, setListings] = useState<SportGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const confirmTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -247,6 +295,31 @@ export default function SportListingsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { fetchListings(); }, [fetchListings]));
+
+  const handleClearPress = useCallback(() => {
+    if (!confirmClear) {
+      // First press: enter confirm mode, auto-cancel after 3s
+      setConfirmClear(true);
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmClear(false), 3000);
+      return;
+    }
+    // Second press: do the clear
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    setConfirmClear(false);
+    setClearing(true);
+    (async () => {
+      try {
+        const url = new URL("/api/sports/clear", getApiUrl());
+        await fetch(url.toString(), { method: "POST" });
+        await fetchListings();
+      } catch (_) {
+        // silently ignore
+      } finally {
+        setClearing(false);
+      }
+    })();
+  }, [confirmClear, fetchListings]);
 
   const handleChannel = useCallback(
     (stream: LiveStream) => {
@@ -282,6 +355,22 @@ export default function SportListingsScreen() {
           <ThemedText style={styles.screenTitle}>Sports on TV</ThemedText>
           <ThemedText style={styles.dateLabel}>{todayLabel}</ThemedText>
         </View>
+        {/* Clear button — first press turns red ("Confirm?"), second press clears */}
+        <Pressable
+          onPress={handleClearPress}
+          style={[
+            styles.backBtn,
+            (clearing) && { opacity: 0.5 },
+            confirmClear && { borderColor: "#cc2200", backgroundColor: "rgba(204,34,0,0.15)" },
+          ]}
+          disabled={clearing || loading}
+        >
+          {clearing ? (
+            <ActivityIndicator size="small" color="#cc2200" />
+          ) : (
+            <Feather name="trash-2" size={15} color={confirmClear ? "#cc2200" : Colors.dark.textSecondary} />
+          )}
+        </Pressable>
         <Pressable
           onPress={fetchListings}
           style={[styles.backBtn, loading && { opacity: 0.5 }]}
