@@ -694,33 +694,43 @@ const SportCard = memo(function SportCard({
 });
 
 // ── Loading bar ────────────────────────────────────────────────────────────────
+const TRACK_W = 280;
+const STRIP_W = 100;
+
 const loadBarStyles = StyleSheet.create({
   wrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   icon: { marginBottom: 18 },
   label: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center", marginBottom: 20 },
-  track: { width: "72%", maxWidth: 300, height: 4, borderRadius: 2, backgroundColor: BORDER, overflow: "hidden" },
-  fill: { height: "100%", borderRadius: 2, backgroundColor: ACCENT },
+  track: { width: TRACK_W, height: 5, borderRadius: 3, backgroundColor: BORDER, overflow: "hidden" },
+  strip: { position: "absolute", left: 0, top: 0, width: STRIP_W, height: "100%", borderRadius: 3, backgroundColor: ACCENT },
   sub: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 14 },
 });
 
 const LoadingBar = memo(function LoadingBar({ label }: { label: string }) {
-  const progress = useRef(new Animated.Value(0)).current;
+  const pos = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    progress.setValue(0);
-    Animated.timing(progress, {
-      toValue: 0.88,
-      duration: 4000,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
-  }, [progress]);
-  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
+    pos.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(pos, {
+        toValue: 1,
+        duration: 1100,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pos]);
+  const translateX = pos.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-STRIP_W, TRACK_W],
+  });
   return (
     <View style={loadBarStyles.wrap}>
       <Feather name="calendar" size={32} color={ACCENT} style={loadBarStyles.icon} />
       <ThemedText style={loadBarStyles.label}>{label}</ThemedText>
       <View style={loadBarStyles.track}>
-        <Animated.View style={[loadBarStyles.fill, { width: barWidth as any }]} />
+        <Animated.View style={[loadBarStyles.strip, { transform: [{ translateX }] }]} />
       </View>
       <ThemedText style={loadBarStyles.sub}>This may take a moment…</ThemedText>
     </View>
@@ -841,34 +851,23 @@ export default function SportListingsScreen() {
   const fetchListings = useCallback(async (force = false) => {
     const hasCache = _listingsCache.length > 0;
 
-    // If we have cached data, show it immediately and decide how to refresh:
-    // - force=true (refresh button) → show loading bar and re-fetch
-    // - force=false (page load) → serve cache instantly, re-fetch silently in bg
-    if (hasCache) {
-      setListings(_listingsCache);
-      if (!force) {
+    if (hasCache && !force) {
+      // Serve from cache as long as it was populated on today's UK calendar date.
+      // Once it's a new day the next page-load will fetch fresh automatically.
+      const cachedDate = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date(_cacheAt));
+      const todayDate = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+      if (cachedDate === todayDate) {
+        setListings(_listingsCache);
         setLoading(false);
-        // Silent background refresh — always fetch fresh on every page visit
-        // but don't flash a loading bar since there's data already on screen
-        try {
-          const url = new URL("/api/sports/listings", getApiUrl());
-          const r = await fetch(url.toString());
-          if (!r.ok) return;
-          const data = await r.json();
-          const arr = Array.isArray(data) ? data : [];
-          _listingsCache = arr;
-          _cacheAt = Date.now();
-          setListings(arr);
-          AsyncStorage.setItem(
-            ASYNC_STORAGE_KEY,
-            JSON.stringify({ data: arr, cachedAt: _cacheAt }),
-          ).catch(() => {});
-        } catch {}
         return;
       }
     }
 
-    // No cache, or forced refresh → show loading bar
+    // No cache, new UK day, or forced refresh (refresh button) → show loading bar
     setLoading(true);
     setError(null);
     try {
