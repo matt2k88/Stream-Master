@@ -109,6 +109,17 @@ function findStream(channelName: string, streams: LiveStream[]): LiveStream | un
       if (hay.includes(needle) && needle.length > 2) matchScore = Math.max(matchScore, 2);
       else if (needle.includes(hay) && hay.length > 2) matchScore = Math.max(matchScore, 1);
     }
+    // norm() strips "+", which makes "ITV 1" and "ITV +1" look identical (both
+    // become "itv1").  When a stream name contains "+" but the query does not,
+    // the score-3 exact match is spurious — demote it to 2 so the quality-tier
+    // tiebreaker (FHD > HD > plain) picks the right stream.
+    if (
+      matchScore === 3 &&
+      s.name.includes("+") &&
+      !variants.some((v) => v.includes("+"))
+    ) {
+      matchScore = 2;
+    }
     if (matchScore > 0) candidates.push({ stream: s, matchScore });
   }
   if (!candidates.length) return undefined;
