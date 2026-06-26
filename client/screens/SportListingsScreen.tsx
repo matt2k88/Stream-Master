@@ -7,7 +7,10 @@ import {
   ActivityIndicator,
   TextInput,
   Platform,
+  Animated,
+  Easing,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -35,6 +38,7 @@ const LIVE_GREEN = "#22c55e";
 let _listingsCache: SportGroup[] = [];
 let _cacheAt = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const ASYNC_STORAGE_KEY = "sports_listings_cache_v1";
 const SOON_AMBER = "#f59e0b";
 
 interface SportMatch {
@@ -251,6 +255,11 @@ function computeLiveOwners(groups: SportGroup[]): Set<string> {
   // Collect all winning match keys
   return new Set(Array.from(channelOwner.values()).map((v) => v.key));
 }
+
+// ── Pre-computed channel resolution context ───────────────────────────────────
+type ResolvedChannel = { displayLabel: string; linkable: boolean; stream: LiveStream | undefined };
+type ChannelResolution = { resolved: ResolvedChannel[]; extraChip: { label: string; stream: LiveStream } | null };
+const ChannelResolutionCtx = createContext<Map<string, ChannelResolution>>(new Map());
 
 // ── Sport sort order ──────────────────────────────────────────────────────────
 // Canonical keys only — matches the approved sport list order.
@@ -474,7 +483,12 @@ const MatchRow = memo(function MatchRow({
       ? null
       : rawStatus;
 
+  const resolutionCtx = useContext(ChannelResolutionCtx);
   const { resolved, extraChip } = useMemo(() => {
+    const ctxKey = `${sportKey}|${competition}|${match.uk_time}|${match.teams}`;
+    const cached = resolutionCtx.get(ctxKey);
+    if (cached) return cached;
+    // Fallback (first render before context is populated)
     const resolved = match.uk_channels.map((ch) => {
       const { displayLabel, linkable } = resolveChannelDisplay(ch);
       const stream = linkable ? findStream(ch, streams) : undefined;
@@ -491,7 +505,7 @@ const MatchRow = memo(function MatchRow({
       }
     }
     return { resolved, extraChip };
-  }, [match.uk_channels, streams]);
+  }, [match.uk_channels, match.uk_time, match.teams, streams, sportKey, competition, resolutionCtx]);
 
   return (
     <View style={[styles.matchRow, !isFirst && styles.matchRowBorder]}>
@@ -679,6 +693,40 @@ const SportCard = memo(function SportCard({
   );
 });
 
+// ── Loading bar ────────────────────────────────────────────────────────────────
+const loadBarStyles = StyleSheet.create({
+  wrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
+  icon: { marginBottom: 18 },
+  label: { fontSize: 16, fontWeight: "700", color: Colors.dark.text, textAlign: "center", marginBottom: 20 },
+  track: { width: "72%", maxWidth: 300, height: 4, borderRadius: 2, backgroundColor: BORDER, overflow: "hidden" },
+  fill: { height: "100%", borderRadius: 2, backgroundColor: ACCENT },
+  sub: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 14 },
+});
+
+const LoadingBar = memo(function LoadingBar({ label }: { label: string }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 0.88,
+      duration: 4000,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+  const barWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
+  return (
+    <View style={loadBarStyles.wrap}>
+      <Feather name="calendar" size={32} color={ACCENT} style={loadBarStyles.icon} />
+      <ThemedText style={loadBarStyles.label}>{label}</ThemedText>
+      <View style={loadBarStyles.track}>
+        <Animated.View style={[loadBarStyles.fill, { width: barWidth as any }]} />
+      </View>
+      <ThemedText style={loadBarStyles.sub}>This may take a moment…</ThemedText>
+    </View>
+  );
+});
+
 // ── Sport filter tabs ──────────────────────────────────────────────────────────
 type FilterTab = { key: string; label: string; icon: keyof typeof Feather.glyphMap };
 
@@ -761,6 +809,12 @@ export default function SportListingsScreen() {
   const [clockStr, setClockStr] = useState("");
   const inputRef = useRef<TextInput>(null);
 
+  // TV-remote / hover focus state for header controls
+  const [backFocused, setBackFocused] = useState(false);
+  const [refreshFocused, setRefreshFocused] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [clearFocused, setClearFocused] = useState(false);
+
   // Live UK clock (HH:MM)
   useEffect(() => {
     const fmt = () =>
@@ -803,11 +857,34 @@ export default function SportListingsScreen() {
       _listingsCache = arr;
       _cacheAt = Date.now();
       setListings(arr);
+      // Persist to AsyncStorage so next app launch is instant
+      AsyncStorage.setItem(
+        ASYNC_STORAGE_KEY,
+        JSON.stringify({ data: arr, cachedAt: _cacheAt }),
+      ).catch(() => {});
     } catch (e: any) {
       setError(e?.message ?? "Failed to load");
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Hydrate from AsyncStorage on first mount (cross-session persistence)
+  useEffect(() => {
+    if (_listingsCache.length > 0) return;
+    AsyncStorage.getItem(ASYNC_STORAGE_KEY).then((raw) => {
+      if (!raw) return;
+      if (_listingsCache.length > 0) return; // network already loaded
+      try {
+        const { data, cachedAt } = JSON.parse(raw);
+        if (Array.isArray(data) && data.length > 0) {
+          _listingsCache = data;
+          _cacheAt = cachedAt ?? 0;
+          setListings(data);
+          setLoading(false);
+        }
+      } catch {}
+    }).catch(() => {});
   }, []);
 
   useFocusEffect(useCallback(() => { fetchListings(); }, [fetchListings]));
@@ -824,6 +901,37 @@ export default function SportListingsScreen() {
 
   // ── Channel ownership (computed from full listings so "live" filter uses it) ──
   const liveOwners = useMemo(() => computeLiveOwners(listings), [listings]);
+
+  // ── Pre-compute all channel→stream resolutions when data/streams change ───────
+  // Stored in a Map keyed by "sportKey|compName|time|teams" so MatchRow just
+  // does a single O(1) lookup instead of running findStream() on every mount.
+  const channelResolutions = useMemo(() => {
+    const map = new Map<string, ChannelResolution>();
+    for (const g of listings) {
+      for (const comp of g.competitions) {
+        for (const m of comp.matches) {
+          const key = `${g.sport_key}|${comp.name}|${m.uk_time}|${m.teams}`;
+          const resolved: ResolvedChannel[] = m.uk_channels.map((ch) => {
+            const { displayLabel, linkable } = resolveChannelDisplay(ch);
+            const stream = linkable ? findStream(ch, liveStreams) : undefined;
+            return { displayLabel, linkable, stream };
+          });
+          const hasDirectLink = resolved.some((r) => r.linkable && r.stream);
+          let extraChip: { label: string; stream: LiveStream } | null = null;
+          if (!hasDirectLink) {
+            for (const ch of m.uk_channels) {
+              const { displayLabel, linkable } = resolveChannelDisplay(ch);
+              if (!linkable) continue;
+              const s = findStream(ch, liveStreams);
+              if (s) { extraChip = { label: displayLabel, stream: s }; break; }
+            }
+          }
+          map.set(key, { resolved, extraChip });
+        }
+      }
+    }
+    return map;
+  }, [listings, liveStreams]);
 
   // Helper: is this match effectively live (owns at least one channel) ──────────
   const isEffLive = useCallback(
@@ -935,10 +1043,11 @@ export default function SportListingsScreen() {
         <Pressable
           onPress={() => navigation.goBack()}
           hitSlop={10}
-          style={({ pressed, focused, hovered }: any) => [
-            styles.backBtn,
-            (pressed || focused || hovered) && styles.iconBtnFocus,
-          ]}
+          onFocus={() => setBackFocused(true)}
+          onBlur={() => setBackFocused(false)}
+          onHoverIn={() => setBackFocused(true)}
+          onHoverOut={() => setBackFocused(false)}
+          style={[styles.backBtn, backFocused && styles.iconBtnFocus]}
         >
           <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
@@ -953,11 +1062,12 @@ export default function SportListingsScreen() {
         {!loading && !error && listings.length > 0 ? (
           <View style={styles.headerSearchWrap}>
             <Pressable
-              style={({ pressed, focused, hovered }: any) => [
-                styles.headerSearchBar,
-                (pressed || focused || hovered) && styles.searchBarFocus,
-              ]}
+              style={[styles.headerSearchBar, searchFocused && styles.searchBarFocus]}
               onPress={() => inputRef.current?.focus()}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              onHoverIn={() => setSearchFocused(true)}
+              onHoverOut={() => setSearchFocused(false)}
             >
               <Feather name="search" size={13} color={Colors.dark.textSecondary} style={{ marginRight: 6 }} />
               <TextInput
@@ -970,6 +1080,8 @@ export default function SportListingsScreen() {
                 returnKeyType="search"
                 autoCorrect={false}
                 autoCapitalize="none"
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
                 {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
               />
               {query.length > 0 ? (
@@ -981,10 +1093,11 @@ export default function SportListingsScreen() {
                 <Pressable
                   onPress={() => setQuery("")}
                   hitSlop={8}
-                  style={({ pressed, focused, hovered }: any) => [
-                    styles.clearBtn,
-                    (pressed || focused || hovered) && styles.clearBtnFocus,
-                  ]}
+                  onFocus={() => setClearFocused(true)}
+                  onBlur={() => setClearFocused(false)}
+                  onHoverIn={() => setClearFocused(true)}
+                  onHoverOut={() => setClearFocused(false)}
+                  style={[styles.clearBtn, clearFocused && styles.clearBtnFocus]}
                 >
                   <Feather name="x" size={12} color={Colors.dark.textSecondary} />
                 </Pressable>
@@ -999,10 +1112,14 @@ export default function SportListingsScreen() {
             onPress={() => fetchListings(true)}
             disabled={loading}
             hitSlop={8}
-            style={({ pressed, focused, hovered }: any) => [
+            onFocus={() => setRefreshFocused(true)}
+            onBlur={() => setRefreshFocused(false)}
+            onHoverIn={() => setRefreshFocused(true)}
+            onHoverOut={() => setRefreshFocused(false)}
+            style={[
               styles.refreshBtn,
               loading && { opacity: 0.4 },
-              !loading && (pressed || focused || hovered) && styles.iconBtnFocus,
+              !loading && refreshFocused && styles.iconBtnFocus,
             ]}
           >
             <Feather name="refresh-cw" size={13} color={Colors.dark.textSecondary} />
@@ -1074,10 +1191,7 @@ export default function SportListingsScreen() {
 
       {/* ── Content ── */}
       {loading ? (
-        <View style={styles.centre}>
-          <ActivityIndicator color={ACCENT} size="large" />
-          <ThemedText style={styles.emptySubtitle}>Loading listings…</ThemedText>
-        </View>
+        <LoadingBar label="Updating Sports Listings" />
       ) : error ? (
         <View style={styles.centre}>
           <Feather name="wifi-off" size={38} color={Colors.dark.textSecondary} />
@@ -1112,40 +1226,42 @@ export default function SportListingsScreen() {
         </View>
       ) : (
         <LiveOwnersCtx.Provider value={liveOwners}>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {filteredListings.map((group) => {
-              const isExpanded =
-                expandedSportKey === group.sport_key ||
-                (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1);
-              return (
-                <SportCard
-                  key={group.sport_key}
-                  group={group}
-                  streams={liveStreams}
-                  onChannel={handleChannel}
-                  expanded={isExpanded}
-                  isFocusTarget={justToggledKey === group.sport_key}
-                  onExpand={() => {
-                    setExpandedSportKey(group.sport_key);
-                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
-                    setJustToggledKey(group.sport_key);
-                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
-                  }}
-                  onCollapse={() => {
-                    setExpandedSportKey(null);
-                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
-                    setJustToggledKey(group.sport_key);
-                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
-                  }}
-                />
-              );
-            })}
-          </ScrollView>
+          <ChannelResolutionCtx.Provider value={channelResolutions}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {filteredListings.map((group) => {
+                const isExpanded =
+                  expandedSportKey === group.sport_key ||
+                  (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1);
+                return (
+                  <SportCard
+                    key={group.sport_key}
+                    group={group}
+                    streams={liveStreams}
+                    onChannel={handleChannel}
+                    expanded={isExpanded}
+                    isFocusTarget={justToggledKey === group.sport_key}
+                    onExpand={() => {
+                      setExpandedSportKey(group.sport_key);
+                      if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                      setJustToggledKey(group.sport_key);
+                      toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                    }}
+                    onCollapse={() => {
+                      setExpandedSportKey(null);
+                      if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                      setJustToggledKey(group.sport_key);
+                      toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                    }}
+                  />
+                );
+              })}
+            </ScrollView>
+          </ChannelResolutionCtx.Provider>
         </LiveOwnersCtx.Provider>
       )}
     </View>
