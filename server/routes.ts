@@ -3565,8 +3565,9 @@ Rules for listing:
       // Re-normalise every row through SPORT_KEY_MAP so stale DB data
       // (e.g. sport_key="formula 1", "other", "horse_racing") is merged
       // into the correct canonical group without needing a re-sync.
+      // Strip any "other: " or "other_" prefix, convert snake_case to spaces, lowercase
       const norm = (s: string) =>
-        s.replace(/^other:\s*/i, "").trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
+        s.replace(/^other[:\s_]+/i, "").trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
 
       const sportsMap = new Map<string, any>();
       let orderCounter = 0;
