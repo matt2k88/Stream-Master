@@ -3174,8 +3174,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "afl":                             { key: "afl",         label: "AFL" },
       "australian football":             { key: "afl",         label: "AFL" },
       "australian rules football":       { key: "afl",         label: "AFL" },
-      // Other — explicit catch-all
-      "other":                           { key: "other",       label: "Other" },
     };
 
     const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
@@ -3188,7 +3186,7 @@ If header:
 {"type":"header","sport":"Football","competition":"FIFA World Cup 2026"}
 
 sport MUST be exactly one of these values — no other values are allowed:
-  Football, Combat Sports, Rugby, Motorsport, Darts, Golf, Cricket, Tennis, Snooker, PPV Events, US Sports, Horse Racing, Athletics, Olympics, Cycling, AFL, Other
+  Football, Combat Sports, Rugby, Motorsport, Darts, Golf, Cricket, Tennis, Snooker, PPV Events, US Sports, Horse Racing, Athletics, Olympics, Cycling, AFL
 
 Grouping rules (IMPORTANT — these override all other instincts):
 - Combat Sports = Boxing, UFC, MMA, WWE, AEW, Bare Knuckle, any fighting/combat sport. Use "Combat Sports".
@@ -3197,7 +3195,7 @@ Grouping rules (IMPORTANT — these override all other instincts):
 - Snooker = Snooker, Pool. Use "Snooker".
 - US Sports = NFL, NBA, MLB, NHL, Basketball, Baseball, Ice Hockey, American Football. Use "US Sports".
 - AFL = Australian Football, Australian Rules Football. Use "AFL".
-- Other = use ONLY when the image genuinely does not match any of the above 16 categories.
+- If you are unsure, pick the closest category from the list above. Do NOT use "Other".
 - Super League anniversary (e.g. "30 Years of Super League") → sport="Rugby", competition="Super League".
 - Anniversary/celebratory images → classify by the sport shown, not the milestone text.
 
@@ -3514,7 +3512,7 @@ Rules for listing:
 
         const toInsert: any[] = [];
         let totalMatches = 0;
-        for (const grp of sportGroups) {
+        for (const grp of sportGroups.filter((g) => g.sport_key !== "other")) {
           for (const [comp, matches] of grp.competitions) {
             toInsert.push({
               sync_date: today,
@@ -3557,6 +3555,7 @@ Rules for listing:
         .from("sport_listings")
         .select("sport_key, sport_label, competition, matches, display_order")
         .eq("sync_date", date)
+        .neq("sport_key", "other")
         .order("display_order", { ascending: true })
         .order("competition", { ascending: true });
 

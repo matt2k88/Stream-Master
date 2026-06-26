@@ -1015,7 +1015,7 @@ export default function SportListingsScreen() {
               group={group}
               streams={liveStreams}
               onChannel={handleChannel}
-              defaultExpanded={i === 0 || isSearching || sportFilter !== "all"}
+              defaultExpanded={isSearching || sportFilter !== "all"}
             />
           ))}
         </ScrollView>
