@@ -154,6 +154,27 @@ function ChannelChip({
   const accent = useAccent();
 
   if (isSection) {
+    // When a fallback stream is available, the section chip becomes pressable.
+    if (onPress) {
+      return (
+        <Pressable
+          onPress={onPress}
+          onPressIn={() => setActive(true)}
+          onPressOut={() => setActive(false)}
+          onFocus={() => setActive(true)}
+          onBlur={() => setActive(false)}
+          onHoverIn={() => setActive(true)}
+          onHoverOut={() => setActive(false)}
+          style={[
+            styles.chipSection,
+            active && { borderColor: "#8aabdf", backgroundColor: "rgba(58,90,138,0.32)" },
+          ]}
+        >
+          <Feather name="tv" size={9} color={active ? "#8aabdf" : "#6b8fc7"} style={{ marginRight: 3 }} />
+          <ThemedText style={[styles.chipTextSection, active && { color: "#8aabdf" }]} numberOfLines={1}>{label}</ThemedText>
+        </Pressable>
+      );
+    }
     return (
       <View style={styles.chipSection}>
         <Feather name="radio" size={9} color="#6b8fc7" style={{ marginRight: 3 }} />
@@ -192,6 +213,23 @@ function ChannelChip({
 
 // ── MatchRow ─────────────────────────────────────────────────────────────────
 function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: LiveStream[]; onChannel: (s: LiveStream) => void }) {
+  // Find the best stream available across ALL channels for this match.
+  // Used as fallback when a chip has no direct link (section/on-demand/unmatched).
+  const fallbackStream = useMemo(() => {
+    for (const ch of match.uk_channels) {
+      const { linkable } = resolveChannelDisplay(ch);
+      if (!linkable) continue;
+      const s = findStream(ch, streams);
+      if (s) return s;
+    }
+    // No linkable UK channel matched — try every channel regardless of type
+    for (const ch of match.uk_channels) {
+      const s = findStream(ch, streams);
+      if (s) return s;
+    }
+    return undefined;
+  }, [match.uk_channels, streams]);
+
   return (
     <View style={styles.matchRow}>
       <View style={styles.matchTimePill}>
@@ -204,13 +242,15 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
             {match.uk_channels.map((ch, i) => {
               const { displayLabel, linkable } = resolveChannelDisplay(ch);
               const stream = linkable ? findStream(ch, streams) : undefined;
+              // Fall back to any other matched channel in the listing
+              const effectiveStream = stream ?? fallbackStream;
               return (
                 <ChannelChip
                   key={i}
                   label={displayLabel}
                   matched={!!stream}
                   isSection={!linkable}
-                  onPress={stream ? () => onChannel(stream) : undefined}
+                  onPress={effectiveStream ? () => onChannel(effectiveStream!) : undefined}
                 />
               );
             })}
