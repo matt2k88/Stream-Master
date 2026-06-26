@@ -41,8 +41,30 @@ interface SportGroup {
 // ── Channel name aliases ─────────────────────────────────────────────────────
 // Maps broadcast channel names (as GPT extracts them) to the naming
 // convention used on the IPTV service, so the fuzzy matcher can find them.
+// ── Section channels (streaming/event — too many variants to link) ───────────
+// These are shown as an informational chip with no stream link.
+const SECTION_PATTERNS: Array<[RegExp, string]> = [
+  [/sky\s*sports?\+\s*\(streaming\)/i, "Sky Sports+ Section"],
+  [/superleague\+/i,                   "SuperLeague+ Section"],
+];
+
+// Returns { displayLabel, linkable } for a raw channel string from GPT.
+// Non-linkable channels show a distinct chip; linkable ones go through findStream.
+function resolveChannelDisplay(raw: string): { displayLabel: string; linkable: boolean } {
+  const trimmed = raw.trim();
+  for (const [pattern, label] of SECTION_PATTERNS) {
+    if (pattern.test(trimmed)) return { displayLabel: label, linkable: false };
+  }
+  // Strip "(TV)" qualifier — purely informational, not part of the stream name
+  const display = trimmed.replace(/\s*\(tv\)\s*/gi, "").trim();
+  return { displayLabel: display || trimmed, linkable: true };
+}
+
+// ── Channel alias map ────────────────────────────────────────────────────────
 const CHANNEL_ALIASES: Array<[RegExp, string]> = [
-  // "Sky Sports X" → "SkySp X"  (handles "Sky Sport X" too)
+  // Strip "(TV)" before lookup (already stripped in display, belt-and-braces here)
+  [/\s*\(tv\)\s*/gi, ""],
+  // "Sky Sports X" / "Sky Sport X" → "SkySp X"  (covers "SkySp +" too via \s*)
   [/sky\s*sports?\s*/gi, "SkySp "],
   // Add more aliases here as needed, e.g.:
   // [/bt\s*sport\s*/gi, "BT Sport "],
@@ -103,9 +125,33 @@ function findStream(channelName: string, streams: LiveStream[]): LiveStream | un
 }
 
 // ── ChannelChip ─────────────────────────────────────────────────────────────
-function ChannelChip({ label, matched, onPress }: { label: string; matched: boolean; onPress?: () => void }) {
+// isSection = streaming/event channel (Sky Sports+ Streaming, SuperLeague+):
+//   shown in blue, informational only, never tappable.
+// matched = found a linkable stream → orange, tappable.
+// neither  = channel listed but no stream found → grey, not tappable.
+function ChannelChip({
+  label,
+  matched,
+  onPress,
+  isSection = false,
+}: {
+  label: string;
+  matched: boolean;
+  onPress?: () => void;
+  isSection?: boolean;
+}) {
   const [active, setActive] = useState(false);
   const accent = useAccent();
+
+  if (isSection) {
+    return (
+      <View style={styles.chipSection}>
+        <Feather name="radio" size={9} color="#6b8fc7" style={{ marginRight: 3 }} />
+        <ThemedText style={styles.chipTextSection} numberOfLines={1}>{label}</ThemedText>
+      </View>
+    );
+  }
+
   return (
     <Pressable
       onPress={matched ? onPress : undefined}
@@ -146,8 +192,17 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
         {match.uk_channels.length > 0 ? (
           <View style={styles.chipRow}>
             {match.uk_channels.map((ch, i) => {
-              const stream = findStream(ch, streams);
-              return <ChannelChip key={i} label={ch} matched={!!stream} onPress={stream ? () => onChannel(stream) : undefined} />;
+              const { displayLabel, linkable } = resolveChannelDisplay(ch);
+              const stream = linkable ? findStream(ch, streams) : undefined;
+              return (
+                <ChannelChip
+                  key={i}
+                  label={displayLabel}
+                  matched={!!stream}
+                  isSection={!linkable}
+                  onPress={stream ? () => onChannel(stream) : undefined}
+                />
+              );
             })}
           </View>
         ) : null}
@@ -570,6 +625,21 @@ const styles = StyleSheet.create({
   },
   chipTextUnmatched: {
     color: Colors.dark.textSecondary,
+  },
+  chipSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: "#3a5a8a",
+    backgroundColor: "rgba(58,90,138,0.18)",
+  },
+  chipTextSection: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6b8fc7",
   },
   // ── States ────────────────────────────────────────────────────────────────
   centre: {
