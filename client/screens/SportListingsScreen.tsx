@@ -839,7 +839,7 @@ export default function SportListingsScreen() {
   const { totalEvents, totalSports, nextUp, hasLive } = useMemo(() => {
     let totalEvents = 0;
     let hasLive = false;
-    let nextUp: { teams: string; time: string } | null = null;
+    let nextUp: { teams: string; time: string; sport: string; channel: string | null } | null = null;
     const now = ukNowMinutes();
     let bestDiff = Infinity;
 
@@ -853,7 +853,17 @@ export default function SportListingsScreen() {
             const diff = mins - now;
             if (diff > 0 && diff < bestDiff) {
               bestDiff = diff;
-              nextUp = { teams: m.teams, time: m.uk_time };
+              const firstLinkable = m.uk_channels.find(
+                (ch) => resolveChannelDisplay(ch).linkable,
+              );
+              nextUp = {
+                teams: m.teams,
+                time: m.uk_time,
+                sport: g.sport_label,
+                channel: firstLinkable
+                  ? resolveChannelDisplay(firstLinkable).displayLabel
+                  : m.uk_channels[0] ?? null,
+              };
             }
           }
         }
@@ -1020,8 +1030,13 @@ export default function SportListingsScreen() {
               <View style={[styles.statBox, styles.statBoxNext]}>
                 <Feather name="clock" size={11} color={ACCENT} style={{ marginRight: 4 }} />
                 <View>
-                  <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
+                  <ThemedText style={styles.statNextLabel}>
+                    Next Up · <ThemedText style={{ color: ACCENT }}>{nextUp.sport}</ThemedText>
+                  </ThemedText>
                   <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
+                  {nextUp.channel ? (
+                    <ThemedText style={styles.statNextChannel} numberOfLines={1}>{nextUp.channel}</ThemedText>
+                  ) : null}
                 </View>
                 <ThemedText style={[styles.statNextTime, { color: ACCENT, marginLeft: 8 }]}>{nextUp.time}</ThemedText>
               </View>
@@ -1210,6 +1225,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, color: Colors.dark.textSecondary },
   statNextLabel: { fontSize: 9, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
   statNextTeams: { fontSize: 11, fontWeight: "700", color: Colors.dark.text, maxWidth: 160 },
+  statNextChannel: { fontSize: 9, fontWeight: "600", color: Colors.dark.textSecondary, maxWidth: 160 },
   statNextTime: { fontSize: 12, fontWeight: "800", fontVariant: ["tabular-nums"] },
   infoDisclaimer: {
     flex: 1, flexDirection: "row", alignItems: "center",
