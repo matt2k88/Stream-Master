@@ -1318,6 +1318,7 @@ export default function HomeScreen() {
                   the switch only hides the in-player GOAL tracker overlay, not the
                   dedicated Centre (whose scores keep updating server-side). */}
               <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
+              <SidebarItem label="Sports on TV" icon="tv" onPress={() => navigation.navigate("SportListings")} />
               <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
               <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />

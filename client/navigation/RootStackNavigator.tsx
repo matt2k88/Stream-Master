@@ -42,6 +42,7 @@ import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import MusicPlayerScreen from "@/screens/MusicPlayerScreen";
 import MusicHomeScreen from "@/screens/MusicHomeScreen";
 import PlaylistDetailScreen from "@/screens/PlaylistDetailScreen";
+import SportListingsScreen from "@/screens/SportListingsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -92,6 +93,7 @@ export type RootStackParamList = {
     openIsLikedSongs?: boolean;
   } | undefined;
   PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
+  SportListings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -168,6 +170,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
             <Stack.Screen name="MusicPlayer" component={MusicPlayerScreen} />
             <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
+            <Stack.Screen name="SportListings" component={SportListingsScreen} />
           </>
         )}
       </Stack.Navigator>

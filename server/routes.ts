@@ -3088,6 +3088,325 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Sports Listings (Telegram + GPT-4o Vision) ──────────────────────────────
+  {
+    let _tgOffset: number | null = null;
+
+    const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
+1. A "header" — a decorative logo, branding, or title card for a sport (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork). It will NOT contain a table of match times and channels.
+2. A "listing" — a card showing one or more match/event rows, each with times and TV channel information.
+
+Respond with a single JSON object only — no markdown, no prose.
+
+If header:
+{"type":"header","sport":"Football"}
+sport must be one of: Football, Formula 1, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <name>"
+
+If listing:
+{"type":"listing","competition":"Premier League","matches":[{"uk_time":"20:00","teams":"Arsenal v Chelsea","uk_channels":["Sky Sports Main Event"]}]}
+
+Rules for listing:
+- competition: the league/tournament name shown on the card.
+- uk_time: HH:MM in UK time (BST = UTC+1 in summer, GMT = UTC+0 in winter). Convert from other zones if needed.
+- teams: the two teams (or event name for non-team sports). Include all matches shown on the card.
+- uk_channels: UK-only channels. UK channels include any Sky Sports, BBC, ITV, Channel 4, Channel 5, BT Sport, TNT Sports, Premier Sports, FreeSports, Eurosport. If NO UK channels are listed for a match, include the first non-UK channel shown as a fallback.`;
+
+    function getUKDate(unixTs?: number): string {
+      const d = unixTs ? new Date(unixTs * 1000) : new Date();
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      })
+        .format(d)
+        .split("/")
+        .reverse()
+        .join("-");
+    }
+
+    async function getSyncOffset(): Promise<number> {
+      if (_tgOffset !== null) return _tgOffset;
+      const { data } = await supabase
+        .from("sport_sync_state")
+        .select("tg_offset")
+        .eq("id", 1)
+        .maybeSingle();
+      _tgOffset = (data?.tg_offset as number) ?? 0;
+      return _tgOffset;
+    }
+
+    async function setSyncOffset(offset: number): Promise<void> {
+      _tgOffset = offset;
+      await supabase.from("sport_sync_state").upsert({
+        id: 1,
+        tg_offset: offset,
+        updated_at: new Date().toISOString(),
+      });
+    }
+
+    // POST /api/sports/sync
+    app.post("/api/sports/sync", async (req, res) => {
+      const authHeader = (req.headers.authorization ?? "") as string;
+      const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+      if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const tgToken = process.env.TELEGRAM_BOT_TOKEN ?? "";
+      const tgChatId = process.env.TELEGRAM_CHAT_ID ?? "";
+      const openaiKey = process.env.OPENAI_API_KEY ?? "";
+
+      if (!tgToken || !tgChatId || !openaiKey) {
+        return res.status(503).json({
+          error: "Server not fully configured. Required secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, OPENAI_API_KEY.",
+        });
+      }
+
+      try {
+        const today = getUKDate();
+        let offset = await getSyncOffset();
+
+        // ── Step 1: Drain Telegram updates, store today's photos ───────────
+        let keepFetching = true;
+        while (keepFetching) {
+          const r = await fetch(
+            `https://api.telegram.org/bot${tgToken}/getUpdates?offset=${offset}&limit=100&timeout=0`,
+          );
+          if (!r.ok) break;
+          const body = (await r.json()) as any;
+          if (!body.ok || !Array.isArray(body.result) || body.result.length === 0) break;
+
+          let maxId = offset - 1;
+          for (const upd of body.result) {
+            if (upd.update_id > maxId) maxId = upd.update_id;
+            const msg = upd.message;
+            if (!msg?.photo || !msg.chat) continue;
+            if (String(msg.chat.id) !== tgChatId) continue;
+            const msgDateUK = getUKDate(msg.date);
+            if (msgDateUK !== today) continue;
+
+            const biggest = msg.photo[msg.photo.length - 1];
+            await supabase
+              .from("sport_listing_images")
+              .upsert(
+                {
+                  message_date: today,
+                  telegram_msg_id: msg.message_id,
+                  file_unique_id: biggest.file_unique_id,
+                  file_id: biggest.file_id,
+                },
+                { onConflict: "file_unique_id", ignoreDuplicates: true },
+              );
+          }
+
+          offset = maxId + 1;
+          await setSyncOffset(offset);
+          if (body.result.length < 100) break;
+        }
+
+        // ── Step 2: Query all of today's images ordered by message id ──────
+        const { data: allImages } = await supabase
+          .from("sport_listing_images")
+          .select("id, telegram_msg_id, file_id, file_unique_id, gpt_result")
+          .eq("message_date", today)
+          .order("telegram_msg_id", { ascending: true });
+
+        if (!allImages || allImages.length === 0) {
+          return res.json({
+            success: true,
+            message: "No images found for today.",
+            sportsFound: 0,
+            matchesFound: 0,
+          });
+        }
+
+        // ── Step 3: GPT-4o Vision for unprocessed images ──────────────────
+        for (const img of allImages) {
+          if (img.gpt_result) continue;
+
+          const getFileR = await fetch(
+            `https://api.telegram.org/bot${tgToken}/getFile?file_id=${img.file_id}`,
+          );
+          const getFileBody = (await getFileR.json()) as any;
+          if (!getFileBody.ok || !getFileBody.result?.file_path) continue;
+
+          const fileR = await fetch(
+            `https://api.telegram.org/file/bot${tgToken}/${getFileBody.result.file_path}`,
+          );
+          if (!fileR.ok) continue;
+          const arrBuf = await fileR.arrayBuffer();
+          const b64 = Buffer.from(arrBuf).toString("base64");
+
+          const gptR = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${openaiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "image_url",
+                      image_url: { url: `data:image/jpeg;base64,${b64}`, detail: "low" },
+                    },
+                    { type: "text", text: SPORTS_GPT_PROMPT },
+                  ],
+                },
+              ],
+              max_tokens: 800,
+              response_format: { type: "json_object" },
+            }),
+          });
+          const gptBody = (await gptR.json()) as any;
+          const content = gptBody.choices?.[0]?.message?.content;
+          let parsed: any = null;
+          try {
+            parsed = content ? JSON.parse(content) : null;
+          } catch {}
+          if (!parsed) {
+            console.error("[sports:sync] GPT parse failed for", img.file_unique_id, content);
+            continue;
+          }
+
+          await supabase
+            .from("sport_listing_images")
+            .update({ gpt_result: parsed })
+            .eq("id", img.id);
+          img.gpt_result = parsed;
+        }
+
+        // ── Step 4: Build sport_listings from GPT-classified images ────────
+        const toKey = (s: string) =>
+          s
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+
+        interface SportGroup {
+          sport_key: string;
+          sport_label: string;
+          display_order: number;
+          competitions: Map<string, any[]>;
+        }
+
+        const sportGroups: SportGroup[] = [];
+        let currentSportKey: string | null = null;
+        let displayOrder = 0;
+
+        for (const img of allImages) {
+          const r = img.gpt_result as any;
+          if (!r) continue;
+
+          if (r.type === "header") {
+            const label = String(r.sport ?? "Other");
+            const key = toKey(label);
+            currentSportKey = key;
+            if (!sportGroups.find((g) => g.sport_key === key)) {
+              sportGroups.push({
+                sport_key: key,
+                sport_label: label,
+                display_order: displayOrder++,
+                competitions: new Map(),
+              });
+            }
+          } else if (r.type === "listing" && currentSportKey) {
+            const group = sportGroups.find((g) => g.sport_key === currentSportKey);
+            if (!group) continue;
+            const comp = String(r.competition ?? "Unknown");
+            if (!group.competitions.has(comp)) group.competitions.set(comp, []);
+            const matches: any[] = Array.isArray(r.matches) ? r.matches : [];
+            for (const m of matches) {
+              group.competitions.get(comp)!.push({
+                uk_time: m.uk_time ?? "",
+                teams: m.teams ?? "",
+                uk_channels: Array.isArray(m.uk_channels) ? m.uk_channels : [],
+              });
+            }
+          }
+        }
+
+        // ── Step 5: Replace today's sport_listings ─────────────────────────
+        await supabase.from("sport_listings").delete().eq("sync_date", today);
+
+        const toInsert: any[] = [];
+        let totalMatches = 0;
+        for (const grp of sportGroups) {
+          for (const [comp, matches] of grp.competitions) {
+            toInsert.push({
+              sync_date: today,
+              sport_key: grp.sport_key,
+              sport_label: grp.sport_label,
+              competition: comp,
+              matches,
+              display_order: grp.display_order,
+            });
+            totalMatches += matches.length;
+          }
+        }
+
+        if (toInsert.length > 0) {
+          await supabase.from("sport_listings").insert(toInsert);
+        }
+
+        console.log(
+          `[sports:sync] ${today}: ${sportGroups.length} sports, ${totalMatches} matches from ${allImages.length} images`,
+        );
+        return res.json({
+          success: true,
+          date: today,
+          imagesProcessed: allImages.filter((i: any) => i.gpt_result).length,
+          sportsFound: sportGroups.length,
+          matchesFound: totalMatches,
+        });
+      } catch (err: any) {
+        console.error("[sports:sync] ERROR:", err?.message);
+        return res.status(500).json({ error: err?.message ?? "Sync failed." });
+      }
+    });
+
+    // GET /api/sports/listings?date=YYYY-MM-DD
+    app.get("/api/sports/listings", async (req, res) => {
+      const date = String(req.query.date ?? "").trim() || getUKDate();
+
+      const { data, error } = await supabase
+        .from("sport_listings")
+        .select("sport_key, sport_label, competition, matches, display_order")
+        .eq("sync_date", date)
+        .order("display_order", { ascending: true })
+        .order("competition", { ascending: true });
+
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data || data.length === 0) return res.json([]);
+
+      const sportsMap = new Map<string, any>();
+      for (const row of data) {
+        if (!sportsMap.has(row.sport_key)) {
+          sportsMap.set(row.sport_key, {
+            sport_key: row.sport_key,
+            sport_label: row.sport_label,
+            display_order: row.display_order,
+            competitions: [],
+          });
+        }
+        sportsMap.get(row.sport_key)!.competitions.push({
+          name: row.competition,
+          matches: Array.isArray(row.matches) ? row.matches : [],
+        });
+      }
+
+      const result = Array.from(sportsMap.values()).sort(
+        (a, b) => a.display_order - b.display_order,
+      );
+      return res.json(result);
+    });
+  }
+  // ── END Sports Listings ──────────────────────────────────────────────────────
+
   const httpServer = createServer(app);
   return httpServer;
 }
