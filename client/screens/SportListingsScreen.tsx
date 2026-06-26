@@ -41,19 +41,29 @@ interface SportGroup {
 // ── Channel name aliases ─────────────────────────────────────────────────────
 // Maps broadcast channel names (as GPT extracts them) to the naming
 // convention used on the IPTV service, so the fuzzy matcher can find them.
-// ── Section channels (streaming/event — too many variants to link) ───────────
-// These are shown as an informational chip with no stream link.
-const SECTION_PATTERNS: Array<[RegExp, string]> = [
-  [/sky\s*sports?\+\s*\(streaming\)/i, "Sky Sports+ Section"],
-  [/superleague\+/i,                   "SuperLeague+ Section"],
+// ── Non-linkable channel patterns ────────────────────────────────────────────
+// label: fixed display string (Section channels).
+// no label: raw channel name shown as-is (on-demand / catch-up services).
+const NON_LINKABLE: Array<{ pattern: RegExp; label?: string }> = [
+  // Streaming/event channels — too many variants on the IPTV service to link
+  { pattern: /sky\s*sports?\+\s*\(streaming\)/i, label: "Sky Sports+ Section" },
+  { pattern: /superleague\+/i,                   label: "SuperLeague+ Section" },
+  // On-demand / catch-up services — informational only, no live stream
+  { pattern: /bbc\s*red\s*button/i },
+  { pattern: /bbc\s*i?player/i },
+  { pattern: /itvx\b|itv\s*x\b/i },
+  { pattern: /\ball\s*4\b|channel\s*4\s*(player|on\s*demand)/i },
+  { pattern: /\bmy\s*5\b|channel\s*5\s*(player|on\s*demand)/i },
+  { pattern: /\bS4C\s*Clic\b|\bS4C\s*(on\s*demand|player)/i },
+  { pattern: /\bSTV\s*Player\b/i },
 ];
 
 // Returns { displayLabel, linkable } for a raw channel string from GPT.
-// Non-linkable channels show a distinct chip; linkable ones go through findStream.
+// Non-linkable channels show a distinct blue chip; linkable ones go through findStream.
 function resolveChannelDisplay(raw: string): { displayLabel: string; linkable: boolean } {
   const trimmed = raw.trim();
-  for (const [pattern, label] of SECTION_PATTERNS) {
-    if (pattern.test(trimmed)) return { displayLabel: label, linkable: false };
+  for (const { pattern, label } of NON_LINKABLE) {
+    if (pattern.test(trimmed)) return { displayLabel: label ?? trimmed, linkable: false };
   }
   // Strip "(TV)" qualifier — purely informational, not part of the stream name
   const display = trimmed.replace(/\s*\(tv\)\s*/gi, "").trim();
