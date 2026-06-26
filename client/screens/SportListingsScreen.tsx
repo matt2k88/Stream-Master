@@ -1254,7 +1254,7 @@ export default function SportListingsScreen() {
           <Feather name="calendar" size={42} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>No listings today</ThemedText>
           <ThemedText style={styles.emptySubtitle}>
-            Check back after the next sync, or ask your admin to trigger one.
+            No sports listings have been added for today yet, check back soon!
           </ThemedText>
         </View>
       ) : filteredListings.length === 0 ? (
