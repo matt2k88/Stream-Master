@@ -1,10 +1,12 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import {
   View,
   StyleSheet,
   Pressable,
   ScrollView,
   ActivityIndicator,
+  TextInput,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -38,17 +40,12 @@ interface SportGroup {
   competitions: SportCompetition[];
 }
 
-// ── Channel name aliases ─────────────────────────────────────────────────────
-// Maps broadcast channel names (as GPT extracts them) to the naming
-// convention used on the IPTV service, so the fuzzy matcher can find them.
 // ── Non-linkable channel patterns ────────────────────────────────────────────
 // label: fixed display string (Section channels).
 // no label: raw channel name shown as-is (on-demand / catch-up services).
 const NON_LINKABLE: Array<{ pattern: RegExp; label?: string }> = [
-  // Streaming/event channels — too many variants on the IPTV service to link
   { pattern: /sky\s*sports?\+\s*\(streaming\)/i, label: "Sky Sports+ Section" },
   { pattern: /superleague\+/i,                   label: "SuperLeague+ Section" },
-  // On-demand / catch-up services — informational only, no live stream
   { pattern: /bbc\s*red\s*button/i },
   { pattern: /bbc\s*i?player/i },
   { pattern: /itvx\b|itv\s*x\b/i },
@@ -58,26 +55,19 @@ const NON_LINKABLE: Array<{ pattern: RegExp; label?: string }> = [
   { pattern: /\bSTV\s*Player\b/i },
 ];
 
-// Returns { displayLabel, linkable } for a raw channel string from GPT.
-// Non-linkable channels show a distinct blue chip; linkable ones go through findStream.
 function resolveChannelDisplay(raw: string): { displayLabel: string; linkable: boolean } {
   const trimmed = raw.trim();
   for (const { pattern, label } of NON_LINKABLE) {
     if (pattern.test(trimmed)) return { displayLabel: label ?? trimmed, linkable: false };
   }
-  // Strip "(TV)" qualifier — purely informational, not part of the stream name
   const display = trimmed.replace(/\s*\(tv\)\s*/gi, "").trim();
   return { displayLabel: display || trimmed, linkable: true };
 }
 
 // ── Channel alias map ────────────────────────────────────────────────────────
 const CHANNEL_ALIASES: Array<[RegExp, string]> = [
-  // Strip "(TV)" before lookup (already stripped in display, belt-and-braces here)
   [/\s*\(tv\)\s*/gi, ""],
-  // "Sky Sports X" / "Sky Sport X" → "SkySp X"  (covers "SkySp +" too via \s*)
   [/sky\s*sports?\s*/gi, "SkySp "],
-  // Add more aliases here as needed, e.g.:
-  // [/bt\s*sport\s*/gi, "BT Sport "],
 ];
 
 function applyAliases(name: string): string {
@@ -88,28 +78,24 @@ function applyAliases(name: string): string {
   return result.trim();
 }
 
-// Quality tier: higher = better.  FHD / FH beat HD, SD is lowest.
 function qualityTier(streamName: string): number {
   const u = streamName.toUpperCase();
   if (u.includes(" FHD") || /\bFH\b/.test(u)) return 3;
   if (u.includes(" HD")) return 2;
   if (u.includes(" SD")) return 0;
-  return 1; // no explicit quality tag
+  return 1;
 }
 
-// ── Channel fuzzy-matcher ───────────────────────────────────────────────────
 function norm(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function findStream(channelName: string, streams: LiveStream[]): LiveStream | undefined {
-  // Build a set of name variants to try (original + alias-transformed)
   const variants = Array.from(new Set([channelName, applyAliases(channelName)]));
   const needles = variants.map(norm).filter(Boolean);
   if (!needles.length) return undefined;
 
   const candidates: Array<{ stream: LiveStream; matchScore: number }> = [];
-
   for (const s of streams) {
     const hay = norm(s.name);
     if (!hay) continue;
@@ -121,24 +107,16 @@ function findStream(channelName: string, streams: LiveStream[]): LiveStream | un
     }
     if (matchScore > 0) candidates.push({ stream: s, matchScore });
   }
-
   if (!candidates.length) return undefined;
-
-  // Prefer higher match score, then highest quality (FHD > HD > SD)
   candidates.sort((a, b) =>
     b.matchScore !== a.matchScore
       ? b.matchScore - a.matchScore
       : qualityTier(b.stream.name) - qualityTier(a.stream.name),
   );
-
   return candidates[0].stream;
 }
 
-// ── ChannelChip ─────────────────────────────────────────────────────────────
-// isSection = streaming/event channel (Sky Sports+ Streaming, SuperLeague+):
-//   shown in blue, informational only, never tappable.
-// matched = found a linkable stream → orange, tappable.
-// neither  = channel listed but no stream found → grey, not tappable.
+// ── ChannelChip ──────────────────────────────────────────────────────────────
 function ChannelChip({
   label,
   matched,
@@ -153,31 +131,34 @@ function ChannelChip({
   const [active, setActive] = useState(false);
   const accent = useAccent();
 
+  const pressProps = {
+    onPressIn:  () => setActive(true),
+    onPressOut: () => setActive(false),
+    onFocus:    () => setActive(true),
+    onBlur:     () => setActive(false),
+    onHoverIn:  () => setActive(true),
+    onHoverOut: () => setActive(false),
+  };
+
   if (isSection) {
-    // When a fallback stream is available, the section chip becomes pressable.
     if (onPress) {
       return (
         <Pressable
           onPress={onPress}
-          onPressIn={() => setActive(true)}
-          onPressOut={() => setActive(false)}
-          onFocus={() => setActive(true)}
-          onBlur={() => setActive(false)}
-          onHoverIn={() => setActive(true)}
-          onHoverOut={() => setActive(false)}
+          {...pressProps}
           style={[
             styles.chipSection,
             active && { borderColor: "#8aabdf", backgroundColor: "rgba(58,90,138,0.32)" },
           ]}
         >
-          <Feather name="tv" size={9} color={active ? "#8aabdf" : "#6b8fc7"} style={{ marginRight: 3 }} />
+          <Feather name="tv" size={8} color={active ? "#8aabdf" : "#6b8fc7"} style={{ marginRight: 3 }} />
           <ThemedText style={[styles.chipTextSection, active && { color: "#8aabdf" }]} numberOfLines={1}>{label}</ThemedText>
         </Pressable>
       );
     }
     return (
       <View style={styles.chipSection}>
-        <Feather name="radio" size={9} color="#6b8fc7" style={{ marginRight: 3 }} />
+        <Feather name="radio" size={8} color="#6b8fc7" style={{ marginRight: 3 }} />
         <ThemedText style={styles.chipTextSection} numberOfLines={1}>{label}</ThemedText>
       </View>
     );
@@ -186,12 +167,7 @@ function ChannelChip({
   return (
     <Pressable
       onPress={matched ? onPress : undefined}
-      onPressIn={() => setActive(true)}
-      onPressOut={() => setActive(false)}
-      onFocus={() => setActive(true)}
-      onBlur={() => setActive(false)}
-      onHoverIn={() => setActive(true)}
-      onHoverOut={() => setActive(false)}
+      {...pressProps}
       style={[
         styles.chip,
         matched ? styles.chipMatched : styles.chipUnmatched,
@@ -199,7 +175,7 @@ function ChannelChip({
       ]}
     >
       {matched ? (
-        <Feather name="tv" size={9} color={active ? accent.accent : Colors.dark.accent} style={{ marginRight: 3 }} />
+        <Feather name="tv" size={8} color={active ? accent.accent : Colors.dark.accent} style={{ marginRight: 3 }} />
       ) : null}
       <ThemedText
         style={[styles.chipText, matched ? styles.chipTextMatched : styles.chipTextUnmatched, active && matched && { color: accent.accent }]}
@@ -212,9 +188,17 @@ function ChannelChip({
 }
 
 // ── MatchRow ─────────────────────────────────────────────────────────────────
-function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: LiveStream[]; onChannel: (s: LiveStream) => void }) {
-  // Find the best stream available across ALL channels for this match.
-  // Used as fallback when a chip has no direct link (section/on-demand/unmatched).
+function MatchRow({
+  match,
+  streams,
+  onChannel,
+  isLast,
+}: {
+  match: SportMatch;
+  streams: LiveStream[];
+  onChannel: (s: LiveStream) => void;
+  isLast?: boolean;
+}) {
   const fallbackStream = useMemo(() => {
     for (const ch of match.uk_channels) {
       const { linkable } = resolveChannelDisplay(ch);
@@ -222,7 +206,6 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
       const s = findStream(ch, streams);
       if (s) return s;
     }
-    // No linkable UK channel matched — try every channel regardless of type
     for (const ch of match.uk_channels) {
       const s = findStream(ch, streams);
       if (s) return s;
@@ -231,18 +214,22 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
   }, [match.uk_channels, streams]);
 
   return (
-    <View style={styles.matchRow}>
+    <View style={[styles.matchRow, isLast && styles.matchRowLast]}>
+      {/* Time */}
       <View style={styles.matchTimePill}>
-        <ThemedText style={styles.matchTimeText}>{match.uk_time || "TBC"}</ThemedText>
+        <ThemedText style={styles.matchTimeText} numberOfLines={1}>
+          {match.uk_time || "TBC"}
+        </ThemedText>
       </View>
+
+      {/* Teams + chips */}
       <View style={styles.matchBody}>
-        <ThemedText style={styles.matchTeams} numberOfLines={2}>{match.teams}</ThemedText>
+        <ThemedText style={styles.matchTeams} numberOfLines={1}>{match.teams}</ThemedText>
         {match.uk_channels.length > 0 ? (
           <View style={styles.chipRow}>
             {match.uk_channels.map((ch, i) => {
               const { displayLabel, linkable } = resolveChannelDisplay(ch);
               const stream = linkable ? findStream(ch, streams) : undefined;
-              // Fall back to any other matched channel in the listing
               const effectiveStream = stream ?? fallbackStream;
               return (
                 <ChannelChip
@@ -263,39 +250,42 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
 
 // ── SportCard ────────────────────────────────────────────────────────────────
 const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
-  football: "circle",
-  formula_1: "zap",
-  formula_2: "zap",
-  formula_3: "zap",
-  motogp: "zap",
-  tennis: "activity",
-  cricket: "activity",
+  football:     "circle",
+  formula_1:    "zap",
+  formula_2:    "zap",
+  formula_3:    "zap",
+  motogp:       "zap",
+  tennis:       "activity",
+  cricket:      "activity",
   rugby_league: "activity",
-  rugby_union: "activity",
-  boxing: "activity",
-  darts: "crosshair",
-  snooker: "circle",
-  cycling: "wind",
-  athletics: "wind",
-  golf: "flag",
-  basketball: "circle",
+  rugby_union:  "activity",
+  boxing:       "activity",
+  darts:        "crosshair",
+  snooker:      "circle",
+  cycling:      "wind",
+  athletics:    "wind",
+  golf:         "flag",
+  basketball:   "circle",
 };
 
 function SportCard({
   group,
   streams,
   onChannel,
-  defaultExpanded,
+  forceExpanded,
 }: {
   group: SportGroup;
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
-  defaultExpanded: boolean;
+  forceExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  const [active, setActive] = useState(false);
+  const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
   const accent = useAccent();
+  const [active, setActive] = useState(false);
   const icon = SPORT_ICON[group.sport_key] ?? "tv";
+
+  const expanded = forceExpanded ?? manualExpanded ?? false;
+
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
     [group],
@@ -304,43 +294,56 @@ function SportCard({
   return (
     <View style={styles.sportCard}>
       <Pressable
-        onPress={() => setExpanded((e) => !e)}
+        onPress={() => setManualExpanded((e) => !(e ?? forceExpanded ?? false))}
         onPressIn={() => setActive(true)}
         onPressOut={() => setActive(false)}
         onFocus={() => setActive(true)}
         onBlur={() => setActive(false)}
         onHoverIn={() => setActive(true)}
         onHoverOut={() => setActive(false)}
-        style={[styles.sportHeader, active && { borderColor: withAlpha(accent.accent, 0.45), backgroundColor: withAlpha(accent.accent, 0.07) }]}
+        style={[styles.sportHeader, active && { backgroundColor: withAlpha(accent.accent, 0.07) }]}
       >
         {active ? (
           <LinearGradient
-            colors={[withAlpha(accent.accent, 0.1), "transparent"]}
+            colors={[withAlpha(accent.accent, 0.08), "transparent"]}
             style={StyleSheet.absoluteFill}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
           />
         ) : null}
-        <View style={[styles.sportIconWrap, { backgroundColor: withAlpha(accent.accent, active ? 0.2 : 0.12) }]}>
-          <Feather name={icon} size={17} color={accent.accent} />
+        <View style={[styles.sportIconWrap, { backgroundColor: withAlpha(accent.accent, 0.12) }]}>
+          <Feather name={icon} size={14} color={accent.accent} />
         </View>
-        <ThemedText style={[styles.sportLabel, active && { color: accent.accent }]}>{group.sport_label}</ThemedText>
+        <ThemedText style={[styles.sportLabel, active && { color: accent.accent }]}>
+          {group.sport_label}
+        </ThemedText>
         <View style={styles.sportMeta}>
-          <ThemedText style={styles.matchCountText}>{totalMatches} match{totalMatches !== 1 ? "es" : ""}</ThemedText>
-          <Feather name={expanded ? "chevron-up" : "chevron-down"} size={16} color={active ? accent.accent : Colors.dark.textSecondary} />
+          <View style={styles.matchCountBadge}>
+            <ThemedText style={styles.matchCountText}>{totalMatches}</ThemedText>
+          </View>
+          <Feather
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={14}
+            color={active ? accent.accent : Colors.dark.textSecondary}
+          />
         </View>
       </Pressable>
 
       {expanded ? (
         <View style={styles.sportBody}>
           {group.competitions.map((comp, ci) => (
-            <View key={ci} style={[styles.compSection, ci > 0 && styles.compSectionBorder]}>
-              <View style={styles.compHeaderRow}>
-                <Feather name="flag" size={11} color={Colors.dark.textSecondary} style={{ marginRight: 5 }} />
+            <View key={ci}>
+              <View style={[styles.compHeader, ci > 0 && styles.compHeaderBorder]}>
                 <ThemedText style={styles.compName} numberOfLines={1}>{comp.name}</ThemedText>
               </View>
               {comp.matches.map((match, mi) => (
-                <MatchRow key={mi} match={match} streams={streams} onChannel={onChannel} />
+                <MatchRow
+                  key={mi}
+                  match={match}
+                  streams={streams}
+                  onChannel={onChannel}
+                  isLast={mi === comp.matches.length - 1}
+                />
               ))}
             </View>
           ))}
@@ -350,24 +353,57 @@ function SportCard({
   );
 }
 
-// ── BackButton ───────────────────────────────────────────────────────────────
-function BackButton() {
-  const navigation = useNavigation<NavigationProp>();
-  const [active, setActive] = useState(false);
+// ── Search bar ───────────────────────────────────────────────────────────────
+function SearchBar({
+  value,
+  onChange,
+  onClear,
+  resultCount,
+  isSearching,
+}: {
+  value: string;
+  onChange: (t: string) => void;
+  onClear: () => void;
+  resultCount: number;
+  isSearching: boolean;
+}) {
+  const inputRef = useRef<TextInput>(null);
   const accent = useAccent();
+  const [focused, setFocused] = useState(false);
+
   return (
-    <Pressable
-      onPress={() => navigation.goBack()}
-      onPressIn={() => setActive(true)}
-      onPressOut={() => setActive(false)}
-      onFocus={() => setActive(true)}
-      onBlur={() => setActive(false)}
-      onHoverIn={() => setActive(true)}
-      onHoverOut={() => setActive(false)}
-      style={[styles.backBtn, active && { borderColor: withAlpha(accent.accent, 0.5), backgroundColor: withAlpha(accent.accent, 0.1) }]}
-    >
-      <Feather name="arrow-left" size={18} color={active ? accent.accent : Colors.dark.text} />
-    </Pressable>
+    <View style={styles.searchWrap}>
+      <Pressable
+        style={[styles.searchBar, focused && { borderColor: withAlpha(accent.accent, 0.5) }]}
+        onPress={() => inputRef.current?.focus()}
+      >
+        <Feather name="search" size={14} color={focused ? accent.accent : Colors.dark.textSecondary} style={{ marginRight: 8 }} />
+        <TextInput
+          ref={inputRef}
+          style={styles.searchInput}
+          placeholder="Search teams, channels, sports…"
+          placeholderTextColor={Colors.dark.textSecondary}
+          value={value}
+          onChangeText={onChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          returnKeyType="search"
+          clearButtonMode="never"
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {value.length > 0 ? (
+          <Pressable onPress={onClear} style={styles.clearBtn} hitSlop={8}>
+            <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+          </Pressable>
+        ) : null}
+      </Pressable>
+      {isSearching ? (
+        <ThemedText style={styles.resultCount}>
+          {resultCount === 0 ? "No results" : `${resultCount} match${resultCount !== 1 ? "es" : ""}`}
+        </ThemedText>
+      ) : null}
+    </View>
   );
 }
 
@@ -381,6 +417,7 @@ export default function SportListingsScreen() {
   const [listings, setListings] = useState<SportGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -422,26 +459,75 @@ export default function SportListingsScreen() {
     }).format(new Date());
   }, []);
 
-  const pt = insets.top + Spacing.md;
+  // ── Search filter ──────────────────────────────────────────────────────────
+  const q = query.trim().toLowerCase();
+  const isSearching = q.length > 0;
+
+  const filteredListings = useMemo<SportGroup[]>(() => {
+    if (!q) return listings;
+    return listings
+      .map((group) => {
+        const sportHit = group.sport_label.toLowerCase().includes(q);
+        const filteredComps = group.competitions
+          .map((comp) => {
+            const compHit = comp.name.toLowerCase().includes(q);
+            const filteredMatches = comp.matches.filter((match) => {
+              if (sportHit || compHit) return true;
+              if (match.teams.toLowerCase().includes(q)) return true;
+              if (match.uk_channels.some((ch) => ch.toLowerCase().includes(q))) return true;
+              return false;
+            });
+            return filteredMatches.length > 0 ? { ...comp, matches: filteredMatches } : null;
+          })
+          .filter((c): c is SportCompetition => c !== null);
+        return filteredComps.length > 0 ? { ...group, competitions: filteredComps } : null;
+      })
+      .filter((g): g is SportGroup => g !== null);
+  }, [listings, q]);
+
+  const totalFilteredMatches = useMemo(
+    () => filteredListings.reduce((n, g) => n + g.competitions.reduce((m, c) => m + c.matches.length, 0), 0),
+    [filteredListings],
+  );
+
+  const pt = insets.top + Spacing.sm;
   const pb = insets.bottom + Spacing["2xl"];
 
   return (
     <View style={[styles.root, { paddingTop: pt }]}>
       {/* Header */}
       <View style={styles.headerRow}>
-        <BackButton />
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.iconBtn}
+          hitSlop={8}
+        >
+          <Feather name="arrow-left" size={17} color={Colors.dark.text} />
+        </Pressable>
         <View style={styles.headerCenter}>
           <ThemedText style={styles.screenTitle}>Sports on TV</ThemedText>
           <ThemedText style={styles.dateLabel}>{todayLabel}</ThemedText>
         </View>
         <Pressable
           onPress={fetchListings}
-          style={[styles.backBtn, loading && { opacity: 0.5 }]}
+          style={[styles.iconBtn, loading && { opacity: 0.4 }]}
           disabled={loading}
+          hitSlop={8}
         >
-          <Feather name="refresh-cw" size={16} color={Colors.dark.textSecondary} />
+          <Feather name="refresh-cw" size={15} color={Colors.dark.textSecondary} />
         </Pressable>
       </View>
+
+      {/* Search */}
+      {!loading && !error && listings.length > 0 ? (
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          onClear={() => setQuery("")}
+          resultCount={totalFilteredMatches}
+          isSearching={isSearching}
+        />
+      ) : null}
 
       {/* Content */}
       {loading ? (
@@ -451,38 +537,42 @@ export default function SportListingsScreen() {
         </View>
       ) : error ? (
         <View style={styles.centre}>
-          <Feather name="wifi-off" size={40} color={Colors.dark.textSecondary} />
+          <Feather name="wifi-off" size={38} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>Could not load</ThemedText>
           <ThemedText style={styles.emptySubtitle}>{error}</ThemedText>
           <Pressable style={[styles.retryBtn, { borderColor: withAlpha(accent.accent, 0.4) }]} onPress={fetchListings}>
-            <Feather name="refresh-cw" size={13} color={accent.accent} style={{ marginRight: 5 }} />
+            <Feather name="refresh-cw" size={12} color={accent.accent} style={{ marginRight: 5 }} />
             <ThemedText style={[styles.retryText, { color: accent.accent }]}>Try again</ThemedText>
           </Pressable>
         </View>
       ) : listings.length === 0 ? (
         <View style={styles.centre}>
-          <Feather name="calendar" size={44} color={Colors.dark.textSecondary} />
+          <Feather name="calendar" size={42} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>No listings today</ThemedText>
           <ThemedText style={styles.emptySubtitle}>
             Check back after the next sync, or ask your admin to trigger one.
           </ThemedText>
+        </View>
+      ) : isSearching && filteredListings.length === 0 ? (
+        <View style={styles.centre}>
+          <Feather name="search" size={38} color={Colors.dark.textSecondary} />
+          <ThemedText style={styles.emptyTitle}>No results</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>Try a different team, sport, or channel name.</ThemedText>
         </View>
       ) : (
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <ThemedText style={styles.sectionHint}>
-            Tap a channel to jump straight to the live stream
-          </ThemedText>
-          {listings.map((group, i) => (
+          {filteredListings.map((group) => (
             <SportCard
               key={group.sport_key}
               group={group}
               streams={liveStreams}
               onChannel={handleChannel}
-              defaultExpanded={i === 0}
+              forceExpanded={isSearching ? true : undefined}
             />
           ))}
         </ScrollView>
@@ -497,11 +587,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.dark.backgroundRoot,
   },
+
+  // ── Header ─────────────────────────────────────────────────────────────────
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
     gap: Spacing.sm,
   },
   headerCenter: {
@@ -509,36 +601,72 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   screenTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: Colors.dark.text,
   },
   dateLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.dark.textSecondary,
     marginTop: 1,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
+  iconBtn: {
+    width: 34,
+    height: 34,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.dark.border,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.dark.backgroundSecondary,
+    flexShrink: 0,
   },
+
+  // ── Search ─────────────────────────────────────────────────────────────────
+  searchWrap: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: 5,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    height: 38,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.dark.text,
+    ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
+  },
+  clearBtn: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundTertiary,
+    marginLeft: 4,
+  },
+  resultCount: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    paddingLeft: 4,
+  },
+
+  // ── Scroll ─────────────────────────────────────────────────────────────────
   scroll: { flex: 1 },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xs,
-    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingTop: 2,
+    gap: 6,
   },
-  sectionHint: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-    marginBottom: Spacing.xs,
-  },
+
   // ── Sport card ─────────────────────────────────────────────────────────────
   sportCard: {
     borderRadius: BorderRadius.md,
@@ -546,115 +674,117 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundSecondary,
-    marginBottom: Spacing.xs,
   },
   sportHeader: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
+    paddingVertical: 9,
     gap: Spacing.sm,
-    borderWidth: 1,
-    borderColor: "transparent",
     overflow: "hidden",
   },
   sportIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.sm,
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.xs,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
   sportLabel: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
     color: Colors.dark.text,
   },
   sportMeta: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: 8,
+  },
+  matchCountBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
   matchCountText: {
     fontSize: 11,
+    fontWeight: "600",
     color: Colors.dark.textSecondary,
   },
   sportBody: {
     borderTopWidth: 1,
     borderTopColor: Colors.dark.border,
   },
-  // ── Competition section ───────────────────────────────────────────────────
-  compSection: {
+
+  // ── Competition header ──────────────────────────────────────────────────────
+  compHeader: {
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
+    paddingVertical: 5,
+    backgroundColor: Colors.dark.backgroundTertiary,
   },
-  compSectionBorder: {
+  compHeaderBorder: {
     borderTopWidth: 1,
     borderTopColor: Colors.dark.border,
   },
-  compHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: Spacing.sm,
-  },
   compName: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "700",
     color: Colors.dark.textSecondary,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-    flexShrink: 1,
+    letterSpacing: 0.6,
   },
+
   // ── Match row ──────────────────────────────────────────────────────────────
   matchRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: Spacing.sm,
+    alignItems: "center",
+    paddingVertical: 7,
+    paddingHorizontal: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.dark.border,
     gap: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.dark.border + "55",
   },
+  matchRowLast: {},
   matchTimePill: {
-    minWidth: 44,
-    paddingHorizontal: Spacing.xs,
+    minWidth: 48,
+    paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: BorderRadius.xs,
     backgroundColor: Colors.dark.backgroundTertiary,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    marginTop: 1,
   },
   matchTimeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
     color: Colors.dark.accent,
     fontVariant: ["tabular-nums"],
   },
   matchBody: {
     flex: 1,
-    gap: Spacing.xs,
+    gap: 4,
+    minWidth: 0,
   },
   matchTeams: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.dark.text,
-    lineHeight: 18,
   },
   chipRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.xs,
+    gap: 4,
   },
-  // ── Channel chip ───────────────────────────────────────────────────────────
+
+  // ── Channel chips ───────────────────────────────────────────────────────────
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
@@ -667,7 +797,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundTertiary,
   },
   chipText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
   },
   chipTextMatched: {
@@ -679,19 +809,20 @@ const styles = StyleSheet.create({
   chipSection: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
     borderColor: "#3a5a8a",
     backgroundColor: "rgba(58,90,138,0.18)",
   },
   chipTextSection: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     color: "#6b8fc7",
   },
-  // ── States ────────────────────────────────────────────────────────────────
+
+  // ── States ─────────────────────────────────────────────────────────────────
   centre: {
     flex: 1,
     alignItems: "center",
@@ -700,7 +831,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
     color: Colors.dark.text,
     textAlign: "center",
@@ -709,7 +840,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.dark.textSecondary,
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 19,
   },
   retryBtn: {
     flexDirection: "row",
@@ -718,7 +849,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   retryText: {
     fontSize: 13,
