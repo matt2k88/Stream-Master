@@ -497,6 +497,23 @@ const MatchRow = memo(function MatchRow({
     return { resolved, extraChip };
   }, [match.uk_channels, streams]);
 
+  // Show a day label (e.g. "SAT") for post-midnight events viewed in daytime.
+  // If the match time is before 04:00 and the current UK hour is >= 4 (daytime/evening),
+  // the event is actually on the NEXT calendar day.
+  const nextDayLabel = useMemo(() => {
+    const mins = parseHHMM(match.uk_time);
+    if (mins === null || mins >= 4 * 60) return null; // 4am+ = same sports day
+    const ukHour = parseInt(
+      new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hour12: false })
+        .format(new Date()), 10,
+    );
+    if (ukHour < 4) return null; // We're also in early morning — match is today
+    // We're in daytime/evening: this early-morning slot is tomorrow
+    return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short" })
+      .format(new Date(Date.now() + 24 * 60 * 60 * 1000))
+      .toUpperCase(); // "SAT", "SUN", etc.
+  }, [match.uk_time]);
+
   return (
     <View style={[styles.matchRow, !isFirst && styles.matchRowBorder]}>
       {/* Time column */}
@@ -504,7 +521,11 @@ const MatchRow = memo(function MatchRow({
         <ThemedText style={[styles.matchTime, status === "live" && { color: LIVE_GREEN }]}>
           {match.uk_time || "TBC"}
         </ThemedText>
-        {status === "live" ? (
+        {nextDayLabel ? (
+          <View style={styles.nextDayBadge}>
+            <ThemedText style={styles.nextDayBadgeText}>{nextDayLabel}</ThemedText>
+          </View>
+        ) : status === "live" ? (
           <View style={styles.statusBadgeLive}>
             <ThemedText style={styles.statusBadgeText}>LIVE</ThemedText>
           </View>
@@ -868,15 +889,23 @@ export default function SportListingsScreen() {
     const hasCache = _listingsCache.length > 0;
 
     if (hasCache && !force) {
-      // Serve from cache as long as it was populated on today's UK calendar date.
-      // Once it's a new day the next page-load will fetch fresh automatically.
-      const cachedDate = new Intl.DateTimeFormat("en-GB", {
+      // Cache is keyed by the "sports day" which runs from 4am UK to 4am UK,
+      // not by midnight. Friday listings (uploaded at noon) stay valid until
+      // Saturday 4am so post-midnight events still show correctly.
+      const ukDateFmt = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
-      }).format(new Date(_cacheAt));
-      const todayDate = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/London", year: "numeric", month: "2-digit", day: "2-digit",
-      }).format(new Date());
-      if (cachedDate === todayDate) {
+      });
+      const ukHourFmt = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London", hour: "2-digit", hour12: false,
+      });
+      const now = new Date();
+      const cachedDate = ukDateFmt.format(new Date(_cacheAt));
+      const todayDate = ukDateFmt.format(now);
+      const ukHour = parseInt(ukHourFmt.format(now), 10);
+      // Same calendar date → always valid.
+      // Different date but before 4am UK → still the same sports day, still valid.
+      const stillValid = cachedDate === todayDate || ukHour < 4;
+      if (stillValid) {
         setListings(_listingsCache);
         setLoading(false);
         return;
@@ -1564,6 +1593,13 @@ const styles = StyleSheet.create({
     backgroundColor: SOON_AMBER,
   },
   statusBadgeText: { fontSize: 8, fontWeight: "800", color: "#000" },
+  nextDayBadge: {
+    paddingHorizontal: 5, paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+    backgroundColor: "#334155",
+    borderWidth: 1, borderColor: "#475569",
+  },
+  nextDayBadgeText: { fontSize: 8, fontWeight: "700", color: "#94a3b8" },
   matchInfo: { flex: 1, gap: 3 },
   matchTeams: { fontSize: 14, fontWeight: "700", color: Colors.dark.text },
   matchComp: { fontSize: 11, color: Colors.dark.textSecondary },
