@@ -3174,6 +3174,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "afl":                             { key: "afl",         label: "AFL" },
       "australian football":             { key: "afl",         label: "AFL" },
       "australian rules football":       { key: "afl",         label: "AFL" },
+      "australian football league":      { key: "afl",         label: "AFL" },
     };
 
     const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
@@ -3562,16 +3563,20 @@ Rules for listing:
       if (!data || data.length === 0) return res.json([]);
 
       // Re-normalise every row through SPORT_KEY_MAP so stale DB data
-      // (e.g. sport_key="formula 1", "other: wrc", "other") is merged
+      // (e.g. sport_key="formula 1", "other", "horse_racing") is merged
       // into the correct canonical group without needing a re-sync.
+      const norm = (s: string) =>
+        s.replace(/^other:\s*/i, "").trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
+
       const sportsMap = new Map<string, any>();
       let orderCounter = 0;
       for (const row of data) {
-        // Strip legacy "other: " prefix that may be stored in sport_key
-        const rawKey = String(row.sport_key ?? "").replace(/^other:\s*/i, "").trim();
-        const normKey = rawKey.toLowerCase().replace(/\s+/g, " ");
-        const mapped = SPORT_KEY_MAP[normKey];
-        // Skip rows that cannot be mapped (true "other", unknown keys)
+        // Cascade: try sport_key → sport_label → competition name
+        let mapped =
+          SPORT_KEY_MAP[norm(String(row.sport_key ?? ""))] ||
+          SPORT_KEY_MAP[norm(String(row.sport_label ?? ""))] ||
+          SPORT_KEY_MAP[norm(String(row.competition ?? ""))];
+        // Skip truly unmappable rows (and any that still resolve to "other")
         if (!mapped || mapped.key === "other") continue;
         const { key, label } = mapped;
         if (!sportsMap.has(key)) {
