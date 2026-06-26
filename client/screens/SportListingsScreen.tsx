@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -274,9 +274,6 @@ export default function SportListingsScreen() {
   const [listings, setListings] = useState<SportGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [clearing, setClearing] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const confirmTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchListings = useCallback(async () => {
     setLoading(true);
@@ -295,31 +292,6 @@ export default function SportListingsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { fetchListings(); }, [fetchListings]));
-
-  const handleClearPress = useCallback(() => {
-    if (!confirmClear) {
-      // First press: enter confirm mode, auto-cancel after 3s
-      setConfirmClear(true);
-      if (confirmTimer.current) clearTimeout(confirmTimer.current);
-      confirmTimer.current = setTimeout(() => setConfirmClear(false), 3000);
-      return;
-    }
-    // Second press: do the clear
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    setConfirmClear(false);
-    setClearing(true);
-    (async () => {
-      try {
-        const url = new URL("/api/sports/clear-app", getApiUrl());
-        await fetch(url.toString(), { method: "POST" });
-        await fetchListings();
-      } catch (_) {
-        // silently ignore
-      } finally {
-        setClearing(false);
-      }
-    })();
-  }, [confirmClear, fetchListings]);
 
   const handleChannel = useCallback(
     (stream: LiveStream) => {
@@ -355,22 +327,6 @@ export default function SportListingsScreen() {
           <ThemedText style={styles.screenTitle}>Sports on TV</ThemedText>
           <ThemedText style={styles.dateLabel}>{todayLabel}</ThemedText>
         </View>
-        {/* Clear button — first press turns red ("Confirm?"), second press clears */}
-        <Pressable
-          onPress={handleClearPress}
-          style={[
-            styles.backBtn,
-            (clearing) && { opacity: 0.5 },
-            confirmClear && { borderColor: "#cc2200", backgroundColor: "rgba(204,34,0,0.15)" },
-          ]}
-          disabled={clearing || loading}
-        >
-          {clearing ? (
-            <ActivityIndicator size="small" color="#cc2200" />
-          ) : (
-            <Feather name="trash-2" size={15} color={confirmClear ? "#cc2200" : Colors.dark.textSecondary} />
-          )}
-        </Pressable>
         <Pressable
           onPress={fetchListings}
           style={[styles.backBtn, loading && { opacity: 0.5 }]}

@@ -3508,16 +3508,6 @@ Rules for listing:
       }
     });
 
-    // POST /api/sports/clear-app — called from in-app UI (no external auth needed; app users are already authed)
-    app.post("/api/sports/clear-app", async (_req, res) => {
-      try {
-        await clearSportListings();
-        return res.json({ success: true });
-      } catch (err: any) {
-        console.error("[sports:clear-app] error:", err?.message);
-        return res.status(500).json({ error: err?.message ?? "Clear failed" });
-      }
-    });
   }
   // ── END Sports Listings ──────────────────────────────────────────────────────
 
