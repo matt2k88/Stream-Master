@@ -545,7 +545,7 @@ const MatchRow = memo(function MatchRow({
 
 // ── SportCard ──────────────────────────────────────────────────────────────────
 const SportCard = memo(function SportCard({
-  group, streams, onChannel, expanded, onExpand, onCollapse,
+  group, streams, onChannel, expanded, onExpand, onCollapse, isFocusTarget,
 }: {
   group: SportGroup;
   streams: LiveStream[];
@@ -553,25 +553,10 @@ const SportCard = memo(function SportCard({
   expanded: boolean;
   onExpand: () => void;
   onCollapse: () => void;
+  isFocusTarget?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const [headerHovered, setHeaderHovered] = useState(false);
-  const expandedHeaderRef = useRef<any>(null);
-  const collapsedRowRef = useRef<any>(null);
-  const prevExpanded = useRef(expanded);
-
-  // Re-focus the correct element after expand/collapse so TV remote doesn't
-  // jump back to the top-left menu button
-  useEffect(() => {
-    if (prevExpanded.current === expanded) return;
-    prevExpanded.current = expanded;
-    if (Platform.OS === "web") return;
-    if (expanded) {
-      setTimeout(() => expandedHeaderRef.current?.focus?.(), 100);
-    } else {
-      setTimeout(() => collapsedRowRef.current?.focus?.(), 100);
-    }
-  }, [expanded]);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
@@ -594,8 +579,8 @@ const SportCard = memo(function SportCard({
   if (!expanded) {
     return (
       <Pressable
-        ref={collapsedRowRef}
         onPress={onExpand}
+        hasTVPreferredFocus={isFocusTarget && Platform.OS !== "web"}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
         onFocus={() => setHovered(true)}
@@ -630,8 +615,8 @@ const SportCard = memo(function SportCard({
     <View style={styles.expandedCard}>
       {/* Expanded header */}
       <Pressable
-        ref={expandedHeaderRef}
         onPress={onCollapse}
+        hasTVPreferredFocus={isFocusTarget && Platform.OS !== "web"}
         onHoverIn={() => setHeaderHovered(true)}
         onHoverOut={() => setHeaderHovered(false)}
         onFocus={() => setHeaderHovered(true)}
@@ -771,6 +756,8 @@ export default function SportListingsScreen() {
   const [query, setQuery] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
   const [expandedSportKey, setExpandedSportKey] = useState<string | null>(null);
+  const [justToggledKey, setJustToggledKey] = useState<string | null>(null);
+  const toggleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clockStr, setClockStr] = useState("");
   const inputRef = useRef<TextInput>(null);
 
@@ -1085,7 +1072,7 @@ export default function SportListingsScreen() {
               styles.retryBtn,
               (pressed || focused || hovered) && styles.retryBtnFocus,
             ]}
-            onPress={fetchListings}
+            onPress={() => fetchListings(true)}
           >
             <Feather name="refresh-cw" size={12} color={ACCENT} style={{ marginRight: 5 }} />
             <ThemedText style={[styles.retryText, { color: ACCENT }]}>Try again</ThemedText>
@@ -1115,20 +1102,33 @@ export default function SportListingsScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {filteredListings.map((group) => (
-              <SportCard
-                key={group.sport_key}
-                group={group}
-                streams={liveStreams}
-                onChannel={handleChannel}
-                expanded={
-                  expandedSportKey === group.sport_key ||
-                  (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1)
-                }
-                onExpand={() => setExpandedSportKey(group.sport_key)}
-                onCollapse={() => setExpandedSportKey(null)}
-              />
-            ))}
+            {filteredListings.map((group) => {
+              const isExpanded =
+                expandedSportKey === group.sport_key ||
+                (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1);
+              return (
+                <SportCard
+                  key={group.sport_key}
+                  group={group}
+                  streams={liveStreams}
+                  onChannel={handleChannel}
+                  expanded={isExpanded}
+                  isFocusTarget={justToggledKey === group.sport_key}
+                  onExpand={() => {
+                    setExpandedSportKey(group.sport_key);
+                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                    setJustToggledKey(group.sport_key);
+                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                  }}
+                  onCollapse={() => {
+                    setExpandedSportKey(null);
+                    if (toggleTimerRef.current) clearTimeout(toggleTimerRef.current);
+                    setJustToggledKey(group.sport_key);
+                    toggleTimerRef.current = setTimeout(() => setJustToggledKey(null), 600);
+                  }}
+                />
+              );
+            })}
           </ScrollView>
         </LiveOwnersCtx.Provider>
       )}
