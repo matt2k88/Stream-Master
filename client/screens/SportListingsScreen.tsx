@@ -991,11 +991,11 @@ export default function SportListingsScreen() {
               <View style={styles.statDivider} />
               <View style={[styles.statBox, styles.statBoxNext]}>
                 <Feather name="clock" size={11} color={ACCENT} style={{ marginRight: 4 }} />
-                <View style={{ flex: 1, minWidth: 0 }}>
+                <View>
                   <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
                   <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
                 </View>
-                <ThemedText style={[styles.statNextTime, { color: ACCENT, marginLeft: 6 }]}>{nextUp.time}</ThemedText>
+                <ThemedText style={[styles.statNextTime, { color: ACCENT, marginLeft: 8 }]}>{nextUp.time}</ThemedText>
               </View>
             </>
           ) : null}
