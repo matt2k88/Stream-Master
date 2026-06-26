@@ -3555,24 +3555,34 @@ Rules for listing:
         .from("sport_listings")
         .select("sport_key, sport_label, competition, matches, display_order")
         .eq("sync_date", date)
-        .neq("sport_key", "other")
         .order("display_order", { ascending: true })
         .order("competition", { ascending: true });
 
       if (error) return res.status(500).json({ error: error.message });
       if (!data || data.length === 0) return res.json([]);
 
+      // Re-normalise every row through SPORT_KEY_MAP so stale DB data
+      // (e.g. sport_key="formula 1", "other: wrc", "other") is merged
+      // into the correct canonical group without needing a re-sync.
       const sportsMap = new Map<string, any>();
+      let orderCounter = 0;
       for (const row of data) {
-        if (!sportsMap.has(row.sport_key)) {
-          sportsMap.set(row.sport_key, {
-            sport_key: row.sport_key,
-            sport_label: row.sport_label,
-            display_order: row.display_order,
+        // Strip legacy "other: " prefix that may be stored in sport_key
+        const rawKey = String(row.sport_key ?? "").replace(/^other:\s*/i, "").trim();
+        const normKey = rawKey.toLowerCase().replace(/\s+/g, " ");
+        const mapped = SPORT_KEY_MAP[normKey];
+        // Skip rows that cannot be mapped (true "other", unknown keys)
+        if (!mapped || mapped.key === "other") continue;
+        const { key, label } = mapped;
+        if (!sportsMap.has(key)) {
+          sportsMap.set(key, {
+            sport_key: key,
+            sport_label: label,
+            display_order: orderCounter++,
             competitions: [],
           });
         }
-        sportsMap.get(row.sport_key)!.competitions.push({
+        sportsMap.get(key)!.competitions.push({
           name: row.competition,
           matches: Array.isArray(row.matches) ? row.matches : [],
         });
