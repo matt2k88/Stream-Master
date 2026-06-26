@@ -3100,10 +3100,10 @@ Respond with a single JSON object only — no markdown, no prose.
 
 If header:
 {"type":"header","sport":"Football","competition":"FIFA World Cup 2026"}
-- sport must be exactly one of: Football, Formula 1, Formula 2, Formula 3, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <descriptive name>"
+- sport must be exactly one of: Football, Formula 1, Formula 2, Formula 3, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball — OR the closest real sport name if it does not match those (e.g. "Motorsport", "Rally", "Rowing", "Volleyball", "Triathlon", "Equestrian", "Wrestling", "Table Tennis", "Netball", "Handball"). NEVER use "Other", "Other: ...", or any variant of "Other" as the sport name under any circumstances.
 - F1/F2/F3 — distinguish carefully: "Formula 1" = the FIA F1 World Championship; "Formula 2" = FIA Formula 2 Championship (F2); "Formula 3" = FIA Formula 3 Championship (F3). Do NOT lump F2 or F3 under Formula 1.
 - Super League — if the image shows Super League (the top-tier European rugby league competition, including any anniversary variant such as "30 Years of Super League" or "Super League 30"), return sport="Rugby League" and competition="Super League".
-- Anniversary / celebratory images — if a sport or competition is celebrating a milestone (e.g. "30 Years"), classify by the SPORT and COMPETITION it represents, not the milestone text. Only use "Other: Channel Logo" when the image is purely a TV channel brand with absolutely no identifiable sport or competition.
+- Anniversary / celebratory images — if a sport or competition is celebrating a milestone (e.g. "30 Years"), classify by the SPORT and COMPETITION it represents, not the milestone text. If the image is purely a TV channel brand with no identifiable sport, use "Motorsport" as a safe fallback — still never "Other".
 - competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible. Omit the field if it is a generic sport logo with no specific tournament name.
 
 If listing:
@@ -3368,7 +3368,10 @@ Rules for listing:
           if (!r) continue;
 
           if (r.type === "header") {
-            const label = String(r.sport ?? "Other");
+            // Strip any "Other: " prefix GPT may have used before the prompt was updated.
+            // e.g. "Other: FIA World Rally Championship" → "FIA World Rally Championship"
+            const rawLabel = String(r.sport ?? "Sport");
+            const label = rawLabel.replace(/^other:\s*/i, "").trim() || "Sport";
             const key = toKey(label);
             currentSportKey = key;
             // Capture competition from header (e.g. FIFA World Cup logo) for
