@@ -15,8 +15,13 @@ CREATE TABLE IF NOT EXISTS sport_listing_images (
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Drop old single-column index if it exists (pre-fix schema had only file_unique_id).
+DROP INDEX IF EXISTS uniq_sport_listing_image;
+
+-- Unique per (date, image) so the same graphic reposted on a later day
+-- is stored again with the new message_date rather than silently ignored.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_sport_listing_image
-  ON sport_listing_images(file_unique_id);
+  ON sport_listing_images(message_date, file_unique_id);
 
 CREATE INDEX IF NOT EXISTS idx_sport_listing_images_date
   ON sport_listing_images(message_date, telegram_msg_id);

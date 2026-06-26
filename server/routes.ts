@@ -3196,7 +3196,7 @@ Rules for listing:
                   file_unique_id: biggest.file_unique_id,
                   file_id: biggest.file_id,
                 },
-                { onConflict: "file_unique_id", ignoreDuplicates: true },
+                { onConflict: "message_date,file_unique_id", ignoreDuplicates: true },
               );
           }
 
