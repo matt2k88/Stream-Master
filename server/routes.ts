@@ -3482,7 +3482,7 @@ Rules for listing:
       return res.json(result);
     });
 
-    // Shared clear logic (used by both routes below)
+    // Shared clear logic (used by both routes below and the daily scheduler)
     async function clearSportListings(): Promise<void> {
       const [delListings, delImages] = await Promise.all([
         supabase.from("sport_listings").delete().gte("sync_date", "2020-01-01"),
@@ -3494,6 +3494,45 @@ Rules for listing:
       _tgOffset = 0;
       console.log("[sports:clear] sport_listings + sport_listing_images wiped; TG offset reset");
     }
+
+    // ── Daily 4am UK-time auto-clear ─────────────────────────────────────────
+    // Reads the actual UK clock components so DST (BST/GMT) is handled correctly.
+    // Self-reschedules every day so it runs indefinitely without drift.
+    function scheduleDailyClear(): void {
+      const now = new Date();
+      const parts = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/London",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+        hour12: false,
+      }).formatToParts(now);
+
+      const ukHour   = parseInt(parts.find((p) => p.type === "hour")?.value   ?? "0");
+      const ukMin    = parseInt(parts.find((p) => p.type === "minute")?.value  ?? "0");
+      const ukSec    = parseInt(parts.find((p) => p.type === "second")?.value  ?? "0");
+
+      const msSinceMidnight = (ukHour * 3600 + ukMin * 60 + ukSec) * 1000;
+      const TARGET_MS       = 4 * 60 * 60 * 1000; // 04:00 UK
+      let   msUntil         = TARGET_MS - msSinceMidnight;
+      if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // already past 4am → tomorrow
+
+      const hh = Math.floor(msUntil / 3_600_000);
+      const mm = Math.floor((msUntil % 3_600_000) / 60_000);
+      console.log(`[sports:scheduler] next 4am UK auto-clear in ${hh}h ${mm}m`);
+
+      setTimeout(async () => {
+        try {
+          await clearSportListings();
+          console.log("[sports:scheduler] 4am UK auto-clear completed");
+        } catch (e: any) {
+          console.error("[sports:scheduler] 4am UK auto-clear error:", e?.message);
+        }
+        scheduleDailyClear(); // schedule next day
+      }, msUntil);
+    }
+    scheduleDailyClear();
+    // ─────────────────────────────────────────────────────────────────────────
 
     // POST /api/sports/clear — admin-only (requires Bearer SPORTS_ADMIN_SECRET); use via curl/automation
     app.post("/api/sports/clear", async (req, res) => {
