@@ -340,11 +340,19 @@ function CompetitionSection({
 }) {
   const accent = ACCENT;
   const [open, setOpen] = useState(defaultExpanded !== false);
+  const [compHovered, setCompHovered] = useState(false);
   const liveCount = comp.matches.filter((m) => isMatchLive(m.uk_time, sportKey)).length;
 
   return (
     <View style={styles.compSection}>
-      <Pressable style={styles.compHeader} onPress={() => setOpen((v) => !v)}>
+      <Pressable
+        style={[styles.compHeader, compHovered && styles.compHeaderHover]}
+        onPress={() => setOpen((v) => !v)}
+        onHoverIn={() => setCompHovered(true)}
+        onHoverOut={() => setCompHovered(false)}
+        onFocus={() => setCompHovered(true)}
+        onBlur={() => setCompHovered(false)}
+      >
         <View style={styles.compHeaderLeft}>
           <View style={[styles.compAccentBar, { backgroundColor: accent }]} />
           <ThemedText style={styles.compHeaderLabel} numberOfLines={1}>{comp.name}</ThemedText>
@@ -481,6 +489,7 @@ function SportCard({
 }) {
   const [expanded, setExpanded] = useState(!!defaultExpanded);
   const [hovered, setHovered] = useState(false);
+  const [headerHovered, setHeaderHovered] = useState(false);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
@@ -501,6 +510,8 @@ function SportCard({
         onPress={() => setExpanded(true)}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
         style={[styles.collapsedRow, hovered && styles.collapsedRowHover]}
       >
         <View style={styles.sportIconCircle}>
@@ -532,7 +543,11 @@ function SportCard({
       {/* Expanded header */}
       <Pressable
         onPress={() => setExpanded(false)}
-        style={styles.expandedHeader}
+        onHoverIn={() => setHeaderHovered(true)}
+        onHoverOut={() => setHeaderHovered(false)}
+        onFocus={() => setHeaderHovered(true)}
+        onBlur={() => setHeaderHovered(false)}
+        style={[styles.expandedHeader, headerHovered && styles.expandedHeaderHover]}
       >
         <View style={styles.sportIconCircle}>
           <Feather name={icon} size={16} color="#fff" />
@@ -669,17 +684,28 @@ function FilterTabs({
           <Pressable
             key={tab.key}
             onPress={() => onSelect(tab.key)}
-            style={[styles.filterTab, active && styles.filterTabActive]}
+            style={({ pressed, focused, hovered }: any) => [
+              styles.filterTab,
+              active && styles.filterTabActive,
+              !active && (pressed || focused || hovered) && styles.filterTabHover,
+            ]}
           >
-            <Feather
-              name={tab.icon}
-              size={12}
-              color={active ? "#fff" : Colors.dark.textSecondary}
-              style={{ marginRight: 5 }}
-            />
-            <ThemedText style={[styles.filterTabText, active && styles.filterTabTextActive]}>
-              {tab.label}
-            </ThemedText>
+            {({ focused, hovered, pressed }: any) => {
+              const lit = active || focused || hovered || pressed;
+              return (
+                <>
+                  <Feather
+                    name={tab.icon}
+                    size={12}
+                    color={lit ? "#fff" : Colors.dark.textSecondary}
+                    style={{ marginRight: 5 }}
+                  />
+                  <ThemedText style={[styles.filterTabText, active && styles.filterTabTextActive]}>
+                    {tab.label}
+                  </ThemedText>
+                </>
+              );
+            }}
           </Pressable>
         );
       })}
@@ -839,7 +865,14 @@ export default function SportListingsScreen() {
       {/* ── Top header ── */}
       <View style={styles.topBar}>
         <SideMenuButton />
-        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          style={({ pressed, focused, hovered }: any) => [
+            styles.backBtn,
+            (pressed || focused || hovered) && styles.iconBtnFocus,
+          ]}
+        >
           <Feather name="arrow-left" size={18} color={Colors.dark.text} />
         </Pressable>
         <View style={styles.topBarCenter}>
@@ -856,9 +889,13 @@ export default function SportListingsScreen() {
           {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
           <Pressable
             onPress={fetchListings}
-            style={[styles.refreshBtn, loading && { opacity: 0.4 }]}
             disabled={loading}
             hitSlop={8}
+            style={({ pressed, focused, hovered }: any) => [
+              styles.refreshBtn,
+              loading && { opacity: 0.4 },
+              !loading && (pressed || focused || hovered) && styles.iconBtnFocus,
+            ]}
           >
             <Feather name="refresh-cw" size={13} color={Colors.dark.textSecondary} />
           </Pressable>
@@ -876,7 +913,13 @@ export default function SportListingsScreen() {
       {/* ── Search bar ── */}
       {!loading && !error && listings.length > 0 ? (
         <View style={styles.searchWrap}>
-          <Pressable style={styles.searchBar} onPress={() => inputRef.current?.focus()}>
+          <Pressable
+            style={({ pressed, focused, hovered }: any) => [
+              styles.searchBar,
+              (pressed || focused || hovered) && styles.searchBarFocus,
+            ]}
+            onPress={() => inputRef.current?.focus()}
+          >
             <Feather name="search" size={14} color={Colors.dark.textSecondary} style={{ marginRight: 8 }} />
             <TextInput
               ref={inputRef}
@@ -891,7 +934,14 @@ export default function SportListingsScreen() {
               {...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {})}
             />
             {query.length > 0 ? (
-              <Pressable onPress={() => setQuery("")} style={styles.clearBtn} hitSlop={8}>
+              <Pressable
+                onPress={() => setQuery("")}
+                hitSlop={8}
+                style={({ pressed, focused, hovered }: any) => [
+                  styles.clearBtn,
+                  (pressed || focused || hovered) && styles.clearBtnFocus,
+                ]}
+              >
                 <Feather name="x" size={12} color={Colors.dark.textSecondary} />
               </Pressable>
             ) : null}
@@ -925,7 +975,13 @@ export default function SportListingsScreen() {
           <Feather name="wifi-off" size={38} color={Colors.dark.textSecondary} />
           <ThemedText style={styles.emptyTitle}>Could not load</ThemedText>
           <ThemedText style={styles.emptySubtitle}>{error}</ThemedText>
-          <Pressable style={styles.retryBtn} onPress={fetchListings}>
+          <Pressable
+            style={({ pressed, focused, hovered }: any) => [
+              styles.retryBtn,
+              (pressed || focused || hovered) && styles.retryBtnFocus,
+            ]}
+            onPress={fetchListings}
+          >
             <Feather name="refresh-cw" size={12} color={ACCENT} style={{ marginRight: 5 }} />
             <ThemedText style={[styles.retryText, { color: ACCENT }]}>Try again</ThemedText>
           </Pressable>
@@ -987,6 +1043,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
     backgroundColor: BG_CARD, flexShrink: 0, marginTop: 2,
   },
+  iconBtnFocus: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.15)" },
   topBarCenter: { flex: 1 },
   pageTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   pageTitle: {
@@ -1066,6 +1123,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     height: 42,
   },
+  searchBarFocus: { borderColor: ACCENT, backgroundColor: BG_CARD_ALT },
   searchInput: {
     flex: 1, fontSize: 14, color: Colors.dark.text,
     ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
@@ -1077,6 +1135,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundTertiary,
     marginLeft: 4,
   },
+  clearBtnFocus: { backgroundColor: ACCENT + "44" },
   resultCount: { fontSize: 11, color: Colors.dark.textSecondary, paddingLeft: 4 },
 
   // ── Filter tabs ───────────────────────────────────────────────────────────────
@@ -1090,6 +1149,7 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD,
   },
   filterTabActive: { backgroundColor: ACCENT, borderColor: ACCENT },
+  filterTabHover: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.12)" },
   filterTabText: { fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary },
   filterTabTextActive: { color: "#fff" },
 
@@ -1108,7 +1168,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: BORDER,
     gap: Spacing.md,
   },
-  collapsedRowHover: { backgroundColor: BG_CARD_ALT },
+  collapsedRowHover: { backgroundColor: BG_CARD_ALT, borderColor: ACCENT + "80" },
   sportIconCircle: {
     width: 40, height: 40,
     borderRadius: 20,
@@ -1148,6 +1208,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,102,0,0.06)",
     borderBottomWidth: 1, borderBottomColor: BORDER,
   },
+  expandedHeaderHover: { backgroundColor: "rgba(255,102,0,0.13)" },
   sportIconCircleLg: {
     width: 48, height: 48,
     borderRadius: 24,
@@ -1192,6 +1253,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "rgba(255,255,255,0.02)",
   },
+  compHeaderHover: { backgroundColor: "rgba(255,102,0,0.08)" },
   compHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -1306,5 +1368,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: ACCENT + "66",
     marginTop: Spacing.xs,
   },
+  retryBtnFocus: { borderColor: ACCENT, backgroundColor: "rgba(255,102,0,0.15)" },
   retryText: { fontSize: 13, fontWeight: "600" },
 });
