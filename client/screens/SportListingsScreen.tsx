@@ -839,13 +839,36 @@ export default function SportListingsScreen() {
   []);
 
   const fetchListings = useCallback(async (force = false) => {
-    const now = Date.now();
-    // Serve instantly from cache if still fresh and not a manual refresh
-    if (!force && _listingsCache.length > 0 && now - _cacheAt < CACHE_TTL_MS) {
+    const hasCache = _listingsCache.length > 0;
+
+    // If we have cached data, show it immediately and decide how to refresh:
+    // - force=true (refresh button) → show loading bar and re-fetch
+    // - force=false (page load) → serve cache instantly, re-fetch silently in bg
+    if (hasCache) {
       setListings(_listingsCache);
-      setLoading(false);
-      return;
+      if (!force) {
+        setLoading(false);
+        // Silent background refresh — always fetch fresh on every page visit
+        // but don't flash a loading bar since there's data already on screen
+        try {
+          const url = new URL("/api/sports/listings", getApiUrl());
+          const r = await fetch(url.toString());
+          if (!r.ok) return;
+          const data = await r.json();
+          const arr = Array.isArray(data) ? data : [];
+          _listingsCache = arr;
+          _cacheAt = Date.now();
+          setListings(arr);
+          AsyncStorage.setItem(
+            ASYNC_STORAGE_KEY,
+            JSON.stringify({ data: arr, cachedAt: _cacheAt }),
+          ).catch(() => {});
+        } catch {}
+        return;
+      }
     }
+
+    // No cache, or forced refresh → show loading bar
     setLoading(true);
     setError(null);
     try {
@@ -857,7 +880,6 @@ export default function SportListingsScreen() {
       _listingsCache = arr;
       _cacheAt = Date.now();
       setListings(arr);
-      // Persist to AsyncStorage so next app launch is instant
       AsyncStorage.setItem(
         ASYNC_STORAGE_KEY,
         JSON.stringify({ data: arr, cachedAt: _cacheAt }),
