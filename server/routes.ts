@@ -3093,15 +3093,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let _tgOffset: number | null = null;
 
     const SPORTS_GPT_PROMPT = `Analyse this image from a sports TV listings channel. Determine whether it is:
-1. A "header" — a decorative logo, branding, or title card for a sport or tournament (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork). It will NOT contain a table of match times and channels.
+1. A "header" — a decorative logo, branding, or title card for a sport or tournament (e.g. FIFA World Cup logo, F1 logo, Premier League banner, promotional artwork, anniversary graphic). It will NOT contain a table of match times and channels.
 2. A "listing" — a card showing one or more match/event rows, each with times and TV channel information.
 
 Respond with a single JSON object only — no markdown, no prose.
 
 If header:
 {"type":"header","sport":"Football","competition":"FIFA World Cup 2026"}
-- sport must be one of: Football, Formula 1, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <name>"
-- competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible (e.g. "FIFA World Cup 2026", "UEFA Champions League", "Premier League"). Omit the field if it is a generic sport logo with no specific tournament name.
+- sport must be exactly one of: Football, Formula 1, Formula 2, Formula 3, MotoGP, Tennis, Cricket, Rugby League, Rugby Union, Boxing, Darts, Snooker, Cycling, Athletics, Golf, Basketball, or "Other: <descriptive name>"
+- F1/F2/F3 — distinguish carefully: "Formula 1" = the FIA F1 World Championship; "Formula 2" = FIA Formula 2 Championship (F2); "Formula 3" = FIA Formula 3 Championship (F3). Do NOT lump F2 or F3 under Formula 1.
+- Super League — if the image shows Super League (the top-tier European rugby league competition, including any anniversary variant such as "30 Years of Super League" or "Super League 30"), return sport="Rugby League" and competition="Super League".
+- Anniversary / celebratory images — if a sport or competition is celebrating a milestone (e.g. "30 Years"), classify by the SPORT and COMPETITION it represents, not the milestone text. Only use "Other: Channel Logo" when the image is purely a TV channel brand with absolutely no identifiable sport or competition.
+- competition is OPTIONAL. Include it ONLY if a specific tournament/competition name is clearly visible. Omit the field if it is a generic sport logo with no specific tournament name.
 
 If listing:
 {"type":"listing","competition":"FIFA World Cup 2026","matches":[{"uk_time":"20:00","teams":"Arsenal v Chelsea","uk_channels":["Sky Sports Main Event"]}]}

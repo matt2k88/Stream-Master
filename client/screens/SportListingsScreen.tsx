@@ -160,6 +160,8 @@ function MatchRow({ match, streams, onChannel }: { match: SportMatch; streams: L
 const SPORT_ICON: Record<string, keyof typeof Feather.glyphMap> = {
   football: "circle",
   formula_1: "zap",
+  formula_2: "zap",
+  formula_3: "zap",
   motogp: "zap",
   tennis: "activity",
   cricket: "activity",
