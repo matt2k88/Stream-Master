@@ -30,6 +30,11 @@ const BG_CARD = "#141414";
 const BG_CARD_ALT = "#1a1a1a";
 const BORDER = "#252525";
 const LIVE_GREEN = "#22c55e";
+
+// ── Module-level listings cache (survives screen unmounts, instant revisits) ───
+let _listingsCache: SportGroup[] = [];
+let _cacheAt = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 const SOON_AMBER = "#f59e0b";
 
 interface SportMatch {
@@ -540,17 +545,33 @@ const MatchRow = memo(function MatchRow({
 
 // ── SportCard ──────────────────────────────────────────────────────────────────
 const SportCard = memo(function SportCard({
-  group, streams, onChannel, defaultExpanded,
+  group, streams, onChannel, expanded, onExpand, onCollapse,
 }: {
   group: SportGroup;
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
-  defaultExpanded?: boolean;
+  expanded: boolean;
+  onExpand: () => void;
+  onCollapse: () => void;
 }) {
-  const [expanded, setExpanded] = useState(!!defaultExpanded);
   const [hovered, setHovered] = useState(false);
   const [headerHovered, setHeaderHovered] = useState(false);
   const expandedHeaderRef = useRef<any>(null);
+  const collapsedRowRef = useRef<any>(null);
+  const prevExpanded = useRef(expanded);
+
+  // Re-focus the correct element after expand/collapse so TV remote doesn't
+  // jump back to the top-left menu button
+  useEffect(() => {
+    if (prevExpanded.current === expanded) return;
+    prevExpanded.current = expanded;
+    if (Platform.OS === "web") return;
+    if (expanded) {
+      setTimeout(() => expandedHeaderRef.current?.focus?.(), 100);
+    } else {
+      setTimeout(() => collapsedRowRef.current?.focus?.(), 100);
+    }
+  }, [expanded]);
 
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
@@ -573,12 +594,8 @@ const SportCard = memo(function SportCard({
   if (!expanded) {
     return (
       <Pressable
-        onPress={() => {
-          setExpanded(true);
-          if (Platform.OS !== "web") {
-            setTimeout(() => { expandedHeaderRef.current?.focus?.(); }, 80);
-          }
-        }}
+        ref={collapsedRowRef}
+        onPress={onExpand}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
         onFocus={() => setHovered(true)}
@@ -614,7 +631,7 @@ const SportCard = memo(function SportCard({
       {/* Expanded header */}
       <Pressable
         ref={expandedHeaderRef}
-        onPress={() => setExpanded(false)}
+        onPress={onCollapse}
         onHoverIn={() => setHeaderHovered(true)}
         onHoverOut={() => setHeaderHovered(false)}
         onFocus={() => setHeaderHovered(true)}
@@ -678,6 +695,41 @@ const SportCard = memo(function SportCard({
 });
 
 // ── Sport filter tabs ──────────────────────────────────────────────────────────
+type FilterTab = { key: string; label: string; icon: keyof typeof Feather.glyphMap };
+
+const FilterTabItem = memo(function FilterTabItem({
+  tab, active, onSelect,
+}: { tab: FilterTab; active: boolean; onSelect: (key: string) => void }) {
+  const [lit, setLit] = useState(false);
+  const isLit = active || lit;
+  return (
+    <Pressable
+      onPress={() => onSelect(tab.key)}
+      onFocus={() => setLit(true)}
+      onBlur={() => setLit(false)}
+      onHoverIn={() => setLit(true)}
+      onHoverOut={() => setLit(false)}
+      onPressIn={() => setLit(true)}
+      onPressOut={() => setLit(false)}
+      style={[
+        styles.filterTab,
+        active && styles.filterTabActive,
+        !active && lit && styles.filterTabHover,
+      ]}
+    >
+      <Feather
+        name={tab.icon}
+        size={12}
+        color={isLit ? "#fff" : Colors.dark.textSecondary}
+        style={{ marginRight: 5 }}
+      />
+      <ThemedText style={[styles.filterTabText, isLit && styles.filterTabTextActive]}>
+        {tab.label}
+      </ThemedText>
+    </Pressable>
+  );
+});
+
 function FilterTabs({
   sports, selected, onSelect, hasLive,
 }: {
@@ -686,7 +738,7 @@ function FilterTabs({
   onSelect: (key: string) => void;
   hasLive: boolean;
 }) {
-  const tabs: Array<{ key: string; label: string; icon: keyof typeof Feather.glyphMap }> = [
+  const tabs: FilterTab[] = [
     { key: "all", label: "All Sports", icon: "grid" },
     ...(hasLive ? [{ key: "live", label: "Live Now", icon: "radio" as keyof typeof Feather.glyphMap }] : []),
     ...sports.map((g) => ({ key: g.sport_key, label: g.sport_label, icon: sportIcon(g.sport_key) })),
@@ -700,37 +752,9 @@ function FilterTabs({
       contentContainerStyle={styles.filterContent}
       keyboardShouldPersistTaps="handled"
     >
-      {tabs.map((tab) => {
-        const active = selected === tab.key;
-        return (
-          <Pressable
-            key={tab.key}
-            onPress={() => onSelect(tab.key)}
-            style={({ pressed, focused, hovered }: any) => [
-              styles.filterTab,
-              active && styles.filterTabActive,
-              !active && (pressed || focused || hovered) && styles.filterTabHover,
-            ]}
-          >
-            {({ focused, hovered, pressed }: any) => {
-              const lit = active || focused || hovered || pressed;
-              return (
-                <>
-                  <Feather
-                    name={tab.icon}
-                    size={12}
-                    color={lit ? "#fff" : Colors.dark.textSecondary}
-                    style={{ marginRight: 5 }}
-                  />
-                  <ThemedText style={[styles.filterTabText, lit && styles.filterTabTextActive]}>
-                    {tab.label}
-                  </ThemedText>
-                </>
-              );
-            }}
-          </Pressable>
-        );
-      })}
+      {tabs.map((tab) => (
+        <FilterTabItem key={tab.key} tab={tab} active={selected === tab.key} onSelect={onSelect} />
+      ))}
     </ScrollView>
   );
 }
@@ -741,11 +765,12 @@ export default function SportListingsScreen() {
   const insets = useSafeAreaInsets();
   const { liveStreams } = useData();
 
-  const [listings, setListings] = useState<SportGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [listings, setListings] = useState<SportGroup[]>(_listingsCache);
+  const [loading, setLoading] = useState(_listingsCache.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
+  const [expandedSportKey, setExpandedSportKey] = useState<string | null>(null);
   const [clockStr, setClockStr] = useState("");
   const inputRef = useRef<TextInput>(null);
 
@@ -772,7 +797,14 @@ export default function SportListingsScreen() {
     }).format(new Date()),
   []);
 
-  const fetchListings = useCallback(async () => {
+  const fetchListings = useCallback(async (force = false) => {
+    const now = Date.now();
+    // Serve instantly from cache if still fresh and not a manual refresh
+    if (!force && _listingsCache.length > 0 && now - _cacheAt < CACHE_TTL_MS) {
+      setListings(_listingsCache);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -780,7 +812,10 @@ export default function SportListingsScreen() {
       const r = await fetch(url.toString());
       if (!r.ok) throw new Error(`Server error ${r.status}`);
       const data = await r.json();
-      setListings(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+      _listingsCache = arr;
+      _cacheAt = Date.now();
+      setListings(arr);
     } catch (e: any) {
       setError(e?.message ?? "Failed to load");
     } finally {
@@ -964,7 +999,7 @@ export default function SportListingsScreen() {
         <View style={styles.topBarRight}>
           {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
           <Pressable
-            onPress={fetchListings}
+            onPress={() => fetchListings(true)}
             disabled={loading}
             hitSlop={8}
             style={({ pressed, focused, hovered }: any) => [
@@ -1020,7 +1055,16 @@ export default function SportListingsScreen() {
         <FilterTabs
           sports={listings}
           selected={sportFilter}
-          onSelect={(k) => { setSportFilter(k); setQuery(""); }}
+          onSelect={(k) => {
+            setSportFilter(k);
+            setQuery("");
+            // Auto-expand the single sport when a specific filter is chosen
+            if (k !== "all" && k !== "live") {
+              setExpandedSportKey(k);
+            } else {
+              setExpandedSportKey(null);
+            }
+          }}
           hasLive={hasLive}
         />
       ) : null}
@@ -1071,13 +1115,18 @@ export default function SportListingsScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {filteredListings.map((group, i) => (
+            {filteredListings.map((group) => (
               <SportCard
                 key={group.sport_key}
                 group={group}
                 streams={liveStreams}
                 onChannel={handleChannel}
-                defaultExpanded={isSearching || sportFilter !== "all"}
+                expanded={
+                  expandedSportKey === group.sport_key ||
+                  (expandedSportKey === null && (isSearching || sportFilter !== "all") && filteredListings.length === 1)
+                }
+                onExpand={() => setExpandedSportKey(group.sport_key)}
+                onCollapse={() => setExpandedSportKey(null)}
               />
             ))}
           </ScrollView>
