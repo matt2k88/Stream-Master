@@ -1041,7 +1041,7 @@ export default function LivePreviewScreen() {
 
           {!isFullscreen && (
             <>
-              <FullScreenButton onPress={handleFullScreen} />
+              <FullScreenButton onPress={handleFullScreen} autoFocus />
               <View style={styles.epgDivider}>
                 <Feather name="calendar" size={11} color={Colors.dark.accent} />
                 <ThemedText style={styles.epgHeaderText} numberOfLines={1}>
@@ -1483,7 +1483,7 @@ function FavBtnHeader({ isFavourited, onPress }: { isFavourited: boolean; onPres
   );
 }
 
-function FullScreenButton({ onPress }: { onPress: () => void }) {
+function FullScreenButton({ onPress, autoFocus }: { onPress: () => void; autoFocus?: boolean }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
@@ -1495,6 +1495,7 @@ function FullScreenButton({ onPress }: { onPress: () => void }) {
       onBlur={() => setFocused(false)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus && Platform.OS !== "web"}
     >
       {isActive ? (
         <LinearGradient
