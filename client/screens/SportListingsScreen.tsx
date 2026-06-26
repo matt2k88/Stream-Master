@@ -1030,10 +1030,11 @@ export default function SportListingsScreen() {
               <View style={[styles.statBox, styles.statBoxNext]}>
                 <Feather name="clock" size={11} color={ACCENT} style={{ marginRight: 4 }} />
                 <View>
-                  <ThemedText style={styles.statNextLabel}>
-                    Next Up · <ThemedText style={{ color: ACCENT }}>{nextUp.sport}</ThemedText>
+                  <ThemedText style={styles.statNextLabel}>Next Up</ThemedText>
+                  <ThemedText style={styles.statNextTeams} numberOfLines={1}>
+                    <ThemedText style={styles.statNextSport}>{nextUp.sport} · </ThemedText>
+                    {nextUp.teams}
                   </ThemedText>
-                  <ThemedText style={styles.statNextTeams} numberOfLines={1}>{nextUp.teams}</ThemedText>
                   {nextUp.channel ? (
                     <ThemedText style={styles.statNextChannel} numberOfLines={1}>{nextUp.channel}</ThemedText>
                   ) : null}
@@ -1225,6 +1226,7 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 10, color: Colors.dark.textSecondary },
   statNextLabel: { fontSize: 9, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
   statNextTeams: { fontSize: 11, fontWeight: "700", color: Colors.dark.text, maxWidth: 160 },
+  statNextSport: { fontSize: 11, fontWeight: "700", color: ACCENT },
   statNextChannel: { fontSize: 9, fontWeight: "600", color: Colors.dark.textSecondary, maxWidth: 160 },
   statNextTime: { fontSize: 12, fontWeight: "800", fontVariant: ["tabular-nums"] },
   infoDisclaimer: {
