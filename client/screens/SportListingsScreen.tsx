@@ -328,9 +328,68 @@ function ChannelChip({
   );
 }
 
+// ── CompetitionSection ─────────────────────────────────────────────────────────
+function CompetitionSection({
+  comp, sportKey, streams, onChannel, defaultExpanded,
+}: {
+  comp: { name: string; matches: SportMatch[] };
+  sportKey: string;
+  streams: LiveStream[];
+  onChannel: (s: LiveStream) => void;
+  defaultExpanded?: boolean;
+}) {
+  const accent = ACCENT;
+  const [open, setOpen] = useState(defaultExpanded !== false);
+  const liveCount = comp.matches.filter((m) => isMatchLive(m.uk_time, sportKey)).length;
+
+  return (
+    <View style={styles.compSection}>
+      <Pressable style={styles.compHeader} onPress={() => setOpen((v) => !v)}>
+        <View style={styles.compHeaderLeft}>
+          <View style={[styles.compAccentBar, { backgroundColor: accent }]} />
+          <ThemedText style={styles.compHeaderLabel} numberOfLines={1}>{comp.name}</ThemedText>
+        </View>
+        <View style={styles.compHeaderRight}>
+          {liveCount > 0 ? (
+            <View style={styles.compLiveBadge}>
+              <View style={styles.liveDotSm} />
+              <ThemedText style={styles.compLiveText}>{liveCount} LIVE</ThemedText>
+            </View>
+          ) : null}
+          <ThemedText style={styles.compMatchCount}>
+            {comp.matches.length} match{comp.matches.length !== 1 ? "es" : ""}
+          </ThemedText>
+          <Feather
+            name={open ? "chevron-up" : "chevron-down"}
+            size={13}
+            color={Colors.dark.textSecondary}
+            style={{ marginLeft: 8 }}
+          />
+        </View>
+      </Pressable>
+      {open ? (
+        <View style={styles.compBody}>
+          {comp.matches.map((match, mi) => (
+            <MatchRow
+              key={mi}
+              match={match}
+              competition={comp.name}
+              sportKey={sportKey}
+              streams={streams}
+              onChannel={onChannel}
+              isFirst={mi === 0}
+              hideCompetitionLabel
+            />
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 // ── MatchRow ───────────────────────────────────────────────────────────────────
 function MatchRow({
-  match, competition, sportKey, streams, onChannel, isFirst,
+  match, competition, sportKey, streams, onChannel, isFirst, hideCompetitionLabel,
 }: {
   match: SportMatch;
   competition: string;
@@ -338,6 +397,7 @@ function MatchRow({
   streams: LiveStream[];
   onChannel: (s: LiveStream) => void;
   isFirst?: boolean;
+  hideCompetitionLabel?: boolean;
 }) {
   const status = getMatchStatus(match.uk_time, sportKey);
 
@@ -381,7 +441,9 @@ function MatchRow({
       {/* Info column */}
       <View style={styles.matchInfo}>
         <ThemedText style={styles.matchTeams} numberOfLines={1}>{match.teams}</ThemedText>
-        <ThemedText style={styles.matchComp} numberOfLines={1}>{competition}</ThemedText>
+        {!hideCompetitionLabel ? (
+          <ThemedText style={styles.matchComp} numberOfLines={1}>{competition}</ThemedText>
+        ) : null}
         {match.uk_channels.length > 0 ? (
           <View style={styles.chipRow}>
             {resolved.map(({ displayLabel, linkable, stream }, i) => (
@@ -495,20 +557,33 @@ function SportCard({
         </View>
       </Pressable>
 
-      {/* Matches */}
+      {/* Matches — sub-categories when multiple competitions exist */}
       <View style={styles.expandedBody}>
-        {group.competitions.map((comp, ci) =>
-          comp.matches.map((match, mi) => (
-            <MatchRow
-              key={`${ci}-${mi}`}
-              match={match}
-              competition={comp.name}
+        {group.competitions.length > 1 ? (
+          group.competitions.map((comp, ci) => (
+            <CompetitionSection
+              key={ci}
+              comp={comp}
               sportKey={group.sport_key}
               streams={streams}
               onChannel={onChannel}
-              isFirst={ci === 0 && mi === 0}
+              defaultExpanded
             />
           ))
+        ) : (
+          group.competitions.flatMap((comp, ci) =>
+            comp.matches.map((match, mi) => (
+              <MatchRow
+                key={`${ci}-${mi}`}
+                match={match}
+                competition={comp.name}
+                sportKey={group.sport_key}
+                streams={streams}
+                onChannel={onChannel}
+                isFirst={ci === 0 && mi === 0}
+              />
+            ))
+          )
         )}
       </View>
     </View>
@@ -1101,6 +1176,66 @@ const styles = StyleSheet.create({
 
   // ── Match body ────────────────────────────────────────────────────────────────
   expandedBody: {},
+
+  // ── Competition sub-section ───────────────────────────────────────────────────
+  compSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER,
+  },
+  compHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255,255,255,0.02)",
+  },
+  compHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 10,
+    minWidth: 0,
+  },
+  compAccentBar: {
+    width: 3,
+    height: 14,
+    borderRadius: 2,
+    flexShrink: 0,
+  },
+  compHeaderLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Colors.dark.text,
+    flex: 1,
+  },
+  compHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
+  },
+  compLiveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: "rgba(34,197,94,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.3)",
+  },
+  compLiveText: { fontSize: 9, fontWeight: "700", color: LIVE_GREEN },
+  compMatchCount: {
+    fontSize: 11,
+    color: Colors.dark.textSecondary,
+    fontWeight: "500",
+  },
+  compBody: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER,
+  },
   matchRow: {
     flexDirection: "row",
     alignItems: "flex-start",
