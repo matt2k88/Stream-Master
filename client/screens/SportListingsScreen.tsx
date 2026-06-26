@@ -371,7 +371,12 @@ function CompetitionSection({
   const accent = ACCENT;
   const [open, setOpen] = useState(defaultExpanded !== false);
   const [compHovered, setCompHovered] = useState(false);
-  const liveCount = comp.matches.filter((m) => isMatchLive(m.uk_time, sportKey)).length;
+  const liveOwners = useContext(LiveOwnersCtx);
+  const liveCount = comp.matches.filter((m) => {
+    if (!isMatchLive(m.uk_time, sportKey)) return false;
+    if (m.uk_channels.length === 0) return true;
+    return liveOwners.has(`${m.uk_time}|${m.teams}`);
+  }).length;
 
   return (
     <View style={styles.compSection}>
@@ -533,11 +538,16 @@ function SportCard({
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
     [group],
   );
+  const liveOwners = useContext(LiveOwnersCtx);
   const liveCount = useMemo(
     () => group.competitions.reduce(
-      (n, c) => n + c.matches.filter((m) => isMatchLive(m.uk_time, group.sport_key)).length, 0,
+      (n, c) => n + c.matches.filter((m) => {
+        if (!isMatchLive(m.uk_time, group.sport_key)) return false;
+        if (m.uk_channels.length === 0) return true;
+        return liveOwners.has(`${m.uk_time}|${m.teams}`);
+      }).length, 0,
     ),
-    [group],
+    [group, liveOwners],
   );
 
   const icon = sportIcon(group.sport_key);
@@ -816,6 +826,19 @@ export default function SportListingsScreen() {
     });
   }, [navigation]);
 
+  // ── Channel ownership (computed from full listings so "live" filter uses it) ──
+  const liveOwners = useMemo(() => computeLiveOwners(listings), [listings]);
+
+  // Helper: is this match effectively live (owns at least one channel) ──────────
+  const isEffLive = useCallback(
+    (m: SportMatch, sportKey: string) => {
+      if (!isMatchLive(m.uk_time, sportKey)) return false;
+      if (m.uk_channels.length === 0) return true;
+      return liveOwners.has(`${m.uk_time}|${m.teams}`);
+    },
+    [liveOwners],
+  );
+
   // ── Computed stats ───────────────────────────────────────────────────────────
   const { totalEvents, totalSports, nextUp, hasLive } = useMemo(() => {
     let totalEvents = 0;
@@ -828,7 +851,7 @@ export default function SportListingsScreen() {
       for (const comp of g.competitions) {
         for (const m of comp.matches) {
           totalEvents++;
-          if (isMatchLive(m.uk_time, g.sport_key)) hasLive = true;
+          if (isEffLive(m, g.sport_key)) hasLive = true;
           const mins = parseHHMM(m.uk_time);
           if (mins !== null) {
             const diff = mins - now;
@@ -841,7 +864,7 @@ export default function SportListingsScreen() {
       }
     }
     return { totalEvents, totalSports: listings.length, nextUp, hasLive };
-  }, [listings]);
+  }, [listings, isEffLive]);
 
   // ── Filtering ────────────────────────────────────────────────────────────────
   const q = query.trim().toLowerCase();
@@ -852,13 +875,13 @@ export default function SportListingsScreen() {
       (a, b) => sportSortIndex(a.sport_key) - sportSortIndex(b.sport_key),
     );
 
-    // Sport filter
+    // Sport filter — "live" uses effective ownership so displaced matches are excluded
     if (sportFilter === "live") {
       result = result
         .map((g) => ({
           ...g,
           competitions: g.competitions
-            .map((c) => ({ ...c, matches: c.matches.filter((m) => isMatchLive(m.uk_time, g.sport_key)) }))
+            .map((c) => ({ ...c, matches: c.matches.filter((m) => isEffLive(m, g.sport_key)) }))
             .filter((c) => c.matches.length > 0),
         }))
         .filter((g) => g.competitions.length > 0);
@@ -892,9 +915,6 @@ export default function SportListingsScreen() {
     () => filteredListings.reduce((n, g) => n + g.competitions.reduce((m, c) => m + c.matches.length, 0), 0),
     [filteredListings],
   );
-
-  // Which live matches "own" at least one channel (latest start time wins per channel)
-  const liveOwners = useMemo(() => computeLiveOwners(filteredListings), [filteredListings]);
 
   const pt = insets.top + Spacing.sm;
   const pb = insets.bottom + Spacing["2xl"];

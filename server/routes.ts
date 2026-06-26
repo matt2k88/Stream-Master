@@ -3588,8 +3588,20 @@ Rules for listing:
             competitions: [],
           });
         }
+        // Fix stale competition names: "Unknown" → sport_label; Formula series
+        // mismatch (e.g. F2 session stored under "Formula 1" competition) → sport_label.
+        let competition = row.competition || "";
+        if (!competition || competition === "Unknown") {
+          competition = row.sport_label;
+        } else if (
+          /^formula\s*\d/i.test(row.sport_label) &&
+          /^formula\s*\d/i.test(competition) &&
+          norm(row.sport_label) !== norm(competition)
+        ) {
+          competition = row.sport_label;
+        }
         sportsMap.get(key)!.competitions.push({
-          name: row.competition,
+          name: competition,
           matches: Array.isArray(row.matches) ? row.matches : [],
         });
       }
