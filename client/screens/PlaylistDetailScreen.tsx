@@ -9,7 +9,7 @@ import {
   Image,
   Modal,
 } from "react-native";
-import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -17,10 +17,6 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import type { MusicPlaylistTrack } from "@/lib/music-types";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-
-type RouteParams = RouteProp<RootStackParamList, "PlaylistDetail">;
-
 function fmtTime(sec: number) {
   if (!sec || isNaN(sec) || sec < 0) return "--:--";
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
@@ -67,8 +63,8 @@ function TrackItem({
 
 export default function PlaylistDetailScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<RouteParams>();
-  const { playlistId, playlistName, isLikedSongs } = route.params;
+  const route = useRoute<any>();
+  const { playlistId, playlistName, isLikedSongs } = route.params ?? {};
   const insets = useSafeAreaInsets();
 
   const [tracks, setTracks] = useState<MusicPlaylistTrack[]>([]);
