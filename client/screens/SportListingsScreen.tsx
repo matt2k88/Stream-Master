@@ -563,6 +563,9 @@ const SportCard = memo(function SportCard({
   const [headerHovered, setHeaderHovered] = useState(false);
   const [expanding, setExpanding] = useState(false);
 
+  // Reset expanding flag whenever the card actually becomes expanded or collapses
+  useEffect(() => { setExpanding(false); }, [expanded]);
+
   const totalMatches = useMemo(
     () => group.competitions.reduce((n, c) => n + c.matches.length, 0),
     [group],
