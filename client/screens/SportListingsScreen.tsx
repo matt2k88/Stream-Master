@@ -849,9 +849,8 @@ export default function SportListingsScreen() {
               <ThemedText style={styles.todayBadgeText}>TODAY</ThemedText>
             </View>
           </View>
-          <ThemedText style={styles.pageSubtitle}>
-            {todayLong}  •  Live and upcoming TV coverage
-          </ThemedText>
+          <ThemedText style={styles.dateText}>{todayLong}</ThemedText>
+          <ThemedText style={styles.pageSubtitle}>Live and upcoming TV coverage</ThemedText>
         </View>
         <View style={styles.topBarRight}>
           {clockStr ? <ThemedText style={styles.clockText}>{clockStr}</ThemedText> : null}
@@ -999,8 +998,11 @@ const styles = StyleSheet.create({
     backgroundColor: ACCENT,
   },
   todayBadgeText: { fontSize: 10, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },
+  dateText: {
+    fontSize: 16, fontWeight: "700", color: Colors.dark.text, marginTop: 3, letterSpacing: -0.2,
+  },
   pageSubtitle: {
-    fontSize: 12, color: Colors.dark.textSecondary, marginTop: 3,
+    fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2,
   },
   topBarRight: { alignItems: "flex-end", gap: 2, flexShrink: 0 },
   clockText: { fontSize: 20, fontWeight: "700", color: Colors.dark.text, fontVariant: ["tabular-nums"] },
