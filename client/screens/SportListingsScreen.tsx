@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext } from "react";
 import {
   View,
   StyleSheet,
@@ -206,6 +206,36 @@ function isMatchLive(ukTime: string, sportKey = ""): boolean {
   return getMatchStatus(ukTime, sportKey) === "live";
 }
 
+// ── Channel-conflict resolution ────────────────────────────────────────────────
+// If two live matches share the same channel, only the one with the LATEST
+// start time is considered "live" on that channel.  We track which match keys
+// "own" at least one channel via a React context so MatchRow can suppress the
+// LIVE badge without prop-drilling through three component layers.
+const LiveOwnersCtx = createContext<Set<string>>(new Set());
+
+function computeLiveOwners(groups: SportGroup[]): Set<string> {
+  // channel (lower-cased) → { timeMins, matchKey }
+  const channelOwner = new Map<string, { timeMins: number; key: string }>();
+  for (const group of groups) {
+    for (const comp of group.competitions) {
+      for (const match of comp.matches) {
+        if (!isMatchLive(match.uk_time, group.sport_key)) continue;
+        const timeMins = parseHHMM(match.uk_time) ?? 0;
+        const key = `${match.uk_time}|${match.teams}`;
+        for (const ch of match.uk_channels) {
+          const normCh = ch.toLowerCase().trim();
+          const existing = channelOwner.get(normCh);
+          if (!existing || timeMins > existing.timeMins) {
+            channelOwner.set(normCh, { timeMins, key });
+          }
+        }
+      }
+    }
+  }
+  // Collect all winning match keys
+  return new Set(Array.from(channelOwner.values()).map((v) => v.key));
+}
+
 // ── Sport sort order ──────────────────────────────────────────────────────────
 // Canonical keys only — matches the approved sport list order.
 const SPORT_SORT_ORDER = [
@@ -407,7 +437,15 @@ function MatchRow({
   isFirst?: boolean;
   hideCompetitionLabel?: boolean;
 }) {
-  const status = getMatchStatus(match.uk_time, sportKey);
+  const rawStatus = getMatchStatus(match.uk_time, sportKey);
+  const liveOwners = useContext(LiveOwnersCtx);
+  const matchKey = `${match.uk_time}|${match.teams}`;
+  // If another match with a later start time is live on the same channel,
+  // suppress this match's LIVE badge (it's been "replaced" on that channel).
+  const status: MatchStatus =
+    rawStatus === "live" && match.uk_channels.length > 0 && !liveOwners.has(matchKey)
+      ? null
+      : rawStatus;
 
   const { resolved, extraChip } = useMemo(() => {
     const resolved = match.uk_channels.map((ch) => {
@@ -855,6 +893,9 @@ export default function SportListingsScreen() {
     [filteredListings],
   );
 
+  // Which live matches "own" at least one channel (latest start time wins per channel)
+  const liveOwners = useMemo(() => computeLiveOwners(filteredListings), [filteredListings]);
+
   const pt = insets.top + Spacing.sm;
   const pb = insets.bottom + Spacing["2xl"];
 
@@ -1003,22 +1044,24 @@ export default function SportListingsScreen() {
           </ThemedText>
         </View>
       ) : (
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {filteredListings.map((group, i) => (
-            <SportCard
-              key={group.sport_key}
-              group={group}
-              streams={liveStreams}
-              onChannel={handleChannel}
-              defaultExpanded={isSearching || sportFilter !== "all"}
-            />
-          ))}
-        </ScrollView>
+        <LiveOwnersCtx.Provider value={liveOwners}>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: pb }]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {filteredListings.map((group, i) => (
+              <SportCard
+                key={group.sport_key}
+                group={group}
+                streams={liveStreams}
+                onChannel={handleChannel}
+                defaultExpanded={isSearching || sportFilter !== "all"}
+              />
+            ))}
+          </ScrollView>
+        </LiveOwnersCtx.Provider>
       )}
     </View>
   );
