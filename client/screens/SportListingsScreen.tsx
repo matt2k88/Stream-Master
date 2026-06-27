@@ -696,6 +696,14 @@ export default function SportListingsScreen() {
   // Increments on each selection change — used as key to remount right panel
   // so hasTVPreferredFocus fires fresh on the first focusable element.
   const [rightPanelGen, setRightPanelGen] = useState(0);
+  const [rightPanelLoading, setRightPanelLoading] = useState(false);
+  const rightLoadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const triggerRightLoad = useCallback(() => {
+    if (rightLoadTimer.current) clearTimeout(rightLoadTimer.current);
+    setRightPanelLoading(true);
+    rightLoadTimer.current = setTimeout(() => setRightPanelLoading(false), 200);
+  }, []);
 
   // TV-remote / hover focus state for header controls
   const [backFocused, setBackFocused] = useState(false);
@@ -934,6 +942,7 @@ export default function SportListingsScreen() {
             onPress={() => {
               setSportFilter((f) => f === "live" ? "all" : "live");
               setQuery("");
+              triggerRightLoad();
             }}
             onFocus={() => setLiveNowFocused(true)}
             onBlur={() => setLiveNowFocused(false)}
@@ -1121,6 +1130,7 @@ export default function SportListingsScreen() {
                       setSelectedSportKey(group.sport_key);
                       setRightPanelGen((n) => n + 1);
                       rightScrollRef.current?.scrollTo({ y: 0, animated: false });
+                      triggerRightLoad();
                     }}
                   />
                 ))
@@ -1138,7 +1148,11 @@ export default function SportListingsScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {selectedGroup ? (
+              {rightPanelLoading ? (
+                <View style={styles.rightPanelSpinner}>
+                  <ActivityIndicator size="large" color={ACCENT} />
+                </View>
+              ) : selectedGroup ? (
                 // key forces remount so hasTVPreferredFocus fires on first element
                 <View key={`${selectedGroup.sport_key}-${rightPanelGen}`}>
                   <RightPanelHeader group={selectedGroup} liveOwners={liveOwners} />
@@ -1392,6 +1406,10 @@ const styles = StyleSheet.create({
   rightPanel: { flex: 1 },
   rightContent: { flexGrow: 1 },
   rightBody: {},
+  rightPanelSpinner: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    minHeight: 200,
+  },
   rightEmpty: {
     flex: 1, alignItems: "center", justifyContent: "center",
     gap: Spacing.md, paddingVertical: 60,
