@@ -651,8 +651,8 @@ const RightPanelHeader = memo(function RightPanelHeader({
             contentFit="cover"
           />
           <LinearGradient
-            colors={["#080808", "#080808", "rgba(8,8,8,0.85)", "transparent"]}
-            locations={[0, 0.45, 0.65, 1]}
+            colors={["#080808", "#080808", "rgba(8,8,8,0.7)", "transparent"]}
+            locations={[0, 0.3, 0.5, 1]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
@@ -1474,8 +1474,8 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     bottom: 0,
-    width: "55%",
-    opacity: 0.55,
+    width: "70%",
+    opacity: 0.75,
   },
   rightHeaderIconCircle: {
     width: 48, height: 48,

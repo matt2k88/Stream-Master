@@ -257,3 +257,81 @@ id = "Ig0oY77pjIJlsdOluyjDR"
 uri = "file://attached_assets/stock_images/afl_football_spectacular_mark.jpg"
 type = "image"
 title = "Australian rules football player leaping high for spectacular mark, MCG stadium crowd"
+
+[[outputs]]
+id = "qtf7yJ8t6erIVb5K2olbc"
+uri = "file://attached_assets/stock_images/darts_dartboard_bullseye_closeup.jpg"
+type = "image"
+title = "three steel tip darts in dartboard bullseye, close up dramatic lighting, blurred crowd background"
+
+[[outputs]]
+id = "I6xJIk0ag9INU3hZLgx4V"
+uri = "file://attached_assets/stock_images/cricket_ball_red_pitch_closeup.jpg"
+type = "image"
+title = "red cricket ball close up on cricket pitch, bat handle visible, dramatic stadium lighting"
+
+[[outputs]]
+id = "eijSmHAf6bveau5lVtyxY"
+uri = "file://attached_assets/stock_images/snooker_balls_green_baize_cue.jpg"
+type = "image"
+title = "coloured snooker balls on green baize table, cue tip approaching red ball, atmospheric low lighting"
+
+[[outputs]]
+id = "A5Bi3hroYYNNnnghLNRfe"
+uri = "file://attached_assets/stock_images/racehorse_jockey_closeup_gallop.jpg"
+type = "image"
+title = "racehorse head and jockey close up at full gallop, dramatic motion blur, race track atmosphere"
+
+[[outputs]]
+id = "h_lV5HxjW_Xgv6IsGXx47"
+uri = "file://attached_assets/stock_images/athletics_starting_blocks_spikes.jpg"
+type = "image"
+title = "athletes feet in spikes at starting blocks on red athletics track, dramatic low angle shot"
+
+[[outputs]]
+id = "aa0xDjupIEHFHay5a59zw"
+uri = "file://attached_assets/stock_images/olympic_gold_medal_closeup.jpg"
+type = "image"
+title = "Olympic gold medal close up, dramatic lighting, athletic podium background, blurred stadium"
+
+[[outputs]]
+id = "r-7bJ38XIYCzXCpga8ZCT"
+uri = "file://attached_assets/stock_images/rugby_ball_field.jpg"
+type = "image"
+title = "rugby ball on sports field"
+
+[[outputs]]
+id = "YINWuLg8-O5yU58WEJCt6"
+uri = "file://attached_assets/stock_images/f1_car_circuit.jpg"
+type = "image"
+title = "formula one race car on circuit track"
+
+[[outputs]]
+id = "8vG76J6nUkHolMMmXiEP3"
+uri = "file://attached_assets/stock_images/soccer_ball_grass.jpg"
+type = "image"
+title = "soccer ball on green grass field"
+
+[[outputs]]
+id = "Fcj58KBob-P1k7dE_4lDi"
+uri = "file://attached_assets/stock_images/tennis_ball_racket.jpg"
+type = "image"
+title = "tennis ball and racket on court"
+
+[[outputs]]
+id = "KBieXm35hbtE3LAoi40gU"
+uri = "file://attached_assets/stock_images/boxing_ring_arena.jpg"
+type = "image"
+title = "boxing ring with dramatic arena lighting"
+
+[[outputs]]
+id = "BA0U3RRdYFo5K2JaWMp3i"
+uri = "file://attached_assets/stock_images/golf_ball_tee_course.jpg"
+type = "image"
+title = "golf ball on tee in golf course"
+
+[[outputs]]
+id = "igTdJ0c3TUKOEOT_WHjuf"
+uri = "file://attached_assets/stock_images/afl_player_jumping.jpg"
+type = "image"
+title = "australian rules football player jumping for ball"
