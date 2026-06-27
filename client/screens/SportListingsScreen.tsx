@@ -530,21 +530,12 @@ const LeftSportRow = memo(function LeftSportRow({
   );
 
   const icon = sportIcon(group.sport_key);
-  const now = ukNowMinutes();
-  const previewMatch = useMemo(() => {
-    const allMatches = group.competitions.flatMap((c) => c.matches);
-    return (
-      allMatches.find((m) => isMatchLive(m.uk_time, group.sport_key)) ??
-      allMatches.find((m) => (parseHHMM(m.uk_time) ?? 0) > now) ??
-      allMatches[0]
-    );
-  }, [group, now]);
-  const previewComp = useMemo(() =>
-    previewMatch
-      ? group.competitions.find((c) => c.matches.some((m) => m === previewMatch))?.name ?? null
-      : null,
-    [group, previewMatch],
-  );
+  const compSubtitle = useMemo(() => {
+    const names = group.competitions.map((c) => c.name).filter(Boolean);
+    if (names.length === 0) return "";
+    if (names.length <= 2) return names.join(" · ");
+    return names.slice(0, 2).join(" · ") + ` +${names.length - 2}`;
+  }, [group]);
 
   return (
     <Pressable
@@ -579,10 +570,9 @@ const LeftSportRow = memo(function LeftSportRow({
             </View>
           ) : null}
         </View>
-        {previewMatch ? (
+        {compSubtitle ? (
           <ThemedText style={styles.leftSub} numberOfLines={1}>
-            {previewMatch.teams}
-            {previewComp && previewComp !== group.sport_label ? ` · ${previewComp}` : ""}
+            {compSubtitle}
           </ThemedText>
         ) : null}
       </View>
