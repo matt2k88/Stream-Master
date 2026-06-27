@@ -686,81 +686,6 @@ const LoadingBar = memo(function LoadingBar({ label }: { label: string }) {
   );
 });
 
-// ── Sport filter tabs ──────────────────────────────────────────────────────────
-type FilterTab = { key: string; label: string; icon: keyof typeof Feather.glyphMap };
-
-const FilterTabItem = memo(function FilterTabItem({
-  tab, active, onSelect, isLoading,
-}: { tab: FilterTab; active: boolean; onSelect: (key: string) => void; isLoading?: boolean }) {
-  const [lit, setLit] = useState(false);
-  const isLit = active || lit;
-  return (
-    <Pressable
-      onPress={() => onSelect(tab.key)}
-      onFocus={() => setLit(true)}
-      onBlur={() => setLit(false)}
-      onHoverIn={() => setLit(true)}
-      onHoverOut={() => setLit(false)}
-      onPressIn={() => setLit(true)}
-      onPressOut={() => setLit(false)}
-      style={[
-        styles.filterTab,
-        active && styles.filterTabActive,
-        !active && lit && styles.filterTabHover,
-      ]}
-    >
-      {isLoading ? (
-        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 5, width: 12, height: 12 }} />
-      ) : (
-        <Feather
-          name={tab.icon}
-          size={12}
-          color={isLit ? "#fff" : Colors.dark.textSecondary}
-          style={{ marginRight: 5 }}
-        />
-      )}
-      <ThemedText style={[styles.filterTabText, isLit && styles.filterTabTextActive]}>
-        {tab.label}
-      </ThemedText>
-    </Pressable>
-  );
-});
-
-function FilterTabs({
-  sports, selected, onSelect, hasLive, loadingKey,
-}: {
-  sports: SportGroup[];
-  selected: string;
-  onSelect: (key: string) => void;
-  hasLive: boolean;
-  loadingKey: string | null;
-}) {
-  const tabs: FilterTab[] = [
-    { key: "all", label: "All Sports", icon: "grid" },
-    ...(hasLive ? [{ key: "live", label: "Live Now", icon: "radio" as keyof typeof Feather.glyphMap }] : []),
-    ...sports.map((g) => ({ key: g.sport_key, label: g.sport_label, icon: sportIcon(g.sport_key) })),
-  ];
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.filterScroll}
-      contentContainerStyle={styles.filterContent}
-      keyboardShouldPersistTaps="handled"
-    >
-      {tabs.map((tab) => (
-        <FilterTabItem
-          key={tab.key}
-          tab={tab}
-          active={selected === tab.key}
-          onSelect={onSelect}
-          isLoading={loadingKey === tab.key}
-        />
-      ))}
-    </ScrollView>
-  );
-}
 
 // ── Main screen ────────────────────────────────────────────────────────────────
 export default function SportListingsScreen() {
@@ -774,8 +699,7 @@ export default function SportListingsScreen() {
   const [query, setQuery] = useState("");
   const [sportFilter, setSportFilter] = useState("all");
   const [selectedSportKey, setSelectedSportKey] = useState<string | null>(null);
-  const [filterLoadingKey, setFilterLoadingKey] = useState<string | null>(null);
-  const filterLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [liveNowFocused, setLiveNowFocused] = useState(false);
   const [clockStr, setClockStr] = useState("");
   const inputRef = useRef<TextInput>(null);
   const rightScrollRef = useRef<ScrollView>(null);
@@ -1014,6 +938,36 @@ export default function SportListingsScreen() {
             <ThemedText style={styles.todayBadgeText}>TODAY</ThemedText>
           </View>
         </View>
+        {/* Live Now toggle — always visible when data is loaded */}
+        {!loading && !error && listings.length > 0 ? (
+          <Pressable
+            onPress={() => {
+              setSportFilter((f) => f === "live" ? "all" : "live");
+              setQuery("");
+            }}
+            onFocus={() => setLiveNowFocused(true)}
+            onBlur={() => setLiveNowFocused(false)}
+            onHoverIn={() => setLiveNowFocused(true)}
+            onHoverOut={() => setLiveNowFocused(false)}
+            style={[
+              styles.liveNowBtn,
+              sportFilter === "live" && styles.liveNowBtnActive,
+              sportFilter !== "live" && liveNowFocused && styles.liveNowBtnHover,
+            ]}
+          >
+            <View style={[styles.liveDotSm, sportFilter !== "live" && { backgroundColor: Colors.dark.textSecondary }]} />
+            <ThemedText style={[styles.liveNowText, sportFilter === "live" && styles.liveNowTextActive]}>
+              Live Now
+            </ThemedText>
+            {hasLive ? (
+              <View style={styles.liveNowCountBubble}>
+                <ThemedText style={styles.liveNowCountText}>
+                  {listings.reduce((n, g) => n + g.competitions.reduce((m, c) => m + c.matches.filter((match) => isEffLive(match, g.sport_key)).length, 0), 0)}
+                </ThemedText>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
         {!loading && !error && listings.length > 0 ? (
           <View style={styles.headerSearchWrap}>
             <Pressable
@@ -1122,30 +1076,6 @@ export default function SportListingsScreen() {
             </ThemedText>
           </View>
         </View>
-      ) : null}
-
-      {/* ── Filter tabs ── */}
-      {!loading && !error && listings.length > 0 ? (
-        <FilterTabs
-          sports={listings}
-          selected={sportFilter}
-          onSelect={(k) => {
-            setFilterLoadingKey(k);
-            if (filterLoadingTimerRef.current) clearTimeout(filterLoadingTimerRef.current);
-            filterLoadingTimerRef.current = setTimeout(() => {
-              setFilterLoadingKey(null);
-              setSportFilter(k);
-              setQuery("");
-              // If a specific sport tab is tapped, pre-select it in the left panel
-              if (k !== "all" && k !== "live") {
-                setSelectedSportKey(k);
-                setRightPanelGen((n) => n + 1);
-              }
-            }, 40);
-          }}
-          hasLive={hasLive}
-          loadingKey={filterLoadingKey}
-        />
       ) : null}
 
       {/* ── Content ── */}
@@ -1313,6 +1243,33 @@ const styles = StyleSheet.create({
     backgroundColor: BG_CARD,
   },
 
+  // ── Live Now toggle button ────────────────────────────────────────────────────
+  liveNowBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: BORDER,
+    backgroundColor: BG_CARD, flexShrink: 0,
+  },
+  liveNowBtnActive: {
+    backgroundColor: "rgba(34,197,94,0.15)",
+    borderColor: "rgba(34,197,94,0.5)",
+  },
+  liveNowBtnHover: {
+    borderColor: "rgba(34,197,94,0.4)",
+    backgroundColor: "rgba(34,197,94,0.08)",
+  },
+  liveNowText: { fontSize: 13, fontWeight: "700", color: Colors.dark.textSecondary },
+  liveNowTextActive: { color: LIVE_GREEN },
+  liveNowCountBubble: {
+    minWidth: 18, height: 18,
+    borderRadius: 9,
+    backgroundColor: LIVE_GREEN,
+    alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 4,
+  },
+  liveNowCountText: { fontSize: 10, fontWeight: "800", color: "#000" },
+
   // ── Info row ─────────────────────────────────────────────────────────────────
   infoRow: {
     flexDirection: "row", alignItems: "center",
@@ -1379,7 +1336,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Left panel ────────────────────────────────────────────────────────────────
-  leftPanel: { width: 310, flexShrink: 0, backgroundColor: BG_LEFT },
+  leftPanel: { flex: 1, backgroundColor: BG_LEFT },
   leftContent: { paddingVertical: 4 },
   leftEmpty: {
     padding: Spacing.xl,
