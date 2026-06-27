@@ -15,8 +15,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -596,26 +594,6 @@ const LeftSportRow = memo(function LeftSportRow({
   );
 });
 
-// ── Sport banner images ────────────────────────────────────────────────────────
-const SPORT_IMAGES: Record<string, ReturnType<typeof require>> = {
-  football:    require("../assets/sports/football.jpg"),
-  motorsport:  require("../assets/sports/motorsport.jpg"),
-  combat:      require("../assets/sports/combat.jpg"),
-  rugby:       require("../assets/sports/rugby.jpg"),
-  darts:       require("../assets/sports/darts.jpg"),
-  golf:        require("../assets/sports/golf.jpg"),
-  cricket:     require("../assets/sports/cricket.jpg"),
-  tennis:      require("../assets/sports/tennis.jpg"),
-  snooker:     require("../assets/sports/snooker.jpg"),
-  ppv:         require("../assets/sports/ppv.jpg"),
-  us_sports:   require("../assets/sports/us_sports.jpg"),
-  horse_racing: require("../assets/sports/horse_racing.jpg"),
-  athletics:   require("../assets/sports/athletics.jpg"),
-  olympics:    require("../assets/sports/olympics.jpg"),
-  cycling:     require("../assets/sports/cycling.jpg"),
-  afl:         require("../assets/sports/afl.jpg"),
-};
-
 // ── RightPanelHeader ──────────────────────────────────────────────────────────
 const RightPanelHeader = memo(function RightPanelHeader({
   group, liveOwners,
@@ -638,27 +616,8 @@ const RightPanelHeader = memo(function RightPanelHeader({
       ? compNames[0]
       : compNames.slice(0, 2).join(", ") + (compNames.length > 2 ? ` +${compNames.length - 2}` : "");
 
-  const sportImg = SPORT_IMAGES[group.sport_key];
-
   return (
     <View style={styles.rightHeader}>
-      {/* Faded sport banner on the right */}
-      {sportImg ? (
-        <>
-          <Image
-            source={sportImg}
-            style={styles.rightHeaderBgImage}
-            contentFit="cover"
-          />
-          <LinearGradient
-            colors={["#080808", "#080808", "rgba(8,8,8,0.7)", "transparent"]}
-            locations={[0, 0.3, 0.5, 1]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </>
-      ) : null}
       <View style={styles.rightHeaderIconCircle}>
         <Feather name={icon} size={20} color="#fff" />
       </View>
@@ -1467,15 +1426,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
     gap: 14,
-    overflow: "hidden",
-  },
-  rightHeaderBgImage: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: "70%",
-    opacity: 0.75,
   },
   rightHeaderIconCircle: {
     width: 48, height: 48,
