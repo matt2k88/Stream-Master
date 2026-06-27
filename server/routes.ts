@@ -3602,6 +3602,48 @@ Rules for listing:
         "nrl":                        { key: "rugby", label: "Rugby" },
       };
 
+      // Detect the motorsport series from a single match's teams/description string.
+      // Returns canonical series name: "Formula 1", "Formula 2", "Formula 3",
+      // "IndyCar", "NASCAR", "MotoGP", "WRC", "Superbikes", or "Motorsport".
+      function detectMotorsportSeries(teams: string): string {
+        const t = (teams ?? "").trim();
+
+        // Formula 2/3 — "Feature Race" and "Sprint Race" are exclusive F2/F3 terms
+        if (/\bfeature\s*race\b/i.test(t)) return "Formula 2";
+
+        // Explicit series mentions
+        if (/\bformula\s*2\b|\bf2\b/i.test(t)) return "Formula 2";
+        if (/\bformula\s*3\b|\bf3\b/i.test(t)) return "Formula 3";
+        if (/\bmoto\s*gp\b/i.test(t)) return "MotoGP";
+        if (/\bnascar\b/i.test(t)) return "NASCAR";
+        if (/\bindycar\b|\bindy\s*500\b/i.test(t)) return "IndyCar";
+        if (/\bwrc\b|\bworld\s*rally\b/i.test(t)) return "WRC";
+        if (/\bsuperbike[s]?\b|\bwsbk\b/i.test(t)) return "Superbikes";
+
+        // IndyCar circuits (not on the F1 calendar)
+        if (/\b(sonoma|elkhart\s*lake|road\s*america|long\s*beach|detroit|iowa\s*speedway|portland|toronto|nashville|barber|laguna\s*seca|mid[-\s]ohio|gateway|st\.?\s*pete|belle\s*isle|texas\s*motor)\b/i.test(t)) {
+          return "IndyCar";
+        }
+
+        // NASCAR-primary venues
+        if (/\b(talladega|daytona|bristol|martinsville|pocono|michigan\s*speedway|dover|loudon|richmond\s*raceway|new\s*hampshire)\b/i.test(t)) {
+          return "NASCAR";
+        }
+
+        // MotoGP circuits (non-F1)
+        if (/\b(mugello|jerez|assen|misano|aragon|brno|sepang|phillip\s*island|sachsenring|motegi|losail|portimao|le\s*mans\s*circuit)\b/i.test(t)) {
+          return "MotoGP";
+        }
+
+        // WRC rally events
+        if (/\brally\s*(finland|monte|sweden|portugal|safari|kenya|sardinia|central\s*europe|japan|croatia|greece|acropolis)\b/i.test(t)) {
+          return "WRC";
+        }
+
+        // Default: Formula 1
+        return "Formula 1";
+      }
+
       const sportsMap = new Map<string, any>();
       let orderCounter = 0;
       for (const row of data) {
@@ -3625,36 +3667,55 @@ Rules for listing:
             competitions: [],
           });
         }
-        // Fix stale competition names: "Unknown" → derive from match teams or sport_label;
-        // Formula series mismatch (e.g. F2 session under "Formula 1") → sport_label.
-        let competition = row.competition || "";
-        if (!competition || competition === "Unknown") {
-          // For motorsport, try to derive competition from the teams field of the
-          // first match — GPT often puts "PLACE: Session" in teams for motor racing.
-          // Extract just the location part (before ":") and use it as a GP name.
-          const firstTeams: string =
-            Array.isArray(row.matches) && row.matches[0]?.teams
-              ? String(row.matches[0].teams)
-              : "";
-          const colonIdx = firstTeams.indexOf(":");
-          if (colonIdx > 0 && key === "motorsport") {
-            // e.g. "Austria: Practice 3" → "Austria" but we still need a series name.
-            // Keep the full teams value as a readable competition label.
-            competition = firstTeams.trim() || row.sport_label;
+
+        const rowMatches: any[] = Array.isArray(row.matches) ? row.matches : [];
+
+        if (key === "motorsport") {
+          // For motorsport rows, GPT often puts venue+session as the competition
+          // name (e.g. "Austria: Practice 3") and may mix several series in one
+          // block.  Detect the correct series for every match individually and
+          // bucket them so each series gets its own named competition section.
+          const seriesBuckets = new Map<string, any[]>();
+          for (const m of rowMatches) {
+            const series = detectMotorsportSeries(String(m.teams ?? ""));
+            if (!seriesBuckets.has(series)) seriesBuckets.set(series, []);
+            seriesBuckets.get(series)!.push(m);
+          }
+          // If we got nothing from match-level detection, fall back to a single
+          // competition derived from the competition name field.
+          if (seriesBuckets.size === 0) {
+            const fb = /^formula\s*\d/i.test(String(row.sport_label ?? ""))
+              ? row.sport_label
+              : "Formula 1";
+            sportsMap.get(key)!.competitions.push({ name: fb, matches: [] });
           } else {
+            for (const [series, seriesMatches] of seriesBuckets) {
+              const group = sportsMap.get(key)!;
+              const existing = group.competitions.find((c: any) => c.name === series);
+              if (existing) {
+                existing.matches.push(...seriesMatches);
+              } else {
+                group.competitions.push({ name: series, matches: seriesMatches });
+              }
+            }
+          }
+        } else {
+          // Non-motorsport: derive competition name as before
+          let competition = row.competition || "";
+          if (!competition || competition === "Unknown") {
+            competition = row.sport_label;
+          } else if (
+            /^formula\s*\d/i.test(row.sport_label) &&
+            /^formula\s*\d/i.test(competition) &&
+            norm(row.sport_label) !== norm(competition)
+          ) {
             competition = row.sport_label;
           }
-        } else if (
-          /^formula\s*\d/i.test(row.sport_label) &&
-          /^formula\s*\d/i.test(competition) &&
-          norm(row.sport_label) !== norm(competition)
-        ) {
-          competition = row.sport_label;
+          sportsMap.get(key)!.competitions.push({
+            name: competition,
+            matches: rowMatches,
+          });
         }
-        sportsMap.get(key)!.competitions.push({
-          name: competition,
-          matches: Array.isArray(row.matches) ? row.matches : [],
-        });
       }
 
       const result = Array.from(sportsMap.values()).sort(
