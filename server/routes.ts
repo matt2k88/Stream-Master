@@ -3114,6 +3114,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "rugby league":                    { key: "rugby",       label: "Rugby" },
       "rugby union":                     { key: "rugby",       label: "Rugby" },
       "super league":                    { key: "rugby",       label: "Rugby" },
+      "betfred super league":            { key: "rugby",       label: "Rugby" },
+      "super league magic weekend":      { key: "rugby",       label: "Rugby" },
+      "nrl":                             { key: "rugby",       label: "Rugby" },
       // Motorsport (F1/F2/F3/MotoGP/WRC all grouped)
       "motorsport":                      { key: "motorsport",  label: "Motorsport" },
       "formula 1":                       { key: "motorsport",  label: "Motorsport" },
@@ -3485,9 +3488,6 @@ Rules for listing:
               });
             }
           } else if (r.type === "listing" && currentSportKey) {
-            const group = sportGroups.find((g) => g.sport_key === currentSportKey);
-            if (!group) continue;
-
             // Use GPT's competition name; fall back to the header's competition
             // if GPT returned nothing useful (blank / "Unknown").
             const rawComp = String(r.competition ?? "").trim();
@@ -3495,6 +3495,30 @@ Rules for listing:
               rawComp && rawComp.toLowerCase() !== "unknown"
                 ? rawComp
                 : (currentCompetition ?? "Unknown");
+
+            // Competition-level override: some competitions always belong to a
+            // specific sport regardless of how GPT classified the header section.
+            const compNorm = comp.toLowerCase().replace(/\s+/g, " ").trim();
+            const compOverrides: Record<string, string> = {
+              "super league":               "rugby",
+              "betfred super league":       "rugby",
+              "super league magic weekend": "rugby",
+              "nrl":                        "rugby",
+            };
+            const overrideSportKey = compOverrides[compNorm];
+            const effectiveSportKey = overrideSportKey ?? currentSportKey;
+
+            // Ensure the target sport group exists (create if needed)
+            if (!sportGroups.find((g) => g.sport_key === effectiveSportKey)) {
+              sportGroups.push({
+                sport_key: effectiveSportKey,
+                sport_label: effectiveSportKey === "rugby" ? "Rugby" : effectiveSportKey,
+                display_order: displayOrder++,
+                competitions: new Map(),
+              });
+            }
+            const group = sportGroups.find((g) => g.sport_key === effectiveSportKey);
+            if (!group) continue;
 
             if (!group.competitions.has(comp)) group.competitions.set(comp, []);
             const matches: any[] = Array.isArray(r.matches) ? r.matches : [];
@@ -3569,11 +3593,24 @@ Rules for listing:
       const norm = (s: string) =>
         s.replace(/^other[:\s_]+/i, "").trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
 
+      // Competition names that always override the sport classification,
+      // regardless of what GPT said.  Checked BEFORE the sport_key cascade.
+      const COMPETITION_OVERRIDE_MAP: Record<string, { key: string; label: string }> = {
+        "super league":               { key: "rugby", label: "Rugby" },
+        "betfred super league":       { key: "rugby", label: "Rugby" },
+        "super league magic weekend": { key: "rugby", label: "Rugby" },
+        "nrl":                        { key: "rugby", label: "Rugby" },
+      };
+
       const sportsMap = new Map<string, any>();
       let orderCounter = 0;
       for (const row of data) {
-        // Cascade: try sport_key → sport_label → competition name
+        // Competition-level override: some competition names unambiguously
+        // belong to a sport regardless of how GPT classified the header.
+        const compOverride = COMPETITION_OVERRIDE_MAP[norm(String(row.competition ?? ""))];
+        // Cascade: competition override → sport_key → sport_label → competition name
         let mapped =
+          compOverride ||
           SPORT_KEY_MAP[norm(String(row.sport_key ?? ""))] ||
           SPORT_KEY_MAP[norm(String(row.sport_label ?? ""))] ||
           SPORT_KEY_MAP[norm(String(row.competition ?? ""))];
