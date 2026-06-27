@@ -3625,11 +3625,25 @@ Rules for listing:
             competitions: [],
           });
         }
-        // Fix stale competition names: "Unknown" → sport_label; Formula series
-        // mismatch (e.g. F2 session stored under "Formula 1" competition) → sport_label.
+        // Fix stale competition names: "Unknown" → derive from match teams or sport_label;
+        // Formula series mismatch (e.g. F2 session under "Formula 1") → sport_label.
         let competition = row.competition || "";
         if (!competition || competition === "Unknown") {
-          competition = row.sport_label;
+          // For motorsport, try to derive competition from the teams field of the
+          // first match — GPT often puts "PLACE: Session" in teams for motor racing.
+          // Extract just the location part (before ":") and use it as a GP name.
+          const firstTeams: string =
+            Array.isArray(row.matches) && row.matches[0]?.teams
+              ? String(row.matches[0].teams)
+              : "";
+          const colonIdx = firstTeams.indexOf(":");
+          if (colonIdx > 0 && key === "motorsport") {
+            // e.g. "Austria: Practice 3" → "Austria" but we still need a series name.
+            // Keep the full teams value as a readable competition label.
+            competition = firstTeams.trim() || row.sport_label;
+          } else {
+            competition = row.sport_label;
+          }
         } else if (
           /^formula\s*\d/i.test(row.sport_label) &&
           /^formula\s*\d/i.test(competition) &&
