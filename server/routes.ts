@@ -3222,12 +3222,13 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
 - The competition field for motorsport MUST be the SERIES name, never the venue or session name.
   CORRECT: "Formula 1", "Formula 2", "Formula 3", "MotoGP", "Moto2", "Moto3", "WRC", "IndyCar", "NASCAR", "Superbikes"
   WRONG: "Austria: Practice 3", "Spielberg", "Sonoma", "Sprint Race", "Feature Race"
-- If multiple motorsport series appear on one image (e.g. Formula 1 sessions AND Formula 2 sessions AND MotoGP), emit a SEPARATE listing object for each series with only that series' matches inside it.
+- Always write the FULL series name — never abbreviate. "F1" → "Formula 1", "F2" → "Formula 2", "F3" → "Formula 3". This applies to both header and listing responses.
+- Header images showing just the series logo (F1, F2, F3, MotoGP etc.) → type="header", competition = the full series name (e.g. "Formula 1", "Formula 2", "Formula 3").
+- If multiple motorsport series appear on one image, emit a SEPARATE listing object for each series with only that series' matches inside it.
 - Moto2 and Moto3 are NOT MotoGP — they are separate support series. Use "Moto2" or "Moto3" as competition.
 - WRC special stages are named SS1, SS2, SS3 etc. Any "SS{number}" event → competition = "WRC".
 - "Feature Race" or "Reverse Grid Race" = Formula 2 or Formula 3 support race. Use "Formula 2" unless the card explicitly says F3.
-- "Sprint Race" context: if on Sky Sports F1 channel AND alongside F1 practice/qualifying → "Formula 1". If standalone or on a non-F1 channel → "Formula 2".
-- Use the channel name as a strong hint: Sky Sports F1 = Formula 1 content; TNT Sports 2 often carries Moto2/Moto3/MotoGP.
+- "Sprint Race" = Formula 2 or Formula 3 ONLY. F1's sprint event is called "Sprint" (without "Race"). So any event literally named "Sprint Race" → competition = "Formula 2". It does NOT matter which channel it is on — F2/F3 support races air on Sky Sports F1 too.
 - Never group different motorsport series into one listing object.`;
 
     function getUKDate(unixTs?: number): string {
@@ -3494,7 +3495,15 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             currentSportKey = key;
             // Capture competition from header (e.g. FIFA World Cup logo) for
             // use as fallback on subsequent listing images that lack a name.
-            currentCompetition = r.competition ? String(r.competition) : null;
+            // Expand motorsport abbreviations GPT may return from logo headers.
+            const rawHeaderComp = r.competition ? String(r.competition).trim() : null;
+            const MOTO_EXPAND: Record<string, string> = {
+              "f1": "Formula 1", "f2": "Formula 2", "f3": "Formula 3",
+              "formula1": "Formula 1", "formula2": "Formula 2", "formula3": "Formula 3",
+            };
+            currentCompetition = rawHeaderComp
+              ? (MOTO_EXPAND[rawHeaderComp.toLowerCase().replace(/\s+/g, "")] ?? rawHeaderComp)
+              : null;
             if (!sportGroups.find((g) => g.sport_key === key)) {
               sportGroups.push({
                 sport_key: key,
@@ -3643,13 +3652,14 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
         if (/\bfeature\s*race\b/i.test(t)) return "Formula 2";
         if (/\breverse\s*grid\b/i.test(t)) return "Formula 2";
 
-        // "Sprint Race" — ambiguous; use channel as the tiebreaker
-        if (/\bsprint\s*race\b/i.test(t)) {
-          if (ch.includes("sky sports f1")) return "Formula 1";
-          return "Formula 2";
-        }
+        // "Sprint Race" = F2/F3 exclusive terminology.
+        // NOTE: F1 sprints are called "Sprint" (not "Sprint Race") since 2023.
+        // F2/F3 support races run on Sky Sports F1 too, so channel is NOT a
+        // reliable discriminator here — always treat "Sprint Race" as F2.
+        if (/\bsprint\s*race\b/i.test(t)) return "Formula 2";
 
-        // ── Channel-based hints ───────────────────────────────────────────────
+        // ── Channel-based hints (used only for ambiguous generic sessions) ────
+        // Only apply when the event name itself has no distinguishing series term.
         if (ch.includes("sky sports f1")) return "Formula 1";
         if (/tnt sports 2|eurosport/.test(ch)) {
           // TNT Sports 2 / Eurosport carry MotoGP weekends predominantly
