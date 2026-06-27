@@ -3126,6 +3126,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       "f2":                              { key: "motorsport",  label: "Motorsport" },
       "f3":                              { key: "motorsport",  label: "Motorsport" },
       "motogp":                          { key: "motorsport",  label: "Motorsport" },
+      "moto2":                           { key: "motorsport",  label: "Motorsport" },
+      "moto3":                           { key: "motorsport",  label: "Motorsport" },
+      "moto 2":                          { key: "motorsport",  label: "Motorsport" },
+      "moto 3":                          { key: "motorsport",  label: "Motorsport" },
       "nascar":                          { key: "motorsport",  label: "Motorsport" },
       "wrc":                             { key: "motorsport",  label: "Motorsport" },
       "rally":                           { key: "motorsport",  label: "Motorsport" },
@@ -3212,7 +3216,19 @@ Rules for listing:
 - competition: the league/tournament name. Look for it anywhere on the card — in the title, broadcaster names (e.g. "FIFA World Cup Channel" → "FIFA World Cup 2026"), or surrounding branding. Only use "Unknown" if there is genuinely no competition context at all.
 - uk_time: HH:MM in UK time (BST = UTC+1 in summer, GMT = UTC+0 in winter). Convert from other zones if needed.
 - teams: the two teams (or event name for non-team sports). Include all matches shown on the card.
-- uk_channels: UK-only channels. UK channels include any Sky Sports, BBC, ITV, Channel 4, Channel 5, BT Sport, TNT Sports, Premier Sports, FreeSports, Eurosport. If NO UK channels are listed for a match, include the first non-UK channel shown as a fallback.`;
+- uk_channels: UK-only channels. UK channels include any Sky Sports, BBC, ITV, Channel 4, Channel 5, BT Sport, TNT Sports, Premier Sports, FreeSports, Eurosport. If NO UK channels are listed for a match, include the first non-UK channel shown as a fallback.
+
+CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing card:
+- The competition field for motorsport MUST be the SERIES name, never the venue or session name.
+  CORRECT: "Formula 1", "Formula 2", "Formula 3", "MotoGP", "Moto2", "Moto3", "WRC", "IndyCar", "NASCAR", "Superbikes"
+  WRONG: "Austria: Practice 3", "Spielberg", "Sonoma", "Sprint Race", "Feature Race"
+- If multiple motorsport series appear on one image (e.g. Formula 1 sessions AND Formula 2 sessions AND MotoGP), emit a SEPARATE listing object for each series with only that series' matches inside it.
+- Moto2 and Moto3 are NOT MotoGP — they are separate support series. Use "Moto2" or "Moto3" as competition.
+- WRC special stages are named SS1, SS2, SS3 etc. Any "SS{number}" event → competition = "WRC".
+- "Feature Race" or "Reverse Grid Race" = Formula 2 or Formula 3 support race. Use "Formula 2" unless the card explicitly says F3.
+- "Sprint Race" context: if on Sky Sports F1 channel AND alongside F1 practice/qualifying → "Formula 1". If standalone or on a non-F1 channel → "Formula 2".
+- Use the channel name as a strong hint: Sky Sports F1 = Formula 1 content; TNT Sports 2 often carries Moto2/Moto3/MotoGP.
+- Never group different motorsport series into one listing object.`;
 
     function getUKDate(unixTs?: number): string {
       const d = unixTs ? new Date(unixTs * 1000) : new Date();
@@ -3602,45 +3618,65 @@ Rules for listing:
         "nrl":                        { key: "rugby", label: "Rugby" },
       };
 
-      // Detect the motorsport series from a single match's teams/description string.
-      // Returns canonical series name: "Formula 1", "Formula 2", "Formula 3",
-      // "IndyCar", "NASCAR", "MotoGP", "WRC", "Superbikes", or "Motorsport".
-      function detectMotorsportSeries(teams: string): string {
+      // Detect the motorsport series from a match's teams/description string
+      // and its channel list.  Returns a canonical series name.
+      function detectMotorsportSeries(teams: string, channels: string[] = []): string {
         const t = (teams ?? "").trim();
+        const ch = channels.join(" ").toLowerCase();
 
-        // Formula 2/3 — "Feature Race" and "Sprint Race" are exclusive F2/F3 terms
-        if (/\bfeature\s*race\b/i.test(t)) return "Formula 2";
-
-        // Explicit series mentions
-        if (/\bformula\s*2\b|\bf2\b/i.test(t)) return "Formula 2";
-        if (/\bformula\s*3\b|\bf3\b/i.test(t)) return "Formula 3";
+        // ── Explicit series name in the event title ───────────────────────────
+        if (/\bmoto\s*3\b/i.test(t)) return "Moto3";
+        if (/\bmoto\s*2\b/i.test(t)) return "Moto2";
         if (/\bmoto\s*gp\b/i.test(t)) return "MotoGP";
+        if (/\bformula\s*3\b|\bf3\b/i.test(t)) return "Formula 3";
+        if (/\bformula\s*2\b|\bf2\b/i.test(t)) return "Formula 2";
+        if (/\bformula\s*1\b|\bf1\b/i.test(t)) return "Formula 1";
         if (/\bnascar\b/i.test(t)) return "NASCAR";
         if (/\bindycar\b|\bindy\s*500\b/i.test(t)) return "IndyCar";
         if (/\bwrc\b|\bworld\s*rally\b/i.test(t)) return "WRC";
         if (/\bsuperbike[s]?\b|\bwsbk\b/i.test(t)) return "Superbikes";
 
-        // IndyCar circuits (not on the F1 calendar)
+        // ── WRC special stages: SS1, SS2, SS12, etc. ─────────────────────────
+        if (/\bss\s*\d+\b/i.test(t)) return "WRC";
+
+        // ── F2/F3 session types ───────────────────────────────────────────────
+        if (/\bfeature\s*race\b/i.test(t)) return "Formula 2";
+        if (/\breverse\s*grid\b/i.test(t)) return "Formula 2";
+
+        // "Sprint Race" — ambiguous; use channel as the tiebreaker
+        if (/\bsprint\s*race\b/i.test(t)) {
+          if (ch.includes("sky sports f1")) return "Formula 1";
+          return "Formula 2";
+        }
+
+        // ── Channel-based hints ───────────────────────────────────────────────
+        if (ch.includes("sky sports f1")) return "Formula 1";
+        if (/tnt sports 2|eurosport/.test(ch)) {
+          // TNT Sports 2 / Eurosport carry MotoGP weekends predominantly
+          if (/\b(qualifying|warm.?up|race)\b/i.test(t)) return "MotoGP";
+        }
+
+        // ── IndyCar circuits (not on the F1 calendar) ────────────────────────
         if (/\b(sonoma|elkhart\s*lake|road\s*america|long\s*beach|detroit|iowa\s*speedway|portland|toronto|nashville|barber|laguna\s*seca|mid[-\s]ohio|gateway|st\.?\s*pete|belle\s*isle|texas\s*motor)\b/i.test(t)) {
           return "IndyCar";
         }
 
-        // NASCAR-primary venues
+        // ── NASCAR-primary venues ─────────────────────────────────────────────
         if (/\b(talladega|daytona|bristol|martinsville|pocono|michigan\s*speedway|dover|loudon|richmond\s*raceway|new\s*hampshire)\b/i.test(t)) {
           return "NASCAR";
         }
 
-        // MotoGP circuits (non-F1)
-        if (/\b(mugello|jerez|assen|misano|aragon|brno|sepang|phillip\s*island|sachsenring|motegi|losail|portimao|le\s*mans\s*circuit)\b/i.test(t)) {
+        // ── MotoGP-only circuits ──────────────────────────────────────────────
+        if (/\b(mugello|jerez|assen|misano|aragon|brno|sepang|phillip\s*island|sachsenring|motegi|losail|le\s*mans\s*circuit)\b/i.test(t)) {
           return "MotoGP";
         }
 
-        // WRC rally events
+        // ── WRC rally rounds ──────────────────────────────────────────────────
         if (/\brally\s*(finland|monte|sweden|portugal|safari|kenya|sardinia|central\s*europe|japan|croatia|greece|acropolis)\b/i.test(t)) {
           return "WRC";
         }
 
-        // Default: Formula 1
+        // Default: Formula 1 (GP weekends with Practice/Qualifying/Race/Sprint)
         return "Formula 1";
       }
 
@@ -3677,7 +3713,10 @@ Rules for listing:
           // bucket them so each series gets its own named competition section.
           const seriesBuckets = new Map<string, any[]>();
           for (const m of rowMatches) {
-            const series = detectMotorsportSeries(String(m.teams ?? ""));
+            const series = detectMotorsportSeries(
+              String(m.teams ?? ""),
+              Array.isArray(m.uk_channels) ? m.uk_channels : [],
+            );
             if (!seriesBuckets.has(series)) seriesBuckets.set(series, []);
             seriesBuckets.get(series)!.push(m);
           }
