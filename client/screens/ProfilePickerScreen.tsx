@@ -7,9 +7,8 @@ import {
   ActivityIndicator,
   Image,
   useWindowDimensions,
-  Animated,
-  Easing,
 } from "react-native";
+import { usePortal } from "@/contexts/PortalContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -26,9 +25,6 @@ import { loadGuestPlayerPrefs } from "@/lib/guest-prefs";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ProfilePickerRouteProp = RouteProp<RootStackParamList, "ProfilePicker">;
-
-// Size of the portal circle shown during the transition
-const PORTAL_SIZE = 110;
 
 /* ------------------------------------------------------------------ */
 /* Avatar — concentric rings with a soft gradient fill.               */
@@ -449,17 +445,7 @@ export default function ProfilePickerScreen() {
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Portal-zoom transition
-  const [animatingProfile, setAnimatingProfile] = useState<{
-    color: string;
-    imageUri?: string | null;
-    icon: string;
-  } | null>(null);
-  const portalScale   = useRef(new Animated.Value(1)).current;
-  const avatarOpacity = useRef(new Animated.Value(1)).current;
-  const bgOpacity     = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(1)).current;
+  const { triggerPortal } = usePortal();
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing["3xl"]);
   const padT = Math.max(insets.top + Spacing.sm, Spacing.lg);
@@ -496,52 +482,23 @@ export default function ProfilePickerScreen() {
     }, [username]),
   );
 
-  const navigateAfterSelect = useCallback((profile: Profile) => {
-    setActiveProfile(profile);
-    if (fromHome) {
-      navigation.goBack();
-    } else {
-      navigation.reset({ index: 0, routes: [{ name: "Home" }] });
-    }
-  }, [setActiveProfile, fromHome, navigation]);
-
   const handleSelect = useCallback((profile: Profile) => {
     if (profile.pin) {
       navigation.navigate("PinEntry", { profile, fromHome });
       return;
     }
-
-    // Reset values
-    portalScale.setValue(1);
-    avatarOpacity.setValue(1);
-    bgOpacity.setValue(0);
-    contentOpacity.setValue(1);
-
-    setAnimatingProfile({
-      color: profile.avatar_color,
-      imageUri: profile.avatar_image,
-      icon: profile.avatar_icon,
-    });
-
-    Animated.sequence([
-      // Phase 1: clear the avatar (black hole), fade out grid, fade in bg
-      Animated.parallel([
-        Animated.timing(avatarOpacity,  { toValue: 0, duration: 130, useNativeDriver: true }),
-        Animated.timing(contentOpacity, { toValue: 0, duration: 110, useNativeDriver: true }),
-        Animated.timing(bgOpacity,      { toValue: 1, duration: 110, useNativeDriver: true }),
-      ]),
-      // Phase 2: zoom through the portal
-      Animated.timing(portalScale, {
-        toValue: 15,
-        duration: 420,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setAnimatingProfile(null);
-      navigateAfterSelect(profile);
-    });
-  }, [navigation, fromHome, navigateAfterSelect, portalScale, avatarOpacity, bgOpacity, contentOpacity]);
+    triggerPortal(
+      { color: profile.avatar_color, imageUri: profile.avatar_image, icon: profile.avatar_icon },
+      () => {
+        setActiveProfile(profile);
+        if (fromHome) {
+          navigation.goBack();
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+        }
+      },
+    );
+  }, [navigation, fromHome, setActiveProfile, triggerPortal]);
 
   const handleSelectGuest = useCallback(async () => {
     const prefs = await loadGuestPlayerPrefs();
@@ -573,9 +530,6 @@ export default function ProfilePickerScreen() {
       />
       <View style={[styles.glowBlob, styles.glowBlobTopLeft]} pointerEvents="none" />
       <View style={[styles.glowBlob, styles.glowBlobBottomRight]} pointerEvents="none" />
-
-      {/* Content fades out during portal transition */}
-      <Animated.View style={{ flex: 1, opacity: contentOpacity }}>
 
       {/* Header */}
       <View style={[styles.header, { paddingTop: padT, paddingHorizontal: padH }]}>
@@ -686,87 +640,12 @@ export default function ProfilePickerScreen() {
         </View>
       )}
 
-      </Animated.View>{/* end contentOpacity wrapper */}
-
-      {/* ── Portal-zoom overlay ────────────────────────────────────────── */}
-      {animatingProfile ? (
-        <>
-          {/* Full-screen dark fill that fades in behind the portal */}
-          <Animated.View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, { backgroundColor: "#080808", opacity: bgOpacity }]}
-          />
-          {/* The portal — centered, zooms toward the viewer */}
-          <Animated.View
-            pointerEvents="none"
-            style={[StyleSheet.absoluteFill, styles.portalCenter, { transform: [{ scale: portalScale }] }]}
-          >
-            {/* Coloured ring */}
-            <View
-              style={[
-                styles.portalRing,
-                {
-                  width: PORTAL_SIZE + 14,
-                  height: PORTAL_SIZE + 14,
-                  borderRadius: (PORTAL_SIZE + 14) / 2,
-                  borderColor: animatingProfile.color,
-                  shadowColor: animatingProfile.color,
-                },
-              ]}
-            >
-              {/* Avatar inside — fades out to become the black hole */}
-              <Animated.View style={{ opacity: avatarOpacity }}>
-                {animatingProfile.imageUri ? (
-                  <Image
-                    source={{ uri: animatingProfile.imageUri }}
-                    style={{
-                      width: PORTAL_SIZE,
-                      height: PORTAL_SIZE,
-                      borderRadius: PORTAL_SIZE / 2,
-                    }}
-                  />
-                ) : (
-                  <LinearGradient
-                    colors={[animatingProfile.color + "55", animatingProfile.color + "22", "rgba(0,0,0,0.55)"]}
-                    start={{ x: 0.3, y: 0.1 }}
-                    end={{ x: 0.7, y: 1 }}
-                    style={{
-                      width: PORTAL_SIZE,
-                      height: PORTAL_SIZE,
-                      borderRadius: PORTAL_SIZE / 2,
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <Feather name={animatingProfile.icon as any} size={PORTAL_SIZE * 0.46} color="#fff" />
-                  </LinearGradient>
-                )}
-              </Animated.View>
-            </View>
-          </Animated.View>
-        </>
-      ) : null}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
-
-  /* Portal-zoom transition */
-  portalCenter: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  portalRing: {
-    borderWidth: 3,
-    shadowOpacity: 0.9,
-    shadowRadius: 20,
-    elevation: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#080808",
-  },
 
   /* Ambient glow blobs */
   glowBlob: {
