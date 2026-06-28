@@ -121,14 +121,15 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
 
       setActive(config);
 
+      // Navigate immediately so home screen loads behind the overlay while
+      // the animation plays — it's fully ready by the time we zoom through.
+      timers.current.push(setTimeout(() => { onNavigate(); }, 60));
+
       // Phase 1 (0–650ms): spring circle up to centre-screen
       circleScale.value = withSpring(3.6, { damping: 16, stiffness: 90, mass: 1 });
 
       // Phase 2 (1900ms): avatar fades — ring becomes a transparent window
       avatarOpacity.value = withDelay(1900, withTiming(0, { duration: 350 }));
-
-      // Navigate: home renders below the transparent hole (2200ms)
-      timers.current.push(setTimeout(() => { onNavigate(); }, 2200));
 
       // Phase 3 (2450ms): zoom through — ring border fades as we pass it
       timers.current.push(
@@ -195,28 +196,38 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
                     }}
                   />
                 ) : (
-                  <LinearGradient
-                    colors={[
-                      active.color + "55",
-                      active.color + "22",
-                      "rgba(0,0,0,0.55)",
-                    ]}
-                    start={{ x: 0.3, y: 0.1 }}
-                    end={{ x: 0.7, y: 1 }}
+                  // Solid backing so the icon is never transparent over the hole
+                  <View
                     style={{
                       width: DISC,
                       height: DISC,
                       borderRadius: DISC / 2,
-                      alignItems: "center",
-                      justifyContent: "center",
+                      overflow: "hidden",
+                      backgroundColor: "#0D0403",
                     }}
                   >
-                    <Feather
-                      name={active.icon as any}
-                      size={DISC * 0.46}
-                      color="#fff"
-                    />
-                  </LinearGradient>
+                    <LinearGradient
+                      colors={[
+                        active.color + "CC",
+                        active.color + "66",
+                        "#0D0403",
+                      ]}
+                      start={{ x: 0.3, y: 0.1 }}
+                      end={{ x: 0.7, y: 1 }}
+                      style={{
+                        width: DISC,
+                        height: DISC,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Feather
+                        name={active.icon as any}
+                        size={DISC * 0.46}
+                        color="#fff"
+                      />
+                    </LinearGradient>
+                  </View>
                 )}
               </Animated.View>
             </View>
