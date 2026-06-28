@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
-import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, searchTeams } from "./football";
+import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
 
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
@@ -3824,6 +3824,22 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     }
     scheduleDailyClear();
     // ─────────────────────────────────────────────────────────────────────────
+
+    // POST /api/football/fixtures/refresh — admin-only; forces an immediate upcoming-fixture sync
+    app.post("/api/football/fixtures/refresh", async (req, res) => {
+      const authHeader = (req.headers.authorization ?? "") as string;
+      const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+      if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      try {
+        await refreshUpcomingFixtures();
+        return res.json({ success: true });
+      } catch (err: any) {
+        console.error("[football:fixtures:refresh] error:", err?.message);
+        return res.status(500).json({ error: err?.message ?? "Refresh failed" });
+      }
+    });
 
     // POST /api/sports/clear — admin-only (requires Bearer SPORTS_ADMIN_SECRET); use via curl/automation
     app.post("/api/sports/clear", async (req, res) => {

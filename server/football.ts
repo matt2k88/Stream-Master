@@ -430,7 +430,7 @@ async function fetchFullSeasonFixtures(
 // missing (migration 015 not yet run). NOTE: purging of past fixtures is
 // handled separately by purgePastFixtures() on every poll cycle so stale rows
 // are removed promptly rather than only once a day.
-async function refreshUpcomingFixtures(): Promise<void> {
+export async function refreshUpcomingFixtures(): Promise<void> {
   const nowIso = new Date().toISOString();
   // Keyed by fixture_id so the rolling-day scan and the full-season tournament
   // pull below can never produce two rows for the same fixture — Postgres
