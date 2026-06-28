@@ -1,0 +1,18 @@
+IPTV Player encountered an issue
+Looks like there was a problem loading the content. Please restart the app to continue watching.
+Try Again
+Error Details
+Error: Animated is not defined
+
+Stack Trace:
+ReferenceError: Animated is not defined
+    at ProfileCard (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:208104:42)
+    at react-stack-bottom-frame (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:17840:20)
+    at renderWithHooks (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:8050:22)
+    at updateFunctionComponent (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:9743:19)
+    at beginWork (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:10329:18)
+    at runWithFiberInDEV (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:5822:70)
+    at performUnitOfWork (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:12402:95)
+    at workLoopSync (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:12295:40)
+    at renderRootSync (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:12279:9)
+    at performWorkOnRoot (https://e778f407-afa7-47b4-87c2-6804e5c129f0-00-ws1l77rd8qli.riker.replit.dev/client/index.bundle?platform=web&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=app&unstable_transformProfile=hermes-stable:12043:44)

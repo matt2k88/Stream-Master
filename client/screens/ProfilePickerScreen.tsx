@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Image,
   useWindowDimensions,
+  Animated,
+  Easing,
 } from "react-native";
 import { usePortal } from "@/contexts/PortalContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
