@@ -3,38 +3,82 @@ const http = require("http");
 
 const config = getDefaultConfig(__dirname);
 
-// Filter Replit internal paths from the additional watch folders
+// ── 1. Watch folders ──────────────────────────────────────────────────────────
+// Strip Replit internal paths and the attached_assets folder (large binary
+// images/videos that Metro would otherwise stat/watch on every build).
 config.watchFolders = (config.watchFolders ?? []).filter(
-  (folder) => !folder.includes(".local/state/workflow-logs")
+  (folder) =>
+    !folder.includes(".local/state/workflow-logs") &&
+    !folder.includes("attached_assets")
 );
+
+// ── 2. Resolver ───────────────────────────────────────────────────────────────
+// Packages that are server-side ONLY (Express, DB drivers, TS runner, YouTube
+// extractors, etc.). Metro will never import them from client code, so we stub
+// them to empty modules to avoid walking their combined ~68 MB dependency tree.
+const SERVER_ONLY_PACKAGES = [
+  "express",
+  "pg",
+  "ws",
+  "tsx",
+  "drizzle-orm",
+  "drizzle-zod",
+  "http-proxy-middleware",
+  "@distube/ytdl-core",
+  "youtubei.js",
+  "@supabase/supabase-js", // client/lib/supabase.ts uses raw fetch — SDK never imported
+];
 
 config.resolver = {
   ...config.resolver,
+
   blockList: [
+    // Replit internals
     /\.local\/state\/workflow-logs\/.*/,
-    // Block server-side and non-client directories so Metro doesn't
-    // accidentally try to resolve or transform them — keeps bundle smaller
-    // and resolver faster.
+    // Server-side source directories — Metro must never bundle these
     /\/server\/.*/,
     /\/migrations\/.*/,
     /\/docs\/.*/,
     /\/static-build\/.*/,
+    // Large binary/media assets folder — not JS, just wastes scanner time
+    /\/attached_assets\/.*/,
+    // Block the node_modules trees of every server-only package.
+    // This is a second line of defence on top of resolveRequest below.
+    /\/node_modules\/express\/.*/,
+    /\/node_modules\/pg\/.*/,
+    /\/node_modules\/ws\/.*/,
+    /\/node_modules\/tsx\/.*/,
+    /\/node_modules\/drizzle-orm\/.*/,
+    /\/node_modules\/drizzle-zod\/.*/,
+    /\/node_modules\/http-proxy-middleware\/.*/,
+    /\/node_modules\/@distube\/.*/,
+    /\/node_modules\/youtubei\.js\/.*/,
+    /\/node_modules\/@supabase\/.*/,
   ],
+
+  // Return an empty module immediately for any server-only package so Metro
+  // never walks their dependency sub-trees.
+  resolveRequest: (context, moduleName, platform) => {
+    for (const pkg of SERVER_ONLY_PACKAGES) {
+      if (moduleName === pkg || moduleName.startsWith(pkg + "/")) {
+        return { type: "empty" };
+      }
+    }
+    return context.resolveRequest(context, moduleName, platform);
+  },
 };
 
-// Use more parallel transform workers to speed up production builds.
-// Default is CPU count / 2; bump to a fixed 8 for the build container.
+// ── 3. Workers ────────────────────────────────────────────────────────────────
+// Use more parallel transform workers. Default is CPU count / 2; bump to 8
+// for the production build container.
 config.maxWorkers = 8;
 
-// Target the Hermes-stable transform profile — Expo SDK 54 uses Hermes by
-// default on Android and iOS.  Metro can skip several Babel passes that
-// Hermes handles natively, meaningfully reducing per-file transform time.
+// ── 4. Transformer ────────────────────────────────────────────────────────────
+// hermes-stable lets Metro skip several Babel passes that Hermes handles
+// natively.  The fast minifier config saves another 15-25% on minification.
 config.transformer = {
   ...config.transformer,
   unstable_transformProfile: "hermes-stable",
-  // Speed-tuned terser config: one compression pass, disable the most
-  // expensive analysis steps (inline hoisting, variable reduction).
-  // Bundle is ~0.5% larger but minification finishes 15-25% faster.
   minifierConfig: {
     compress: {
       passes: 1,
@@ -55,9 +99,9 @@ config.transformer = {
   },
 };
 
-// Proxy /api/* requests through Metro (port 8081, external port 80) to Express
-// (port 5000). This ensures Expo Go devices can reach the API without needing
-// to connect to port 5000 directly, which is blocked on most mobile networks.
+// ── 5. Dev-server API proxy ───────────────────────────────────────────────────
+// Proxy /api/* through Metro (port 8081) to Express (port 5000) so Expo Go
+// devices on mobile networks can reach the API without needing port 5000.
 config.server = {
   enhanceMiddleware: (metroMiddleware) => {
     return (req, res, next) => {
