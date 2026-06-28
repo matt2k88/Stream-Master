@@ -40,6 +40,7 @@ import TopPicksScreen from "@/screens/TopPicksScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
 import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
+import PlaylistDetailScreen from "@/screens/PlaylistDetailScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -79,6 +80,7 @@ export type RootStackParamList = {
   Referrals: undefined;
   UltraTube: undefined;
   SportListings: undefined;
+  PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -153,6 +155,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="Referrals" component={ReferralsScreen} />
             <Stack.Screen name="UltraTube" component={UltraTubeScreen} />
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
+            <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
           </>
         )}
       </Stack.Navigator>

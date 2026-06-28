@@ -12,11 +12,13 @@ import {
 import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import type { MusicPlaylistTrack } from "@/lib/music-types";
+
 function fmtTime(sec: number) {
   if (!sec || isNaN(sec) || sec < 0) return "--:--";
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
@@ -28,17 +30,27 @@ function TrackItem({
   onRemove,
   onPlay,
   isLikedSongs,
+  isPlaying,
+  isLoading,
 }: {
   track: MusicPlaylistTrack;
   index: number;
   onRemove: () => void;
   onPlay: () => void;
   isLikedSongs: boolean;
+  isPlaying: boolean;
+  isLoading: boolean;
 }) {
   return (
     <Pressable style={styles.trackRow} onPress={onPlay}>
       <View style={styles.trackIndex}>
-        <ThemedText style={styles.trackIndexText}>{index + 1}</ThemedText>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={Colors.dark.accent} />
+        ) : isPlaying ? (
+          <Feather name="volume-2" size={14} color={Colors.dark.accent} />
+        ) : (
+          <ThemedText style={styles.trackIndexText}>{index + 1}</ThemedText>
+        )}
       </View>
       {track.thumbnail ? (
         <Image source={{ uri: track.thumbnail }} style={styles.trackThumb} />
@@ -48,12 +60,17 @@ function TrackItem({
         </View>
       )}
       <View style={styles.trackMeta}>
-        <ThemedText style={styles.trackTitle} numberOfLines={1}>{track.title}</ThemedText>
+        <ThemedText
+          style={[styles.trackTitle, isPlaying && { color: Colors.dark.accent }]}
+          numberOfLines={1}
+        >
+          {track.title}
+        </ThemedText>
         <ThemedText style={styles.trackArtist} numberOfLines={1}>
           {track.artist}{track.album ? ` · ${track.album}` : ""}
         </ThemedText>
       </View>
-      <ThemedText style={styles.trackDuration}>{fmtTime(track.duration_sec)}</ThemedText>
+      <ThemedText style={styles.trackDuration}>{fmtTime(track.durationSec)}</ThemedText>
       <Pressable style={styles.removeBtn} onPress={onRemove} hitSlop={8}>
         <Feather name="trash-2" size={16} color="rgba(239,68,68,0.7)" />
       </Pressable>
@@ -76,6 +93,58 @@ export default function PlaylistDetailScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Audio player ──────────────────────────────────────────────────────────
+  const [currentTrack, setCurrentTrack] = useState<MusicPlaylistTrack | null>(null);
+  const [resolving, setResolving] = useState<string | null>(null); // track id being resolved
+  const player = useAudioPlayer(null as any);
+  const status = useAudioPlayerStatus(player);
+
+  const handlePlay = useCallback(async (track: MusicPlaylistTrack) => {
+    if (resolving === track.id) return; // already loading this track
+    if (currentTrack?.id === track.id && status.playing) {
+      player.pause();
+      return;
+    }
+    if (currentTrack?.id === track.id && !status.playing) {
+      player.play();
+      return;
+    }
+
+    setResolving(track.id);
+    try {
+      // Step 1: resolve searchKey → videoId
+      const resolveRes = await fetch(
+        `${getApiUrl()}/api/music/resolve?q=${encodeURIComponent(track.searchKey)}`
+      );
+      if (!resolveRes.ok) throw new Error("Could not find track");
+      const { videoId } = await resolveRes.json();
+
+      // Step 2: get stream URL
+      const streamRes = await fetch(`${getApiUrl()}/api/music/stream?id=${encodeURIComponent(videoId)}`);
+      if (!streamRes.ok) throw new Error("Could not get audio stream");
+      const { url } = await streamRes.json();
+
+      // Step 3: play
+      setCurrentTrack(track);
+      player.replace({ uri: url });
+      player.play();
+    } catch (err: any) {
+      console.warn("[PlaylistDetail] play error:", err.message);
+    } finally {
+      setResolving(null);
+    }
+  }, [resolving, currentTrack, status.playing, player]);
+
+  // Auto-advance to next track when current finishes
+  useEffect(() => {
+    if (status.didJustFinish && currentTrack) {
+      const idx = tracks.findIndex((t) => t.id === currentTrack.id);
+      const next = tracks[idx + 1];
+      if (next) handlePlay(next);
+    }
+  }, [status.didJustFinish]);
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
   const fetchTracks = useCallback(async () => {
     setLoading(true);
     try {
@@ -93,21 +162,26 @@ export default function PlaylistDetailScreen() {
     try {
       await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" });
       setTracks((prev) => prev.filter((t) => t.id !== trackId));
+      if (currentTrack?.id === trackId) {
+        player.pause();
+        setCurrentTrack(null);
+      }
     } catch {}
     setRemoving(null);
-  }, [playlistId]);
+  }, [playlistId, currentTrack, player]);
 
   const handleDeleteConfirmed = useCallback(async () => {
     setDeleting(true);
     try {
       await fetch(`${getApiUrl()}/api/music/playlists/${playlistId}`, { method: "DELETE" });
+      player.pause();
       setShowDeleteConfirm(false);
       navigation.goBack();
     } catch {
       setDeleting(false);
       setShowDeleteConfirm(false);
     }
-  }, [playlistId, navigation]);
+  }, [playlistId, navigation, player]);
 
   const handleRename = useCallback(async () => {
     const name = nameInput.trim();
@@ -123,8 +197,8 @@ export default function PlaylistDetailScreen() {
     setRenaming(false);
   }, [nameInput, newName, playlistId]);
 
-
   const padTop = insets.top + 8;
+  const playerBarHeight = currentTrack ? 68 : 0;
 
   return (
     <ThemedView style={styles.root}>
@@ -173,7 +247,6 @@ export default function PlaylistDetailScreen() {
         <ThemedText style={styles.trackCount}>
           {tracks.length} {tracks.length === 1 ? "song" : "songs"}
         </ThemedText>
-
       </View>
 
       {loading ? (
@@ -194,7 +267,7 @@ export default function PlaylistDetailScreen() {
         <FlatList
           data={tracks}
           keyExtractor={(t) => t.id}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + playerBarHeight + 20 }}
           renderItem={({ item, index }) =>
             removing === item.id ? (
               <View style={[styles.trackRow, { opacity: 0.4 }]}>
@@ -205,13 +278,61 @@ export default function PlaylistDetailScreen() {
                 track={item}
                 index={index}
                 isLikedSongs={!!isLikedSongs}
+                isPlaying={currentTrack?.id === item.id && status.playing}
+                isLoading={resolving === item.id}
                 onRemove={() => handleRemove(item.id)}
-                onPlay={() => {}}
+                onPlay={() => handlePlay(item)}
               />
             )
           }
         />
       )}
+
+      {/* ── Mini audio player bar ── */}
+      {currentTrack ? (
+        <View style={[styles.playerBar, { paddingBottom: insets.bottom + 8 }]}>
+          {currentTrack.thumbnail ? (
+            <Image source={{ uri: currentTrack.thumbnail }} style={styles.playerThumb} />
+          ) : (
+            <View style={[styles.playerThumb, styles.playerThumbPlaceholder]}>
+              <Feather name="music" size={16} color={Colors.dark.textSecondary} />
+            </View>
+          )}
+          <View style={styles.playerMeta}>
+            <ThemedText style={styles.playerTitle} numberOfLines={1}>{currentTrack.title}</ThemedText>
+            <ThemedText style={styles.playerArtist} numberOfLines={1}>{currentTrack.artist}</ThemedText>
+          </View>
+          <Pressable
+            style={styles.playerBtn}
+            hitSlop={10}
+            onPress={() => status.playing ? player.pause() : player.play()}
+          >
+            <Feather
+              name={status.playing ? "pause" : "play"}
+              size={22}
+              color={Colors.dark.accent}
+            />
+          </Pressable>
+          <Pressable
+            style={styles.playerBtn}
+            hitSlop={10}
+            onPress={() => {
+              const idx = tracks.findIndex((t) => t.id === currentTrack.id);
+              const next = tracks[idx + 1];
+              if (next) handlePlay(next);
+            }}
+          >
+            <Feather name="skip-forward" size={20} color={Colors.dark.textSecondary} />
+          </Pressable>
+          <Pressable
+            style={styles.playerBtn}
+            hitSlop={10}
+            onPress={() => { player.pause(); setCurrentTrack(null); }}
+          >
+            <Feather name="x" size={18} color={Colors.dark.textSecondary} />
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* ── Delete confirmation modal ── */}
       <Modal visible={showDeleteConfirm} transparent animationType="fade" onRequestClose={() => setShowDeleteConfirm(false)}>
@@ -264,12 +385,6 @@ const styles = StyleSheet.create({
     color: Colors.dark.text, borderBottomWidth: 2,
     borderBottomColor: Colors.dark.accent, paddingVertical: 2,
   },
-  playAllBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: Colors.dark.accent, borderRadius: BorderRadius.md,
-    paddingHorizontal: 14, paddingVertical: 8,
-  },
-  playAllText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   deleteBtn: { padding: 8, borderRadius: BorderRadius.sm },
 
   subHeader: {
@@ -277,8 +392,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg, paddingBottom: Spacing.md, gap: Spacing.md,
   },
   trackCount: { fontSize: 13, color: Colors.dark.textSecondary },
-  shuffleBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
-  shuffleBtnText: { fontSize: 13, color: Colors.dark.accent, fontWeight: "600" },
 
   trackRow: {
     flexDirection: "row", alignItems: "center",
@@ -302,6 +415,24 @@ const styles = StyleSheet.create({
   centred: { flex: 1, justifyContent: "center", alignItems: "center", gap: Spacing.md, paddingHorizontal: Spacing.xl },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.dark.text },
   emptySubtitle: { fontSize: 13, color: Colors.dark.textSecondary, textAlign: "center", lineHeight: 19 },
+
+  // ── Mini player bar
+  playerBar: {
+    position: "absolute", bottom: 0, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderTopWidth: 1, borderTopColor: "rgba(255,102,0,0.25)",
+  },
+  playerThumb: { width: 40, height: 40, borderRadius: BorderRadius.sm },
+  playerThumbPlaceholder: {
+    backgroundColor: Colors.dark.backgroundRoot,
+    justifyContent: "center", alignItems: "center",
+  },
+  playerMeta: { flex: 1, gap: 1 },
+  playerTitle: { fontSize: 13, fontWeight: "600", color: Colors.dark.text },
+  playerArtist: { fontSize: 11, color: Colors.dark.textSecondary },
+  playerBtn: { padding: 6 },
 
   // ── Delete confirm modal
   confirmOverlay: {
