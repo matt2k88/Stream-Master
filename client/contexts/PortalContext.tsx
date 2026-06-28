@@ -5,13 +5,19 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  Animated,
+import { Image, StyleSheet, View, useWindowDimensions } from "react-native";
+import Animated, {
   Easing,
-  Image,
-  StyleSheet,
-  View,
-} from "react-native";
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
+import Svg, { Path } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 
@@ -34,14 +40,72 @@ export function usePortal() {
   return useContext(Ctx);
 }
 
+// ── Isolated mask component so only it re-renders on holeR change ─────────────
+function BlackMask({
+  width,
+  height,
+  cx,
+  cy,
+  holeR,
+}: {
+  width: number;
+  height: number;
+  cx: number;
+  cy: number;
+  holeR: number;
+}) {
+  // SVG "even-odd" path: outer rectangle + inner circle traced as two arcs.
+  // Even-odd rule makes the circle region empty (transparent hole).
+  const r = Math.max(1, holeR);
+  const d = [
+    `M0,0 H${width} V${height} H0 Z`,
+    `M${cx},${cy - r} A${r},${r},0,1,0,${cx},${cy + r} A${r},${r},0,1,0,${cx},${cy - r} Z`,
+  ].join(" ");
+
+  return (
+    <Svg
+      style={StyleSheet.absoluteFill}
+      width={width}
+      height={height}
+      pointerEvents="none"
+    >
+      <Path d={d} fill="#080808" fillRule="evenodd" />
+    </Svg>
+  );
+}
+
 export function PortalProvider({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState<PortalConfig | null>(null);
+  const [holeR, setHoleR] = useState(0);
+  const { width, height } = useWindowDimensions();
 
-  const circleScale   = useRef(new Animated.Value(1)).current;
-  const avatarOpacity = useRef(new Animated.Value(1)).current;
-  const bgOpacity     = useRef(new Animated.Value(0)).current;
-  const zoomScale     = useRef(new Animated.Value(1)).current;
-  const ringOpacity   = useRef(new Animated.Value(1)).current;
+  // ── Shared animation values (Reanimated — UI thread) ─────────────────────
+  const circleScale   = useSharedValue(0.6);
+  const zoomScale     = useSharedValue(1);
+  const avatarOpacity = useSharedValue(1);
+  const ringOpacity   = useSharedValue(1);
+
+  const combinedScale = useDerivedValue(
+    () => circleScale.value * zoomScale.value,
+  );
+
+  // Sync the hole radius to JS state so the SVG mask can consume it.
+  // useAnimatedReaction fires on the UI thread; runOnJS dispatches to JS.
+  useAnimatedReaction(
+    () => combinedScale.value * (DISC / 2),
+    (r) => {
+      runOnJS(setHoleR)(r);
+    },
+  );
+
+  // Animated styles for Reanimated.View components
+  const ringAnimStyle = useAnimatedStyle(() => ({
+    opacity: ringOpacity.value,
+    transform: [{ scale: combinedScale.value }],
+  }));
+  const avatarAnimStyle = useAnimatedStyle(() => ({
+    opacity: avatarOpacity.value,
+  }));
 
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -50,107 +114,63 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
       timers.current.forEach(clearTimeout);
       timers.current = [];
 
-      circleScale.setValue(0.6);
-      avatarOpacity.setValue(1);
-      bgOpacity.setValue(0);
-      zoomScale.setValue(1);
-      ringOpacity.setValue(1);
+      circleScale.value   = 0.6;
+      zoomScale.value     = 1;
+      avatarOpacity.value = 1;
+      ringOpacity.value   = 1;
+
       setActive(config);
 
-      // Phase 1 (0–650ms): spring circle up + dark bg fades in
-      Animated.parallel([
-        Animated.spring(circleScale, {
-          toValue: 3.6,
-          useNativeDriver: true,
-          damping: 16,
-          stiffness: 90,
-          mass: 1,
-        }),
-        Animated.timing(bgOpacity, {
-          toValue: 0.93,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      // Phase 1 (0–650ms): spring circle up to centre-screen
+      circleScale.value = withSpring(3.6, { damping: 16, stiffness: 90, mass: 1 });
 
-      // Phase 2 (1900ms): avatar fades out
+      // Phase 2 (1900ms): avatar fades — ring becomes a transparent window
+      avatarOpacity.value = withDelay(1900, withTiming(0, { duration: 350 }));
+
+      // Navigate: home renders below the transparent hole (2200ms)
+      timers.current.push(setTimeout(() => { onNavigate(); }, 2200));
+
+      // Phase 3 (2450ms): zoom through — ring border fades as we pass it
       timers.current.push(
         setTimeout(() => {
-          Animated.timing(avatarOpacity, {
-            toValue: 0,
-            duration: 350,
-            useNativeDriver: true,
-          }).start();
-        }, 1900),
-      );
-
-      // Phase 2b (2100ms): bg fades to 0 → home screen reveals below
-      timers.current.push(
-        setTimeout(() => {
-          Animated.timing(bgOpacity, {
-            toValue: 0,
-            duration: 300,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }).start();
-        }, 2100),
-      );
-
-      // Navigate (2200ms): home screen renders below the transparent overlay
-      timers.current.push(
-        setTimeout(() => {
-          onNavigate();
-        }, 2200),
-      );
-
-      // Phase 3 (2450ms): zoom through — ring fades as we pass it
-      timers.current.push(
-        setTimeout(() => {
-          Animated.parallel([
-            Animated.timing(zoomScale, {
-              toValue: 14,
-              duration: 550,
-              easing: Easing.in(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(ringOpacity, {
-              toValue: 0,
-              duration: 300,
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            setActive(null);
-          });
+          ringOpacity.value = withTiming(0, { duration: 300 });
+          zoomScale.value = withTiming(
+            14,
+            { duration: 550, easing: Easing.in(Easing.cubic) },
+            (finished) => {
+              if (finished) {
+                runOnJS(setActive)(null);
+              }
+            },
+          );
         }, 2450),
       );
     },
-    [circleScale, avatarOpacity, bgOpacity, zoomScale, ringOpacity],
+    [circleScale, zoomScale, avatarOpacity, ringOpacity],
   );
 
-  const combinedScale = Animated.multiply(circleScale, zoomScale);
+  const cx = width / 2;
+  const cy = height / 2;
 
   return (
     <Ctx.Provider value={{ triggerPortal }}>
       {children}
+
       {active ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {/* Dark bg behind the ring — fades in then out */}
-          <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: "#080808", opacity: bgOpacity },
-            ]}
+          {/* Black overlay with a circular transparent hole — */}
+          {/* outside the circle stays pitch black; inside shows the home screen */}
+          <BlackMask
+            width={width}
+            height={height}
+            cx={cx}
+            cy={cy}
+            holeR={holeR}
           />
-          {/* The ring — centred, enlarges then zooms through */}
+
+          {/* Animated ring + avatar — zooms toward camera */}
           <Animated.View
-            style={[
-              StyleSheet.absoluteFill,
-              styles.center,
-              {
-                opacity: ringOpacity,
-                transform: [{ scale: combinedScale }],
-              },
-            ]}
+            style={[StyleSheet.absoluteFill, styles.center, ringAnimStyle]}
           >
             <View
               style={[
@@ -164,7 +184,7 @@ export function PortalProvider({ children }: { children: React.ReactNode }) {
                 },
               ]}
             >
-              <Animated.View style={{ opacity: avatarOpacity }}>
+              <Animated.View style={avatarAnimStyle}>
                 {active.imageUri ? (
                   <Image
                     source={{ uri: active.imageUri }}
