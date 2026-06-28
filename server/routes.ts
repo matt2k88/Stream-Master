@@ -3629,7 +3629,13 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
 
       // Detect the motorsport series from a match's teams/description string
       // and its channel list.  Returns a canonical series name.
-      function detectMotorsportSeries(teams: string, channels: string[] = []): string {
+      const KNOWN_MOTORSPORT_SERIES = new Set([
+        "Formula 1", "Formula 2", "Formula 3",
+        "MotoGP", "Moto2", "Moto3",
+        "IndyCar", "NASCAR", "WRC", "Superbikes",
+      ]);
+
+      function detectMotorsportSeries(teams: string, channels: string[] = [], fallback = "Formula 1"): string {
         const t = (teams ?? "").trim();
         const ch = channels.join(" ").toLowerCase();
 
@@ -3686,8 +3692,11 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
           return "WRC";
         }
 
-        // Default: Formula 1 (GP weekends with Practice/Qualifying/Race/Sprint)
-        return "Formula 1";
+        // Default: use the stored competition from the DB row if it's a
+        // recognised series (e.g. GPT correctly wrote "MotoGP" but the title
+        // "Grand Prix of the Netherlands" has no explicit series keyword).
+        // Falls back to "Formula 1" when no stored series hint is available.
+        return fallback;
       }
 
       const sportsMap = new Map<string, any>();
@@ -3721,11 +3730,18 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
           // name (e.g. "Austria: Practice 3") and may mix several series in one
           // block.  Detect the correct series for every match individually and
           // bucket them so each series gets its own named competition section.
+          // If the stored competition is a recognised series (e.g. GPT wrote
+          // "MotoGP"), use it as the fallback when title-based detection can't
+          // determine the series (e.g. "Grand Prix of the Netherlands").
+          const storedComp = String(row.competition ?? "").trim();
+          const storedFallback = KNOWN_MOTORSPORT_SERIES.has(storedComp) ? storedComp : "Formula 1";
+
           const seriesBuckets = new Map<string, any[]>();
           for (const m of rowMatches) {
             const series = detectMotorsportSeries(
               String(m.teams ?? ""),
               Array.isArray(m.uk_channels) ? m.uk_channels : [],
+              storedFallback,
             );
             if (!seriesBuckets.has(series)) seriesBuckets.set(series, []);
             seriesBuckets.get(series)!.push(m);
