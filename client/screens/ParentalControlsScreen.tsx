@@ -20,16 +20,17 @@ import PinPadModal from "@/components/PinPadModal";
 
 /* ── BBFC rating definitions ──────────────────────────────────────────── */
 const BBFC_RATINGS: { code: string; label: string; color: string; desc: string }[] = [
-  { code: "U",   label: "U",   color: "#67AE3F", desc: "Universal — suitable for all" },
-  { code: "PG",  label: "PG",  color: "#FCB017", desc: "Parental Guidance suggested" },
-  { code: "12A", label: "12A", color: "#029FD8", desc: "12A — cinema; under-12s with adult" },
-  { code: "12",  label: "12",  color: "#029FD8", desc: "12 — not suitable under 12" },
-  { code: "15",  label: "15",  color: "#ED6623", desc: "15 — not suitable under 15" },
-  { code: "18",  label: "18",  color: "#CC0003", desc: "18 — adults only" },
-  { code: "R18", label: "R18", color: "#CC0003", desc: "R18 — restricted adult content" },
+  { code: "U",     label: "U",     color: "#67AE3F", desc: "Universal — suitable for all" },
+  { code: "PG",    label: "PG",    color: "#FCB017", desc: "Parental Guidance suggested" },
+  { code: "12A",   label: "12A",   color: "#029FD8", desc: "12A — cinema; under-12s with adult" },
+  { code: "12",    label: "12",    color: "#029FD8", desc: "12 — not suitable under 12" },
+  { code: "PG-13", label: "PG-13", color: "#F07000", desc: "PG-13 — may be unsuitable under 13" },
+  { code: "15",    label: "15",    color: "#ED6623", desc: "15 — not suitable under 15" },
+  { code: "18",    label: "18",    color: "#CC0003", desc: "18 — adults only" },
+  { code: "R18",   label: "R18",   color: "#CC0003", desc: "R18 — restricted adult content" },
 ];
 
-const DEFAULT_RATINGS = ["U", "PG", "12A", "12", "15"];
+const DEFAULT_RATINGS = ["U", "PG", "12A", "12", "PG-13", "15"];
 
 /* ── Small components ────────────────────────────────────────────────── */
 function BackBtn({ onPress }: { onPress: () => void }) {
