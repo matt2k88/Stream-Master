@@ -877,7 +877,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList } = useData();
+  const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, streamRatings } = useData();
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge } = useAppTheme();
@@ -1028,15 +1028,44 @@ export default function HomeScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.xs, Spacing.md);
 
+  // Parental-control filter — mirrors ContentListScreen's parentalFilter.
+  // Returns null when parental controls are disabled (no filtering needed).
+  const parentalFilter = useMemo(() => {
+    const pc = activeProfile?.parental_controls;
+    if (!pc?.enabled) return null;
+    const CERT_AGE: Record<string, number> = {
+      U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+      "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
+    };
+    const allowed = pc.allowed_ratings ?? [];
+    const showUnclassified = pc.show_unclassified ?? true;
+    const maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+    const allow18Plus = maxAge >= 18;
+    return (streamId: number | string | null, name: string): boolean => {
+      if (!allow18Plus && /xxx/i.test(name)) return false;
+      if (streamId == null) return showUnclassified;
+      const r = streamRatings.get(Number(streamId));
+      if (!r) return showUnclassified;
+      return r.age_int <= maxAge;
+    };
+  }, [activeProfile?.parental_controls, streamRatings]);
+
   // Dashboard watch-history sections — Live (recently watched) + in-progress
   // movies/series (continue watching), shown inside one shared card box.
   const watchSections: WatchSectionConfig[] = useMemo(() => [
     {
       label: "Continue Watching",
       icon: "play-circle",
-      filter: (e) =>
-        (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
-        (e.content_type === "series" && e.series_id != null),
+      filter: (e) => {
+        const typeOk =
+          (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
+          (e.content_type === "series" && e.series_id != null);
+        if (!typeOk) return false;
+        if (parentalFilter && (e.content_type === "movie" || e.content_type === "series")) {
+          return parentalFilter(e.stream_id, e.name ?? "");
+        }
+        return true;
+      },
       emptyText: "Nothing in progress",
       maxItems: 12,
       variant: "continue-watching" as const,
@@ -1048,7 +1077,7 @@ export default function HomeScreen() {
       emptyText: "No live channels watched yet",
       maxItems: 12,
     },
-  ], []);
+  ], [parentalFilter]);
 
   // Continue Watching click handler. For series rows where the LAST watched
   // episode is already completed, asynchronously resolve the next episode
