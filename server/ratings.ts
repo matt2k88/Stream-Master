@@ -58,6 +58,39 @@ function pickBestCert(
   return null;
 }
 
+// ── OMDb fetch helper ─────────────────────────────────────────────────────────
+// Primary cert source for the stream enricher: 1 call per title, 100k/day limit.
+// Returns null when key not configured, title not found, or rating is N/A.
+const MIN_OMDB_GAP_MS = 60; // ~16 calls/sec → well within 100k/day
+let lastOmdbCallAt = 0;
+
+async function omdbFetch(
+  title: string,
+  year: string | null
+): Promise<{ certification: string; age_int: number } | null> {
+  const key = (process.env.OMDB_API_KEY ?? "").trim();
+  if (!key) return null;
+
+  const gap = MIN_OMDB_GAP_MS - (Date.now() - lastOmdbCallAt);
+  if (gap > 0) await sleep(gap);
+  lastOmdbCallAt = Date.now();
+
+  try {
+    const params = new URLSearchParams({ apikey: key, t: title, plot: "short" });
+    if (year) params.set("y", year);
+    const r = await fetch(`https://www.omdbapi.com/?${params}`);
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d?.Response !== "True" || !d?.Rated) return null;
+    const cert = d.Rated.trim();
+    const age = normalizeCert(cert); // reuses existing MPAA + TV cert map
+    if (age === null) return null;   // "N/A", "Not Rated", "NR", etc.
+    return { certification: cert, age_int: age };
+  } catch {
+    return null;
+  }
+}
+
 // ── TMDB rate-limit gate ──────────────────────────────────────────────────────
 // Shared across BOTH enrichers so they can't race each other over the 40/10s cap.
 // Node is single-threaded: the check+set is race-safe across coroutines.
@@ -422,46 +455,63 @@ async function runStreamEnricher(): Promise<void> {
     try {
       if (ratedSet.has(rkey)) { streamEnrichStats.skipped++; consecutiveRateLimits = 0; continue; }
 
-      const q = encodeURIComponent(item.name);
-      const yearMovie = item.year ? `&primary_release_year=${item.year}` : "";
-      const yearTv    = item.year ? `&first_air_date_year=${item.year}` : "";
+      // ── Step 1: OMDb (primary) ────────────────────────────────────────────
+      // 1 call per item, 100k/day — fast and generous.
+      let cert: { certification: string; age_int: number } | null =
+        await omdbFetch(item.name, item.year ?? null);
+      let source = "omdb";
 
-      let top: any = null;
-      let resolvedType: "movie" | "tv" = item.type;
+      // ── Step 2: TMDB fallback (when OMDb misses or key not set) ──────────
+      if (!cert) {
+        source = "tmdb_search";
+        const q = encodeURIComponent(item.name);
+        const yearMovie = item.year ? `&primary_release_year=${item.year}` : "";
+        const yearTv    = item.year ? `&first_air_date_year=${item.year}` : "";
 
-      if (item.type === "movie") {
-        const d = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
-        top = d?.results?.[0];
-        if (!top?.id) {
-          const d2 = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
-          top = d2?.results?.[0];
-          if (top?.id) resolvedType = "tv";
+        let top: any = null;
+        let resolvedType: "movie" | "tv" = item.type;
+
+        if (item.type === "movie") {
+          const d = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
+          top = d?.results?.[0];
+          if (!top?.id) {
+            const d2 = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
+            top = d2?.results?.[0];
+            if (top?.id) resolvedType = "tv";
+          }
+        } else {
+          const d = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
+          top = d?.results?.[0];
+          if (!top?.id) {
+            const d2 = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
+            top = d2?.results?.[0];
+            if (top?.id) resolvedType = "movie";
+          }
         }
-      } else {
-        const d = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
-        top = d?.results?.[0];
-        if (!top?.id) {
-          const d2 = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
-          top = d2?.results?.[0];
-          if (top?.id) resolvedType = "movie";
+
+        if (top?.id) {
+          const tmdbId = Number(top.id);
+          cert = resolvedType === "movie"
+            ? await fetchMovieCert(tmdbId)
+            : await fetchTvCert(tmdbId);
+          if (cert) {
+            // Also cache in the tmdb_ratings table for future cross-stream reuse.
+            await storeRating(tmdbId, item.type, cert.certification, cert.age_int, "tmdb_search");
+            await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
+          }
         }
       }
 
-      if (!top?.id) { streamEnrichStats.skipped++; consecutiveRateLimits = 0; continue; }
-
-      const tmdbId = Number(top.id);
-      const cert = resolvedType === "movie"
-        ? await fetchMovieCert(tmdbId)
-        : await fetchTvCert(tmdbId);
+      if (cert && source === "omdb") {
+        await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "omdb");
+      }
 
       if (cert) {
-        await storeRating(tmdbId, item.type, cert.certification, cert.age_int, "tmdb_search");
-        await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
         ratedSet.add(rkey);
         streamEnrichStats.processed++;
         consecutiveRateLimits = 0;
         if (++logEvery % 10 === 1) {
-          console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [total ${streamEnrichStats.processed}, remaining ${streamEnrichQueue.length}]`);
+          console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [${source}] [total ${streamEnrichStats.processed}, remaining ${streamEnrichQueue.length}]`);
         }
       } else {
         streamEnrichStats.skipped++;
