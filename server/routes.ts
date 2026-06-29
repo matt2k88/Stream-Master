@@ -3369,6 +3369,9 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             const msgDateUK = getUKDate(msg.date);
             if (msgDateUK !== today) { tgDateMismatch++; continue; }
 
+            // Deduplicate on telegram_msg_id (globally unique per chat).
+            // Using (message_date, file_unique_id) would drop repeated header
+            // images posted on the same day, breaking chronological grouping.
             const { error: upsertErr } = await supabase
               .from("sport_listing_images")
               .upsert(
@@ -3378,7 +3381,7 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
                   file_unique_id: fileUniqueId,
                   file_id: fileId,
                 },
-                { onConflict: "message_date,file_unique_id", ignoreDuplicates: true },
+                { onConflict: "telegram_msg_id", ignoreDuplicates: true },
               );
             if (upsertErr) diag.steps.push(`upsert error: ${upsertErr.message}`);
             else tgSaved++;
@@ -3419,8 +3422,43 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
         }
 
         // ── Step 3: GPT-4o Vision for unprocessed images ──────────────────
+        // Build a file_unique_id → gpt_result cache from (a) today's rows that
+        // already have results, and (b) any historical row for the same image.
+        // This lets repeated header images reuse their GPT result without an
+        // extra API call, while still preserving the duplicate rows in order.
+        const gptCache = new Map<string, any>();
+        for (const img of (allImages as any[])) {
+          if (img.gpt_result) gptCache.set(img.file_unique_id, img.gpt_result);
+        }
+        const uncachedIds = [...new Set(
+          (allImages as any[])
+            .filter((img: any) => !img.gpt_result && !gptCache.has(img.file_unique_id))
+            .map((img: any) => img.file_unique_id as string)
+        )];
+        if (uncachedIds.length > 0) {
+          const { data: hist } = await supabase
+            .from("sport_listing_images")
+            .select("file_unique_id, gpt_result")
+            .in("file_unique_id", uncachedIds)
+            .not("gpt_result", "is", null)
+            .limit(uncachedIds.length);
+          for (const h of hist ?? []) {
+            if (h.gpt_result && !gptCache.has(h.file_unique_id)) {
+              gptCache.set(h.file_unique_id, h.gpt_result);
+            }
+          }
+        }
+
         for (const img of allImages) {
           if (img.gpt_result) continue;
+
+          // Reuse cached result if same image was seen before (same or earlier day).
+          const cachedResult = gptCache.get((img as any).file_unique_id);
+          if (cachedResult) {
+            await supabase.from("sport_listing_images").update({ gpt_result: cachedResult }).eq("id", (img as any).id);
+            (img as any).gpt_result = cachedResult;
+            continue;
+          }
 
           const getFileR = await fetch(
             `https://api.telegram.org/bot${tgToken}/getFile?file_id=${img.file_id}`,
@@ -3475,6 +3513,7 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             .update({ gpt_result: parsed })
             .eq("id", img.id);
           img.gpt_result = parsed;
+          gptCache.set((img as any).file_unique_id, parsed);
         }
 
         // ── Step 4: Build sport_listings from GPT-classified images ────────
