@@ -396,7 +396,16 @@ const streamEnrichQueue: StreamEnrichItem[] = [];
 const streamQueuedKeys = new Set<string>();
 let streamEnrichRunning = false;
 
-export const streamEnrichStats = { queued: 0, processed: 0, skipped: 0, failed: 0, running: false, paused: false, pausedUntil: 0 };
+export const streamEnrichStats = {
+  queued: 0,
+  processed: 0,
+  already_rated: 0,  // already had a DB entry — instant skip
+  no_match: 0,       // neither OMDb nor TMDB could identify the title
+  failed: 0,
+  running: false,
+  paused: false,
+  pausedUntil: 0,
+};
 export function streamEnrichQueueLength(): number { return streamEnrichQueue.length; }
 
 export function startStreamEnrich(
@@ -453,7 +462,7 @@ async function runStreamEnricher(): Promise<void> {
     const item = streamEnrichQueue.shift()!;
     const rkey = `${item.type}:${item.stream_id}`;
     try {
-      if (ratedSet.has(rkey)) { streamEnrichStats.skipped++; consecutiveRateLimits = 0; continue; }
+      if (ratedSet.has(rkey)) { streamEnrichStats.already_rated++; consecutiveRateLimits = 0; continue; }
 
       // ── Step 1: OMDb (primary) ────────────────────────────────────────────
       // 1 call per item, 100k/day — fast and generous.
@@ -514,7 +523,7 @@ async function runStreamEnricher(): Promise<void> {
           console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [${source}] [total ${streamEnrichStats.processed}, remaining ${streamEnrichQueue.length}]`);
         }
       } else {
-        streamEnrichStats.skipped++;
+        streamEnrichStats.no_match++;
         consecutiveRateLimits = 0;
       }
     } catch (e: any) {
@@ -556,7 +565,7 @@ async function runStreamEnricher(): Promise<void> {
   streamEnrichStats.running = false;
   streamEnrichStats.paused = false;
   streamEnrichStats.pausedUntil = 0;
-  console.log(`[stream-enrich] done — processed: ${streamEnrichStats.processed}, skipped: ${streamEnrichStats.skipped}, failed: ${streamEnrichStats.failed}`);
+  console.log(`[stream-enrich] done — processed: ${streamEnrichStats.processed}, already_rated: ${streamEnrichStats.already_rated}, no_match: ${streamEnrichStats.no_match}, failed: ${streamEnrichStats.failed}`);
 }
 
 // ── Stream-ratings (keyed by stream_id + content_type) ────────────────────────
