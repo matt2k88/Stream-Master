@@ -58,10 +58,22 @@ function pickBestCert(
   return null;
 }
 
+// ── TMDB rate-limit gate ──────────────────────────────────────────────────────
+// Shared across BOTH enrichers so they can't race each other over the 40/10s cap.
+// Node is single-threaded: the check+set is race-safe across coroutines.
+const MIN_TMDB_GAP_MS = 200; // 5 calls/sec max → 2 items/sec → well under 40/10s
+let lastTmdbCallAt = 0;
+
 // ── TMDB fetch helper ─────────────────────────────────────────────────────────
 // Supports v3 API key (?api_key=) OR v4 Bearer token — whichever is available.
 // Prefers TMDB_API_KEY (v3, short alphanumeric) over TMDB_READ_TOKEN (v4 JWT).
-async function tmdbFetch(path: string): Promise<any | null> {
+// Handles 429 explicitly: waits Retry-After (default 12s) then retries up to 3×.
+async function tmdbFetch(path: string, retries = 3): Promise<any | null> {
+  // Enforce minimum gap between any two TMDB calls (both enrichers share this)
+  const gap = MIN_TMDB_GAP_MS - (Date.now() - lastTmdbCallAt);
+  if (gap > 0) await sleep(gap);
+  lastTmdbCallAt = Date.now();
+
   const v3Key   = (process.env.TMDB_API_KEY   ?? "").trim();
   const v4Token = (process.env.TMDB_READ_TOKEN ?? "").trim();
   if (!v3Key && !v4Token) return null;
@@ -76,6 +88,19 @@ async function tmdbFetch(path: string): Promise<any | null> {
       headers["Authorization"] = `Bearer ${v4Token}`;
     }
     const r = await fetch(url, { headers });
+    if (r.status === 429) {
+      if (retries <= 0) {
+        console.warn("[ratings] TMDB 429 — no retries left, skipping");
+        return null;
+      }
+      const retryAfter = r.headers.get("retry-after");
+      const waitMs = retryAfter
+        ? Math.min(Math.max(parseInt(retryAfter, 10), 1) * 1000, 60_000)
+        : 12_000;
+      console.warn(`[ratings] TMDB 429 — waiting ${waitMs}ms (retry-after: ${retryAfter ?? "none"}, retries left: ${retries})`);
+      await sleep(waitMs);
+      return tmdbFetch(path, retries - 1);
+    }
     if (!r.ok) return null;
     return r.json();
   } catch {
@@ -227,9 +252,10 @@ export function startBulkEnrich(
   return { queued: added, already_queued: already };
 }
 
-// 300ms between items: 2 TMDB calls per item = ~6.6 calls/second, safely
-// under TMDB's 40 req/10s cap.
-const INTERVAL_MS = 300;
+// Per-item sleep for the bulk enricher.  tmdbFetch already enforces MIN_TMDB_GAP_MS
+// between every individual TMDB call; this adds a small extra gap between items
+// so DB calls don't pile up.
+const INTERVAL_MS = 100;
 
 async function runEnricher(): Promise<void> {
   if (enrichRunning) return;
@@ -311,6 +337,7 @@ const streamQueuedKeys = new Set<string>();
 let streamEnrichRunning = false;
 
 export const streamEnrichStats = { queued: 0, processed: 0, skipped: 0, failed: 0, running: false };
+export function streamEnrichQueueLength(): number { return streamEnrichQueue.length; }
 
 export function startStreamEnrich(
   items: { stream_id: number; type: "movie" | "tv"; name: string; year?: string | null }[]
@@ -354,7 +381,7 @@ async function runStreamEnricher(): Promise<void> {
 
       const searchData = await tmdbFetch(path);
       const top = searchData?.results?.[0];
-      if (!top?.id) { streamEnrichStats.skipped++; await sleep(250); continue; }
+      if (!top?.id) { streamEnrichStats.skipped++; continue; }
 
       const tmdbId = Number(top.id);
       const cert = item.type === "movie"
@@ -372,7 +399,8 @@ async function runStreamEnricher(): Promise<void> {
       streamEnrichStats.failed++;
       console.warn(`[stream-enrich] stream_id ${item.stream_id}:`, e?.message);
     }
-    await sleep(250);
+    // No explicit sleep here — tmdbFetch enforces MIN_TMDB_GAP_MS between every
+    // individual TMDB call, which naturally paces the loop.
   }
 
   streamEnrichRunning = false;

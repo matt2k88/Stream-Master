@@ -10,6 +10,7 @@ import {
   fetchAllStreamRatings,
   startStreamEnrich,
   streamEnrichStats,
+  streamEnrichQueueLength,
   StreamBatchItem,
 } from "./ratings";
 
@@ -3979,7 +3980,7 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
 
   // GET /api/stream-ratings/status — check enricher progress.
   app.get("/api/stream-ratings/status", (req, res) => {
-    return res.json({ ...streamEnrichStats, remaining: 0 });
+    return res.json({ ...streamEnrichStats, remaining: streamEnrichQueueLength() });
   });
 
 
