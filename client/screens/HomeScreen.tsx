@@ -433,6 +433,7 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
                         {p.name}
                       </ThemedText>
                       {p.pin ? <Feather name="lock" size={12} color={Colors.dark.textSecondary} /> : null}
+                      {p.parental_controls?.enabled ? <Feather name="shield" size={12} color="#4CAF50" /> : null}
                       {selected ? <Feather name="check" size={16} color={Colors.dark.accent} /> : null}
                     </ProfileDropdownRow>
                   );

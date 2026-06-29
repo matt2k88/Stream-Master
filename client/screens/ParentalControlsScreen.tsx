@@ -256,7 +256,7 @@ export default function ParentalControlsScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingHorizontal: padH, paddingBottom: padB, maxWidth: isLandscape ? 680 : undefined, alignSelf: "center", width: "100%" },
+          { paddingHorizontal: padH, paddingBottom: padB, maxWidth: isLandscape ? 800 : undefined, alignSelf: "center", width: "100%" },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -327,84 +327,67 @@ export default function ParentalControlsScreen() {
             {/* Ratings selector */}
             <View style={styles.section}>
               <ThemedText style={styles.sectionLabel}>Allowed Classifications</ThemedText>
-              <ThemedText style={styles.sectionHint}>
-                Tick the highest rating you want to allow. Content rated above your selection will be hidden.
-              </ThemedText>
-              {BBFC_RATINGS.map((r) => (
-                <RatingCheckbox
-                  key={r.code}
-                  rating={r}
-                  checked={allowedRatings.includes(r.code)}
-                  onToggle={() => toggleRating(r.code)}
-                />
-              ))}
+              <View style={styles.ratingsGrid}>
+                {BBFC_RATINGS.map((r) => (
+                  <RatingCheckbox
+                    key={r.code}
+                    rating={r}
+                    checked={allowedRatings.includes(r.code)}
+                    onToggle={() => toggleRating(r.code)}
+                  />
+                ))}
+              </View>
             </View>
 
             {/* Unclassified toggle */}
-            <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>Unrated Content</ThemedText>
-              <ToggleRow
-                label="Show Unclassified Content"
-                subtitle="Content with no age rating assigned"
-                value={showUnclassified}
-                onToggle={() => { setShowUnclassified((v) => !v); setDirty(true); }}
-              />
-            </View>
+            <ToggleRow
+              label="Show Unclassified Content"
+              subtitle="Content with no age rating assigned"
+              value={showUnclassified}
+              onToggle={() => { setShowUnclassified((v) => !v); setDirty(true); }}
+            />
 
-            {/* Legal disclaimer */}
-            <View style={styles.disclaimerCard}>
-              <Feather name="alert-triangle" size={14} color="#FCB017" style={{ marginTop: 1, flexShrink: 0 }} />
-              <ThemedText style={styles.disclaimerText}>
-                Age ratings rely on BBFC and TMDB classifications and may not be complete or accurate for all content. Parental Controls are not a substitute for active parental supervision. Stream names and categories containing "XXX" are blocked unless 18+ content is permitted.
-              </ThemedText>
-            </View>
+            {/* Legal note */}
+            <ThemedText style={styles.disclaimerNote}>
+              Age ratings rely on BBFC/TMDB classifications and may not be complete for all content. Not a substitute for active parental supervision.
+            </ThemedText>
 
-            {/* Save button */}
-            <Pressable
-              style={({ pressed }) => [styles.saveBtn, !dirty && styles.saveBtnDisabled, (pressed && dirty) && styles.saveBtnPressed, saving && { opacity: 0.6 }]}
-              onPress={() => {
-                if (!dirty) return;
-                if (hasPin) setPinModal({ visible: true, action: "save" });
-                else saveSettings({ enabled: true });
-              }}
-              disabled={!dirty || saving}
-            >
-              <LinearGradient
-                colors={dirty ? ["#FF8C1A", "#FF5500"] : [Colors.dark.backgroundDefault, Colors.dark.backgroundDefault]}
-                style={StyleSheet.absoluteFill}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              />
-              <ThemedText style={[styles.saveBtnText, !dirty && styles.saveBtnTextDim]}>
-                {saving ? "Saving..." : "Save Changes"}
-              </ThemedText>
-            </Pressable>
-
-            {/* PIN actions */}
-            <View style={styles.pinActions}>
+            {/* Action row: Save · Change PIN · Disable */}
+            <View style={styles.actionRow}>
               <Pressable
-                style={({ pressed }) => [styles.pinActionBtn, pressed && styles.pinActionBtnActive]}
-                onPress={() => setPinModal({ visible: true, action: "changePin" })}
+                style={({ pressed }) => [styles.actionBtn, styles.saveBtnSmall, !dirty && styles.saveBtnDisabled, pressed && dirty && styles.saveBtnPressed, saving && { opacity: 0.6 }]}
+                onPress={() => {
+                  if (!dirty) return;
+                  if (hasPin) setPinModal({ visible: true, action: "save" });
+                  else saveSettings({ enabled: true });
+                }}
+                disabled={!dirty || saving}
               >
-                <Feather name="key" size={14} color={Colors.dark.textSecondary} />
-                <ThemedText style={styles.pinActionText}>Change Parental PIN</ThemedText>
+                <LinearGradient
+                  colors={dirty ? ["#FF8C1A", "#FF5500"] : [Colors.dark.backgroundDefault, Colors.dark.backgroundDefault]}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+                <ThemedText style={[styles.actionBtnText, !dirty && styles.saveBtnTextDim]}>
+                  {saving ? "Saving…" : "Save Changes"}
+                </ThemedText>
               </Pressable>
 
               <Pressable
-                style={({ pressed }) => [styles.disableBtn, pressed && styles.disableBtnActive]}
-                onPress={() => {
-                  Alert.alert(
-                    "Disable Parental Controls",
-                    "This will remove all content filtering. You will need to enter your PIN to confirm.",
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "Disable", style: "destructive", onPress: () => setPinModal({ visible: true, action: "disable" }) },
-                    ]
-                  );
-                }}
+                style={({ pressed }) => [styles.actionBtn, styles.changePinBtn, pressed && styles.pinActionBtnActive]}
+                onPress={() => setPinModal({ visible: true, action: "changePin" })}
               >
-                <Feather name="shield-off" size={14} color={Colors.dark.error} />
-                <ThemedText style={styles.disableBtnText}>Disable Parental Controls</ThemedText>
+                <Feather name="key" size={13} color={Colors.dark.textSecondary} />
+                <ThemedText style={styles.changePinText}>Change PIN</ThemedText>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [styles.actionBtn, styles.disableBtn, pressed && styles.disableBtnActive]}
+                onPress={() => setPinModal({ visible: true, action: "disable" })}
+              >
+                <Feather name="shield-off" size={13} color={Colors.dark.error} />
+                <ThemedText style={styles.disableBtnText}>Disable</ThemedText>
               </Pressable>
             </View>
           </>
@@ -468,7 +451,7 @@ const styles = StyleSheet.create({
   },
   backBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   divider: { height: 1, backgroundColor: Colors.dark.border, marginBottom: Spacing.md },
-  scroll: { gap: Spacing.lg, paddingTop: Spacing.xs },
+  scroll: { gap: Spacing.sm, paddingTop: Spacing.xs },
 
   /* Status card */
   statusCard: {
@@ -477,20 +460,20 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    padding: Spacing.lg,
+    padding: Spacing.md,
     overflow: "hidden",
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { flex: 1 },
-  statusTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text },
-  statusSub: { fontSize: 12, color: Colors.dark.textSecondary, marginTop: 2, lineHeight: 16 },
+  statusTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.text },
+  statusSub: { fontSize: 11, color: Colors.dark.textSecondary, marginTop: 1, lineHeight: 15 },
   statusBadge: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 36, height: 36, borderRadius: 18,
     justifyContent: "center", alignItems: "center",
   },
 
   /* Enable section */
-  enableSection: { gap: Spacing.lg },
+  enableSection: { gap: Spacing.md },
   descCard: {
     flexDirection: "row",
     gap: Spacing.sm,
@@ -513,35 +496,44 @@ const styles = StyleSheet.create({
   enableBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 
   /* Settings section */
-  section: { gap: Spacing.sm },
+  section: { gap: Spacing.xs },
   sectionLabel: {
-    fontSize: 11, fontWeight: "700", color: Colors.dark.accent,
+    fontSize: 10, fontWeight: "700", color: Colors.dark.accent,
     textTransform: "uppercase", letterSpacing: 1,
   },
-  sectionHint: { fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 17 },
+  sectionHint: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
+
+  /* Ratings 2-column grid */
+  ratingsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+  },
 
   /* Rating checkbox row */
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
+    gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.sm,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    padding: Spacing.md,
+    padding: Spacing.sm,
+    minWidth: "48%",
+    flex: 1,
   },
   ratingRowActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   ratingRowChecked: { borderColor: "rgba(255,102,0,0.4)" },
   ratingBadge: {
-    width: 40, height: 40, borderRadius: 6,
+    width: 32, height: 32, borderRadius: 5,
     justifyContent: "center", alignItems: "center",
   },
-  ratingBadgeText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  ratingBadgeText: { fontSize: 11, fontWeight: "800", color: "#fff" },
   ratingInfo: { flex: 1 },
-  ratingLabel: { fontSize: 13, color: Colors.dark.text, fontWeight: "500" },
+  ratingLabel: { fontSize: 12, color: Colors.dark.text, fontWeight: "500" },
   checkbox: {
-    width: 24, height: 24, borderRadius: 6,
+    width: 20, height: 20, borderRadius: 5,
     borderWidth: 2, borderColor: Colors.dark.border,
     backgroundColor: "transparent",
     justifyContent: "center", alignItems: "center",
@@ -576,44 +568,40 @@ const styles = StyleSheet.create({
   thumbOn: { backgroundColor: "#fff", alignSelf: "flex-end" },
 
   /* Disclaimer */
-  disclaimerCard: {
+  disclaimerNote: {
+    fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 16,
+    opacity: 0.7,
+  },
+
+  /* Action row */
+  actionRow: {
     flexDirection: "row",
     gap: Spacing.sm,
-    backgroundColor: "rgba(252,176,23,0.08)",
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: "rgba(252,176,23,0.25)",
-    padding: Spacing.md,
   },
-  disclaimerText: { flex: 1, fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 17 },
-
-  /* Save button */
-  saveBtn: {
-    height: 52, borderRadius: BorderRadius.sm, overflow: "hidden",
-    justifyContent: "center", alignItems: "center",
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
+  actionBtn: {
+    flex: 1, height: 46, borderRadius: BorderRadius.sm, overflow: "hidden",
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  saveBtnSmall: {
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
   },
   saveBtnDisabled: { shadowOpacity: 0 },
   saveBtnPressed: { opacity: 0.85 },
-  saveBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  actionBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   saveBtnTextDim: { color: Colors.dark.textSecondary },
 
-  /* PIN / disable actions */
-  pinActions: { gap: Spacing.sm, marginBottom: Spacing.sm },
-  pinActionBtn: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    padding: Spacing.md, borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: Colors.dark.border,
+  changePinBtn: {
     backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1, borderColor: Colors.dark.border,
   },
+  changePinText: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "600" },
   pinActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  pinActionText: { fontSize: 13, color: Colors.dark.textSecondary },
+
+  /* Disable action button */
   disableBtn: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    padding: Spacing.md, borderRadius: BorderRadius.sm,
     borderWidth: 1, borderColor: "rgba(255,59,59,0.3)",
     backgroundColor: Colors.dark.backgroundDefault,
   },
   disableBtnActive: { borderColor: Colors.dark.error, backgroundColor: "rgba(255,59,59,0.07)" },
-  disableBtnText: { fontSize: 13, color: Colors.dark.error },
+  disableBtnText: { fontSize: 13, color: Colors.dark.error, fontWeight: "600" },
 });

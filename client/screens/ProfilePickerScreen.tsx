@@ -169,6 +169,11 @@ function ProfileCard({
               <Feather name="lock" size={10} color="#fff" />
             </View>
           ) : null}
+          {profile.parental_controls?.enabled ? (
+            <View style={styles.parentalBadge}>
+              <Feather name="shield" size={10} color="#fff" />
+            </View>
+          ) : null}
         </View>
 
         {/* Name pill — fills with the profile's accent colour when active */}
@@ -755,6 +760,19 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: Colors.dark.backgroundRoot,
+  },
+  parentalBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#4CAF50",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
