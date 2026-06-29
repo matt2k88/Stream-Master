@@ -227,8 +227,27 @@ export const enrichStats = {
 };
 
 function parseName(raw: string): { name: string; year: string | null } {
-  const m = raw.match(/^(.+?)\s*\((\d{4})\)\s*$/);
-  return m ? { name: m[1].trim(), year: m[2] } : { name: raw.trim(), year: null };
+  let s = raw.trim();
+
+  // Strip IPTV provider prefixes: "UK | ", "US: ", "AR | ", "FR - " etc.
+  // Matches 2-5 upper-case letters (or digits) followed by a separator and space.
+  s = s.replace(/^[A-Z0-9]{2,5}\s*[\|:\-]\s+/g, "");
+
+  // Strip bracketed quality/format tags: [HD], (FHD), (4K), [1080p] etc.
+  s = s.replace(/\s*[\[\(]\s*(4K|FHD|HD|720p|1080p|2160p|UHD|SDR|HDR|HEVC|H\.?265|H\.?264|DV|DUBBED|SUBBED|ENG|MULTI)\s*[\]\)]/gi, "");
+
+  // Strip pipe-separated quality tags at end: "Name | FHD", "Name |HD"
+  s = s.replace(/\s*\|\s*(4K|FHD|HD|720p|1080p|2160p|UHD|SDR|HDR|HEVC|H\.?265|H\.?264|DV|DUBBED|SUBBED|ENG|MULTI)\s*$/gi, "");
+
+  // Strip standalone quality tags at end of string (whole word only).
+  s = s.replace(/\s+\b(4K|FHD|720p|1080p|2160p|UHD|SDR|HEVC|DUBBED|SUBBED|MULTI)\b\s*$/gi, "");
+
+  // Strip trailing pipes and brackets left behind, collapse multiple spaces.
+  s = s.replace(/\s*\|\s*$/, "").replace(/\s{2,}/g, " ").trim();
+
+  // Extract trailing year.
+  const m = s.match(/^(.+?)\s*[\[\(](\d{4})[\]\)]\s*$/);
+  return m ? { name: m[1].trim(), year: m[2] } : { name: s, year: null };
 }
 
 export function startBulkEnrich(
@@ -364,34 +383,72 @@ async function runStreamEnricher(): Promise<void> {
   streamEnrichStats.running = true;
   console.log(`[stream-enrich] starting — ${streamEnrichQueue.length} items`);
 
+  // Preload all already-rated stream_ids into memory so we avoid one Supabase
+  // round-trip per item (~250ms each) and can do the skip check in O(1).
+  const ratedSet = new Set<string>();
+  try {
+    const [movies, tv] = await Promise.all([
+      fetchAllStreamRatings("movie"),
+      fetchAllStreamRatings("tv"),
+    ]);
+    for (const r of movies) ratedSet.add(`movie:${r.stream_id}`);
+    for (const r of tv)    ratedSet.add(`tv:${r.stream_id}`);
+    console.log(`[stream-enrich] preloaded ${ratedSet.size} already-rated entries`);
+  } catch (e: any) {
+    console.warn("[stream-enrich] preload warning — falling back to per-item lookup:", e?.message);
+  }
+
+  let logEvery = 0;
   while (streamEnrichQueue.length > 0) {
     const item = streamEnrichQueue.shift()!;
+    const rkey = `${item.type}:${item.stream_id}`;
     try {
-      const existing = await getStreamRating(item.stream_id, item.type);
-      if (existing) { streamEnrichStats.skipped++; continue; }
+      if (ratedSet.has(rkey)) { streamEnrichStats.skipped++; continue; }
 
-      // TMDB search by name
+      // TMDB search by name. For VOD streams classified as "movie" by the IPTV
+      // provider, also try a TV search as fallback — many providers mis-classify
+      // TV shows as movies.
       const q = encodeURIComponent(item.name);
-      const yearParam = item.year
-        ? item.type === "movie" ? `&primary_release_year=${item.year}` : `&first_air_date_year=${item.year}`
-        : "";
-      const path = item.type === "movie"
-        ? `/search/movie?query=${q}${yearParam}&include_adult=false`
-        : `/search/tv?query=${q}${yearParam}&include_adult=false`;
+      const yearMovie = item.year ? `&primary_release_year=${item.year}` : "";
+      const yearTv    = item.year ? `&first_air_date_year=${item.year}` : "";
 
-      const searchData = await tmdbFetch(path);
-      const top = searchData?.results?.[0];
+      let top: any = null;
+      let resolvedType: "movie" | "tv" = item.type;
+
+      if (item.type === "movie") {
+        const d = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
+        top = d?.results?.[0];
+        if (!top?.id) {
+          // Fallback: try TV search — many IPTV providers list TV shows as VOD
+          const d2 = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
+          top = d2?.results?.[0];
+          if (top?.id) resolvedType = "tv";
+        }
+      } else {
+        const d = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
+        top = d?.results?.[0];
+        if (!top?.id) {
+          const d2 = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
+          top = d2?.results?.[0];
+          if (top?.id) resolvedType = "movie";
+        }
+      }
+
       if (!top?.id) { streamEnrichStats.skipped++; continue; }
 
       const tmdbId = Number(top.id);
-      const cert = item.type === "movie"
+      const cert = resolvedType === "movie"
         ? await fetchMovieCert(tmdbId)
         : await fetchTvCert(tmdbId);
 
       if (cert) {
         await storeRating(tmdbId, item.type, cert.certification, cert.age_int, "tmdb_search");
         await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
+        ratedSet.add(rkey);
         streamEnrichStats.processed++;
+        if (++logEvery % 10 === 1) {
+          console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [total ${streamEnrichStats.processed}]`);
+        }
       } else {
         streamEnrichStats.skipped++;
       }
@@ -399,8 +456,7 @@ async function runStreamEnricher(): Promise<void> {
       streamEnrichStats.failed++;
       console.warn(`[stream-enrich] stream_id ${item.stream_id}:`, e?.message);
     }
-    // No explicit sleep here — tmdbFetch enforces MIN_TMDB_GAP_MS between every
-    // individual TMDB call, which naturally paces the loop.
+    // No explicit sleep — tmdbFetch enforces MIN_TMDB_GAP_MS per TMDB call.
   }
 
   streamEnrichRunning = false;
@@ -465,11 +521,22 @@ async function storeStreamRating(
 export async function fetchAllStreamRatings(
   contentType: "movie" | "tv"
 ): Promise<{ stream_id: number; certification: string; age_int: number }[]> {
-  const { data } = await supabase
-    .from("stream_ratings")
-    .select("stream_id, certification, age_int")
-    .eq("content_type", contentType);
-  return data ?? [];
+  // Supabase default page size is 1000. Paginate to get all rows.
+  const PAGE = 1000;
+  const all: { stream_id: number; certification: string; age_int: number }[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("stream_ratings")
+      .select("stream_id, certification, age_int")
+      .eq("content_type", contentType)
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
 }
 
 export async function processStreamBatch(
