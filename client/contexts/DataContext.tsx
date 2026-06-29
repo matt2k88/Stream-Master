@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { xtreamApi, Category, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useAuth } from "@/contexts/AuthContext";
+import { getApiUrl } from "@/lib/query-client";
 
 export type SyncStatus = "idle" | "waiting" | "loading" | "done" | "error";
 
@@ -107,6 +108,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncRunning.current = true;
     setIsSyncing(true);
     setSyncProgress({ live: "waiting", movies: "waiting", series: "waiting" });
+    let _enrichMovies: VodStream[] = [];
+    let _enrichSeries: Series[] = [];
 
     try {
       // ── Live TV ──────────────────────────────────────────────────────────
@@ -133,6 +136,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setVodCategories(cats);
         setVodStreams(streams);
         setRecentMovies(computeRecent(streams, "movies"));
+        _enrichMovies = streams;
         setSyncProgress((p) => ({ ...p, movies: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, movies: "error" }));
@@ -148,12 +152,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setSeriesCategories(cats);
         setSeriesList(list);
         setRecentSeries(computeRecent(list, "series"));
+        _enrichSeries = list;
         setSyncProgress((p) => ({ ...p, series: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, series: "error" }));
       }
 
       setHasData(true);
+
+      // Fire-and-forget bulk rating enrichment.  The server queues all movie
+      // and series names for TMDB cert lookup in the background (300ms/item).
+      // Already-rated or already-queued items are silently skipped, so this
+      // call is cheap on repeated syncs after the first full run.
+      if (_enrichMovies.length > 0 || _enrichSeries.length > 0) {
+        fetch(new URL("/api/ratings/enrich", getApiUrl()).toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            streams: [
+              ..._enrichMovies.map((s) => ({ id: String(s.stream_id), name: s.name, type: "movie" })),
+              ..._enrichSeries.map((s) => ({ id: String(s.series_id), name: s.name, type: "tv" })),
+            ],
+          }),
+        }).catch(() => {});
+      }
     } finally {
       setIsSyncing(false);
       syncRunning.current = false;

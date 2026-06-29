@@ -25,6 +25,7 @@ import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useData } from "@/contexts/DataContext";
 import { getApiUrl } from "@/lib/query-client";
+import AgeRatingBadge from "@/components/AgeRatingBadge";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type MovieInfoRouteProp = RouteProp<RootStackParamList, "MovieInfo">;
@@ -245,6 +246,24 @@ export default function MovieInfoScreen() {
 
   // ── Merged display fields (TMDB > Xtream > route) ────────────────────────
   const xt = vodInfo?.info ?? {};
+
+  // ── Age certification (lazy — server fetches from TMDB, caches in DB) ────
+  const xtCert = xt.mpaa_rating || xt.age || null;
+  const { data: ageRating } = useQuery<{ certification: string; age_int: number } | null>({
+    queryKey: ["content-rating", "movie", tmdbId],
+    enabled: !!tmdbId,
+    queryFn: async () => {
+      const url = new URL("/api/content-ratings", getApiUrl());
+      url.searchParams.set("tmdb_id", tmdbId!);
+      url.searchParams.set("content_type", "movie");
+      if (xtCert) url.searchParams.set("xtream_cert", xtCert);
+      const r = await fetch(url.toString());
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 24 * 60 * 60 * 1000,
+    retry: false,
+  });
   const title = (tmdb as any)?.title ?? xt.name ?? name;
   const tagline = (tmdb as any)?.tagline as string | undefined;
   const overview =
@@ -417,6 +436,7 @@ export default function MovieInfoScreen() {
               </ThemedText>
             </View>
           ) : null}
+          <AgeRatingBadge certification={ageRating?.certification} />
           {country ? <MetaChip>{country}</MetaChip> : null}
         </View>
 

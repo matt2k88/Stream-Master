@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { getApiUrl } from "@/lib/query-client";
+import AgeRatingBadge from "@/components/AgeRatingBadge";
 import SideMenuButton from "@/components/SideMenuButton";
 import {
   View,
@@ -208,6 +211,21 @@ export default function SeriesDetailScreen() {
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
   const isFav = isFavourite(seriesId, "series");
   const tmdbSeriesId = (seriesInfo?.info as any)?.tmdb ?? (seriesInfo?.info as any)?.tmdb_id ?? null;
+  const tmdbSeriesIdNum = tmdbSeriesId ? Number(tmdbSeriesId) : null;
+  const { data: ageRating } = useQuery<{ certification: string; age_int: number } | null>({
+    queryKey: ["content-rating", "tv", tmdbSeriesIdNum],
+    enabled: tmdbSeriesIdNum != null && !isNaN(tmdbSeriesIdNum),
+    queryFn: async () => {
+      const url = new URL("/api/content-ratings", getApiUrl());
+      url.searchParams.set("tmdb_id", String(tmdbSeriesIdNum!));
+      url.searchParams.set("content_type", "tv");
+      const r = await fetch(url.toString());
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 24 * 60 * 60 * 1000,
+    retry: false,
+  });
   const watchlistContentId = tmdbSeriesId ? String(tmdbSeriesId) : `xt_${seriesId}`;
   const inWatchlist = isInWatchlist(seriesId, "series") || isInWatchlist(watchlistContentId, "series");
   const handleToggleWatchlist = () => {
@@ -340,11 +358,14 @@ export default function SeriesDetailScreen() {
                 </View>
               )}
             </View>
-            {seriesInfo?.info?.genre ? (
-              <View style={styles.genreBadge}>
-                <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
-              </View>
-            ) : null}
+            <View style={styles.badgeRow}>
+              {seriesInfo?.info?.genre ? (
+                <View style={styles.genreBadge}>
+                  <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+                </View>
+              ) : null}
+              <AgeRatingBadge certification={ageRating?.certification} size="sm" />
+            </View>
             <ScrollView
               style={styles.sidebarScroll}
               contentContainerStyle={styles.sidebarScrollContent}
@@ -386,11 +407,14 @@ export default function SeriesDetailScreen() {
                 )}
               </View>
               <View style={styles.portraitMeta}>
-                {seriesInfo?.info?.genre ? (
-                  <View style={[styles.genreBadge, { alignSelf: "flex-start" }]}>
-                    <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
-                  </View>
-                ) : null}
+                <View style={styles.badgeRow}>
+                  {seriesInfo?.info?.genre ? (
+                    <View style={[styles.genreBadge, { alignSelf: "flex-start" }]}>
+                      <ThemedText style={styles.genreText} numberOfLines={1}>{seriesInfo.info.genre}</ThemedText>
+                    </View>
+                  ) : null}
+                  <AgeRatingBadge certification={ageRating?.certification} size="sm" />
+                </View>
                 {seriesInfo?.info?.plot ? (
                   <ThemedText style={styles.plotText} numberOfLines={5}>
                     {seriesInfo.info.plot}
@@ -568,6 +592,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundSecondary,
     justifyContent: "center",
     alignItems: "center",
+  },
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   genreBadge: {
     backgroundColor: Colors.dark.accentDim,

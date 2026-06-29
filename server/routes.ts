@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
+import { getOrFetchRating, startBulkEnrich, enrichStats } from "./ratings";
 
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
@@ -3875,6 +3876,50 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
 
   }
   // ── END Sports Listings ──────────────────────────────────────────────────────
+
+  // ── Content age ratings ───────────────────────────────────────────────────
+  // GET /api/content-ratings?tmdb_id=xxx&content_type=movie|tv[&xtream_cert=PG]
+  // Returns cached cert if available; fetches from TMDB and caches if not.
+  app.get("/api/content-ratings", async (req, res) => {
+    const { tmdb_id, content_type, xtream_cert } = req.query as Record<string, string | undefined>;
+    if (!tmdb_id || !/^\d+$/.test(tmdb_id)) {
+      return res.status(400).json({ error: "valid numeric tmdb_id required" });
+    }
+    if (content_type !== "movie" && content_type !== "tv") {
+      return res.status(400).json({ error: "content_type must be 'movie' or 'tv'" });
+    }
+    try {
+      const rating = await getOrFetchRating(Number(tmdb_id), content_type, xtream_cert ?? null);
+      return res.json(rating ?? null);
+    } catch (e: any) {
+      console.error("[ratings] GET error:", e?.message);
+      return res.status(500).json({ error: "Rating lookup failed" });
+    }
+  });
+
+  // POST /api/ratings/enrich — client sends full movie+series list after sync;
+  // server queues bulk name-based TMDB enrichment in the background.
+  // Idempotent: already-rated / already-queued items are silently skipped.
+  app.post("/api/ratings/enrich", (req, res) => {
+    const { streams } = req.body ?? {};
+    if (!Array.isArray(streams)) {
+      return res.status(400).json({ error: "streams array required" });
+    }
+    const result = startBulkEnrich(
+      streams.filter((s: any) => typeof s?.name === "string" && s?.type)
+    );
+    return res.json({ ok: true, ...result });
+  });
+
+  // GET /api/ratings/status — admin: current enrichment job stats.
+  app.get("/api/ratings/status", (req, res) => {
+    const authHeader = (req.headers.authorization ?? "") as string;
+    const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+    if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    return res.json(enrichStats);
+  });
 
   const httpServer = createServer(app);
   return httpServer;
