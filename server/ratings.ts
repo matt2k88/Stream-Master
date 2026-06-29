@@ -284,6 +284,92 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── Server-side stream enricher ───────────────────────────────────────────────
+// Client sends the full library names once after sync.  The server processes
+// them here at 250ms/item using TMDB name search, storing certs in
+// stream_ratings keyed by stream_id.  Client never needs to batch getVodInfo.
+
+interface StreamEnrichItem {
+  stream_id: number;
+  type: "movie" | "tv";
+  name: string;
+  year: string | null;
+}
+
+const streamEnrichQueue: StreamEnrichItem[] = [];
+const streamQueuedKeys = new Set<string>();
+let streamEnrichRunning = false;
+
+export const streamEnrichStats = { queued: 0, processed: 0, skipped: 0, failed: 0, running: false };
+
+export function startStreamEnrich(
+  items: { stream_id: number; type: "movie" | "tv"; name: string; year?: string | null }[]
+): { queued: number; already_queued: number } {
+  let added = 0, already = 0;
+  for (const item of items) {
+    const key = `${item.type}:${item.stream_id}`;
+    if (streamQueuedKeys.has(key)) { already++; continue; }
+    streamQueuedKeys.add(key);
+    const { name, year } = parseName(item.name);
+    streamEnrichQueue.push({ stream_id: item.stream_id, type: item.type, name, year: item.year ?? year });
+    added++;
+  }
+  streamEnrichStats.queued += added;
+  if (!streamEnrichRunning && streamEnrichQueue.length > 0) {
+    runStreamEnricher();
+  }
+  return { queued: added, already_queued: already };
+}
+
+async function runStreamEnricher(): Promise<void> {
+  if (streamEnrichRunning) return;
+  streamEnrichRunning = true;
+  streamEnrichStats.running = true;
+  console.log(`[stream-enrich] starting — ${streamEnrichQueue.length} items`);
+
+  while (streamEnrichQueue.length > 0) {
+    const item = streamEnrichQueue.shift()!;
+    try {
+      const existing = await getStreamRating(item.stream_id, item.type);
+      if (existing) { streamEnrichStats.skipped++; continue; }
+
+      // TMDB search by name
+      const q = encodeURIComponent(item.name);
+      const yearParam = item.year
+        ? item.type === "movie" ? `&primary_release_year=${item.year}` : `&first_air_date_year=${item.year}`
+        : "";
+      const path = item.type === "movie"
+        ? `/search/movie?query=${q}${yearParam}&include_adult=false`
+        : `/search/tv?query=${q}${yearParam}&include_adult=false`;
+
+      const searchData = await tmdbFetch(path);
+      const top = searchData?.results?.[0];
+      if (!top?.id) { streamEnrichStats.skipped++; await sleep(250); continue; }
+
+      const tmdbId = Number(top.id);
+      const cert = item.type === "movie"
+        ? await fetchMovieCert(tmdbId)
+        : await fetchTvCert(tmdbId);
+
+      if (cert) {
+        await storeRating(tmdbId, item.type, cert.certification, cert.age_int, "tmdb_search");
+        await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
+        streamEnrichStats.processed++;
+      } else {
+        streamEnrichStats.skipped++;
+      }
+    } catch (e: any) {
+      streamEnrichStats.failed++;
+      console.warn(`[stream-enrich] stream_id ${item.stream_id}:`, e?.message);
+    }
+    await sleep(250);
+  }
+
+  streamEnrichRunning = false;
+  streamEnrichStats.running = false;
+  console.log(`[stream-enrich] done — processed: ${streamEnrichStats.processed}, skipped: ${streamEnrichStats.skipped}, failed: ${streamEnrichStats.failed}`);
+}
+
 // ── Stream-ratings (keyed by stream_id + content_type) ────────────────────────
 // Powers parental controls. Client enricher sends batches; we resolve certs and
 // store so DataContext can build a Map<stream_id, {certification, age_int}>.

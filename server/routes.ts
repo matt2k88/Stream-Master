@@ -8,6 +8,8 @@ import {
   enrichStats,
   processStreamBatch,
   fetchAllStreamRatings,
+  startStreamEnrich,
+  streamEnrichStats,
   StreamBatchItem,
 } from "./ratings";
 
@@ -3946,6 +3948,32 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     }
     const ratings = await fetchAllStreamRatings(ct);
     return res.json(ratings);
+  });
+
+  // POST /api/stream-ratings/enrich — client sends full library names after
+  // sync.  Server queues everything and processes via TMDB name search in the
+  // background at ~250ms/item.  Returns immediately; deduplicates repeated calls.
+  app.post("/api/stream-ratings/enrich", (req, res) => {
+    const raw = req.body?.streams;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return res.status(400).json({ error: "streams array required" });
+    }
+    const items = (raw as any[])
+      .filter(
+        (s) =>
+          typeof s.stream_id === "number" &&
+          typeof s.name === "string" &&
+          s.name.trim() &&
+          (s.type === "movie" || s.type === "tv")
+      )
+      .map((s) => ({ stream_id: s.stream_id, type: s.type as "movie" | "tv", name: s.name, year: s.year ?? null }));
+    const result = startStreamEnrich(items);
+    return res.json({ ok: true, ...result });
+  });
+
+  // GET /api/stream-ratings/status — check enricher progress.
+  app.get("/api/stream-ratings/status", (req, res) => {
+    return res.json({ ...streamEnrichStats, remaining: 0 });
   });
 
   // GET /api/ratings/status — admin: current enrichment job stats.
