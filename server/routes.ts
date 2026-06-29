@@ -3451,6 +3451,10 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
           }
         }
 
+        let gptNeeded = 0;
+        let gptFailed = 0;
+        const gptFailReasons: string[] = [];
+
         for (const img of allImages) {
           if (img.gpt_result) continue;
 
@@ -3462,16 +3466,30 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             continue;
           }
 
+          gptNeeded++;
+
           const getFileR = await fetch(
             `https://api.telegram.org/bot${tgToken}/getFile?file_id=${img.file_id}`,
           );
           const getFileBody = (await getFileR.json()) as any;
-          if (!getFileBody.ok || !getFileBody.result?.file_path) continue;
+          if (!getFileBody.ok || !getFileBody.result?.file_path) {
+            const reason = `getFile failed for ${(img as any).file_unique_id}: ${getFileBody.description ?? "no file_path"}`;
+            console.error("[sports:sync]", reason);
+            gptFailed++;
+            gptFailReasons.push(reason);
+            continue;
+          }
 
           const fileR = await fetch(
             `https://api.telegram.org/file/bot${tgToken}/${getFileBody.result.file_path}`,
           );
-          if (!fileR.ok) continue;
+          if (!fileR.ok) {
+            const reason = `file download HTTP ${fileR.status} for ${(img as any).file_unique_id}`;
+            console.error("[sports:sync]", reason);
+            gptFailed++;
+            gptFailReasons.push(reason);
+            continue;
+          }
           const arrBuf = await fileR.arrayBuffer();
           const b64 = Buffer.from(arrBuf).toString("base64");
 
@@ -3499,6 +3517,13 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
               response_format: { type: "json_object" },
             }),
           });
+          if (!gptR.ok) {
+            const reason = `OpenAI HTTP ${gptR.status} for ${(img as any).file_unique_id}`;
+            console.error("[sports:sync]", reason);
+            gptFailed++;
+            gptFailReasons.push(reason);
+            continue;
+          }
           const gptBody = (await gptR.json()) as any;
           const content = gptBody.choices?.[0]?.message?.content;
           let parsed: any = null;
@@ -3506,7 +3531,10 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             parsed = content ? JSON.parse(content) : null;
           } catch {}
           if (!parsed) {
-            console.error("[sports:sync] GPT parse failed for", img.file_unique_id, content);
+            const reason = `GPT parse failed for ${(img as any).file_unique_id}: ${String(content ?? "empty").slice(0, 120)}`;
+            console.error("[sports:sync]", reason);
+            gptFailed++;
+            gptFailReasons.push(reason);
             continue;
           }
 
@@ -3516,6 +3544,20 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
             .eq("id", img.id);
           img.gpt_result = parsed;
           gptCache.set((img as any).file_unique_id, parsed);
+        }
+
+        diag.gpt = { needed: gptNeeded, failed: gptFailed, failReasons: gptFailReasons.slice(0, 5) };
+
+        // Abort if more than half the images that needed GPT processing failed —
+        // don't replace today's listings with a partial/empty dataset.
+        if (gptNeeded > 0 && gptFailed > 0 && gptFailed / gptNeeded > 0.5) {
+          return res.status(422).json({
+            error: `GPT extraction materially failed: ${gptFailed}/${gptNeeded} images could not be processed. Today's listings were NOT replaced.`,
+            gptFailed,
+            gptNeeded,
+            failReasons: gptFailReasons.slice(0, 5),
+            diag,
+          });
         }
 
         // ── Step 4: Build sport_listings from GPT-classified images ────────
