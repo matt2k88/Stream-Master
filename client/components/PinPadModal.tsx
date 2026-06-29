@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Modal,
@@ -66,6 +66,11 @@ export default function PinPadModal({
     onClose();
   }, [reset, onClose]);
 
+  // Keep a stable ref to handleComplete so handleKey (stable callback with
+  // empty deps, required for TV remote focus stability) always calls the
+  // latest version even after props / step state change.
+  const handleCompleteRef = useRef<(entered: string) => void>(() => {});
+
   const handleKey = useCallback((k: string) => {
     if (k === "⌫") {
       setPin((p) => p.slice(0, -1));
@@ -76,12 +81,12 @@ export default function PinPadModal({
       if (p.length >= 4) return p;
       const next = p + k;
       if (next.length === 4) {
-        setTimeout(() => handleComplete(next), 80);
+        setTimeout(() => handleCompleteRef.current(next), 80);
       }
       return next;
     });
     setError(null);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleComplete = useCallback((entered: string) => {
     if (mode === "verify") {
@@ -110,6 +115,9 @@ export default function PinPadModal({
       }
     }
   }, [mode, existingPin, step, pinFirst, reset, onVerified, onPinSet]);
+
+  // Keep the ref in sync so the stable handleKey always sees the latest version.
+  useEffect(() => { handleCompleteRef.current = handleComplete; }, [handleComplete]);
 
   const heading = title ?? (mode === "verify" ? "Enter Parental PIN" : step === "enter" ? "Create Parental PIN" : "Confirm PIN");
   const subtitle = mode === "set"

@@ -609,11 +609,15 @@ export default function CreateProfileScreen() {
           <Pressable
             style={({ pressed }) => [styles.pinToggleRow, parentalEnabled && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
             onPress={() => {
-              setParentalEnabled((v) => {
-                if (v) { setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("idle"); }
-                else { setParentalPinStep("set"); }
-                return !v;
-              });
+              const next = !parentalEnabled;
+              setParentalEnabled(next);
+              if (next) {
+                setParentalPinStep("set");
+              } else {
+                setParentalPin("");
+                setParentalPinConfirm("");
+                setParentalPinStep("idle");
+              }
             }}
           >
             <View style={styles.pinToggleLeft}>
