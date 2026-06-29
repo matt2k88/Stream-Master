@@ -4033,6 +4033,55 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     return res.json(enrichStats);
   });
 
+  // POST /api/admin/enrich — server-side trigger: fetches streams directly from
+  // the Xtream API without needing a client to connect.  Protected by admin secret.
+  // Body: { serverUrl, username, password }
+  app.post("/api/admin/enrich", async (req, res) => {
+    const authHeader = (req.headers.authorization ?? "") as string;
+    const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+    if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { serverUrl, username, password } = req.body ?? {};
+    if (!serverUrl || !username || !password) {
+      return res.status(400).json({ error: "serverUrl, username and password required" });
+    }
+
+    // Kick off fetch + enrich in background; respond immediately.
+    res.json({ ok: true, message: "Fetching streams from Xtream API — enricher will start in background" });
+
+    (async () => {
+      try {
+        const base = `${serverUrl}/get.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+
+        console.log("[admin/enrich] fetching VOD streams…");
+        const [vodRes, seriesRes] = await Promise.all([
+          fetch(`${base}&action=get_vod_streams`),
+          fetch(`${base}&action=get_series`),
+        ]);
+
+        const vod: any[] = vodRes.ok ? await vodRes.json() : [];
+        const series: any[] = seriesRes.ok ? await seriesRes.json() : [];
+        console.log(`[admin/enrich] fetched ${vod.length} VOD + ${series.length} series`);
+
+        const items = [
+          ...vod
+            .filter((s) => s.stream_id && s.name)
+            .map((s) => ({ stream_id: Number(s.stream_id), type: "movie" as const, name: String(s.name) })),
+          ...series
+            .filter((s) => s.series_id && s.name)
+            .map((s) => ({ stream_id: Number(s.series_id), type: "tv" as const, name: String(s.name) })),
+        ];
+
+        const result = startStreamEnrich(items);
+        console.log(`[admin/enrich] queued ${result.queued} new items (${result.already_queued} already in queue)`);
+      } catch (e: any) {
+        console.error("[admin/enrich] error:", e?.message);
+      }
+    })();
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
