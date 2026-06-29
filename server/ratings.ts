@@ -61,8 +61,14 @@ function pickBestCert(
 // ── TMDB rate-limit gate ──────────────────────────────────────────────────────
 // Shared across BOTH enrichers so they can't race each other over the 40/10s cap.
 // Node is single-threaded: the check+set is race-safe across coroutines.
-const MIN_TMDB_GAP_MS = 200; // 5 calls/sec max → 2 items/sec → well under 40/10s
+const MIN_TMDB_GAP_MS = 300; // ~3 calls/sec → well under TMDB's 40/10s cap
 let lastTmdbCallAt = 0;
+
+// Thrown by tmdbFetch when 429 retries are exhausted — lets the enricher
+// loop distinguish "rate limited right now" from "title not found".
+class TmdbRateLimitError extends Error {
+  constructor() { super("TMDB_RATE_LIMITED"); this.name = "TmdbRateLimitError"; }
+}
 
 // ── TMDB fetch helper ─────────────────────────────────────────────────────────
 // Supports v3 API key (?api_key=) OR v4 Bearer token — whichever is available.
@@ -90,8 +96,9 @@ async function tmdbFetch(path: string, retries = 3): Promise<any | null> {
     const r = await fetch(url, { headers });
     if (r.status === 429) {
       if (retries <= 0) {
-        console.warn("[ratings] TMDB 429 — no retries left, skipping");
-        return null;
+        // Signal to the caller that we're rate-limited — do NOT return null
+        // (null means "title not found" and causes the item to be skipped forever).
+        throw new TmdbRateLimitError();
       }
       const retryAfter = r.headers.get("retry-after");
       const waitMs = retryAfter
@@ -103,7 +110,8 @@ async function tmdbFetch(path: string, retries = 3): Promise<any | null> {
     }
     if (!r.ok) return null;
     return r.json();
-  } catch {
+  } catch (e: any) {
+    if (e instanceof TmdbRateLimitError) throw e; // must propagate — do not swallow
     return null;
   }
 }
@@ -355,7 +363,7 @@ const streamEnrichQueue: StreamEnrichItem[] = [];
 const streamQueuedKeys = new Set<string>();
 let streamEnrichRunning = false;
 
-export const streamEnrichStats = { queued: 0, processed: 0, skipped: 0, failed: 0, running: false };
+export const streamEnrichStats = { queued: 0, processed: 0, skipped: 0, failed: 0, running: false, paused: false, pausedUntil: 0 };
 export function streamEnrichQueueLength(): number { return streamEnrichQueue.length; }
 
 export function startStreamEnrich(
@@ -398,16 +406,22 @@ async function runStreamEnricher(): Promise<void> {
     console.warn("[stream-enrich] preload warning — falling back to per-item lookup:", e?.message);
   }
 
+  // PAUSE_MS: how long to back off when TMDB sustains rate-limiting us.
+  // After tmdbFetch exhausts its own per-request retries (3×, each waiting
+  // Retry-After), a global pause gives the quota window time to reset.
+  const RATE_LIMIT_PAUSE_MS = 60_000;
+  // How many consecutive rate-limit exhaustions before we trigger a global pause.
+  const CONSECUTIVE_LIMIT = 2;
+
   let logEvery = 0;
+  let consecutiveRateLimits = 0;
+
   while (streamEnrichQueue.length > 0) {
     const item = streamEnrichQueue.shift()!;
     const rkey = `${item.type}:${item.stream_id}`;
     try {
-      if (ratedSet.has(rkey)) { streamEnrichStats.skipped++; continue; }
+      if (ratedSet.has(rkey)) { streamEnrichStats.skipped++; consecutiveRateLimits = 0; continue; }
 
-      // TMDB search by name. For VOD streams classified as "movie" by the IPTV
-      // provider, also try a TV search as fallback — many providers mis-classify
-      // TV shows as movies.
       const q = encodeURIComponent(item.name);
       const yearMovie = item.year ? `&primary_release_year=${item.year}` : "";
       const yearTv    = item.year ? `&first_air_date_year=${item.year}` : "";
@@ -419,7 +433,6 @@ async function runStreamEnricher(): Promise<void> {
         const d = await tmdbFetch(`/search/movie?query=${q}${yearMovie}&include_adult=false`);
         top = d?.results?.[0];
         if (!top?.id) {
-          // Fallback: try TV search — many IPTV providers list TV shows as VOD
           const d2 = await tmdbFetch(`/search/tv?query=${q}${yearTv}&include_adult=false`);
           top = d2?.results?.[0];
           if (top?.id) resolvedType = "tv";
@@ -434,7 +447,7 @@ async function runStreamEnricher(): Promise<void> {
         }
       }
 
-      if (!top?.id) { streamEnrichStats.skipped++; continue; }
+      if (!top?.id) { streamEnrichStats.skipped++; consecutiveRateLimits = 0; continue; }
 
       const tmdbId = Number(top.id);
       const cert = resolvedType === "movie"
@@ -446,21 +459,53 @@ async function runStreamEnricher(): Promise<void> {
         await storeStreamRating(item.stream_id, item.type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
         ratedSet.add(rkey);
         streamEnrichStats.processed++;
+        consecutiveRateLimits = 0;
         if (++logEvery % 10 === 1) {
-          console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [total ${streamEnrichStats.processed}]`);
+          console.log(`[stream-enrich] ✓ ${item.name} → ${cert.certification} (age ${cert.age_int}) [total ${streamEnrichStats.processed}, remaining ${streamEnrichQueue.length}]`);
         }
       } else {
         streamEnrichStats.skipped++;
+        consecutiveRateLimits = 0;
       }
     } catch (e: any) {
-      streamEnrichStats.failed++;
-      console.warn(`[stream-enrich] stream_id ${item.stream_id}:`, e?.message);
+      if (e instanceof TmdbRateLimitError) {
+        // Push item back to front so it's retried after the pause, not lost.
+        streamEnrichQueue.unshift(item);
+        consecutiveRateLimits++;
+
+        if (consecutiveRateLimits >= CONSECUTIVE_LIMIT) {
+          // Sustained rate limit — back off globally before continuing.
+          const pauseUntil = Date.now() + RATE_LIMIT_PAUSE_MS;
+          streamEnrichStats.paused = true;
+          streamEnrichStats.pausedUntil = pauseUntil;
+          console.warn(
+            `[stream-enrich] sustained rate limit (${consecutiveRateLimits} consecutive) — pausing ${RATE_LIMIT_PAUSE_MS / 1000}s. ` +
+            `Queue: ${streamEnrichQueue.length} remaining.`
+          );
+          await sleep(RATE_LIMIT_PAUSE_MS);
+          streamEnrichStats.paused = false;
+          streamEnrichStats.pausedUntil = 0;
+          consecutiveRateLimits = 0;
+          console.log(`[stream-enrich] resuming after rate-limit pause`);
+        } else {
+          // First/second consecutive — tmdbFetch already waited Retry-After;
+          // a short extra gap before retrying the same item.
+          await sleep(5_000);
+        }
+      } else {
+        // Genuine error (network, parse, etc.) — skip this item and move on.
+        streamEnrichStats.failed++;
+        consecutiveRateLimits = 0;
+        console.warn(`[stream-enrich] stream_id ${item.stream_id}:`, e?.message);
+      }
     }
-    // No explicit sleep — tmdbFetch enforces MIN_TMDB_GAP_MS per TMDB call.
+    // No explicit sleep between items — tmdbFetch enforces MIN_TMDB_GAP_MS.
   }
 
   streamEnrichRunning = false;
   streamEnrichStats.running = false;
+  streamEnrichStats.paused = false;
+  streamEnrichStats.pausedUntil = 0;
   console.log(`[stream-enrich] done — processed: ${streamEnrichStats.processed}, skipped: ${streamEnrichStats.skipped}, failed: ${streamEnrichStats.failed}`);
 }
 
