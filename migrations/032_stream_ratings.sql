@@ -17,3 +17,6 @@ CREATE TABLE IF NOT EXISTS stream_ratings (
 
 CREATE INDEX IF NOT EXISTS stream_ratings_age_idx
   ON stream_ratings (content_type, age_int);
+
+-- Allow the Express server (anon key) to read/write this table.
+ALTER TABLE stream_ratings DISABLE ROW LEVEL SECURITY;

@@ -47,8 +47,8 @@ interface BatchResult {
   age_int: number;
 }
 
-const MOVIE_WM_KEY = "ratings_enricher_v3_movie_wm";
-const SERIES_WM_KEY = "ratings_enricher_v3_series_wm";
+const MOVIE_WM_KEY = "ratings_enricher_v4_movie_wm";
+const SERIES_WM_KEY = "ratings_enricher_v4_series_wm";
 const VOD_BATCH = 5;     // concurrent getVodInfo calls
 const SERIES_BATCH = 50; // series embedded-check only — no heavy API calls
 const FLUSH_EVERY = 25;  // push to server every N items
