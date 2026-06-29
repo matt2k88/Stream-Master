@@ -16,7 +16,7 @@ export type HwDecodeMode = "auto" | "on" | "off";
 /**
  * Parental controls configuration stored as JSONB in the profiles table.
  * Only active when enabled=true. allowed_ratings is a subset of the recognised
- * rating codes (U PG 12A 12 PG-13 15 18 R18). show_unclassified controls whether content
+ * rating codes (U PG 12A 12 PG-13 15 R 18 R18). show_unclassified controls whether content
  * with no TMDB rating is shown or hidden.
  */
 export interface ParentalControls {

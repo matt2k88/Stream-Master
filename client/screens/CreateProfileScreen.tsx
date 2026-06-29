@@ -169,6 +169,7 @@ const BBFC_RATINGS_CREATE = [
   { code: "12",    color: "#029FD8", desc: "12 — not suitable under 12" },
   { code: "PG-13", color: "#F07000", desc: "PG-13 — may be unsuitable under 13" },
   { code: "15",    color: "#ED6623", desc: "15 — not suitable under 15" },
+  { code: "R",     color: "#CC1515", desc: "R — restricted; under-17 with adult" },
   { code: "18",    color: "#CC0003", desc: "18 — adults only" },
   { code: "R18",   color: "#CC0003", desc: "R18 — restricted adult content" },
 ];
