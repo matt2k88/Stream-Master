@@ -3989,13 +3989,41 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
 
   // GET /api/stream-ratings?content_type=movie|tv — full ratings dump used by
   // DataContext on startup to populate the badge / parental-control map.
+  // Reads from vod_ratings (status='rated'). content_type=tv maps to 'series'.
   app.get("/api/stream-ratings", async (req, res) => {
     const ct = req.query.content_type as string;
     if (ct !== "movie" && ct !== "tv") {
       return res.status(400).json({ error: "content_type must be 'movie' or 'tv'" });
     }
-    const ratings = await fetchAllStreamRatings(ct);
-    return res.json(ratings);
+
+    const vodType = ct === "tv" ? "series" : "movie";
+    const PAGE = 1000;
+    const all: { stream_id: number; certification: string; age_int: number }[] = [];
+    let from = 0;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("vod_ratings")
+        .select("stream_id, rated, min_age")
+        .eq("content_type", vodType)
+        .eq("status", "rated")
+        .not("rated", "is", null)
+        .not("min_age", "is", null)
+        .range(from, from + PAGE - 1);
+
+      if (error || !data || data.length === 0) break;
+
+      for (const row of data) {
+        const id = parseInt(row.stream_id, 10);
+        if (!isNaN(id) && row.rated && row.min_age !== null) {
+          all.push({ stream_id: id, certification: row.rated, age_int: row.min_age });
+        }
+      }
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+
+    return res.json(all);
   });
 
   // POST /api/stream-ratings/enrich — client sends full library names after
