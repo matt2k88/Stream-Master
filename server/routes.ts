@@ -3986,6 +3986,23 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     return res.json(enrichStats);
   });
 
+  app.get("/api/test-tmdb", async (req, res) => {
+    const raw = process.env.TMDB_READ_TOKEN ?? "";
+    const token = raw.trim();
+    const parts = token.split(".");
+    let nbf = "none", sub = "none";
+    try { const p = JSON.parse(Buffer.from(parts[1] ?? "", "base64").toString()); nbf = p.nbf ? new Date(p.nbf*1000).toISOString() : "none"; sub = (p.sub ?? "").substring(0,8); } catch {}
+    try {
+      const r = await fetch("https://api.themoviedb.org/3/search/movie?query=Matrix&include_adult=false", {
+        headers: { Authorization: `Bearer ${token}`, accept: "application/json" },
+      });
+      const d: any = await r.json();
+      return res.json({ status: r.status, rawLen: raw.length, trimLen: token.length, nbf, sub, results: d.results?.length ?? 0, error: d.status_message ?? null });
+    } catch (e: any) {
+      return res.json({ status: 0, rawLen: raw.length, trimLen: token.length, nbf, sub, error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
