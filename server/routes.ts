@@ -3976,6 +3976,7 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     return res.json({ ...streamEnrichStats, remaining: 0 });
   });
 
+
   // GET /api/ratings/status — admin: current enrichment job stats.
   app.get("/api/ratings/status", (req, res) => {
     const authHeader = (req.headers.authorization ?? "") as string;
