@@ -707,6 +707,233 @@ async function processOneStreamItem(
   return null;
 }
 
+// ── vod_ratings enricher ──────────────────────────────────────────────────────
+// Reads rows from the vod_ratings table (status='pending'), looks up the cert
+// via OMDb (primary) then TMDB (fallback), writes results back to vod_ratings,
+// and also syncs into stream_ratings so the existing client code still works.
+
+interface VodRatingRow {
+  id: string;
+  stream_id: string;
+  content_type: string; // "movie" | "series"
+  name: string;
+  status: string;
+}
+
+export const vodEnrichStats = {
+  processed: 0,
+  not_found: 0,
+  failed: 0,
+  running: false,
+};
+
+let vodEnrichRunning = false;
+
+// Extracts a clean title + year from raw IPTV names.
+// Handles: "Title (2020)", "Title [2020]", "Title - 2020", "UK | Title HD"
+function parseVodName(raw: string): { name: string; year: string | null } {
+  let s = raw.trim();
+
+  // Strip IPTV country/quality prefixes: "UK | ", "US: ", "AR | " etc.
+  s = s.replace(/^[A-Z0-9]{2,5}\s*[\|:\-]\s+/g, "");
+
+  // Strip bracketed quality tags: [HD], (FHD), [1080p], (4K) etc.
+  s = s.replace(/\s*[\[\(]\s*(4K|FHD|HD|720p|1080p|2160p|UHD|SDR|HDR|HEVC|H\.?265|H\.?264|DV|DUBBED|SUBBED|ENG|MULTI)\s*[\]\)]/gi, "");
+
+  // Strip standalone quality/lang tags at end.
+  s = s.replace(/\s+\b(4K|FHD|720p|1080p|2160p|UHD|SDR|HEVC|DUBBED|SUBBED|MULTI|HD)\b\s*$/gi, "");
+
+  // Strip trailing pipes left behind.
+  s = s.replace(/\s*\|\s*$/, "").replace(/\s{2,}/g, " ").trim();
+
+  // Extract year from "(2020)" or "[2020]" at end.
+  let m = s.match(/^(.+?)\s*[\[\(](\d{4})[\]\)]\s*$/);
+  if (m) return { name: m[1].trim(), year: m[2] };
+
+  // Extract year from " - 2020" at end (common in vod_ratings name column).
+  m = s.match(/^(.+?)\s*-\s*(\d{4})\s*$/);
+  if (m) return { name: m[1].trim(), year: m[2] };
+
+  return { name: s, year: null };
+}
+
+// Update a vod_ratings row and optionally sync into stream_ratings.
+async function updateVodRatingRow(
+  id: string,
+  streamId: string,
+  contentType: string,
+  patch: Record<string, any>
+): Promise<void> {
+  await supabase
+    .from("vod_ratings")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  // Sync a successful rating into stream_ratings so the app's parental
+  // controls work without any client-side changes.
+  if (patch.status === "rated" && patch.rated && patch.min_age !== null) {
+    const streamIdNum = parseInt(streamId, 10);
+    const srType: "movie" | "tv" = contentType === "series" ? "tv" : "movie";
+    if (!isNaN(streamIdNum)) {
+      await storeStreamRating(
+        streamIdNum,
+        srType,
+        patch.rated,
+        patch.min_age,
+        "vod_ratings"
+      );
+    }
+  }
+}
+
+export async function startVodEnricher(): Promise<{ ok: boolean; message: string }> {
+  if (vodEnrichRunning) return { ok: false, message: "Already running" };
+  vodEnrichRunning = true;
+  vodEnrichStats.running = true;
+  vodEnrichStats.processed = 0;
+  vodEnrichStats.not_found = 0;
+  vodEnrichStats.failed = 0;
+
+  runVodEnricher().catch((e) => {
+    console.error("[vod-enrich] fatal error:", e?.message);
+    vodEnrichRunning = false;
+    vodEnrichStats.running = false;
+  });
+
+  return { ok: true, message: "VOD enricher started" };
+}
+
+async function runVodEnricher(): Promise<void> {
+  const BATCH = 50;
+  let totalProcessed = 0;
+  console.log("[vod-enrich] starting — reading pending rows from vod_ratings");
+
+  while (true) {
+    // Fetch next batch of pending rows.
+    const { data: rows, error } = await supabase
+      .from("vod_ratings")
+      .select("id, stream_id, content_type, name, status")
+      .eq("status", "pending")
+      .limit(BATCH);
+
+    if (error) {
+      console.error("[vod-enrich] DB fetch error:", error.message);
+      break;
+    }
+    if (!rows || rows.length === 0) break;
+
+    for (const row of rows as VodRatingRow[]) {
+      try {
+        const { name: cleanName, year } = parseVodName(row.name);
+        if (!cleanName) {
+          await updateVodRatingRow(row.id, row.stream_id, row.content_type, {
+            status: "not_found",
+          });
+          vodEnrichStats.not_found++;
+          continue;
+        }
+
+        // ── Step 1: OMDb (primary) ──────────────────────────────────────────
+        const omdbKey = (process.env.OMDB_API_KEY ?? "").trim();
+        let cert: { certification: string; age_int: number } | null = null;
+        let omdbTitle: string | null = null;
+        let matchedYear: string | null = year;
+
+        if (omdbKey) {
+          const gap = MIN_OMDB_GAP_MS - (Date.now() - lastOmdbCallAt);
+          if (gap > 0) await sleep(gap);
+          lastOmdbCallAt = Date.now();
+
+          const params = new URLSearchParams({ apikey: omdbKey, t: cleanName, plot: "short" });
+          if (year) params.set("y", year);
+          try {
+            const r = await fetch(`https://www.omdbapi.com/?${params}`);
+            if (r.ok) {
+              const d = await r.json();
+              if (d?.Response === "True" && d?.Rated) {
+                const age = normalizeCert(d.Rated.trim());
+                if (age !== null) {
+                  cert = { certification: d.Rated.trim(), age_int: age };
+                  omdbTitle = d.Title ?? null;
+                  matchedYear = d.Year ?? year;
+                }
+              }
+            }
+          } catch { /* network error — fall through to TMDB */ }
+        }
+
+        // ── Step 2: TMDB fallback ───────────────────────────────────────────
+        if (!cert) {
+          const srType: "movie" | "tv" = row.content_type === "series" ? "tv" : "movie";
+          const q = encodeURIComponent(cleanName);
+          const yearParam = year
+            ? srType === "movie" ? `&primary_release_year=${year}` : `&first_air_date_year=${year}`
+            : "";
+          try {
+            const d = await tmdbFetch(
+              srType === "movie"
+                ? `/search/movie?query=${q}${yearParam}&include_adult=false`
+                : `/search/tv?query=${q}${yearParam}&include_adult=false`
+            );
+            const top = d?.results?.[0];
+            if (top?.id) {
+              const tmdbId = Number(top.id);
+              cert = srType === "movie"
+                ? await fetchMovieCert(tmdbId)
+                : await fetchTvCert(tmdbId);
+              if (cert) {
+                await storeRating(tmdbId, srType, cert.certification, cert.age_int, "tmdb_search");
+              }
+            }
+          } catch (e: any) {
+            if (e instanceof TmdbRateLimitError) {
+              // Back off 30s and retry this row.
+              console.warn("[vod-enrich] TMDB rate limit — pausing 30s");
+              await sleep(30_000);
+            }
+          }
+        }
+
+        if (cert) {
+          await updateVodRatingRow(row.id, row.stream_id, row.content_type, {
+            status: "rated",
+            rated: cert.certification,
+            age_certification: cert.certification,
+            min_age: cert.age_int,
+            omdb_title: omdbTitle,
+            year: matchedYear,
+          });
+          vodEnrichStats.processed++;
+          totalProcessed++;
+          if (totalProcessed % 50 === 1) {
+            console.log(
+              `[vod-enrich] ✓ ${cleanName} → ${cert.certification} (age ${cert.age_int}) | processed: ${totalProcessed}`
+            );
+          }
+        } else {
+          await updateVodRatingRow(row.id, row.stream_id, row.content_type, {
+            status: "not_found",
+          });
+          vodEnrichStats.not_found++;
+        }
+      } catch (e: any) {
+        console.warn(`[vod-enrich] error on row ${row.id}:`, e?.message);
+        await supabase
+          .from("vod_ratings")
+          .update({ status: "error", error: e?.message ?? "unknown", updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        vodEnrichStats.failed++;
+      }
+    }
+  }
+
+  vodEnrichRunning = false;
+  vodEnrichStats.running = false;
+  console.log(
+    `[vod-enrich] done — processed: ${vodEnrichStats.processed}, not_found: ${vodEnrichStats.not_found}, failed: ${vodEnrichStats.failed}`
+  );
+}
+
 async function nameSearchStreamEnrich(item: {
   stream_id: number;
   content_type: "movie" | "tv";

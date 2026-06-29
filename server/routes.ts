@@ -11,6 +11,8 @@ import {
   startStreamEnrich,
   streamEnrichStats,
   streamEnrichQueueLength,
+  startVodEnricher,
+  vodEnrichStats,
   StreamBatchItem,
 } from "./ratings";
 
@@ -4031,6 +4033,33 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
       return res.status(401).json({ error: "Unauthorized" });
     }
     return res.json(enrichStats);
+  });
+
+  // POST /api/admin/vod-enrich — start the vod_ratings enricher (DB-driven).
+  // No credentials needed — reads pending rows directly from Supabase.
+  app.post("/api/admin/vod-enrich", async (req, res) => {
+    const authHeader = (req.headers.authorization ?? "") as string;
+    const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+    if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const result = await startVodEnricher();
+    return res.json(result);
+  });
+
+  // GET /api/admin/vod-enrich/status
+  app.get("/api/admin/vod-enrich/status", async (req, res) => {
+    const authHeader = (req.headers.authorization ?? "") as string;
+    const adminSecret = process.env.SPORTS_ADMIN_SECRET ?? "";
+    if (!adminSecret || authHeader !== `Bearer ${adminSecret}`) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    // Also fetch live pending count from DB for accurate progress.
+    const { count } = await supabase
+      .from("vod_ratings")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending");
+    return res.json({ ...vodEnrichStats, pending_in_db: count ?? 0 });
   });
 
   // POST /api/admin/enrich — server-side trigger: fetches streams directly from
