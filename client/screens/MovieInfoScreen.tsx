@@ -400,6 +400,11 @@ export default function MovieInfoScreen() {
             </View>
           ) : null}
         </View>
+        {ageRating?.certification ? (
+          <View style={styles.posterBadgeRow}>
+            <AgeRatingBadge certification={ageRating.certification} size="md" />
+          </View>
+        ) : null}
       </View>
 
       {/* Right column — title, meta, play, description, cast */}
@@ -422,7 +427,6 @@ export default function MovieInfoScreen() {
               </ThemedText>
             </View>
           ) : null}
-          <AgeRatingBadge certification={ageRating?.certification} />
           {country ? <MetaChip>{country}</MetaChip> : null}
         </View>
 
@@ -641,6 +645,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 4,
+  },
+  posterBadgeRow: {
+    marginTop: Spacing.sm,
+    alignItems: "center",
   },
   detailsCol: {
     flex: 1,
