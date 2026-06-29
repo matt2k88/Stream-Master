@@ -162,16 +162,18 @@ function PinToggleRow({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
   );
 }
 
-const BBFC_RATINGS_CREATE = [
-  { code: "U",     color: "#67AE3F", desc: "Universal — suitable for all" },
-  { code: "PG",    color: "#FCB017", desc: "Parental Guidance suggested" },
-  { code: "12A",   color: "#029FD8", desc: "12A — under-12s with an adult" },
-  { code: "12",    color: "#029FD8", desc: "12 — not suitable under 12" },
-  { code: "PG-13", color: "#F07000", desc: "PG-13 — may be unsuitable under 13" },
-  { code: "15",    color: "#ED6623", desc: "15 — not suitable under 15" },
-  { code: "R",     color: "#CC1515", desc: "R — restricted; under-17 with adult" },
-  { code: "18",    color: "#CC0003", desc: "18 — adults only" },
-  { code: "R18",   color: "#CC0003", desc: "R18 — restricted adult content" },
+const ALL_CERTS_CREATE: { label: string; age: number; color: string }[] = [
+  { label: "U",     age: 0,  color: "#3CB914" },
+  { label: "G",     age: 0,  color: "#3CB914" },
+  { label: "PG",    age: 8,  color: "#F0A800" },
+  { label: "12A",   age: 12, color: "#F07000" },
+  { label: "12",    age: 12, color: "#F07000" },
+  { label: "PG-13", age: 13, color: "#F07000" },
+  { label: "15",    age: 15, color: "#E0408A" },
+  { label: "16",    age: 16, color: "#CC1515" },
+  { label: "R",     age: 17, color: "#CC1515" },
+  { label: "18",    age: 18, color: "#CC0003" },
+  { label: "R18",   age: 18, color: "#1060C0" },
 ];
 
 function PinKey({ k, onPress }: { k: string; onPress: () => void }) {
@@ -237,9 +239,18 @@ export default function CreateProfileScreen() {
   const [parentalPinStep, setParentalPinStep] = useState<"idle" | "set" | "confirm" | "done">(
     editing?.parental_controls?.enabled ? "done" : "idle"
   );
-  const [allowedRatings, setAllowedRatings] = useState<string[]>(
-    editing?.parental_controls?.allowed_ratings ?? ["U", "PG", "12A", "12", "PG-13", "15"]
-  );
+  const [maxAgeRating, setMaxAgeRating] = useState<number>(() => {
+    const pc = editing?.parental_controls;
+    if (!pc) return 15;
+    if (pc.max_age != null) return pc.max_age;
+    // backward compat: derive from legacy allowed_ratings
+    const CERT_AGE: Record<string, number> = {
+      U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+      "PG-13": 13, R: 17, "NC-17": 18, "16": 16, "17": 17,
+    };
+    const allowed = pc.allowed_ratings ?? [];
+    return allowed.length === 0 ? 15 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+  });
   const [showUnclassified, setShowUnclassified] = useState(
     editing?.parental_controls?.show_unclassified ?? true
   );
@@ -371,7 +382,7 @@ export default function CreateProfileScreen() {
           body.parental_pin = parentalPin.length === 4 ? parentalPin : null;
           body.parental_controls = {
             enabled: true,
-            allowed_ratings: allowedRatings,
+            max_age: maxAgeRating,
             show_unclassified: showUnclassified,
           };
           body.private_viewing = false;
@@ -715,25 +726,41 @@ export default function CreateProfileScreen() {
             </View>
           ) : null}
           {parentalEnabled && parentalPinStep === "done" ? (
-            <View style={{ gap: 6, marginTop: 4 }}>
-              <ThemedText style={styles.pinToggleSubtitle}>Select the highest rating to allow:</ThemedText>
-              {BBFC_RATINGS_CREATE.map((r) => (
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <ThemedText style={styles.pinToggleSubtitle}>What age limit would you like set?</ThemedText>
+              {/* Age stepper */}
+              <View style={styles.ageStepperRow}>
                 <FocusPressable
-                  key={r.code}
-                  style={(isActive) => [styles.pinToggleRow, allowedRatings.includes(r.code) && styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
-                  onPress={() => setAllowedRatings((prev) => prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code])}
+                  style={(isActive) => [styles.ageStepBtn, maxAgeRating <= 0 && { opacity: 0.35 }, isActive && styles.ageStepBtnActive]}
+                  onPress={() => { if (maxAgeRating > 0) setMaxAgeRating(maxAgeRating - 1); }}
                 >
-                  <View style={styles.pinToggleLeft}>
-                    <View style={[styles.pinIconWrap, { backgroundColor: r.color + "33" }]}>
-                      <ThemedText style={{ fontSize: 10, fontWeight: "800", color: r.color }}>{r.code}</ThemedText>
-                    </View>
-                    <ThemedText style={styles.pinToggleSubtitle}>{r.desc}</ThemedText>
-                  </View>
-                  <View style={[styles.pcCheckbox, allowedRatings.includes(r.code) && styles.pcCheckboxOn]}>
-                    {allowedRatings.includes(r.code) ? <Feather name="check" size={11} color="#fff" /> : null}
-                  </View>
+                  <Feather name="minus" size={18} color={maxAgeRating <= 0 ? Colors.dark.border : Colors.dark.text} />
                 </FocusPressable>
-              ))}
+                <View style={styles.ageNumWrap}>
+                  <ThemedText style={styles.ageNumText}>{maxAgeRating}</ThemedText>
+                  <ThemedText style={styles.ageNumUnit}>& under</ThemedText>
+                </View>
+                <FocusPressable
+                  style={(isActive) => [styles.ageStepBtn, maxAgeRating >= 18 && { opacity: 0.35 }, isActive && styles.ageStepBtnActive]}
+                  onPress={() => { if (maxAgeRating < 18) setMaxAgeRating(maxAgeRating + 1); }}
+                >
+                  <Feather name="plus" size={18} color={maxAgeRating >= 18 ? Colors.dark.border : Colors.dark.text} />
+                </FocusPressable>
+              </View>
+              {/* Classification preview */}
+              <View style={styles.certPreviewBox}>
+                <ThemedText style={[styles.pinToggleSubtitle, { marginBottom: 4 }]}>This will allow:</ThemedText>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
+                  {ALL_CERTS_CREATE.filter((c) => c.age <= maxAgeRating).map((c) => (
+                    <View key={c.label} style={[styles.certChipCreate, { backgroundColor: c.color + "22", borderColor: c.color + "66" }]}>
+                      <ThemedText style={[styles.certChipCreateText, { color: c.color }]}>{c.label}</ThemedText>
+                    </View>
+                  ))}
+                  {ALL_CERTS_CREATE.filter((c) => c.age <= maxAgeRating).length === 0 ? (
+                    <ThemedText style={styles.pinToggleSubtitle}>No rated content</ThemedText>
+                  ) : null}
+                </View>
+              </View>
               <FocusPressable
                 style={(isActive) => [styles.pinToggleRow, showUnclassified && styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
                 onPress={() => setShowUnclassified((v) => !v)}
@@ -1177,6 +1204,34 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   pcCheckboxOn: { backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent },
+
+  /* Age stepper (create profile parental controls) */
+  ageStepperRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
+    paddingVertical: Spacing.md, gap: Spacing.xl,
+  },
+  ageStepBtn: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  ageStepBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  ageNumWrap: { alignItems: "center", minWidth: 60 },
+  ageNumText: { fontSize: 38, fontWeight: "800", color: Colors.dark.accent, lineHeight: 44 },
+  ageNumUnit: { fontSize: 10, color: Colors.dark.textSecondary },
+  certPreviewBox: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: Colors.dark.border,
+    padding: Spacing.sm,
+  },
+  certChipCreate: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 5, borderWidth: 1,
+  },
+  certChipCreateText: { fontSize: 11, fontWeight: "800" },
   pinToggleLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md, flex: 1 },
   pinIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
   pinIconWrapEnabled: { backgroundColor: "rgba(255,102,0,0.15)" },

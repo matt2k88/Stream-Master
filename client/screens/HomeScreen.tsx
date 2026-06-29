@@ -1033,13 +1033,20 @@ export default function HomeScreen() {
   const parentalFilter = useMemo(() => {
     const pc = activeProfile?.parental_controls;
     if (!pc?.enabled) return null;
-    const CERT_AGE: Record<string, number> = {
-      U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
-      "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
-    };
-    const allowed = pc.allowed_ratings ?? [];
     const showUnclassified = pc.show_unclassified ?? true;
-    const maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+    // Use max_age when set (new style). Fall back to deriving from legacy allowed_ratings.
+    let maxAge: number;
+    if (pc.max_age != null) {
+      maxAge = pc.max_age;
+    } else {
+      const CERT_AGE: Record<string, number> = {
+        U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+        "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
+        "16": 16, "17": 17,
+      };
+      const allowed = pc.allowed_ratings ?? [];
+      maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+    }
     const allow18Plus = maxAge >= 18;
     return (streamId: number | string | null, name: string): boolean => {
       if (!allow18Plus && /xxx/i.test(name)) return false;

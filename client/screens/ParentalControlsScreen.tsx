@@ -18,20 +18,36 @@ import { useProfile, ParentalControls } from "@/contexts/ProfileContext";
 import { getApiUrl } from "@/lib/query-client";
 import PinPadModal from "@/components/PinPadModal";
 
-/* ── BBFC rating definitions ──────────────────────────────────────────── */
-const BBFC_RATINGS: { code: string; label: string; color: string; desc: string }[] = [
-  { code: "U",     label: "U",     color: "#67AE3F", desc: "Universal — suitable for all" },
-  { code: "PG",    label: "PG",    color: "#FCB017", desc: "Parental Guidance suggested" },
-  { code: "12A",   label: "12A",   color: "#029FD8", desc: "12A — cinema; under-12s with adult" },
-  { code: "12",    label: "12",    color: "#029FD8", desc: "12 — not suitable under 12" },
-  { code: "PG-13", label: "PG-13", color: "#F07000", desc: "PG-13 — may be unsuitable under 13" },
-  { code: "15",    label: "15",    color: "#ED6623", desc: "15 — not suitable under 15" },
-  { code: "R",     label: "R",     color: "#CC1515", desc: "R — restricted; under-17 with adult" },
-  { code: "18",    label: "18",    color: "#CC0003", desc: "18 — adults only" },
-  { code: "R18",   label: "R18",   color: "#CC0003", desc: "R18 — restricted adult content" },
+/* ── All known age-rated classifications ─────────────────────────────── */
+const ALL_CERTS: { label: string; age: number; color: string }[] = [
+  { label: "U",     age: 0,  color: "#3CB914" },
+  { label: "G",     age: 0,  color: "#3CB914" },
+  { label: "PG",    age: 8,  color: "#F0A800" },
+  { label: "12A",   age: 12, color: "#F07000" },
+  { label: "12",    age: 12, color: "#F07000" },
+  { label: "PG-13", age: 13, color: "#F07000" },
+  { label: "15",    age: 15, color: "#E0408A" },
+  { label: "16",    age: 16, color: "#CC1515" },
+  { label: "R",     age: 17, color: "#CC1515" },
+  { label: "18",    age: 18, color: "#CC0003" },
+  { label: "R18",   age: 18, color: "#1060C0" },
 ];
 
-const DEFAULT_RATINGS = ["U", "PG", "12A", "12", "PG-13", "15"];
+const DEFAULT_MAX_AGE = 15;
+
+/* Derive a max_age number from existing parental_controls (handles legacy
+   allowed_ratings arrays stored before the age-stepper redesign). */
+function deriveMaxAge(pc: ParentalControls | null | undefined): number {
+  if (!pc) return DEFAULT_MAX_AGE;
+  if (pc.max_age != null) return pc.max_age;
+  const CERT_AGE: Record<string, number> = {
+    U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+    "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
+    "16": 16, "17": 17,
+  };
+  const allowed = pc.allowed_ratings ?? [];
+  return allowed.length === 0 ? DEFAULT_MAX_AGE : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+}
 
 /* ── Small components ────────────────────────────────────────────────── */
 function BackBtn({ onPress }: { onPress: () => void }) {
@@ -46,38 +62,6 @@ function BackBtn({ onPress }: { onPress: () => void }) {
       onPressOut={() => setActive(false)}
     >
       <Feather name="arrow-left" size={20} color={active ? Colors.dark.accent : Colors.dark.text} />
-    </Pressable>
-  );
-}
-
-function RatingCheckbox({
-  rating,
-  checked,
-  onToggle,
-}: {
-  rating: typeof BBFC_RATINGS[number];
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  const [active, setActive] = useState(false);
-  return (
-    <Pressable
-      style={[styles.ratingRow, active && styles.ratingRowActive, checked && styles.ratingRowChecked]}
-      onPress={onToggle}
-      onFocus={() => setActive(true)}
-      onBlur={() => setActive(false)}
-      onPressIn={() => setActive(true)}
-      onPressOut={() => setActive(false)}
-    >
-      <View style={[styles.ratingBadge, { backgroundColor: rating.color }]}>
-        <ThemedText style={styles.ratingBadgeText}>{rating.label}</ThemedText>
-      </View>
-      <View style={styles.ratingInfo}>
-        <ThemedText style={styles.ratingLabel}>{rating.desc}</ThemedText>
-      </View>
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        {checked ? <Feather name="check" size={13} color="#fff" /> : null}
-      </View>
     </Pressable>
   );
 }
@@ -114,7 +98,6 @@ function ToggleRow({
   );
 }
 
-/** Pressable that reacts to both touch-press AND D-pad / pointer focus */
 function FocusBtn({
   style,
   onPress,
@@ -151,26 +134,18 @@ export default function ParentalControlsScreen() {
   const existing = activeProfile?.parental_controls;
   const hasPin = !!(activeProfile?.parental_pin);
 
-  // Local editing state (mirrors DB until saved)
-  const [allowedRatings, setAllowedRatings] = useState<string[]>(
-    existing?.allowed_ratings ?? DEFAULT_RATINGS
-  );
+  const [maxAge, setMaxAge] = useState<number>(deriveMaxAge(existing));
   const [showUnclassified, setShowUnclassified] = useState(
     existing?.show_unclassified ?? true
   );
-
-  // Dirty tracking
   const [dirty, setDirty] = useState(false);
 
-  // Modal state
   const [pinModal, setPinModal] = useState<{
     visible: boolean;
     action: "enable" | "disable" | "save" | "changePin";
   }>({ visible: false, action: "enable" });
 
-  // Change PIN flow: after verifying old PIN, show set-new-PIN modal
   const [showSetNewPin, setShowSetNewPin] = useState(false);
-
   const [saving, setSaving] = useState(false);
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
@@ -179,13 +154,7 @@ export default function ParentalControlsScreen() {
 
   const isEnabled = existing?.enabled ?? false;
 
-  /* ── Toggle a rating ────────────────────────────────────────────────── */
-  const toggleRating = (code: string) => {
-    setAllowedRatings((prev) =>
-      prev.includes(code) ? prev.filter((r) => r !== code) : [...prev, code]
-    );
-    setDirty(true);
-  };
+  const allowedCerts = ALL_CERTS.filter((c) => c.age <= maxAge);
 
   /* ── Save to server ─────────────────────────────────────────────────── */
   const saveSettings = useCallback(async (
@@ -196,12 +165,10 @@ export default function ParentalControlsScreen() {
     try {
       const controls: ParentalControls = {
         enabled: overrides.enabled ?? isEnabled,
-        allowed_ratings: allowedRatings,
+        max_age: maxAge,
         show_unclassified: showUnclassified,
       };
-      const body: Record<string, any> = {
-        parental_controls: controls,
-      };
+      const body: Record<string, any> = { parental_controls: controls };
       if (overrides.pin !== undefined) body.parental_pin = overrides.pin;
       if (overrides.enabled === false) {
         body.parental_pin = null;
@@ -222,26 +189,17 @@ export default function ParentalControlsScreen() {
       setActiveProfile(updated);
       setDirty(false);
       if (overrides.enabled === true && activeProfile.private_viewing) {
-        Alert.alert(
-          "Parental Controls Enabled",
-          "Private Viewing has been automatically disabled."
-        );
+        Alert.alert("Parental Controls Enabled", "Private Viewing has been automatically disabled.");
       }
     } catch {
       Alert.alert("Error", "Failed to save parental controls. Please try again.");
     } finally {
       setSaving(false);
     }
-  }, [activeProfile, isEnabled, allowedRatings, showUnclassified, setActiveProfile]);
+  }, [activeProfile, isEnabled, maxAge, showUnclassified, setActiveProfile]);
 
   /* ── Enable flow ─────────────────────────────────────────────────────── */
-  const handleEnable = () => {
-    if (hasPin) {
-      setPinModal({ visible: true, action: "enable" });
-    } else {
-      setPinModal({ visible: true, action: "enable" });
-    }
-  };
+  const handleEnable = () => setPinModal({ visible: true, action: "enable" });
 
   /* ── PIN modal outcomes ──────────────────────────────────────────────── */
   const handleVerified = useCallback(async () => {
@@ -268,7 +226,6 @@ export default function ParentalControlsScreen() {
     await saveSettings({ enabled: true, pin: newPin });
   }, [saveSettings]);
 
-  /* ── Status indicator colour ─────────────────────────────────────────── */
   const statusColor = isEnabled ? Colors.dark.accent : Colors.dark.border;
 
   return (
@@ -304,8 +261,8 @@ export default function ParentalControlsScreen() {
             </ThemedText>
             <ThemedText style={styles.statusSub}>
               {isEnabled
-                ? `Filtering ${allowedRatings.length === 0 ? "all" : BBFC_RATINGS.filter(r => !allowedRatings.includes(r.code)).length === 0 ? "no" : "some"} content by age rating`
-                : "All content is accessible. Enable to restrict by age rating."}
+                ? `Age limit: ${maxAge} and under`
+                : "All content is accessible. Enable to restrict by age."}
             </ThemedText>
           </View>
           <View style={[styles.statusBadge, { backgroundColor: isEnabled ? "rgba(255,102,0,0.18)" : Colors.dark.backgroundDefault }]}>
@@ -319,12 +276,12 @@ export default function ParentalControlsScreen() {
             <View style={styles.descCard}>
               <Feather name="info" size={14} color={Colors.dark.accent} style={{ marginTop: 1 }} />
               <ThemedText style={styles.descText}>
-                Parental Controls let you restrict content by age classification. You will set a 4-digit PIN to protect these settings. Once enabled, only content matching your chosen ratings will be visible.
+                Parental Controls let you restrict content by age. Set an age limit and only content at or below that age will be visible. Protected by a 4-digit PIN.
               </ThemedText>
             </View>
 
             <View style={styles.featureList}>
-              {["BBFC age-rating filters (U through R18)", "Block unrated / unclassified content", "Hide adult live TV categories", "Protected by a 4-digit PIN"].map((f) => (
+              {["Age-based content filtering (any rating system)", "Block unrated / unclassified content", "Hide adult live TV categories", "Protected by a 4-digit PIN"].map((f) => (
                 <View key={f} style={styles.featureRow}>
                   <Feather name="check-circle" size={14} color={Colors.dark.accent} />
                   <ThemedText style={styles.featureText}>{f}</ThemedText>
@@ -352,18 +309,59 @@ export default function ParentalControlsScreen() {
         ) : (
           /* ── Settings section (enabled) ──────────────────────────────── */
           <>
-            {/* Ratings selector */}
+            {/* Age stepper */}
             <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>Allowed Classifications</ThemedText>
-              <View style={styles.ratingsGrid}>
-                {BBFC_RATINGS.map((r) => (
-                  <RatingCheckbox
-                    key={r.code}
-                    rating={r}
-                    checked={allowedRatings.includes(r.code)}
-                    onToggle={() => toggleRating(r.code)}
-                  />
-                ))}
+              <ThemedText style={styles.sectionLabel}>What age limit would you like set?</ThemedText>
+              <View style={styles.ageStepper}>
+                <FocusBtn
+                  style={({ pressed, focused }) => [
+                    styles.stepBtn,
+                    (pressed || focused) && styles.stepBtnActive,
+                    maxAge <= 0 && styles.stepBtnDisabled,
+                  ]}
+                  onPress={() => { if (maxAge > 0) { setMaxAge(maxAge - 1); setDirty(true); } }}
+                  disabled={maxAge <= 0}
+                >
+                  <Feather name="minus" size={22} color={maxAge <= 0 ? Colors.dark.border : Colors.dark.text} />
+                </FocusBtn>
+
+                <View style={styles.ageDisplay}>
+                  <ThemedText style={styles.ageNumber}>{maxAge}</ThemedText>
+                  <ThemedText style={styles.ageUnit}>years &amp; under</ThemedText>
+                </View>
+
+                <FocusBtn
+                  style={({ pressed, focused }) => [
+                    styles.stepBtn,
+                    (pressed || focused) && styles.stepBtnActive,
+                    maxAge >= 18 && styles.stepBtnDisabled,
+                  ]}
+                  onPress={() => { if (maxAge < 18) { setMaxAge(maxAge + 1); setDirty(true); } }}
+                  disabled={maxAge >= 18}
+                >
+                  <Feather name="plus" size={22} color={maxAge >= 18 ? Colors.dark.border : Colors.dark.text} />
+                </FocusBtn>
+              </View>
+
+              {/* Classification preview */}
+              <View style={styles.allowedPreview}>
+                <ThemedText style={styles.allowedPreviewLabel}>
+                  This will allow the following content:
+                </ThemedText>
+                {allowedCerts.length === 0 ? (
+                  <ThemedText style={styles.noAllowedText}>No rated content will be shown</ThemedText>
+                ) : (
+                  <View style={styles.certBadgeRow}>
+                    {allowedCerts.map((c) => (
+                      <View key={c.label} style={[styles.certChip, { backgroundColor: c.color + "22", borderColor: c.color + "66" }]}>
+                        <ThemedText style={[styles.certChipText, { color: c.color }]}>{c.label}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {maxAge >= 18 ? (
+                  <ThemedText style={styles.adultWarning}>Includes adult-rated content (18+)</ThemedText>
+                ) : null}
               </View>
             </View>
 
@@ -377,7 +375,7 @@ export default function ParentalControlsScreen() {
 
             {/* Legal note */}
             <ThemedText style={styles.disclaimerNote}>
-              Age ratings rely on BBFC/TMDB classifications and may not be complete for all content. Not a substitute for active parental supervision.
+              Age ratings rely on TMDB classifications and may not be complete for all content. Not a substitute for active parental supervision.
             </ThemedText>
 
             {/* Action row: Save · Change PIN · Disable */}
@@ -524,49 +522,62 @@ const styles = StyleSheet.create({
   enableBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 
   /* Settings section */
-  section: { gap: Spacing.xs },
+  section: { gap: Spacing.sm },
   sectionLabel: {
     fontSize: 10, fontWeight: "700", color: Colors.dark.accent,
     textTransform: "uppercase", letterSpacing: 1,
   },
-  sectionHint: { fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 15 },
 
-  /* Ratings 2-column grid */
-  ratingsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.xs,
-  },
-
-  /* Rating checkbox row */
-  ratingRow: {
+  /* Age stepper */
+  ageStepper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    justifyContent: "center",
+    gap: Spacing.lg,
     backgroundColor: Colors.dark.backgroundDefault,
-    borderRadius: BorderRadius.sm,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.dark.border,
-    padding: Spacing.sm,
-    minWidth: "48%",
-    flex: 1,
+    paddingVertical: Spacing.lg,
   },
-  ratingRowActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-  ratingRowChecked: { borderColor: "rgba(255,102,0,0.4)" },
-  ratingBadge: {
-    width: 32, height: 32, borderRadius: 5,
+  stepBtn: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
   },
-  ratingBadgeText: { fontSize: 11, fontWeight: "800", color: "#fff" },
-  ratingInfo: { flex: 1 },
-  ratingLabel: { fontSize: 12, color: Colors.dark.text, fontWeight: "500" },
-  checkbox: {
-    width: 20, height: 20, borderRadius: 5,
-    borderWidth: 2, borderColor: Colors.dark.border,
-    backgroundColor: "transparent",
-    justifyContent: "center", alignItems: "center",
+  stepBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  stepBtnDisabled: { opacity: 0.35 },
+  ageDisplay: { alignItems: "center", minWidth: 80 },
+  ageNumber: { fontSize: 52, fontWeight: "800", color: Colors.dark.accent, lineHeight: 58 },
+  ageUnit: { fontSize: 11, color: Colors.dark.textSecondary, marginTop: 2 },
+
+  /* Classification preview */
+  allowedPreview: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    padding: Spacing.md,
+    gap: Spacing.sm,
   },
-  checkboxChecked: { backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent },
+  allowedPreviewLabel: {
+    fontSize: 12, fontWeight: "600", color: Colors.dark.textSecondary,
+  },
+  certBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  certChip: {
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 6, borderWidth: 1,
+  },
+  certChipText: { fontSize: 12, fontWeight: "800" },
+  noAllowedText: { fontSize: 12, color: Colors.dark.textSecondary, fontStyle: "italic" },
+  adultWarning: {
+    fontSize: 11, color: Colors.dark.error, fontWeight: "600", marginTop: 2,
+  },
 
   /* Toggle row */
   toggleRow: {
@@ -597,15 +608,11 @@ const styles = StyleSheet.create({
 
   /* Disclaimer */
   disclaimerNote: {
-    fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 16,
-    opacity: 0.7,
+    fontSize: 11, color: Colors.dark.textSecondary, lineHeight: 16, opacity: 0.7,
   },
 
   /* Action row */
-  actionRow: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-  },
+  actionRow: { flexDirection: "row", gap: Spacing.sm },
   actionBtn: {
     flex: 1, height: 46, borderRadius: BorderRadius.sm, overflow: "hidden",
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
@@ -617,15 +624,12 @@ const styles = StyleSheet.create({
   saveBtnPressed: { opacity: 0.85 },
   actionBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   saveBtnTextDim: { color: Colors.dark.textSecondary },
-
   changePinBtn: {
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
   },
   changePinText: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "600" },
   pinActionBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
-
-  /* Disable action button */
   disableBtn: {
     borderWidth: 1, borderColor: "rgba(255,59,59,0.3)",
     backgroundColor: Colors.dark.backgroundDefault,

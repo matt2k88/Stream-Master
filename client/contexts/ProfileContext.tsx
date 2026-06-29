@@ -21,7 +21,10 @@ export type HwDecodeMode = "auto" | "on" | "off";
  */
 export interface ParentalControls {
   enabled: boolean;
-  allowed_ratings: string[];
+  /** Age-based limit (0–18). The filter shows content where age_int <= max_age. */
+  max_age?: number;
+  /** Legacy field — replaced by max_age. Kept for backward-compat read. */
+  allowed_ratings?: string[];
   show_unclassified: boolean;
 }
 
