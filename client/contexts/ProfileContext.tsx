@@ -13,6 +13,18 @@ export type PlayerEngine = "vlc" | "expo";
  */
 export type HwDecodeMode = "auto" | "on" | "off";
 
+/**
+ * Parental controls configuration stored as JSONB in the profiles table.
+ * Only active when enabled=true. allowed_ratings is a subset of the 7 BBFC
+ * codes (U PG 12A 12 15 18 R18). show_unclassified controls whether content
+ * with no TMDB rating is shown or hidden.
+ */
+export interface ParentalControls {
+  enabled: boolean;
+  allowed_ratings: string[];
+  show_unclassified: boolean;
+}
+
 export interface Profile {
   id: string;
   account_username: string;
@@ -38,6 +50,10 @@ export interface Profile {
   // When true, no watch history is saved to recently_watched — enforced
   // both client-side (upsertLocal no-ops) and server-side (POST skips insert).
   private_viewing?: boolean;
+  // Parental controls PIN (plain 4-digit text, same pattern as profile PIN).
+  parental_pin?: string | null;
+  // Parental controls config. null / undefined means disabled.
+  parental_controls?: ParentalControls | null;
 }
 
 /**

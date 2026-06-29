@@ -731,7 +731,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/profiles/:id", async (req, res) => {
     const { id } = req.params;
-    const { name, avatar_icon, avatar_color, avatar_image, pin, player_vod, player_live, player_hw_decode, player_buffer_ms, private_viewing } = req.body;
+    const { name, avatar_icon, avatar_color, avatar_image, pin, player_vod, player_live, player_hw_decode, player_buffer_ms, private_viewing, parental_pin, parental_controls } = req.body;
     try {
       // Build a partial update so callers (e.g. PlayerSettingsScreen)
       // can patch only the fields they care about.
@@ -774,6 +774,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (private_viewing !== undefined) {
         patch.private_viewing = !!private_viewing;
+      }
+      if (parental_pin !== undefined) {
+        patch.parental_pin = parental_pin !== null ? String(parental_pin) : null;
+      }
+      if (parental_controls !== undefined) {
+        patch.parental_controls = parental_controls ?? null;
       }
       const { data, error } = await supabase
         .from("profiles")

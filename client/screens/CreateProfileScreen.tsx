@@ -135,6 +135,16 @@ function PinToggleRow({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
   );
 }
 
+const BBFC_RATINGS_CREATE = [
+  { code: "U",   color: "#67AE3F", desc: "Universal — suitable for all" },
+  { code: "PG",  color: "#FCB017", desc: "Parental Guidance suggested" },
+  { code: "12A", color: "#029FD8", desc: "12A — under-12s with an adult" },
+  { code: "12",  color: "#029FD8", desc: "12 — not suitable under 12" },
+  { code: "15",  color: "#ED6623", desc: "15 — not suitable under 15" },
+  { code: "18",  color: "#CC0003", desc: "18 — adults only" },
+  { code: "R18", color: "#CC0003", desc: "R18 — restricted adult content" },
+];
+
 function PinKey({ k, onPress }: { k: string; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -191,6 +201,20 @@ export default function CreateProfileScreen() {
   const [cancelModalFocused, setCancelModalFocused] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Parental controls state (new profile or editing a profile without existing controls)
+  const [parentalEnabled, setParentalEnabled] = useState(!!editing?.parental_controls?.enabled);
+  const [parentalPin, setParentalPin] = useState("");
+  const [parentalPinConfirm, setParentalPinConfirm] = useState("");
+  const [parentalPinStep, setParentalPinStep] = useState<"idle" | "set" | "confirm" | "done">(
+    editing?.parental_controls?.enabled ? "done" : "idle"
+  );
+  const [allowedRatings, setAllowedRatings] = useState<string[]>(
+    editing?.parental_controls?.allowed_ratings ?? ["U", "PG", "12A", "12", "15"]
+  );
+  const [showUnclassified, setShowUnclassified] = useState(
+    editing?.parental_controls?.show_unclassified ?? true
+  );
+
   // Poll only while the modal is open and we don't have a pending image yet
   useEffect(() => {
     if (!showQrModal || !avatarToken || pendingAvatarImage) return;
@@ -215,7 +239,10 @@ export default function CreateProfileScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.sm, Spacing.xl);
 
-  const isValid = name.trim().length > 0 && (!pinEnabled || pin.length === 4);
+  const isValid =
+    name.trim().length > 0 &&
+    (!pinEnabled || pin.length === 4) &&
+    (!!editing?.parental_controls?.enabled || !parentalEnabled || parentalPinStep === "done");
 
   const handleOpenAvatarModal = async () => {
     setGeneratingToken(true);
@@ -308,6 +335,22 @@ export default function CreateProfileScreen() {
         pin: pinEnabled && pin.length === 4 ? pin : null,
         avatar_image: avatarImage ?? null,
       };
+      // Parental controls: only applied when the profile doesn't already have
+      // them configured (existing controls are managed via ParentalControlsScreen).
+      if (!editing?.parental_controls?.enabled) {
+        if (parentalEnabled && parentalPinStep === "done") {
+          body.parental_pin = parentalPin.length === 4 ? parentalPin : null;
+          body.parental_controls = {
+            enabled: true,
+            allowed_ratings: allowedRatings,
+            show_unclassified: showUnclassified,
+          };
+          body.private_viewing = false;
+        } else {
+          body.parental_pin = null;
+          body.parental_controls = null;
+        }
+      }
       const baseUrl = getApiUrl();
       const url = editing
         ? new URL(`/api/profiles/${editing.id}`, baseUrl).toString()
@@ -542,6 +585,140 @@ export default function CreateProfileScreen() {
     </View>
   );
 
+  const parentalSection = (
+    <View style={styles.section}>
+      <ThemedText style={styles.sectionLabel}>Parental Controls</ThemedText>
+      {editing && editing.parental_controls?.enabled ? (
+        <Pressable
+          style={({ pressed }) => [styles.pinToggleRow, styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+          onPress={() => (navigation as any).navigate("ParentalControls")}
+        >
+          <View style={styles.pinToggleLeft}>
+            <View style={[styles.pinIconWrap, styles.pinIconWrapEnabled]}>
+              <Feather name="shield" size={16} color={Colors.dark.accent} />
+            </View>
+            <View>
+              <ThemedText style={styles.pinToggleTitle}>Parental Controls</ThemedText>
+              <ThemedText style={styles.pinToggleSubtitle}>On — manage in Settings</ThemedText>
+            </View>
+          </View>
+          <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} />
+        </Pressable>
+      ) : (
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.pinToggleRow, parentalEnabled && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+            onPress={() => {
+              setParentalEnabled((v) => {
+                if (v) { setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("idle"); }
+                else { setParentalPinStep("set"); }
+                return !v;
+              });
+            }}
+          >
+            <View style={styles.pinToggleLeft}>
+              <View style={[styles.pinIconWrap, parentalEnabled && styles.pinIconWrapEnabled]}>
+                <Feather name="shield" size={16} color={parentalEnabled ? Colors.dark.accent : Colors.dark.textSecondary} />
+              </View>
+              <View>
+                <ThemedText style={styles.pinToggleTitle}>Parental Controls</ThemedText>
+                <ThemedText style={styles.pinToggleSubtitle}>Restrict content by age rating</ThemedText>
+              </View>
+            </View>
+            <View style={[styles.toggleTrack, parentalEnabled && styles.toggleTrackOn]}>
+              <View style={[styles.toggleThumb, parentalEnabled && styles.toggleThumbOn]} />
+            </View>
+          </Pressable>
+          {parentalEnabled && parentalPinStep !== "done" ? (
+            <View style={styles.pinInputSection}>
+              <ThemedText style={styles.pinLabel}>
+                {parentalPinStep === "set" ? "Set a 4-digit Parental PIN" : "Confirm your Parental PIN"}
+              </ThemedText>
+              <View style={styles.pinDots}>
+                {[0,1,2,3].map((i) => {
+                  const val = parentalPinStep === "confirm" ? parentalPinConfirm : parentalPin;
+                  return (
+                    <View key={i} style={[styles.pinDot, { borderColor: val.length > i ? Colors.dark.accent : Colors.dark.border }, val.length > i && { backgroundColor: Colors.dark.accent }]} />
+                  );
+                })}
+              </View>
+              <View style={styles.pinPad}>
+                {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) => (
+                  <PinKey key={idx} k={k} onPress={() => {
+                    if (!k) return;
+                    const isConfirm = parentalPinStep === "confirm";
+                    const curr = isConfirm ? parentalPinConfirm : parentalPin;
+                    const setVal = isConfirm ? setParentalPinConfirm : setParentalPin;
+                    if (k === "⌫") { setVal((p) => p.slice(0, -1)); }
+                    else if (curr.length < 4) {
+                      const next = curr + k;
+                      setVal(next);
+                      if (next.length === 4) {
+                        if (!isConfirm) {
+                          setTimeout(() => setParentalPinStep("confirm"), 100);
+                        } else {
+                          setTimeout(() => {
+                            if (next === parentalPin) {
+                              setParentalPinStep("done");
+                            } else {
+                              setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("set");
+                              Alert.alert("PIN Mismatch", "The PINs don't match. Please try again.");
+                            }
+                          }, 100);
+                        }
+                      }
+                    }
+                  }} />
+                ))}
+              </View>
+              {parentalPinStep === "confirm" ? (
+                <Pressable onPress={() => { setParentalPinConfirm(""); setParentalPinStep("set"); }}>
+                  <ThemedText style={styles.pinToggleSubtitle}>Back</ThemedText>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          {parentalEnabled && parentalPinStep === "done" ? (
+            <View style={{ gap: 6, marginTop: 4 }}>
+              <ThemedText style={styles.pinToggleSubtitle}>Select the highest rating to allow:</ThemedText>
+              {BBFC_RATINGS_CREATE.map((r) => (
+                <Pressable
+                  key={r.code}
+                  style={({ pressed }) => [styles.pinToggleRow, allowedRatings.includes(r.code) && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+                  onPress={() => setAllowedRatings((prev) => prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code])}
+                >
+                  <View style={styles.pinToggleLeft}>
+                    <View style={[styles.pinIconWrap, { backgroundColor: r.color + "33" }]}>
+                      <ThemedText style={{ fontSize: 10, fontWeight: "800", color: r.color }}>{r.code}</ThemedText>
+                    </View>
+                    <ThemedText style={styles.pinToggleSubtitle}>{r.desc}</ThemedText>
+                  </View>
+                  <View style={[styles.pcCheckbox, allowedRatings.includes(r.code) && styles.pcCheckboxOn]}>
+                    {allowedRatings.includes(r.code) ? <Feather name="check" size={11} color="#fff" /> : null}
+                  </View>
+                </Pressable>
+              ))}
+              <Pressable
+                style={({ pressed }) => [styles.pinToggleRow, showUnclassified && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+                onPress={() => setShowUnclassified((v) => !v)}
+              >
+                <View style={styles.pinToggleLeft}>
+                  <View style={styles.pinIconWrap}>
+                    <Feather name="help-circle" size={16} color={Colors.dark.textSecondary} />
+                  </View>
+                  <ThemedText style={styles.pinToggleSubtitle}>Show Unclassified Content</ThemedText>
+                </View>
+                <View style={[styles.toggleTrack, showUnclassified && styles.toggleTrackOn]}>
+                  <View style={[styles.toggleThumb, showUnclassified && styles.toggleThumbOn]} />
+                </View>
+              </Pressable>
+            </View>
+          ) : null}
+        </>
+      )}
+    </View>
+  );
+
   const pinSection = (
     <View style={styles.section}>
       <PinToggleRow enabled={pinEnabled} onToggle={() => { setPinEnabled((v) => { if (v) setPin(""); return !v; }); }} />
@@ -681,6 +858,7 @@ export default function CreateProfileScreen() {
             {iconPickerSection}
             {colorPickerSection}
             {pinSection}
+            {parentalSection}
 
             <View style={styles.lsActions}>
               {actionButtons}
@@ -744,6 +922,7 @@ export default function CreateProfileScreen() {
         {iconPickerSection}
         {colorPickerSection}
         {pinSection}
+        {parentalSection}
 
         {actionButtons}
       </ScrollView>
@@ -955,6 +1134,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 8, elevation: 4,
   },
   pinToggleRowEnabled: { borderColor: "rgba(255,102,0,0.4)" },
+  pcCheckbox: {
+    width: 22, height: 22, borderRadius: 5,
+    borderWidth: 2, borderColor: Colors.dark.border,
+    backgroundColor: "transparent",
+    justifyContent: "center", alignItems: "center",
+  },
+  pcCheckboxOn: { backgroundColor: Colors.dark.accent, borderColor: Colors.dark.accent },
   pinToggleLeft: { flexDirection: "row", alignItems: "center", gap: Spacing.md, flex: 1 },
   pinIconWrap: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.dark.backgroundSecondary, justifyContent: "center", alignItems: "center" },
   pinIconWrapEnabled: { backgroundColor: "rgba(255,102,0,0.15)" },

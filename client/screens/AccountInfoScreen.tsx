@@ -650,10 +650,36 @@ export default function AccountInfoScreen() {
                     <ActionTile
                       icon={activeProfile?.private_viewing ? "eye-off" : "eye"}
                       title="Private Viewing"
-                      subtitle={activeProfile?.private_viewing ? "On — history paused" : "Off — tap to enable"}
-                      tint={activeProfile?.private_viewing ? Colors.dark.success : Colors.dark.textSecondary}
+                      subtitle={
+                        activeProfile?.parental_controls?.enabled
+                          ? "Restricted by parental controls"
+                          : activeProfile?.private_viewing
+                          ? "On — history paused"
+                          : "Off — tap to enable"
+                      }
+                      tint={
+                        activeProfile?.parental_controls?.enabled
+                          ? Colors.dark.border
+                          : activeProfile?.private_viewing
+                          ? Colors.dark.success
+                          : Colors.dark.textSecondary
+                      }
                       busy={privacySaving}
-                      onPress={() => togglePrivateViewing()}
+                      onPress={() => {
+                        if (activeProfile?.parental_controls?.enabled) return;
+                        void togglePrivateViewing();
+                      }}
+                    />
+                  </View>
+                ) : null}
+                {!isGuest ? (
+                  <View style={styles.tileGridItem}>
+                    <ActionTile
+                      icon="shield"
+                      title="Parental Controls"
+                      subtitle={activeProfile?.parental_controls?.enabled ? "On — content filtered" : "Off — tap to manage"}
+                      tint={activeProfile?.parental_controls?.enabled ? Colors.dark.accent : Colors.dark.textSecondary}
+                      onPress={() => navigation.navigate("ParentalControls")}
                     />
                   </View>
                 ) : null}

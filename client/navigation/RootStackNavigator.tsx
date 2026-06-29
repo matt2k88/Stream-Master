@@ -43,6 +43,7 @@ import SportListingsScreen from "@/screens/SportListingsScreen";
 import PlaylistDetailScreen from "@/screens/PlaylistDetailScreen";
 import MusicHomeScreen from "@/screens/MusicHomeScreen";
 import MusicPlayerScreen from "@/screens/MusicPlayerScreen";
+import ParentalControlsScreen from "@/screens/ParentalControlsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -84,6 +85,7 @@ export type RootStackParamList = {
   SportListings: undefined;
   PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
   MusicHome: undefined;
+  ParentalControls: undefined;
   MusicPlayer: {
     queue?: Array<{ videoId: string; title: string; artist: string; album: string; duration: number; thumbnail: string; searchKey: string; }>;
     startIndex?: number;
@@ -171,6 +173,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
             <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
             <Stack.Screen name="MusicPlayer" component={MusicPlayerScreen} options={{ animation: "fade" }} />
+            <Stack.Screen name="ParentalControls" component={ParentalControlsScreen} />
           </>
         )}
       </Stack.Navigator>

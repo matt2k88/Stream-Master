@@ -971,7 +971,8 @@ export default function ContentListScreen() {
   // Requests / Multi Screen / Manage) into circular icon-only buttons so
   // the header doesn't blow out horizontally.
   const isLandscapeHeader = width > height;
-  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh } = useData();
+  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh, streamRatings } = useData();
+  const { activeProfile } = useProfile();
   const handleRefresh = useCallback(() => {
     if (isSyncing) return;
     refresh();
@@ -1039,6 +1040,41 @@ export default function ContentListScreen() {
     }
   }, [type, liveCategories, vodCategories, seriesCategories, applyOrder]);
 
+  // Parental controls filter — null when the feature is disabled or the
+  // profile has no parental_controls config. When non-null, provides:
+  //   filterStream(id, name) → bool — should this stream be visible?
+  //   filterCategory(name)   → bool — should this category appear in sidebar?
+  const parentalFilter = useMemo(() => {
+    const pc = activeProfile?.parental_controls;
+    if (!pc?.enabled) return null;
+    const CERT_AGE: Record<string, number> = {
+      U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+      "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
+    };
+    const allowed = pc.allowed_ratings ?? [];
+    const showUnclassified = pc.show_unclassified ?? true;
+    const maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+    const allow18Plus = maxAge >= 18;
+    return {
+      filterStream: (id: number, name: string): boolean => {
+        if (!allow18Plus && /xxx/i.test(name)) return false;
+        const r = streamRatings.get(id);
+        if (!r) return showUnclassified;
+        return r.age_int <= maxAge;
+      },
+      filterCategory: (catName: string): boolean => {
+        if (!allow18Plus && /xxx/i.test(catName)) return false;
+        return true;
+      },
+    };
+  }, [activeProfile?.parental_controls, streamRatings]);
+
+  // Parental-filtered category list — hides XXX sidebar entries when <18 allowed
+  const filteredCategories: SidebarCat[] = useMemo(() => {
+    if (!parentalFilter) return categories;
+    return categories.filter((c) => parentalFilter.filterCategory(c.category_name));
+  }, [categories, parentalFilter]);
+
   // If the user landed here on a category that THEY have hidden in their
   // organised list, jump them to the first visible real category instead.
   // Otherwise the page would silently show content from a category the
@@ -1047,22 +1083,22 @@ export default function ContentListScreen() {
   // redirected. Runs only once per mount.
   useEffect(() => {
     if (redirectedFromHiddenRef.current) return;
-    if (categories.length === 0) return; // wait until prefs/data load
+    if (filteredCategories.length === 0) return; // wait until prefs/data load
     const pinnedIds = new Set([
       "favourites", "recently", "suggested", "recent", "watchlist",
     ]);
     if (pinnedIds.has(selectedCategoryId)) return;
     // User-pinned groups use a "group:<id>" id — never redirect off them.
     if (String(selectedCategoryId).startsWith("group:")) return;
-    const visible = categories.find((c) => String(c.category_id) === String(selectedCategoryId));
+    const visible = filteredCategories.find((c) => String(c.category_id) === String(selectedCategoryId));
     if (visible) return;
     // Current category is hidden — switch to the first visible one.
     redirectedFromHiddenRef.current = true;
-    const first = categories[0];
+    const first = filteredCategories[0];
     setSelectedCategoryId(first.category_id);
     setSelectedCategoryName(first.category_name);
     setInitialFocusId(first.category_id);
-  }, [categories, selectedCategoryId]);
+  }, [filteredCategories, selectedCategoryId]);
 
   // User-pinned custom groups for this type. Pinned groups appear in the
   // sidebar (between the system pinned rows and the real categories) using
@@ -1093,8 +1129,8 @@ export default function ContentListScreen() {
         iconName: def.name,
       };
     });
-    return [...pinned, ...userPinned, ...categories];
-  }, [type, categories, pinnedGroups]);
+    return [...pinned, ...userPinned, ...filteredCategories];
+  }, [type, filteredCategories, pinnedGroups]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
@@ -1286,6 +1322,17 @@ export default function ContentListScreen() {
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
+  // Parental-filter the current category/special-view content list
+  const filteredCategoryContent: ContentItem[] = useMemo(() => {
+    if (!parentalFilter) return categoryContent;
+    return categoryContent.filter((item) => {
+      const id = type === "series"
+        ? (item as Series).series_id
+        : (item as LiveStream | VodStream).stream_id;
+      return parentalFilter.filterStream(id, (item as any).name ?? "");
+    });
+  }, [categoryContent, parentalFilter, type]);
+
   // Progressive render: on slower devices, mounting a FlatList with hundreds
   // of cards (images + focus handlers + watch-state lookups) blocks the JS
   // thread on first paint. Instead we expose a tiny first batch immediately,
@@ -1324,7 +1371,18 @@ export default function ContentListScreen() {
     return out;
   }, [trimmedQuery, normalisedSection]);
 
-  const fullDisplayContent = isSearching ? searchResults : categoryContent;
+  // Parental-filter search results the same way as category content
+  const filteredSearchResults: ContentItem[] = useMemo(() => {
+    if (!parentalFilter) return searchResults;
+    return searchResults.filter((item) => {
+      const id = type === "series"
+        ? (item as Series).series_id
+        : (item as LiveStream | VodStream).stream_id;
+      return parentalFilter.filterStream(id, (item as any).name ?? "");
+    });
+  }, [searchResults, parentalFilter, type]);
+
+  const fullDisplayContent = isSearching ? filteredSearchResults : filteredCategoryContent;
 
   // Reset progressive limit whenever the underlying list identity changes
   // (category switch, search, type change, special view toggle). Then ramp
