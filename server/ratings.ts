@@ -283,3 +283,168 @@ async function processItem(item: QueueItem): Promise<void> {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+// ── Stream-ratings (keyed by stream_id + content_type) ────────────────────────
+// Powers parental controls. Client enricher sends batches; we resolve certs and
+// store so DataContext can build a Map<stream_id, {certification, age_int}>.
+
+export interface StreamBatchItem {
+  stream_id: number;
+  content_type: "movie" | "tv";
+  tmdb_id?: number | null;
+  mpaa_rating?: string | null;
+  name?: string | null;
+  year?: string | null;
+}
+
+export interface StreamBatchResult {
+  stream_id: number;
+  certification: string;
+  age_int: number;
+}
+
+async function getStreamRating(
+  streamId: number,
+  contentType: "movie" | "tv"
+): Promise<{ certification: string; age_int: number } | null> {
+  const { data } = await supabase
+    .from("stream_ratings")
+    .select("certification, age_int")
+    .eq("stream_id", streamId)
+    .eq("content_type", contentType)
+    .maybeSingle();
+  return data ?? null;
+}
+
+async function storeStreamRating(
+  streamId: number,
+  contentType: "movie" | "tv",
+  cert: string,
+  ageInt: number,
+  source: string,
+  tmdbId?: number | null
+): Promise<void> {
+  await supabase.from("stream_ratings").upsert(
+    {
+      stream_id: streamId,
+      content_type: contentType,
+      certification: cert,
+      age_int: ageInt,
+      source,
+      ...(tmdbId ? { tmdb_id: tmdbId } : {}),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "stream_id,content_type" }
+  );
+}
+
+export async function fetchAllStreamRatings(
+  contentType: "movie" | "tv"
+): Promise<{ stream_id: number; certification: string; age_int: number }[]> {
+  const { data } = await supabase
+    .from("stream_ratings")
+    .select("stream_id, certification, age_int")
+    .eq("content_type", contentType);
+  return data ?? [];
+}
+
+export async function processStreamBatch(
+  items: StreamBatchItem[]
+): Promise<StreamBatchResult[]> {
+  const results: StreamBatchResult[] = [];
+  for (const item of items) {
+    try {
+      const r = await processOneStreamItem(item);
+      if (r) results.push({ stream_id: item.stream_id, ...r });
+    } catch (e: any) {
+      console.warn(`[stream-ratings] stream_id ${item.stream_id}:`, e?.message);
+    }
+  }
+  return results;
+}
+
+async function processOneStreamItem(
+  item: StreamBatchItem
+): Promise<{ certification: string; age_int: number } | null> {
+  const { stream_id, content_type, tmdb_id, mpaa_rating, name, year } = item;
+
+  const existing = await getStreamRating(stream_id, content_type);
+  if (existing) return existing;
+
+  // Xtream-provided rating — no TMDB call needed
+  if (mpaa_rating) {
+    const age = normalizeCert(mpaa_rating);
+    if (age !== null) {
+      await storeStreamRating(stream_id, content_type, mpaa_rating.trim(), age, "xtream", tmdb_id ?? null);
+      return { certification: mpaa_rating.trim(), age_int: age };
+    }
+  }
+
+  // Exact TMDB ID → one cert lookup
+  if (tmdb_id) {
+    const cached = await getCachedRating(tmdb_id, content_type);
+    if (cached) {
+      await storeStreamRating(stream_id, content_type, cached.certification, cached.age_int, "tmdb_cache", tmdb_id);
+      return { certification: cached.certification, age_int: cached.age_int };
+    }
+    const cert = content_type === "movie"
+      ? await fetchMovieCert(tmdb_id)
+      : await fetchTvCert(tmdb_id);
+    if (cert) {
+      await storeRating(tmdb_id, content_type, cert.certification, cert.age_int, "tmdb");
+      await storeStreamRating(stream_id, content_type, cert.certification, cert.age_int, "tmdb", tmdb_id);
+      return cert;
+    }
+  }
+
+  // Name search — offloaded to background so batch response stays fast
+  if (name?.trim()) {
+    setImmediate(() => {
+      nameSearchStreamEnrich({
+        stream_id,
+        content_type,
+        name: name.trim(),
+        year: year ?? null,
+      }).catch(() => {});
+    });
+  }
+
+  return null;
+}
+
+async function nameSearchStreamEnrich(item: {
+  stream_id: number;
+  content_type: "movie" | "tv";
+  name: string;
+  year: string | null;
+}): Promise<void> {
+  const { stream_id, content_type, name, year } = item;
+  const q = encodeURIComponent(name);
+  const yearParam = year
+    ? content_type === "movie"
+      ? `&primary_release_year=${year}`
+      : `&first_air_date_year=${year}`
+    : "";
+  const path =
+    content_type === "movie"
+      ? `/search/movie?query=${q}${yearParam}&include_adult=false`
+      : `/search/tv?query=${q}${yearParam}&include_adult=false`;
+
+  const searchData = await tmdbFetch(path);
+  const top = searchData?.results?.[0];
+  if (!top?.id) return;
+
+  const tmdbId = Number(top.id);
+  const existing = await getStreamRating(stream_id, content_type);
+  if (existing) return;
+
+  const cert =
+    content_type === "movie"
+      ? await fetchMovieCert(tmdbId)
+      : await fetchTvCert(tmdbId);
+  if (cert) {
+    await storeRating(tmdbId, content_type, cert.certification, cert.age_int, "tmdb_search");
+    await storeStreamRating(stream_id, content_type, cert.certification, cert.age_int, "tmdb_search", tmdbId);
+    enrichStats.processed++;
+  }
+}

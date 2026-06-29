@@ -247,23 +247,9 @@ export default function MovieInfoScreen() {
   // ── Merged display fields (TMDB > Xtream > route) ────────────────────────
   const xt = vodInfo?.info ?? {};
 
-  // ── Age certification (lazy — server fetches from TMDB, caches in DB) ────
-  const xtCert = xt.mpaa_rating || xt.age || null;
-  const { data: ageRating } = useQuery<{ certification: string; age_int: number } | null>({
-    queryKey: ["content-rating", "movie", tmdbId],
-    enabled: !!tmdbId,
-    queryFn: async () => {
-      const url = new URL("/api/content-ratings", getApiUrl());
-      url.searchParams.set("tmdb_id", tmdbId!);
-      url.searchParams.set("content_type", "movie");
-      if (xtCert) url.searchParams.set("xtream_cert", xtCert);
-      const r = await fetch(url.toString());
-      if (!r.ok) return null;
-      return r.json();
-    },
-    staleTime: 24 * 60 * 60 * 1000,
-    retry: false,
-  });
+  // Age cert from the pre-loaded stream ratings map (no per-title fetch needed)
+  const { streamRatings } = useData();
+  const ageRating = streamRatings.get(streamId);
   const title = (tmdb as any)?.title ?? xt.name ?? name;
   const tagline = (tmdb as any)?.tagline as string | undefined;
   const overview =

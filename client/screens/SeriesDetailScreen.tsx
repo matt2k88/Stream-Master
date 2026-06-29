@@ -1,6 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { getApiUrl } from "@/lib/query-client";
 import AgeRatingBadge from "@/components/AgeRatingBadge";
 import SideMenuButton from "@/components/SideMenuButton";
 import {
@@ -23,6 +21,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
+import { useData } from "@/contexts/DataContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
@@ -212,20 +211,9 @@ export default function SeriesDetailScreen() {
   const isFav = isFavourite(seriesId, "series");
   const tmdbSeriesId = (seriesInfo?.info as any)?.tmdb ?? (seriesInfo?.info as any)?.tmdb_id ?? null;
   const tmdbSeriesIdNum = tmdbSeriesId ? Number(tmdbSeriesId) : null;
-  const { data: ageRating } = useQuery<{ certification: string; age_int: number } | null>({
-    queryKey: ["content-rating", "tv", tmdbSeriesIdNum],
-    enabled: tmdbSeriesIdNum != null && !isNaN(tmdbSeriesIdNum),
-    queryFn: async () => {
-      const url = new URL("/api/content-ratings", getApiUrl());
-      url.searchParams.set("tmdb_id", String(tmdbSeriesIdNum!));
-      url.searchParams.set("content_type", "tv");
-      const r = await fetch(url.toString());
-      if (!r.ok) return null;
-      return r.json();
-    },
-    staleTime: 24 * 60 * 60 * 1000,
-    retry: false,
-  });
+  // Age cert from the pre-loaded stream ratings map
+  const { streamRatings } = useData();
+  const ageRating = streamRatings.get(seriesId);
   const watchlistContentId = tmdbSeriesId ? String(tmdbSeriesId) : `xt_${seriesId}`;
   const inWatchlist = isInWatchlist(seriesId, "series") || isInWatchlist(watchlistContentId, "series");
   const handleToggleWatchlist = () => {

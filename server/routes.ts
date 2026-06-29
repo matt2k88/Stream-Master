@@ -2,7 +2,14 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
-import { getOrFetchRating, startBulkEnrich, enrichStats } from "./ratings";
+import {
+  getOrFetchRating,
+  startBulkEnrich,
+  enrichStats,
+  processStreamBatch,
+  fetchAllStreamRatings,
+  StreamBatchItem,
+} from "./ratings";
 
 
 // ── Server-side in-memory cache ───────────────────────────────────────────────
@@ -3909,6 +3916,36 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
       streams.filter((s: any) => typeof s?.name === "string" && s?.type)
     );
     return res.json({ ok: true, ...result });
+  });
+
+  // POST /api/stream-ratings/batch — client enricher pushes resolved items.
+  // Returns immediate results for items whose cert was resolved synchronously.
+  // Items that only have a name fall back to background TMDB name-search.
+  app.post("/api/stream-ratings/batch", async (req, res) => {
+    const raw = req.body?.items;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return res.status(400).json({ error: "items array required" });
+    }
+    const items: StreamBatchItem[] = raw
+      .slice(0, 50)
+      .filter(
+        (i: any) =>
+          typeof i.stream_id === "number" &&
+          (i.content_type === "movie" || i.content_type === "tv")
+      );
+    const results = await processStreamBatch(items);
+    return res.json({ results });
+  });
+
+  // GET /api/stream-ratings?content_type=movie|tv — full ratings dump used by
+  // DataContext on startup to populate the badge / parental-control map.
+  app.get("/api/stream-ratings", async (req, res) => {
+    const ct = req.query.content_type as string;
+    if (ct !== "movie" && ct !== "tv") {
+      return res.status(400).json({ error: "content_type must be 'movie' or 'tv'" });
+    }
+    const ratings = await fetchAllStreamRatings(ct);
+    return res.json(ratings);
   });
 
   // GET /api/ratings/status — admin: current enrichment job stats.

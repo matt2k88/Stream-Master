@@ -10,6 +10,7 @@ import React, {
 import { xtreamApi, Category, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
+import { runRatingsEnricher, StreamRating, EnrichProgress } from "@/lib/ratingsEnricher";
 
 export type SyncStatus = "idle" | "waiting" | "loading" | "done" | "error";
 
@@ -35,6 +36,8 @@ interface DataContextType {
   recentMovies: VodStream[];
   recentSeries: Series[];
   refresh: () => Promise<void>;
+  streamRatings: Map<number, StreamRating>;
+  enrichProgress: EnrichProgress;
 }
 
 const RECENTLY_ADDED_LIMIT = 30;
@@ -102,14 +105,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [recentSeries, setRecentSeries] = useState<Series[]>([]);
 
   const syncRunning = useRef(false);
+  const [streamRatings, setStreamRatings] = useState<Map<number, StreamRating>>(new Map());
+  const [enrichProgress, setEnrichProgress] = useState<EnrichProgress>({ total: 0, done: 0, running: false });
+  const enricherStarted = useRef(false);
+  const enricherAbort = useRef<AbortController | null>(null);
 
   const sync = useCallback(async () => {
     if (syncRunning.current) return;
     syncRunning.current = true;
     setIsSyncing(true);
     setSyncProgress({ live: "waiting", movies: "waiting", series: "waiting" });
-    let _enrichMovies: VodStream[] = [];
-    let _enrichSeries: Series[] = [];
 
     try {
       // ── Live TV ──────────────────────────────────────────────────────────
@@ -136,7 +141,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setVodCategories(cats);
         setVodStreams(streams);
         setRecentMovies(computeRecent(streams, "movies"));
-        _enrichMovies = streams;
         setSyncProgress((p) => ({ ...p, movies: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, movies: "error" }));
@@ -152,7 +156,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setSeriesCategories(cats);
         setSeriesList(list);
         setRecentSeries(computeRecent(list, "series"));
-        _enrichSeries = list;
         setSyncProgress((p) => ({ ...p, series: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, series: "error" }));
@@ -160,22 +163,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       setHasData(true);
 
-      // Fire-and-forget bulk rating enrichment.  The server queues all movie
-      // and series names for TMDB cert lookup in the background (300ms/item).
-      // Already-rated or already-queued items are silently skipped, so this
-      // call is cheap on repeated syncs after the first full run.
-      if (_enrichMovies.length > 0 || _enrichSeries.length > 0) {
-        fetch(new URL("/api/ratings/enrich", getApiUrl()).toString(), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            streams: [
-              ..._enrichMovies.map((s) => ({ id: String(s.stream_id), name: s.name, type: "movie" })),
-              ..._enrichSeries.map((s) => ({ id: String(s.series_id), name: s.name, type: "tv" })),
-            ],
-          }),
-        }).catch(() => {});
-      }
+      // Reload stream ratings so badges reflect whatever has been enriched
+      // from previous sessions.  Fire-and-forget; app stays usable either way.
+      Promise.all([
+        fetch(new URL("/api/stream-ratings?content_type=movie", getApiUrl()).toString())
+          .then((r) => (r.ok ? r.json() : [])),
+        fetch(new URL("/api/stream-ratings?content_type=tv", getApiUrl()).toString())
+          .then((r) => (r.ok ? r.json() : [])),
+      ])
+        .then(([movies, tv]: [any[], any[]]) => {
+          const map = new Map<number, StreamRating>();
+          for (const r of [...movies, ...tv]) {
+            if (r.stream_id && r.certification)
+              map.set(r.stream_id, { certification: r.certification, age_int: r.age_int });
+          }
+          setStreamRatings(map);
+        })
+        .catch(() => {});
     } finally {
       setIsSyncing(false);
       syncRunning.current = false;
@@ -200,6 +204,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [isAuthenticated]);
 
+  // Start background enricher once after the first successful sync.
+  // The enricher calls getVodInfo in batches to get tmdb_id + mpaa_rating for
+  // every movie, then pushes to /api/stream-ratings/batch.  Series use embedded
+  // fields + server-side TMDB name search.  AsyncStorage watermarks let it
+  // resume across app restarts.  enricherStarted prevents re-running on refresh.
+  useEffect(() => {
+    if (!hasData || vodStreams.length === 0) return;
+    if (enricherStarted.current) return;
+    enricherStarted.current = true;
+    const ctrl = new AbortController();
+    enricherAbort.current = ctrl;
+    runRatingsEnricher(
+      vodStreams,
+      seriesList,
+      getApiUrl(),
+      (progress) => setEnrichProgress(progress),
+      (newRatings) =>
+        setStreamRatings((prev) => {
+          const next = new Map(prev);
+          for (const [k, v] of newRatings) next.set(k, v);
+          return next;
+        }),
+      ctrl.signal
+    ).catch(() => {});
+    return () => {
+      ctrl.abort();
+    };
+  }, [hasData, vodStreams.length]);
+
   return (
     <DataContext.Provider
       value={{
@@ -215,6 +248,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         recentMovies,
         recentSeries,
         refresh: sync,
+        streamRatings,
+        enrichProgress,
       }}
     >
       {children}
