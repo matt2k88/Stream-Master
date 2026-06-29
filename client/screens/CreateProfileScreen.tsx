@@ -27,6 +27,33 @@ import { getApiUrl } from "@/lib/query-client";
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type CreateProfileRouteProp = RouteProp<RootStackParamList, "CreateProfile">;
 
+/** Generic pressable with D-pad / hover focus state built-in */
+function FocusPressable({
+  style,
+  onPress,
+  children,
+}: {
+  style: (isActive: boolean) => any;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={style(isActive)}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 const AVATAR_ICONS: Array<keyof typeof Feather.glyphMap> = [
   "user", "smile", "star", "heart", "zap", "sun", "moon",
   "music", "coffee", "compass", "shield", "award",
@@ -589,8 +616,8 @@ export default function CreateProfileScreen() {
     <View style={styles.section}>
       <ThemedText style={styles.sectionLabel}>Parental Controls</ThemedText>
       {editing && editing.parental_controls?.enabled ? (
-        <Pressable
-          style={({ pressed }) => [styles.pinToggleRow, styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+        <FocusPressable
+          style={(isActive) => [styles.pinToggleRow, styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
           onPress={() => (navigation as any).navigate("ParentalControls")}
         >
           <View style={styles.pinToggleLeft}>
@@ -603,11 +630,11 @@ export default function CreateProfileScreen() {
             </View>
           </View>
           <Feather name="chevron-right" size={16} color={Colors.dark.textSecondary} />
-        </Pressable>
+        </FocusPressable>
       ) : (
         <>
-          <Pressable
-            style={({ pressed }) => [styles.pinToggleRow, parentalEnabled && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+          <FocusPressable
+            style={(isActive) => [styles.pinToggleRow, parentalEnabled && styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
             onPress={() => {
               const next = !parentalEnabled;
               setParentalEnabled(next);
@@ -632,7 +659,7 @@ export default function CreateProfileScreen() {
             <View style={[styles.toggleTrack, parentalEnabled && styles.toggleTrackOn]}>
               <View style={[styles.toggleThumb, parentalEnabled && styles.toggleThumbOn]} />
             </View>
-          </Pressable>
+          </FocusPressable>
           {parentalEnabled && parentalPinStep !== "done" ? (
             <View style={styles.pinInputSection}>
               <ThemedText style={styles.pinLabel}>
@@ -676,9 +703,12 @@ export default function CreateProfileScreen() {
                 ))}
               </View>
               {parentalPinStep === "confirm" ? (
-                <Pressable onPress={() => { setParentalPinConfirm(""); setParentalPinStep("set"); }}>
+                <FocusPressable
+                  style={(isActive) => [{ alignSelf: "center", padding: Spacing.sm, borderRadius: BorderRadius.sm }, isActive && { backgroundColor: Colors.dark.backgroundDefault }]}
+                  onPress={() => { setParentalPinConfirm(""); setParentalPinStep("set"); }}
+                >
                   <ThemedText style={styles.pinToggleSubtitle}>Back</ThemedText>
-                </Pressable>
+                </FocusPressable>
               ) : null}
             </View>
           ) : null}
@@ -686,9 +716,9 @@ export default function CreateProfileScreen() {
             <View style={{ gap: 6, marginTop: 4 }}>
               <ThemedText style={styles.pinToggleSubtitle}>Select the highest rating to allow:</ThemedText>
               {BBFC_RATINGS_CREATE.map((r) => (
-                <Pressable
+                <FocusPressable
                   key={r.code}
-                  style={({ pressed }) => [styles.pinToggleRow, allowedRatings.includes(r.code) && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+                  style={(isActive) => [styles.pinToggleRow, allowedRatings.includes(r.code) && styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
                   onPress={() => setAllowedRatings((prev) => prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code])}
                 >
                   <View style={styles.pinToggleLeft}>
@@ -700,10 +730,10 @@ export default function CreateProfileScreen() {
                   <View style={[styles.pcCheckbox, allowedRatings.includes(r.code) && styles.pcCheckboxOn]}>
                     {allowedRatings.includes(r.code) ? <Feather name="check" size={11} color="#fff" /> : null}
                   </View>
-                </Pressable>
+                </FocusPressable>
               ))}
-              <Pressable
-                style={({ pressed }) => [styles.pinToggleRow, showUnclassified && styles.pinToggleRowEnabled, pressed && styles.pinToggleRowActive]}
+              <FocusPressable
+                style={(isActive) => [styles.pinToggleRow, showUnclassified && styles.pinToggleRowEnabled, isActive && styles.pinToggleRowActive]}
                 onPress={() => setShowUnclassified((v) => !v)}
               >
                 <View style={styles.pinToggleLeft}>
@@ -715,7 +745,7 @@ export default function CreateProfileScreen() {
                 <View style={[styles.toggleTrack, showUnclassified && styles.toggleTrackOn]}>
                   <View style={[styles.toggleThumb, showUnclassified && styles.toggleThumbOn]} />
                 </View>
-              </Pressable>
+              </FocusPressable>
             </View>
           ) : null}
         </>

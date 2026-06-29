@@ -112,6 +112,32 @@ function ToggleRow({
   );
 }
 
+/** Pressable that reacts to both touch-press AND D-pad / pointer focus */
+function FocusBtn({
+  style,
+  onPress,
+  disabled,
+  children,
+}: {
+  style: (state: { pressed: boolean; focused: boolean }) => any;
+  onPress?: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <Pressable
+      style={({ pressed }) => style({ pressed, focused })}
+      onPress={onPress}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 /* ── Main screen ─────────────────────────────────────────────────────── */
 export default function ParentalControlsScreen() {
   const navigation = useNavigation();
@@ -304,8 +330,8 @@ export default function ParentalControlsScreen() {
               ))}
             </View>
 
-            <Pressable
-              style={({ pressed }) => [styles.enableBtn, pressed && styles.enableBtnPressed, saving && { opacity: 0.6 }]}
+            <FocusBtn
+              style={({ pressed, focused }) => [styles.enableBtn, (pressed || focused) && styles.enableBtnPressed, saving && { opacity: 0.6 }]}
               onPress={handleEnable}
               disabled={saving}
             >
@@ -319,7 +345,7 @@ export default function ParentalControlsScreen() {
               <ThemedText style={styles.enableBtnText}>
                 {saving ? "Enabling..." : "Enable Parental Controls"}
               </ThemedText>
-            </Pressable>
+            </FocusBtn>
           </View>
         ) : (
           /* ── Settings section (enabled) ──────────────────────────────── */
@@ -354,8 +380,8 @@ export default function ParentalControlsScreen() {
 
             {/* Action row: Save · Change PIN · Disable */}
             <View style={styles.actionRow}>
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, styles.saveBtnSmall, !dirty && styles.saveBtnDisabled, pressed && dirty && styles.saveBtnPressed, saving && { opacity: 0.6 }]}
+              <FocusBtn
+                style={({ pressed, focused }) => [styles.actionBtn, styles.saveBtnSmall, !dirty && styles.saveBtnDisabled, (pressed || focused) && dirty && styles.saveBtnPressed, saving && { opacity: 0.6 }]}
                 onPress={() => {
                   if (!dirty) return;
                   if (hasPin) setPinModal({ visible: true, action: "save" });
@@ -372,23 +398,23 @@ export default function ParentalControlsScreen() {
                 <ThemedText style={[styles.actionBtnText, !dirty && styles.saveBtnTextDim]}>
                   {saving ? "Saving…" : "Save Changes"}
                 </ThemedText>
-              </Pressable>
+              </FocusBtn>
 
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, styles.changePinBtn, pressed && styles.pinActionBtnActive]}
+              <FocusBtn
+                style={({ pressed, focused }) => [styles.actionBtn, styles.changePinBtn, (pressed || focused) && styles.pinActionBtnActive]}
                 onPress={() => setPinModal({ visible: true, action: "changePin" })}
               >
                 <Feather name="key" size={13} color={Colors.dark.textSecondary} />
                 <ThemedText style={styles.changePinText}>Change PIN</ThemedText>
-              </Pressable>
+              </FocusBtn>
 
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, styles.disableBtn, pressed && styles.disableBtnActive]}
+              <FocusBtn
+                style={({ pressed, focused }) => [styles.actionBtn, styles.disableBtn, (pressed || focused) && styles.disableBtnActive]}
                 onPress={() => setPinModal({ visible: true, action: "disable" })}
               >
                 <Feather name="shield-off" size={13} color={Colors.dark.error} />
                 <ThemedText style={styles.disableBtnText}>Disable</ThemedText>
-              </Pressable>
+              </FocusBtn>
             </View>
           </>
         )}
