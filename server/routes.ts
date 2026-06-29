@@ -3986,35 +3986,6 @@ CRITICAL MOTORSPORT RULES — read carefully before classifying any motor racing
     return res.json(enrichStats);
   });
 
-  app.get("/api/test-tmdb", async (req, res) => {
-    const v3Key   = (process.env.TMDB_API_KEY   ?? "").trim();
-    const v4Raw   = process.env.TMDB_READ_TOKEN ?? "";
-    const v4Token = v4Raw.trim();
-    const parts = v4Token.split(".");
-    let nbf = "none", sub = "none";
-    try { const p = JSON.parse(Buffer.from(parts[1] ?? "", "base64").toString()); nbf = p.nbf ? new Date(p.nbf*1000).toISOString() : "none"; sub = (p.sub ?? "").substring(0,8); } catch {}
-
-    const results: any = { v3KeyLen: v3Key.length, v4TokenLen: v4Token.length, v4Nbf: nbf, v4Sub: sub };
-
-    if (v3Key) {
-      try {
-        const r = await fetch(`https://api.themoviedb.org/3/search/movie?query=Matrix&include_adult=false&api_key=${v3Key}`, { headers: { accept: "application/json" } });
-        const d: any = await r.json();
-        results.v3Status = r.status; results.v3Results = d.results?.length ?? 0; results.v3Error = d.status_message ?? null;
-      } catch (e: any) { results.v3Error = e.message; }
-    }
-
-    if (v4Token) {
-      try {
-        const r = await fetch("https://api.themoviedb.org/3/search/movie?query=Matrix&include_adult=false", { headers: { Authorization: `Bearer ${v4Token}`, accept: "application/json" } });
-        const d: any = await r.json();
-        results.v4Status = r.status; results.v4Results = d.results?.length ?? 0; results.v4Error = d.status_message ?? null;
-      } catch (e: any) { results.v4Error = e.message; }
-    }
-
-    return res.json(results);
-  });
-
   const httpServer = createServer(app);
   return httpServer;
 }

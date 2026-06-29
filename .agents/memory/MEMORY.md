@@ -10,3 +10,4 @@
 - [VLC live reconnect](vlc-live-reconnect.md) — live freeze is provider-side (no 3h timer in our code); recovery needs --http-reconnect + engine-aware stall gate + playToEnd→reconnect, all three.
 - [VLC hardware-decode preference](vlc-hw-decode.md) — player_hw_decode auto/on/off; "auto" must OMIT --avcodec-hw on bridge path; raw Android VOD keeps mediacodec for auto/on, software only for off.
 - [findNodeHandle on web](findnodehandle-web.md) — findNodeHandle throws on RN-web & is flagged as an app crash; guard every call (web no-op), tags are native TV-focus only.
+- [TMDB API key type](tmdb-api-key.md) — use v3 API key (TMDB_API_KEY, 32-char alphanumeric, ?api_key=) not v4 JWT Bearer (TMDB_READ_TOKEN); v4 JWTs can be silently revoked server-side.
