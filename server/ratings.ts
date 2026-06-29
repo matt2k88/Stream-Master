@@ -59,13 +59,23 @@ function pickBestCert(
 }
 
 // ── TMDB fetch helper ─────────────────────────────────────────────────────────
+// Supports v3 API key (?api_key=) OR v4 Bearer token — whichever is available.
+// Prefers TMDB_API_KEY (v3, short alphanumeric) over TMDB_READ_TOKEN (v4 JWT).
 async function tmdbFetch(path: string): Promise<any | null> {
-  const token = process.env.TMDB_READ_TOKEN;
-  if (!token) return null;
+  const v3Key   = (process.env.TMDB_API_KEY   ?? "").trim();
+  const v4Token = (process.env.TMDB_READ_TOKEN ?? "").trim();
+  if (!v3Key && !v4Token) return null;
   try {
-    const r = await fetch(`https://api.themoviedb.org/3${path}`, {
-      headers: { Authorization: `Bearer ${token}`, accept: "application/json" },
-    });
+    let url: string;
+    const headers: Record<string, string> = { accept: "application/json" };
+    if (v3Key) {
+      const sep = path.includes("?") ? "&" : "?";
+      url = `https://api.themoviedb.org/3${path}${sep}api_key=${v3Key}`;
+    } else {
+      url = `https://api.themoviedb.org/3${path}`;
+      headers["Authorization"] = `Bearer ${v4Token}`;
+    }
+    const r = await fetch(url, { headers });
     if (!r.ok) return null;
     return r.json();
   } catch {
