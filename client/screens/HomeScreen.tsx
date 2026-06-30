@@ -1235,8 +1235,15 @@ export default function HomeScreen() {
     }
   }, [navigation]);
 
+  const isAdvertContentRestricted = useCallback((advert: Advert): boolean => {
+    if (!parentalFilter) return false;
+    if (!advert.content_type || !advert.content_id) return false;
+    return !parentalFilter(advert.content_id, advert.content_name ?? advert.name, advert.content_type);
+  }, [parentalFilter]);
+
   const handleAdvertPress = useCallback((advert: Advert) => {
     if (!advert.content_type || !advert.content_id) return;
+    if (isAdvertContentRestricted(advert)) return;
     if (advert.content_type === "movie") {
       navigation.navigate("MovieInfo", {
         streamId: Number(advert.content_id),
@@ -1250,7 +1257,7 @@ export default function HomeScreen() {
         cover: advert.content_icon ?? "",
       });
     }
-  }, [navigation]);
+  }, [navigation, isAdvertContentRestricted]);
 
   const watchRows = isGuest ? (
     <View style={[styles.watchCard, styles.guestPromptCard]}>
@@ -1400,7 +1407,7 @@ export default function HomeScreen() {
                   flexGrow:1 lets short landscape viewports scroll instead of
                   clipping. */}
               <View style={styles.advertBannerLandscape}>
-                <AdvertCarousel orientation="landscape" onFocusTag={(t) => setCarouselTag(t ?? undefined)} onContentPress={handleAdvertPress} />
+                <AdvertCarousel orientation="landscape" onFocusTag={(t) => setCarouselTag(t ?? undefined)} onContentPress={handleAdvertPress} isContentRestricted={isAdvertContentRestricted} />
               </View>
 
               {/* Quick-action cards — portrait/mobile only; sidebar covers nav in landscape */}
@@ -1482,7 +1489,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.advertBannerPortrait}>
-              <AdvertCarousel orientation="portrait" onContentPress={handleAdvertPress} />
+              <AdvertCarousel orientation="portrait" onContentPress={handleAdvertPress} isContentRestricted={isAdvertContentRestricted} />
             </View>
 
             <View style={styles.gridWrap}>

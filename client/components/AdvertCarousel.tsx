@@ -59,11 +59,13 @@ export default function AdvertCarousel({
   orientation,
   onFocusTag,
   onContentPress,
+  isContentRestricted,
 }: {
   style?: any;
   orientation?: "landscape" | "portrait";
   onFocusTag?: (tag: number | null) => void;
   onContentPress?: (advert: Advert) => void;
+  isContentRestricted?: (advert: Advert) => boolean;
 }) {
   const [adverts, setAdverts] = useState<Advert[]>([]);
   const [currIdx, setCurrIdx] = useState(0);
@@ -203,13 +205,14 @@ export default function AdvertCarousel({
   const catIcon    = (CATEGORY_ICON[catKey] ?? "star") as keyof typeof Feather.glyphMap;
   const catLabel   = CATEGORY_LABEL[catKey] ?? catKey.replace(/_/g, " ").toUpperCase();
   const hasContent = !!(current.content_type && current.content_id);
+  const restricted = hasContent && !!(isContentRestricted?.(current));
   const isMovie    = current.content_type === "movie";
   const isSeries   = current.content_type === "series";
-  const ctaLabel   = isMovie ? "Go to Movie" : isSeries ? "Go to Series" : null;
+  const ctaLabel   = (!restricted && isMovie) ? "Go to Movie" : (!restricted && isSeries) ? "Go to Series" : null;
   const ctaIcon: keyof typeof Feather.glyphMap = isMovie ? "film" : "grid";
 
   const handlePress = () => {
-    if (hasContent && onContentPress) onContentPress(current);
+    if (hasContent && !restricted && onContentPress) onContentPress(current);
   };
 
   return (
