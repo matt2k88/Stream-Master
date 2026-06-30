@@ -589,6 +589,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   genreBadge: {
+    flexShrink: 1,
     backgroundColor: Colors.dark.accentDim,
     borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.sm,
