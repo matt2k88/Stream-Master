@@ -787,12 +787,12 @@ export default function SportListingsScreen() {
   useFocusEffect(useCallback(() => { fetchListings(); }, [fetchListings]));
 
   const handleChannel = useCallback((stream: LiveStream) => {
-    navigation.navigate("LivePreview", {
-      streamId: stream.stream_id,
-      name: stream.name,
+    navigation.navigate("Player", {
       streamUrl: xtreamApi.getLiveStreamUrl(stream.stream_id),
+      title: stream.name,
+      type: "live",
+      streamId: String(stream.stream_id),
       thumbnail: stream.stream_icon ?? undefined,
-      streamIcon: stream.stream_icon ?? undefined,
     });
   }, [navigation]);
 
