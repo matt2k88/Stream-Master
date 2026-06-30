@@ -136,7 +136,7 @@ export default function ParentalControlsScreen() {
 
   const [maxAge, setMaxAge] = useState<number>(deriveMaxAge(existing));
   const [showUnclassified, setShowUnclassified] = useState(
-    existing?.show_unclassified ?? true
+    existing?.show_unclassified ?? false
   );
   const [dirty, setDirty] = useState(false);
 

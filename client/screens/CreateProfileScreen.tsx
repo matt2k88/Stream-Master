@@ -252,7 +252,7 @@ export default function CreateProfileScreen() {
     return allowed.length === 0 ? 15 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
   });
   const [showUnclassified, setShowUnclassified] = useState(
-    editing?.parental_controls?.show_unclassified ?? true
+    editing?.parental_controls?.show_unclassified ?? false
   );
 
   // Poll only while the modal is open and we don't have a pending image yet

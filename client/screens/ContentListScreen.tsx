@@ -1055,7 +1055,7 @@ export default function ContentListScreen() {
   const parentalFilter = useMemo(() => {
     const pc = activeProfile?.parental_controls;
     if (!pc?.enabled) return null;
-    const showUnclassified = pc.show_unclassified ?? true;
+    const showUnclassified = pc.show_unclassified ?? false;
     // Use max_age when set (new style). Fall back to deriving from legacy allowed_ratings.
     let maxAge: number;
     if (pc.max_age != null) {
