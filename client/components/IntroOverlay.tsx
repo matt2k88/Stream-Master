@@ -148,7 +148,7 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
   const [videoUrl, setVideoUrl] = useState<string | null | false>(null);
 
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
   }, []);
 
   useEffect(() => {

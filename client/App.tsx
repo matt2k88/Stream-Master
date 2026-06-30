@@ -41,9 +41,9 @@ export default function App() {
   // Keep the device awake the whole time the app is in the foreground.
   useKeepAwake();
 
-  // Force portrait throughout the entire app.
+  // Force landscape throughout the entire app.
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
   }, []);
 
   const [introComplete, setIntroComplete] = useState(false);

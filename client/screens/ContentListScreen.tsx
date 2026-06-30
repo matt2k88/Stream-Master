@@ -1083,6 +1083,20 @@ export default function ContentListScreen() {
     };
   }, [activeProfile?.parental_controls, streamRatings]);
 
+  // Human-readable label for the age restriction badge, e.g. "12+" or "PG (8+)"
+  const parentalAgeLabel = useMemo(() => {
+    const pc = activeProfile?.parental_controls;
+    if (!pc?.enabled) return "";
+    const maxAge = pc.max_age ?? -1;
+    if (maxAge <= 0) return "Universal";
+    if (maxAge <= 8) return "PG (8+)";
+    if (maxAge <= 12) return "12+";
+    if (maxAge <= 13) return "13+";
+    if (maxAge <= 15) return "15+";
+    if (maxAge <= 17) return "17+";
+    return "18+";
+  }, [activeProfile?.parental_controls]);
+
   // Parental-filtered category list — hides XXX sidebar entries when <18 allowed
   const filteredCategories: SidebarCat[] = useMemo(() => {
     if (!parentalFilter) return categories;
@@ -1385,16 +1399,17 @@ export default function ContentListScreen() {
     return out;
   }, [trimmedQuery, normalisedSection]);
 
-  // Parental-filter search results the same way as category content
+  // Parental-filter search results the same way as category content.
+  // When the user has unlocked via PIN, skip the filter entirely.
   const filteredSearchResults: ContentItem[] = useMemo(() => {
-    if (!parentalFilter) return searchResults;
+    if (!parentalFilter || parentalSearchUnlocked) return searchResults;
     return searchResults.filter((item) => {
       const id = type === "series"
         ? (item as Series).series_id
         : (item as LiveStream | VodStream).stream_id;
       return parentalFilter.filterStream(id, (item as any).name ?? "");
     });
-  }, [searchResults, parentalFilter, type]);
+  }, [searchResults, parentalFilter, parentalSearchUnlocked, type]);
 
   const fullDisplayContent = isSearching ? filteredSearchResults : filteredCategoryContent;
 
@@ -1808,43 +1823,65 @@ export default function ContentListScreen() {
       ? watchlistTotal
       : fullDisplayContent.length;
 
+  const showParentalBadge = !!parentalFilter && (type === "movies" || type === "series");
+  const blockedCount = showParentalBadge && isSearching && !parentalSearchUnlocked
+    ? searchResults.length - filteredSearchResults.length
+    : 0;
+  const showFilteredNotice = blockedCount > 0;
+
   const searchBarHeader = (
     <View style={styles.searchBarWrap}>
-      <View style={[styles.searchBar, isSearching && styles.searchBarActive]}>
-        <Feather
-          name="search"
-          size={15}
-          color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
-        />
-        <TextInput
-          ref={searchInputRef}
-          style={styles.searchInput}
-          placeholder={sectionPlaceholder}
-          placeholderTextColor={Colors.dark.textSecondary}
-          value={query}
-          onChangeText={setQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          submitBehavior="blurAndSubmit"
-          onSubmitEditing={() => {
-            setSubmittedQuery(query);
-            searchInputRef.current?.blur();
-            Keyboard.dismiss();
-          }}
-          focusable={!Platform.isTV}
-        />
-        {query.length > 0 ? (
-          <SearchClearButton
-            size="sm"
-            onPress={() => {
-              setQuery("");
-              setSubmittedQuery("");
+      {/* Search input row — splits 50/50 with age restriction badge on parental profiles */}
+      <View style={styles.searchBarRow}>
+        <View style={[
+          styles.searchBar,
+          isSearching && styles.searchBarActive,
+          showParentalBadge && styles.searchBarHalf,
+        ]}>
+          <Feather
+            name="search"
+            size={15}
+            color={isSearching ? Colors.dark.accent : Colors.dark.textSecondary}
+          />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            placeholder={sectionPlaceholder}
+            placeholderTextColor={Colors.dark.textSecondary}
+            value={query}
+            onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+            submitBehavior="blurAndSubmit"
+            onSubmitEditing={() => {
+              setSubmittedQuery(query);
               searchInputRef.current?.blur();
               Keyboard.dismiss();
             }}
+            focusable={!Platform.isTV}
           />
+          {query.length > 0 ? (
+            <SearchClearButton
+              size="sm"
+              onPress={() => {
+                setQuery("");
+                setSubmittedQuery("");
+                searchInputRef.current?.blur();
+                Keyboard.dismiss();
+              }}
+            />
+          ) : null}
+        </View>
+        {showParentalBadge ? (
+          <View style={styles.parentalBadge}>
+            <Feather name="shield" size={13} color={Colors.dark.accent} />
+            <View style={styles.parentalBadgeText}>
+              <ThemedText style={styles.parentalBadgeLabel}>Age Restriction</ThemedText>
+              <ThemedText style={styles.parentalBadgeAge}>{parentalAgeLabel}</ThemedText>
+            </View>
+          </View>
         ) : null}
       </View>
       {isSearching ? (
@@ -1863,6 +1900,23 @@ export default function ContentListScreen() {
           ) : null}
         </View>
       ) : null}
+      {/* Filtered-content notice — shown when parental controls hid some search results */}
+      {showFilteredNotice ? (
+        <Pressable
+          style={styles.parentalNotice}
+          onPress={() => {
+            setPinEntry("");
+            setPinError(false);
+            setShowParentalPinModal(true);
+          }}
+        >
+          <Feather name="eye-off" size={13} color={Colors.dark.accent} style={{ marginRight: 6 }} />
+          <ThemedText style={styles.parentalNoticeText}>
+            {`${blockedCount} item${blockedCount === 1 ? "" : "s"} hidden due to age restrictions. `}
+            <ThemedText style={styles.parentalNoticeLink}>Enter PIN to view all content.</ThemedText>
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -1879,6 +1933,95 @@ export default function ContentListScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Parental PIN unlock modal for search results */}
+      <Modal
+        visible={showParentalPinModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowParentalPinModal(false)}
+      >
+        <Pressable style={styles.pinModalBackdrop} onPress={() => setShowParentalPinModal(false)}>
+          <Pressable style={styles.pinModalCard} onPress={(e) => e.stopPropagation()}>
+            <Pressable
+              style={styles.pinModalClose}
+              onPress={() => setShowParentalPinModal(false)}
+            >
+              <Feather name="x" size={14} color={Colors.dark.textSecondary} />
+            </Pressable>
+            <Feather name="shield" size={22} color={Colors.dark.accent} />
+            <ThemedText style={styles.pinModalTitle}>Enter Parental PIN</ThemedText>
+            <ThemedText style={styles.pinModalSub}>Enter your PIN to view all search results</ThemedText>
+            <Animated.View style={[styles.pinDots, { transform: [{ translateX: pinShakeAnim }] }]}>
+              {[0, 1, 2, 3].map((i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.pinDot,
+                    {
+                      borderColor: pinError ? Colors.dark.error : pinEntry.length > i ? Colors.dark.accent : Colors.dark.border,
+                      backgroundColor: pinError ? Colors.dark.error : pinEntry.length > i ? Colors.dark.accent : "transparent",
+                    },
+                  ]}
+                />
+              ))}
+            </Animated.View>
+            {pinError ? (
+              <ThemedText style={styles.pinErrorText}>Incorrect PIN</ThemedText>
+            ) : (
+              <View style={{ height: 16 }} />
+            )}
+            <View style={styles.pinPad}>
+              {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((key, idx) => {
+                if (!key) return <View key={idx} style={styles.pinKeyEmpty} />;
+                const isDelete = key === "⌫";
+                return (
+                  <Pressable
+                    key={idx}
+                    style={({ pressed }) => [
+                      styles.pinKey,
+                      isDelete && styles.pinKeyDelete,
+                      pressed && styles.pinKeyActive,
+                    ]}
+                    onPress={() => {
+                      if (isDelete) {
+                        setPinEntry((p) => p.slice(0, -1));
+                        setPinError(false);
+                        return;
+                      }
+                      if (pinEntry.length >= 4) return;
+                      const next = pinEntry + key;
+                      setPinEntry(next);
+                      if (next.length === 4) {
+                        const correctPin = activeProfile?.parental_pin;
+                        if (next === correctPin) {
+                          setParentalSearchUnlocked(true);
+                          setShowParentalPinModal(false);
+                          setPinEntry("");
+                        } else {
+                          setPinError(true);
+                          Animated.sequence([
+                            Animated.timing(pinShakeAnim, { toValue: 10, duration: 60, useNativeDriver: true }),
+                            Animated.timing(pinShakeAnim, { toValue: -10, duration: 60, useNativeDriver: true }),
+                            Animated.timing(pinShakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+                            Animated.timing(pinShakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+                            Animated.timing(pinShakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+                          ]).start(() => { setPinEntry(""); setPinError(false); });
+                        }
+                      }
+                    }}
+                  >
+                    {isDelete
+                      ? <Feather name="delete" size={14} color={Colors.dark.textSecondary} />
+                      : <ThemedText style={styles.pinKeyText}>{key}</ThemedText>
+                    }
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Confirm Clear All modal */}
       <Modal
         visible={showClearConfirm}
@@ -2505,4 +2648,81 @@ const styles = StyleSheet.create({
   emptyTitle: { color: Colors.dark.text, fontSize: 16, fontWeight: "700" },
   emptyText: { color: Colors.dark.textSecondary, fontSize: 14, textAlign: "center", paddingHorizontal: Spacing.xl },
   loadingText: { color: Colors.dark.textSecondary, fontSize: 14 },
+
+  // Search bar row — flex row so parental badge sits beside the input
+  searchBarRow: { flexDirection: "row", alignItems: "stretch", gap: Spacing.sm },
+  searchBarHalf: { flex: 1 },
+
+  // Age restriction badge (right half of search bar row)
+  parentalBadge: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,102,0,0.35)",
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    height: 42,
+  },
+  parentalBadgeText: { flex: 1 },
+  parentalBadgeLabel: { fontSize: 10, color: Colors.dark.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  parentalBadgeAge: { fontSize: 14, color: Colors.dark.accent, fontWeight: "700" },
+
+  // Filtered-content notice banner
+  parentalNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,102,0,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.25)",
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: 2,
+  },
+  parentalNoticeText: { flex: 1, fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 17 },
+  parentalNoticeLink: { fontSize: 12, color: Colors.dark.accent, fontWeight: "600" },
+
+  // Parental PIN unlock modal
+  pinModalBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.78)",
+    justifyContent: "center", alignItems: "center",
+  },
+  pinModalCard: {
+    width: 280,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    paddingVertical: Spacing.xl, paddingHorizontal: Spacing["2xl"],
+    alignItems: "center", gap: Spacing.sm,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.6, shadowRadius: 24, elevation: 20,
+    position: "relative",
+  },
+  pinModalClose: {
+    position: "absolute", top: Spacing.sm, right: Spacing.sm,
+    width: 26, height: 26, borderRadius: BorderRadius.full,
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+    zIndex: 10,
+  },
+  pinModalTitle: { fontSize: 15, fontWeight: "700", color: Colors.dark.text, textAlign: "center" },
+  pinModalSub: { fontSize: 12, color: Colors.dark.textSecondary, textAlign: "center" },
+  pinDots: { flexDirection: "row", gap: Spacing.md, marginTop: Spacing.xs },
+  pinDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2 },
+  pinErrorText: { color: Colors.dark.error, fontSize: 12, fontWeight: "500", height: 16 },
+  pinPad: { flexDirection: "row", flexWrap: "wrap", gap: 6, width: 3 * 46 + 2 * 6, justifyContent: "center", marginTop: Spacing.xs },
+  pinKey: {
+    width: 46, height: 46, borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.backgroundRoot,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  pinKeyEmpty: { width: 46, height: 46 },
+  pinKeyDelete: { backgroundColor: "transparent", borderColor: "transparent" },
+  pinKeyActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
+  pinKeyText: { color: Colors.dark.text, fontSize: 16, fontWeight: "600" },
 });
