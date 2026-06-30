@@ -58,7 +58,6 @@ function ProfileAvatar({
               width: ring + 22,
               height: ring + 22,
               borderRadius: (ring + 22) / 2,
-              shadowColor: color,
             },
           ]}
         />
@@ -73,9 +72,6 @@ function ProfileAvatar({
             height: ring,
             borderRadius: ring / 2,
             borderColor: color,
-            shadowColor: color,
-            shadowOpacity: active ? 0.65 : 0,
-            shadowRadius: active ? 10 : 0,
             elevation: 0,
           },
         ]}
@@ -251,8 +247,6 @@ function AddProfileCard({
                   width: ring + 22,
                   height: ring + 22,
                   borderRadius: (ring + 22) / 2,
-                  shadowColor: Colors.dark.accent,
-                  backgroundColor: Colors.dark.accent + "1A",
                 },
               ]}
             />
@@ -265,9 +259,6 @@ function AddProfileCard({
                 height: ring,
                 borderRadius: ring / 2,
                 borderColor: isActive ? Colors.dark.accent : Colors.dark.border,
-                shadowColor: Colors.dark.accent,
-                shadowOpacity: isActive ? 0.55 : 0,
-                shadowRadius: isActive ? 8 : 0,
                 elevation: 0,
               },
             ]}
@@ -366,8 +357,6 @@ function GuestCard({
                   width: ring + 22,
                   height: ring + 22,
                   borderRadius: (ring + 22) / 2,
-                  shadowColor: Colors.dark.accent,
-                  backgroundColor: Colors.dark.accent + "1A",
                 },
               ]}
             />
@@ -380,9 +369,6 @@ function GuestCard({
                 height: ring,
                 borderRadius: ring / 2,
                 borderColor: isActive ? Colors.dark.accent : Colors.dark.border,
-                shadowColor: Colors.dark.accent,
-                shadowOpacity: isActive ? 0.55 : 0,
-                shadowRadius: isActive ? 8 : 0,
                 elevation: 0,
               },
             ]}
@@ -704,10 +690,7 @@ const styles = StyleSheet.create({
   iconBtnActive: {
     borderColor: Colors.dark.accent,
     backgroundColor: Colors.dark.accentDim,
-    shadowColor: Colors.dark.accent,
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    elevation: 6,
+    elevation: 0,
   },
 
   /* Divider */
@@ -739,8 +722,8 @@ const styles = StyleSheet.create({
   haloOuter: {
     position: "absolute",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
+    shadowOpacity: 0,
+    shadowRadius: 0,
     elevation: 0,
   },
   avatarRing: {
