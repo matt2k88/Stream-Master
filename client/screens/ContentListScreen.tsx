@@ -992,8 +992,9 @@ export default function ContentListScreen() {
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [categorySwitching, setCategorySwitching] = useState(false);
 
-  // Parental PIN unlock for search results
+  // Parental PIN unlock for search results — resets on every new search term
   const [parentalSearchUnlocked, setParentalSearchUnlocked] = useState(false);
+  useEffect(() => { setParentalSearchUnlocked(false); }, [submittedQuery]);
   const [noticeFocused, setNoticeFocused] = useState(false);
   const [showParentalPinModal, setShowParentalPinModal] = useState(false);
   const [pinEntry, setPinEntry] = useState("");
