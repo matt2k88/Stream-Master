@@ -994,6 +994,7 @@ export default function ContentListScreen() {
 
   // Parental PIN unlock for search results
   const [parentalSearchUnlocked, setParentalSearchUnlocked] = useState(false);
+  const [noticeFocused, setNoticeFocused] = useState(false);
   const [showParentalPinModal, setShowParentalPinModal] = useState(false);
   const [pinEntry, setPinEntry] = useState("");
   const [pinError, setPinError] = useState(false);
@@ -1903,17 +1904,23 @@ export default function ContentListScreen() {
       {/* Filtered-content notice — shown when parental controls hid some search results */}
       {showFilteredNotice ? (
         <Pressable
-          style={styles.parentalNotice}
+          style={[styles.parentalNotice, noticeFocused && styles.parentalNoticeFocused]}
           onPress={() => {
             setPinEntry("");
             setPinError(false);
             setShowParentalPinModal(true);
           }}
+          onFocus={() => setNoticeFocused(true)}
+          onBlur={() => setNoticeFocused(false)}
+          focusable
         >
-          <Feather name="eye-off" size={13} color={Colors.dark.accent} style={{ marginRight: 6 }} />
-          <ThemedText style={styles.parentalNoticeText}>
+          {noticeFocused ? (
+            <View style={styles.parentalNoticeFocusOverlay} pointerEvents="none" />
+          ) : null}
+          <Feather name="eye-off" size={13} color={noticeFocused ? "#fff" : Colors.dark.accent} style={{ marginRight: 6 }} />
+          <ThemedText style={[styles.parentalNoticeText, noticeFocused && styles.parentalNoticeTextFocused]}>
             {`${blockedCount} item${blockedCount === 1 ? "" : "s"} hidden due to age restrictions. `}
-            <ThemedText style={styles.parentalNoticeLink}>Enter PIN to view all content.</ThemedText>
+            <ThemedText style={[styles.parentalNoticeLink, noticeFocused && styles.parentalNoticeLinkFocused]}>Enter PIN to view all content.</ThemedText>
           </ThemedText>
         </Pressable>
       ) : null}
@@ -2683,7 +2690,24 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   parentalNoticeText: { flex: 1, fontSize: 12, color: Colors.dark.textSecondary, lineHeight: 17 },
+  parentalNoticeTextFocused: { color: "rgba(255,255,255,0.9)" },
   parentalNoticeLink: { fontSize: 12, color: Colors.dark.accent, fontWeight: "600" },
+  parentalNoticeLinkFocused: { color: "#fff" },
+  parentalNoticeFocused: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accent,
+    shadowColor: Colors.dark.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  parentalNoticeFocusOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    pointerEvents: "none",
+  },
 
   // Parental PIN unlock modal
   pinModalBackdrop: {
