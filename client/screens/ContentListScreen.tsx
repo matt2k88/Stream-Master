@@ -1102,6 +1102,13 @@ export default function ContentListScreen() {
     return "18+";
   }, [activeProfile?.parental_controls]);
 
+  // category_id → category_name for live streams (used in search parental filter)
+  const liveCatMap = useMemo(() => {
+    const m = new Map<string, string>();
+    liveCategories.forEach((c) => m.set(c.category_id, c.category_name));
+    return m;
+  }, [liveCategories]);
+
   // Parental-filtered category list — hides XXX sidebar entries when <18 allowed
   const filteredCategories: SidebarCat[] = useMemo(() => {
     if (!parentalFilter) return categories;
@@ -1405,16 +1412,24 @@ export default function ContentListScreen() {
   }, [trimmedQuery, normalisedSection]);
 
   // Parental-filter search results the same way as category content.
-  // When the user has unlocked via PIN, skip the filter entirely.
+  // For live TV we additionally block any channel whose category is restricted
+  // (e.g. "XXX ADULT ONLY XXX"), even when the channel's own name passes the
+  // name check.  When the user has unlocked via PIN, skip the filter entirely.
   const filteredSearchResults: ContentItem[] = useMemo(() => {
     if (!parentalFilter || parentalSearchUnlocked) return searchResults;
     return searchResults.filter((item) => {
       const id = type === "series"
         ? (item as Series).series_id
         : (item as LiveStream | VodStream).stream_id;
-      return parentalFilter.filterStream(id, (item as any).name ?? "", type);
+      if (!parentalFilter.filterStream(id, (item as any).name ?? "", type)) return false;
+      if (type === "live") {
+        const catId = (item as LiveStream).category_id;
+        const catName = catId ? (liveCatMap.get(catId) ?? "") : "";
+        if (catName && !parentalFilter.filterCategory(catName)) return false;
+      }
+      return true;
     });
-  }, [searchResults, parentalFilter, parentalSearchUnlocked, type]);
+  }, [searchResults, parentalFilter, parentalSearchUnlocked, type, liveCatMap]);
 
   const fullDisplayContent = isSearching ? filteredSearchResults : filteredCategoryContent;
 
