@@ -40,9 +40,6 @@ import TopPicksScreen from "@/screens/TopPicksScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
 import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
-import PlaylistDetailScreen from "@/screens/PlaylistDetailScreen";
-import MusicHomeScreen from "@/screens/MusicHomeScreen";
-import MusicPlayerScreen from "@/screens/MusicPlayerScreen";
 import ParentalControlsScreen from "@/screens/ParentalControlsScreen";
 
 export type RootStackParamList = {
@@ -83,19 +80,7 @@ export type RootStackParamList = {
   Referrals: undefined;
   UltraTube: undefined;
   SportListings: undefined;
-  PlaylistDetail: { playlistId: string; playlistName: string; isLikedSongs?: boolean };
-  MusicHome: undefined;
   ParentalControls: undefined;
-  MusicPlayer: {
-    queue?: Array<{ videoId: string; title: string; artist: string; album: string; duration: number; thumbnail: string; searchKey: string; }>;
-    startIndex?: number;
-    contextName?: string;
-    initialQuery?: string;
-    albumId?: number;
-    openPlaylistId?: string;
-    openPlaylistName?: string;
-    openIsLikedSongs?: boolean;
-  } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -170,9 +155,6 @@ export default function RootStackNavigator() {
             <Stack.Screen name="Referrals" component={ReferralsScreen} />
             <Stack.Screen name="UltraTube" component={UltraTubeScreen} />
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
-            <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
-            <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
-            <Stack.Screen name="MusicPlayer" component={MusicPlayerScreen} options={{ animation: "fade" }} />
             <Stack.Screen name="ParentalControls" component={ParentalControlsScreen} />
           </>
         )}

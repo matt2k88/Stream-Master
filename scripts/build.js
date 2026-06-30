@@ -136,7 +136,7 @@ async function startMetro() {
 
 async function downloadFile(url, outputPath) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120_000);
+  const timeoutId = setTimeout(() => controller.abort(), 360_000);
 
   try {
     console.log(`Downloading: ${url}`);
