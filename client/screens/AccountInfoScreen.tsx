@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
+  Image,
   useWindowDimensions,
   ScrollView,
   Alert,
@@ -546,19 +547,39 @@ export default function AccountInfoScreen() {
           // Defined once and slotted into the portrait single column or
           // the landscape two-column layout below.
 
+          const profileColor = activeProfile?.avatar_color ?? Colors.dark.accent;
           const userHero = (
-            <View style={[styles.userCard, isLandscape && styles.userCardLandscape]}>
+            <View style={[styles.userCard, isLandscape && styles.userCardLandscape, { borderColor: profileColor + "40" }]}>
               <LinearGradient
-                colors={["rgba(255,102,0,0.14)", "rgba(255,102,0,0.02)"]}
+                colors={[profileColor + "26", profileColor + "06"]}
                 style={StyleSheet.absoluteFill}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
+                pointerEvents="none"
               />
-              <View style={[styles.avatarRing, isLandscape && styles.avatarRingLandscape]}>
-                <View style={[styles.avatar, isLandscape && styles.avatarLandscape]}>
-                  <Feather name="user" size={isLandscape ? 20 : 26} color={Colors.dark.accent} />
-                </View>
+              {/* Profile avatar ring — uses profile colour & icon/image */}
+              <View style={[styles.avatarRing, isLandscape && styles.avatarRingLandscape, { borderColor: profileColor }]}>
+                {activeProfile?.avatar_image ? (
+                  <Image
+                    source={{ uri: activeProfile.avatar_image }}
+                    style={[styles.avatar, isLandscape && styles.avatarLandscape, { borderRadius: 999 }]}
+                  />
+                ) : (
+                  <View style={[styles.avatar, isLandscape && styles.avatarLandscape, { backgroundColor: profileColor + "30" }]}>
+                    <Feather
+                      name={(activeProfile?.avatar_icon ?? "user") as any}
+                      size={isLandscape ? 20 : 26}
+                      color={profileColor}
+                    />
+                  </View>
+                )}
               </View>
+              {/* Profile name + status */}
+              {activeProfile ? (
+                <ThemedText style={[styles.profileHeroName, isLandscape && styles.profileHeroNameLandscape, { color: profileColor }]} numberOfLines={1}>
+                  {activeProfile.name}
+                </ThemedText>
+              ) : null}
               <ThemedText style={[styles.username, isLandscape && styles.usernameLandscape]} numberOfLines={1}>{user.username}</ThemedText>
               <View style={styles.statusBadge}>
                 <View style={[styles.statusDot, { backgroundColor: statusColor(user.status) }]} />
@@ -566,19 +587,6 @@ export default function AccountInfoScreen() {
                   {user.status || "Unknown"}
                 </ThemedText>
               </View>
-              {activeProfile ? (
-                <View style={[styles.profilePill, { borderColor: activeProfile.avatar_color + "66" }]}>
-                  <View style={[styles.profilePillAvatar, { backgroundColor: activeProfile.avatar_color + "33", borderColor: activeProfile.avatar_color }]}>
-                    <Feather name={activeProfile.avatar_icon as any} size={14} color={activeProfile.avatar_color} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <ThemedText style={styles.profilePillLabel}>Active Profile</ThemedText>
-                    <ThemedText style={[styles.profilePillName, { color: activeProfile.avatar_color }]} numberOfLines={1}>
-                      {activeProfile.name}
-                    </ThemedText>
-                  </View>
-                </View>
-              ) : null}
             </View>
           );
 
@@ -1743,9 +1751,8 @@ const styles = StyleSheet.create({
   },
   userCardLandscape: { padding: Spacing.sm + 2, gap: Spacing.xs },
   avatarRing: {
-    width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: Colors.dark.accent,
-    justifyContent: "center", alignItems: "center",
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 12,
+    width: 68, height: 68, borderRadius: 34, borderWidth: 2,
+    justifyContent: "center", alignItems: "center", overflow: "hidden",
   },
   avatarRingLandscape: { width: 46, height: 46, borderRadius: 23 },
   avatar: {
@@ -1753,8 +1760,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.accentDim, justifyContent: "center", alignItems: "center",
   },
   avatarLandscape: { width: 38, height: 38, borderRadius: 19 },
-  username: { fontSize: 16, fontWeight: "700", color: Colors.dark.text },
-  usernameLandscape: { fontSize: 13 },
+  profileHeroName: { fontSize: 15, fontWeight: "800", letterSpacing: 0.2 },
+  profileHeroNameLandscape: { fontSize: 12 },
+  username: { fontSize: 13, fontWeight: "600", color: Colors.dark.textSecondary },
+  usernameLandscape: { fontSize: 11 },
   statusBadge: { flexDirection: "row", alignItems: "center", gap: Spacing.xs },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusText: { fontSize: 12, fontWeight: "600", textTransform: "capitalize" },

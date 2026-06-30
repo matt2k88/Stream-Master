@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   Image,
+  Platform,
   useWindowDimensions,
   Animated,
   Easing,
@@ -124,7 +125,7 @@ function ProfileCard({
   const scale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     Animated.timing(scale, {
-      toValue: isActive ? 1.07 : 1,
+      toValue: isActive && Platform.OS === "ios" ? 1.07 : 1,
       duration: 180,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
@@ -211,7 +212,7 @@ function AddProfileCard({
   const scale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     Animated.timing(scale, {
-      toValue: isActive ? 1.07 : 1,
+      toValue: isActive && Platform.OS === "ios" ? 1.07 : 1,
       duration: 180,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
@@ -321,7 +322,7 @@ function GuestCard({
   const scale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     Animated.timing(scale, {
-      toValue: isActive ? 1.07 : 1,
+      toValue: isActive && Platform.OS === "ios" ? 1.07 : 1,
       duration: 180,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true,
@@ -730,7 +731,6 @@ const styles = StyleSheet.create({
     borderWidth: 2.5,
     justifyContent: "center",
     alignItems: "center",
-    shadowOffset: { width: 0, height: 0 },
     backgroundColor: "#000",
   },
   lockBadge: {
@@ -785,7 +785,6 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     justifyContent: "center",
     alignItems: "center",
-    shadowOffset: { width: 0, height: 0 },
     backgroundColor: "rgba(0,0,0,0.4)",
   },
   addInner: { justifyContent: "center", alignItems: "center" },
