@@ -2475,7 +2475,6 @@ const styles = StyleSheet.create({
   // Search bar
   searchBarWrap: { marginBottom: Spacing.sm, gap: Spacing.xs },
   searchBar: {
-    flex: 1,
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1.5, borderColor: Colors.dark.border,
@@ -2491,7 +2490,6 @@ const styles = StyleSheet.create({
     flex: 1, color: Colors.dark.text, fontSize: 13,
     height: 42, padding: 0,
   },
-
   searchMeta: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, paddingHorizontal: Spacing.xs },
   searchMetaText: { flex: 1, color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
   searchMetaLimit: { color: Colors.dark.textSecondary, fontSize: 11 },
