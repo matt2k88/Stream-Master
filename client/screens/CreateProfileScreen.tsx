@@ -903,31 +903,44 @@ export default function CreateProfileScreen() {
             <View style={[styles.lsAccentStrip, { backgroundColor: color }]} />
           </View>
 
-          {/* RIGHT — controls */}
+          {/* RIGHT — controls in 50/50 grid */}
           <ScrollView
             style={styles.lsRight}
             contentContainerStyle={[styles.lsRightContent, { paddingBottom: padB, paddingRight: Math.max(insets.right + Spacing.sm, Spacing.lg) }]}
             showsVerticalScrollIndicator={false}
           >
-            {/* Name input */}
-            <View style={styles.section}>
-              <ThemedText style={styles.sectionLabel}>Profile Name</ThemedText>
-              <TextInput
-                style={[styles.textInput, nameFocused && styles.textInputFocused]}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter a name"
-                placeholderTextColor={Colors.dark.border}
-                maxLength={24}
-                autoCorrect={false}
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => setNameFocused(false)}
-              />
+            {/* Row 1: Profile Name (left) | Custom Avatar (right) */}
+            <View style={styles.lsFormRow}>
+              <View style={styles.lsFormCol}>
+                <ThemedText style={styles.sectionLabel}>Profile Name</ThemedText>
+                <TextInput
+                  style={[styles.textInput, nameFocused && styles.textInputFocused]}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Enter a name"
+                  placeholderTextColor={Colors.dark.border}
+                  maxLength={24}
+                  autoCorrect={false}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => setNameFocused(false)}
+                />
+              </View>
+              <View style={styles.lsFormCol}>
+                {customAvatarSection}
+              </View>
             </View>
 
-            {customAvatarSection}
-            {iconPickerSection}
-            {colorPickerSection}
+            {/* Row 2: Avatar Icon (left) | Colour (right) */}
+            <View style={styles.lsFormRow}>
+              <View style={styles.lsFormCol}>
+                {iconPickerSection}
+              </View>
+              <View style={styles.lsFormCol}>
+                {colorPickerSection}
+              </View>
+            </View>
+
+            {/* Full-width: PIN + Parental */}
             {pinSection}
             {parentalSection}
 
@@ -1164,7 +1177,9 @@ const styles = StyleSheet.create({
   modalConfirmText: { fontSize: 14, fontWeight: "700", color: "#fff" },
   lsProfileName: { fontSize: 16, fontWeight: "800", textAlign: "center", letterSpacing: 0.3, color: Colors.dark.text },
   lsRight: { flex: 1 },
-  lsRightContent: { paddingLeft: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.lg },
+  lsRightContent: { paddingLeft: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.md },
+  lsFormRow: { flexDirection: "row", gap: Spacing.md, alignItems: "flex-start" },
+  lsFormCol: { flex: 1, gap: Spacing.sm },
   lsActions: { gap: Spacing.sm, marginTop: Spacing.xs },
 
   /* Shared form styles */
