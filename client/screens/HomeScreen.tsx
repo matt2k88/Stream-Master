@@ -1074,7 +1074,8 @@ export default function HomeScreen() {
           (e.content_type === "series" && e.series_id != null);
         if (!typeOk) return false;
         if (parentalFilter && (e.content_type === "movie" || e.content_type === "series")) {
-          return parentalFilter(e.stream_id, e.name ?? "");
+          const id = e.content_type === "series" ? e.series_id : e.stream_id;
+          return parentalFilter(id, e.name ?? "");
         }
         return true;
       },
