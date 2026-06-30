@@ -20,6 +20,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { getApiUrl } from "@/lib/query-client";
 import { useData } from "@/contexts/DataContext";
+import { useProfile } from "@/contexts/ProfileContext";
 import SideMenuButton from "@/components/SideMenuButton";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -42,6 +43,7 @@ interface TopPick {
 interface MatchedPick extends TopPick {
   matchedId: number | null;
   matchedCover: string | null;
+  isRestricted: boolean;
 }
 
 function normaliseTitle(s: string): string {
@@ -87,7 +89,7 @@ function PickCard({
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const isActive = focused || hovered;
-  const canNav = pick.matchedId !== null;
+  const canNav = pick.matchedId !== null && !pick.isRestricted;
   const isMovie = pick.media_type === "movie";
   const year = pick.release_date ? pick.release_date.slice(0, 4) : "";
   const posterUri = pick.poster_path ? `${TMDB_BASE}${pick.poster_path}` : "";
@@ -179,12 +181,40 @@ function PickCard({
 
 export default function TopPicksScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { vodStreams, seriesList } = useData();
+  const { vodStreams, seriesList, streamRatings } = useData();
+  const { activeProfile } = useProfile();
   const [picks, setPicks] = useState<TopPick[]>([]);
   const [loading, setLoading] = useState(true);
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isLandscape = width > height;
+
+  // Parental-control filter — same logic as HomeScreen/ContentListScreen.
+  const parentalFilter = useMemo(() => {
+    const pc = activeProfile?.parental_controls;
+    if (!pc?.enabled) return null;
+    const showUnclassified = pc.show_unclassified ?? false;
+    let maxAge: number;
+    if (pc.max_age != null) {
+      maxAge = pc.max_age;
+    } else {
+      const CERT_AGE: Record<string, number> = {
+        U: 0, G: 0, PG: 8, "12A": 12, "12": 12, "15": 15, "18": 18, R18: 18,
+        "PG-13": 13, R: 17, "NC-17": 18, "TV-MA": 18, "TV-14": 14, "TV-G": 0, "TV-PG": 8,
+        "16": 16, "17": 17,
+      };
+      const allowed = pc.allowed_ratings ?? [];
+      maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
+    }
+    const allow18Plus = maxAge >= 18;
+    return (streamId: number | null, name: string): boolean => {
+      if (!allow18Plus && /xxx/i.test(name)) return false;
+      if (streamId == null) return showUnclassified;
+      const r = streamRatings.get(streamId);
+      if (!r) return showUnclassified;
+      return r.age_int <= maxAge;
+    };
+  }, [activeProfile?.parental_controls, streamRatings]);
 
   useFocusEffect(
     useCallback(() => {
@@ -205,6 +235,8 @@ export default function TopPicksScreen() {
   const matchedPicks = useMemo<MatchedPick[]>(() => {
     return picks.map((pick) => {
       const t = normaliseTitle(pick.title);
+      let matchedId: number | null = null;
+      let matchedCover: string | null = null;
       if (pick.media_type === "movie") {
         const match =
           vodStreams.find((v) => normaliseTitle(v.name) === t) ??
@@ -212,11 +244,8 @@ export default function TopPicksScreen() {
             const n = normaliseTitle(v.name);
             return n.includes(t) || t.includes(n);
           });
-        return {
-          ...pick,
-          matchedId: match?.stream_id ?? null,
-          matchedCover: match?.stream_icon ?? null,
-        };
+        matchedId = match?.stream_id ?? null;
+        matchedCover = match?.stream_icon ?? null;
       } else {
         const match =
           seriesList.find((s) => normaliseTitle(s.name) === t) ??
@@ -224,14 +253,15 @@ export default function TopPicksScreen() {
             const n = normaliseTitle(s.name);
             return n.includes(t) || t.includes(n);
           });
-        return {
-          ...pick,
-          matchedId: match?.series_id ?? null,
-          matchedCover: match?.cover ?? null,
-        };
+        matchedId = match?.series_id ?? null;
+        matchedCover = match?.cover ?? null;
       }
+      const isRestricted = parentalFilter !== null
+        ? !parentalFilter(matchedId, pick.title)
+        : false;
+      return { ...pick, matchedId, matchedCover, isRestricted };
     });
-  }, [picks, vodStreams, seriesList]);
+  }, [picks, vodStreams, seriesList, parentalFilter]);
 
   const handlePress = (pick: MatchedPick) => {
     if (pick.matchedId === null) return;
