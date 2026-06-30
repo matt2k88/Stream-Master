@@ -1072,8 +1072,11 @@ export default function ContentListScreen() {
     }
     const allow18Plus = maxAge >= 18;
     return {
-      filterStream: (id: number, name: string): boolean => {
+      // contentType: "live" | "movies" | "series"
+      // Live TV is never filtered by rating — only XXX category/name is blocked.
+      filterStream: (id: number, name: string, contentType?: string): boolean => {
         if (!allow18Plus && /xxx/i.test(name)) return false;
+        if (contentType === "live") return true;
         const r = streamRatings.get(id);
         if (!r) return showUnclassified;
         return r.age_int <= maxAge;
@@ -1359,7 +1362,7 @@ export default function ContentListScreen() {
       const id = type === "series"
         ? (item as Series).series_id
         : (item as LiveStream | VodStream).stream_id;
-      return parentalFilter.filterStream(id, (item as any).name ?? "");
+      return parentalFilter.filterStream(id, (item as any).name ?? "", type);
     });
   }, [categoryContent, parentalFilter, type]);
 
@@ -1409,7 +1412,7 @@ export default function ContentListScreen() {
       const id = type === "series"
         ? (item as Series).series_id
         : (item as LiveStream | VodStream).stream_id;
-      return parentalFilter.filterStream(id, (item as any).name ?? "");
+      return parentalFilter.filterStream(id, (item as any).name ?? "", type);
     });
   }, [searchResults, parentalFilter, parentalSearchUnlocked, type]);
 

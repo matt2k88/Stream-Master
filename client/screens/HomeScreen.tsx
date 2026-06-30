@@ -1048,8 +1048,9 @@ export default function HomeScreen() {
       maxAge = allowed.length === 0 ? -1 : Math.max(...allowed.map((r) => CERT_AGE[r] ?? 0));
     }
     const allow18Plus = maxAge >= 18;
-    return (streamId: number | string | null, name: string): boolean => {
+    return (streamId: number | string | null, name: string, contentType?: string): boolean => {
       if (!allow18Plus && /xxx/i.test(name)) return false;
+      if (contentType === "live") return true;
       if (streamId == null) return showUnclassified;
       const r = streamRatings.get(Number(streamId));
       if (!r) return showUnclassified;
