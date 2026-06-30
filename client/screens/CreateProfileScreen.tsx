@@ -993,18 +993,11 @@ export default function CreateProfileScreen() {
               </View>
             </View>
 
-            {/* PIN + Parental — side-by-side on TV, stacked otherwise */}
-            {Platform.isTV ? (
-              <View style={styles.lsFormRow}>
-                <View style={styles.lsFormCol}>{pinSection}</View>
-                <View style={styles.lsFormCol}>{parentalSection}</View>
-              </View>
-            ) : (
-              <>
-                {pinSection}
-                {parentalSection}
-              </>
-            )}
+            {/* PIN + Parental — side-by-side in landscape, stacked in portrait */}
+            <View style={styles.lsFormRow}>
+              <View style={styles.lsFormCol}>{pinSection}</View>
+              <View style={styles.lsFormCol}>{parentalSection}</View>
+            </View>
 
             <View style={styles.lsActions}>
               {actionButtons}
