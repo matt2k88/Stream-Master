@@ -2475,6 +2475,7 @@ const styles = StyleSheet.create({
   // Search bar
   searchBarWrap: { marginBottom: Spacing.sm, gap: Spacing.xs },
   searchBar: {
+    flex: 1,
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1.5, borderColor: Colors.dark.border,
