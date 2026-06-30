@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   ActivityIndicator,
   useWindowDimensions,
 } from "react-native";
@@ -176,6 +177,98 @@ const ALL_CERTS_CREATE: { label: string; age: number; color: string }[] = [
   { label: "R18",   age: 18, color: "#1060C0" },
 ];
 
+/** Floating modal for PIN entry — replaces inline keypads */
+function PinEntryModal({
+  visible,
+  title,
+  mode,
+  onCancel,
+  onDone,
+}: {
+  visible: boolean;
+  title: string;
+  mode: "single" | "confirm";
+  onCancel: () => void;
+  onDone: (pin: string) => void;
+}) {
+  const [step, setStep] = useState<"set" | "confirm">("set");
+  const [pin, setPin] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  useEffect(() => {
+    if (visible) { setStep("set"); setPin(""); setConfirm(""); }
+  }, [visible]);
+
+  const isConfirmStep = mode === "confirm" && step === "confirm";
+  const curr = isConfirmStep ? confirm : pin;
+  const label = mode === "confirm"
+    ? (step === "set" ? "Set a 4-digit PIN" : "Confirm your PIN")
+    : title;
+
+  const handleKey = (k: string) => {
+    if (!k) return;
+    if (k === "⌫") {
+      if (isConfirmStep) setConfirm((p) => p.slice(0, -1));
+      else setPin((p) => p.slice(0, -1));
+      return;
+    }
+    if (curr.length >= 4) return;
+    const next = curr + k;
+    if (isConfirmStep) setConfirm(next); else setPin(next);
+    if (next.length === 4) {
+      if (mode === "single") {
+        setTimeout(() => onDone(next), 100);
+      } else if (step === "set") {
+        setTimeout(() => { setStep("confirm"); setConfirm(""); }, 100);
+      } else {
+        const saved = pin;
+        setTimeout(() => {
+          if (next === saved) { onDone(saved); }
+          else {
+            setPin(""); setConfirm(""); setStep("set");
+            Alert.alert("PIN Mismatch", "The PINs don't match. Please try again.");
+          }
+        }, 100);
+      }
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <Pressable style={styles.modalBackdrop} onPress={onCancel}>
+        <Pressable style={styles.pinModalCard} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.pinModalIconWrap}>
+            <Feather name={mode === "confirm" ? "shield" : "lock"} size={26} color={Colors.dark.accent} />
+          </View>
+          <ThemedText style={styles.pinModalTitle}>{label}</ThemedText>
+          <View style={styles.pinDots}>
+            {[0,1,2,3].map((i) => (
+              <View key={i} style={[
+                styles.pinDot,
+                { borderColor: curr.length > i ? Colors.dark.accent : Colors.dark.border },
+                curr.length > i && { backgroundColor: Colors.dark.accent },
+              ]} />
+            ))}
+          </View>
+          <View style={styles.pinPad}>
+            {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) => (
+              <PinKey key={idx} k={k} onPress={() => handleKey(k)} />
+            ))}
+          </View>
+          {isConfirmStep ? (
+            <Pressable style={styles.pinModalTextBtn} onPress={() => { setStep("set"); setConfirm(""); }}>
+              <ThemedText style={styles.pinToggleSubtitle}>Back</ThemedText>
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.pinModalTextBtn} onPress={onCancel}>
+            <ThemedText style={[styles.pinToggleSubtitle, { color: Colors.dark.error }]}>Cancel</ThemedText>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function PinKey({ k, onPress }: { k: string; onPress: () => void }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -239,6 +332,8 @@ export default function CreateProfileScreen() {
   const [parentalPinStep, setParentalPinStep] = useState<"idle" | "set" | "confirm" | "done">(
     editing?.parental_controls?.enabled ? "done" : "idle"
   );
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [parentalPinModalVisible, setParentalPinModalVisible] = useState(false);
   const [maxAgeRating, setMaxAgeRating] = useState<number>(() => {
     const pc = editing?.parental_controls;
     if (!pc) return 15;
@@ -653,6 +748,7 @@ export default function CreateProfileScreen() {
               setParentalEnabled(next);
               if (next) {
                 setParentalPinStep("set");
+                setParentalPinModalVisible(true);
               } else {
                 setParentalPin("");
                 setParentalPinConfirm("");
@@ -673,58 +769,6 @@ export default function CreateProfileScreen() {
               <View style={[styles.toggleThumb, parentalEnabled && styles.toggleThumbOn]} />
             </View>
           </FocusPressable>
-          {parentalEnabled && parentalPinStep !== "done" ? (
-            <View style={styles.pinInputSection}>
-              <ThemedText style={styles.pinLabel}>
-                {parentalPinStep === "set" ? "Set a 4-digit Parental PIN" : "Confirm your Parental PIN"}
-              </ThemedText>
-              <View style={styles.pinDots}>
-                {[0,1,2,3].map((i) => {
-                  const val = parentalPinStep === "confirm" ? parentalPinConfirm : parentalPin;
-                  return (
-                    <View key={i} style={[styles.pinDot, { borderColor: val.length > i ? Colors.dark.accent : Colors.dark.border }, val.length > i && { backgroundColor: Colors.dark.accent }]} />
-                  );
-                })}
-              </View>
-              <View style={styles.pinPad}>
-                {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) => (
-                  <PinKey key={idx} k={k} onPress={() => {
-                    if (!k) return;
-                    const isConfirm = parentalPinStep === "confirm";
-                    const curr = isConfirm ? parentalPinConfirm : parentalPin;
-                    const setVal = isConfirm ? setParentalPinConfirm : setParentalPin;
-                    if (k === "⌫") { setVal((p) => p.slice(0, -1)); }
-                    else if (curr.length < 4) {
-                      const next = curr + k;
-                      setVal(next);
-                      if (next.length === 4) {
-                        if (!isConfirm) {
-                          setTimeout(() => setParentalPinStep("confirm"), 100);
-                        } else {
-                          setTimeout(() => {
-                            if (next === parentalPin) {
-                              setParentalPinStep("done");
-                            } else {
-                              setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("set");
-                              Alert.alert("PIN Mismatch", "The PINs don't match. Please try again.");
-                            }
-                          }, 100);
-                        }
-                      }
-                    }
-                  }} />
-                ))}
-              </View>
-              {parentalPinStep === "confirm" ? (
-                <FocusPressable
-                  style={(isActive) => [{ alignSelf: "center", padding: Spacing.sm, borderRadius: BorderRadius.sm }, isActive && { backgroundColor: Colors.dark.backgroundDefault }]}
-                  onPress={() => { setParentalPinConfirm(""); setParentalPinStep("set"); }}
-                >
-                  <ThemedText style={styles.pinToggleSubtitle}>Back</ThemedText>
-                </FocusPressable>
-              ) : null}
-            </View>
-          ) : null}
           {parentalEnabled && parentalPinStep === "done" ? (
             <View style={{ gap: 8, marginTop: 4 }}>
               <ThemedText style={styles.pinToggleSubtitle}>What age limit would you like set?</ThemedText>
@@ -784,25 +828,30 @@ export default function CreateProfileScreen() {
 
   const pinSection = (
     <View style={styles.section}>
-      <PinToggleRow enabled={pinEnabled} onToggle={() => { setPinEnabled((v) => { if (v) setPin(""); return !v; }); }} />
-      {pinEnabled ? (
-        <View style={styles.pinInputSection}>
-          <ThemedText style={styles.pinLabel}>Enter 4-digit PIN</ThemedText>
+      <PinToggleRow
+        enabled={pinEnabled}
+        onToggle={() => {
+          if (!pinEnabled) {
+            setPinEnabled(true);
+            setPinModalVisible(true);
+          } else {
+            setPinEnabled(false);
+            setPin("");
+          }
+        }}
+      />
+      {pinEnabled && pin.length === 4 ? (
+        <Pressable
+          style={({ pressed }) => [styles.pinSetRow, pressed && styles.pinSetRowActive]}
+          onPress={() => setPinModalVisible(true)}
+        >
           <View style={styles.pinDots}>
-            {[0, 1, 2, 3].map((i) => (
-              <View key={i} style={[styles.pinDot, { borderColor: pin.length > i ? Colors.dark.accent : Colors.dark.border }, pin.length > i && { backgroundColor: Colors.dark.accent }]} />
+            {[0,1,2,3].map((i) => (
+              <View key={i} style={[styles.pinDot, { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accent }]} />
             ))}
           </View>
-          <View style={styles.pinPad}>
-            {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k, idx) => (
-              <PinKey key={idx} k={k} onPress={() => {
-                if (!k) return;
-                if (k === "⌫") { setPin((p) => p.slice(0, -1)); }
-                else if (pin.length < 4) { setPin((p) => p + k); }
-              }} />
-            ))}
-          </View>
-        </View>
+          <ThemedText style={styles.pinSetLabel}>PIN set — tap to change</ThemedText>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -907,7 +956,7 @@ export default function CreateProfileScreen() {
           <ScrollView
             style={styles.lsRight}
             contentContainerStyle={[styles.lsRightContent, { paddingBottom: padB, paddingRight: Math.max(insets.right + Spacing.sm, Spacing.lg) }]}
-            showsVerticalScrollIndicator={false}
+            showsVerticalScrollIndicator={Platform.isTV ? false : true}
           >
             {/* Row 1: Profile Name (left) | Custom Avatar (right) */}
             <View style={styles.lsFormRow}>
@@ -950,6 +999,29 @@ export default function CreateProfileScreen() {
           </ScrollView>
         </View>
         {avatarModal}
+        <PinEntryModal
+          visible={pinModalVisible}
+          title="Set a 4-digit PIN"
+          mode="single"
+          onCancel={() => {
+            setPinModalVisible(false);
+            if (pin.length < 4) { setPinEnabled(false); setPin(""); }
+          }}
+          onDone={(p) => { setPin(p); setPinModalVisible(false); }}
+        />
+        <PinEntryModal
+          visible={parentalPinModalVisible}
+          title="Set Parental PIN"
+          mode="confirm"
+          onCancel={() => {
+            setParentalPinModalVisible(false);
+            if (parentalPinStep !== "done") {
+              setParentalEnabled(false);
+              setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("idle");
+            }
+          }}
+          onDone={(p) => { setParentalPin(p); setParentalPinStep("done"); setParentalPinModalVisible(false); }}
+        />
       </ThemedView>
     );
   }
@@ -1011,6 +1083,29 @@ export default function CreateProfileScreen() {
         {actionButtons}
       </ScrollView>
       {avatarModal}
+      <PinEntryModal
+        visible={pinModalVisible}
+        title="Set a 4-digit PIN"
+        mode="single"
+        onCancel={() => {
+          setPinModalVisible(false);
+          if (pin.length < 4) { setPinEnabled(false); setPin(""); }
+        }}
+        onDone={(p) => { setPin(p); setPinModalVisible(false); }}
+      />
+      <PinEntryModal
+        visible={parentalPinModalVisible}
+        title="Set Parental PIN"
+        mode="confirm"
+        onCancel={() => {
+          setParentalPinModalVisible(false);
+          if (parentalPinStep !== "done") {
+            setParentalEnabled(false);
+            setParentalPin(""); setParentalPinConfirm(""); setParentalPinStep("idle");
+          }
+        }}
+        onDone={(p) => { setParentalPin(p); setParentalPinStep("done"); setParentalPinModalVisible(false); }}
+      />
     </ThemedView>
   );
 }
@@ -1178,6 +1273,36 @@ const styles = StyleSheet.create({
   lsProfileName: { fontSize: 16, fontWeight: "800", textAlign: "center", letterSpacing: 0.3, color: Colors.dark.text },
   lsRight: { flex: 1 },
   lsRightContent: { paddingLeft: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.md },
+
+  /* PIN entry modal */
+  pinModalCard: {
+    width: "100%", maxWidth: 320,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,102,0,0.35)",
+    padding: Spacing.xl, gap: Spacing.lg, alignItems: "center",
+  },
+  pinModalIconWrap: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: "rgba(255,102,0,0.12)",
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
+    justifyContent: "center", alignItems: "center",
+  },
+  pinModalTitle: {
+    fontSize: 17, fontWeight: "700", color: Colors.dark.text, textAlign: "center",
+  },
+  pinModalTextBtn: {
+    alignSelf: "center", paddingVertical: Spacing.sm, paddingHorizontal: Spacing.xl,
+  },
+
+  /* Compact "PIN set" indicator in form */
+  pinSetRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.md,
+    backgroundColor: "rgba(255,102,0,0.08)",
+    borderRadius: BorderRadius.sm, borderWidth: 1, borderColor: "rgba(255,102,0,0.3)",
+    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+  },
+  pinSetRowActive: { borderColor: Colors.dark.accent, backgroundColor: "rgba(255,102,0,0.14)" },
+  pinSetLabel: { fontSize: 13, color: Colors.dark.textSecondary },
   lsFormRow: { flexDirection: "row", gap: Spacing.md, alignItems: "flex-start" },
   lsFormCol: { flex: 1, gap: Spacing.sm },
   lsActions: { gap: Spacing.sm, marginTop: Spacing.xs },

@@ -881,17 +881,15 @@ export default function AccountInfoScreen() {
             // actions in a single horizontal band. Below = 2-col body
             // (identity/subscription | profile/settings). Bottom = wide
             // Sign Out / Exit App row. Designed to fit a TV viewport
-            // without scrolling, while remaining ScrollView-wrapped so
-            // tiny windows can still pan.
-            return (
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={[
-                  styles.landscapeBodyV2,
-                  { paddingHorizontal: padH, paddingBottom: padB },
-                ]}
-                showsVerticalScrollIndicator={false}
-              >
+            // without scrolling. ScrollView retained on non-TV so small
+            // windows can still pan.
+            const lsBodyStyle = [
+              styles.landscapeBodyV2,
+              Platform.isTV ? styles.landscapeBodyFlex : undefined,
+              { paddingHorizontal: padH, paddingBottom: padB },
+            ] as const;
+            const lsBody = (
+              <>
                 {/* Body: 2 columns */}
                 <View style={styles.landscapeBodyRow}>
                   <View style={styles.leftColLandscape}>
@@ -1024,6 +1022,13 @@ export default function AccountInfoScreen() {
                     <ThemedText style={[styles.logoutText, styles.logoutTextLandscape]}>Exit App</ThemedText>
                   </HoverBtn>
                 </View>
+              </>
+            );
+            return Platform.isTV ? (
+              <View style={lsBodyStyle}>{lsBody}</View>
+            ) : (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={lsBodyStyle} showsVerticalScrollIndicator={false}>
+                {lsBody}
               </ScrollView>
             );
           }
@@ -1537,6 +1542,7 @@ const styles = StyleSheet.create({
   },
   // v2 landscape — full-width app bar on top, 2-col body, bottom session row.
   landscapeBodyV2: { gap: Spacing.sm, flexGrow: 1 },
+  landscapeBodyFlex: { flex: 1 },
   landscapeBodyRow: { flex: 1, flexDirection: "row", gap: Spacing.md, minHeight: 0 },
   sessionRowBottom: { flexDirection: "row", gap: Spacing.sm, marginTop: "auto" },
   appBarLandscape: {
