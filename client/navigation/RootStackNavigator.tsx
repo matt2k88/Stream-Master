@@ -133,7 +133,7 @@ export default function RootStackNavigator() {
             <Stack.Screen
               name="Player"
               component={PlayerScreen}
-              options={{ animation: "fade", orientation: "landscape" }}
+              options={{ animation: "fade" }}
             />
             <Stack.Screen
               name="LivePreview"
@@ -151,17 +151,17 @@ export default function RootStackNavigator() {
             <Stack.Screen
               name="MultiScreenLayout"
               component={MultiScreenLayoutScreen}
-              options={{ orientation: "landscape" }}
+              options={{}}
             />
             <Stack.Screen
               name="MultiScreen"
               component={MultiScreenScreen}
-              options={{ animation: "fade", orientation: "landscape" }}
+              options={{ animation: "fade" }}
             />
             <Stack.Screen
               name="MultiScreenPicker"
               component={MultiScreenPickerScreen}
-              options={{ orientation: "landscape" }}
+              options={{}}
             />
             <Stack.Screen name="MyGroups" component={MyGroupsScreen} />
             <Stack.Screen name="FootballSettings" component={FootballSettingsScreen} />

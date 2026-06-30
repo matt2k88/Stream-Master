@@ -992,6 +992,13 @@ export default function ContentListScreen() {
   const [selectedCategoryName, setSelectedCategoryName] = useState(categoryName);
   const [categorySwitching, setCategorySwitching] = useState(false);
 
+  // Parental PIN unlock for search results
+  const [parentalSearchUnlocked, setParentalSearchUnlocked] = useState(false);
+  const [showParentalPinModal, setShowParentalPinModal] = useState(false);
+  const [pinEntry, setPinEntry] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const pinShakeAnim = useRef(new Animated.Value(0)).current;
+
   // Clear the loading overlay shortly AFTER the new selectedCategoryId has
   // been applied (the list re-renders synchronously with the change). We
   // wait until selectedCategoryId actually changes — not when the spinner

@@ -147,13 +147,8 @@ interface IntroOverlayProps {
 export default function IntroOverlay({ onDone }: IntroOverlayProps) {
   const [videoUrl, setVideoUrl] = useState<string | null | false>(null);
 
-  // The intro must always play in landscape. Lock on mount, restore on
-  // unmount so the rest of the app can rotate freely on mobile.
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
-    return () => {
-      ScreenOrientation.unlockAsync().catch(() => {});
-    };
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
   }, []);
 
   useEffect(() => {

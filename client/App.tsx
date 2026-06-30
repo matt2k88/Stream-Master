@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { StyleSheet, AppState, AppStateStatus } from "react-native";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
 import { NavigationContainer } from "@react-navigation/native";
 import { navigationRef } from "@/lib/navigation-ref";
@@ -38,20 +39,14 @@ import { Colors } from "@/constants/theme";
 
 export default function App() {
   // Keep the device awake the whole time the app is in the foreground.
-  // Fire TV / Android TV otherwise trip their system screensaver/sleep
-  // after ~10 min of no remote input — which previously looked like the
-  // VLC player "crashing" mid-playback, and also caused the menus to
-  // appear to hang/black-out when left idle. expo-video already requests
-  // a wake lock during active playback, but menus and any future
-  // engine swap (VLC, react-native-video) need this app-level lock too.
   useKeepAwake();
 
-  const [introComplete, setIntroComplete] = useState(false);
+  // Force portrait throughout the entire app.
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
 
-  // NOTE: orientation is no longer globally locked here. The intro locks
-  // landscape while it plays, the Player screen locks landscape via its
-  // navigator option, and everything else can rotate freely so users on
-  // mobile can use the app in portrait OR landscape from the start.
+  const [introComplete, setIntroComplete] = useState(false);
 
   const handleIntroDone = useCallback(() => {
     setIntroComplete(true);
