@@ -49,7 +49,7 @@ function ProfileAvatar({
   const ring = size + 14;
   return (
     <View style={{ width: ring, height: ring, alignItems: "center", justifyContent: "center" }}>
-      {/* Outer halo glow (only when active) */}
+      {/* Outer halo glow (only when active — iOS shadow only, no fill) */}
       {active ? (
         <View
           style={[
@@ -59,7 +59,6 @@ function ProfileAvatar({
               height: ring + 22,
               borderRadius: (ring + 22) / 2,
               shadowColor: color,
-              backgroundColor: color + "1A",
             },
           ]}
         />
@@ -88,20 +87,18 @@ function ProfileAvatar({
             style={{ width: size, height: size, borderRadius: size / 2 }}
           />
         ) : (
-          <LinearGradient
-            colors={[color + "55", color + "22", "rgba(0,0,0,0.55)"]}
-            start={{ x: 0.3, y: 0.1 }}
-            end={{ x: 0.7, y: 1 }}
+          <View
             style={{
               width: size,
               height: size,
               borderRadius: size / 2,
+              backgroundColor: color + "20",
               justifyContent: "center",
               alignItems: "center",
             }}
           >
-            <Feather name={icon as any} size={size * 0.46} color="#fff" />
-          </LinearGradient>
+            <Feather name={icon as any} size={size * 0.46} color={color} />
+          </View>
         )}
       </View>
     </View>

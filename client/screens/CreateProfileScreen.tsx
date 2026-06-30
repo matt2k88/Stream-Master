@@ -859,40 +859,48 @@ export default function CreateProfileScreen() {
 
         {/* Two-column body */}
         <View style={styles.lsBody}>
-          {/* LEFT — live preview panel */}
-          <View style={[styles.lsLeft, { paddingBottom: padB }]}>
-            <LinearGradient
-              colors={[color + "18", "transparent"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0.5, y: 0 }}
-              end={{ x: 0.5, y: 1 }}
-              pointerEvents="none"
-            />
-            {/* Large avatar */}
-            <View style={[styles.lsAvatarRing, { borderColor: color, shadowColor: color }]}>
+          {/* LEFT — live preview card */}
+          <View style={[styles.lsLeft, { paddingBottom: padB, borderRightColor: color + "40" }]}>
+            {/* Subtle colour wash at top only */}
+            <View style={[styles.lsColorWash, { backgroundColor: color + "14" }]} pointerEvents="none" />
+
+            {/* PREVIEW label */}
+            <ThemedText style={styles.lsPreviewEyebrow}>PREVIEW</ThemedText>
+
+            {/* Avatar ring — clean flat fill */}
+            <View style={[styles.lsAvatarRing, { borderColor: color }]}>
               {avatarImage ? (
                 <Image source={{ uri: avatarImage }} style={styles.lsAvatarImg} />
               ) : (
-                <View style={[styles.lsAvatarInner, { backgroundColor: color + "33" }]}>
-                  <Feather name={icon as any} size={48} color={color} />
+                <View style={[styles.lsAvatarInner, { backgroundColor: color + "18" }]}>
+                  <Feather name={icon as any} size={40} color={color} />
                 </View>
               )}
             </View>
-            {/* Live name preview */}
-            <ThemedText style={[styles.lsProfileName, { color }]} numberOfLines={1}>
+
+            {/* Name */}
+            <ThemedText style={styles.lsProfileName} numberOfLines={1}>
               {name.trim() || "Profile Name"}
             </ThemedText>
-            <ThemedText style={styles.lsProfileSub}>
-              {editing ? "Editing profile" : "New profile"}
-            </ThemedText>
-            {pinEnabled ? (
-              <View style={styles.lsPinBadge}>
-                <Feather name="lock" size={11} color={Colors.dark.accent} />
-                <ThemedText style={styles.lsPinBadgeText}>PIN protected</ThemedText>
-              </View>
-            ) : null}
-            {/* Accent bar */}
-            <View style={[styles.lsAccentBar, { backgroundColor: color }]} />
+
+            {/* Status chips row */}
+            <View style={styles.lsBadgeRow}>
+              {pinEnabled ? (
+                <View style={[styles.lsStatusChip, { borderColor: Colors.dark.accent + "55", backgroundColor: Colors.dark.accentDim }]}>
+                  <Feather name="lock" size={9} color={Colors.dark.accent} />
+                  <ThemedText style={[styles.lsStatusChipText, { color: Colors.dark.accent }]}>PIN</ThemedText>
+                </View>
+              ) : null}
+              {parentalEnabled && parentalPinStep === "done" ? (
+                <View style={[styles.lsStatusChip, { borderColor: "#4CAF5066", backgroundColor: "#4CAF5015" }]}>
+                  <Feather name="shield" size={9} color="#4CAF50" />
+                  <ThemedText style={[styles.lsStatusChipText, { color: "#4CAF50" }]}>SAFE</ThemedText>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Bottom colour strip */}
+            <View style={[styles.lsAccentStrip, { backgroundColor: color }]} />
           </View>
 
           {/* RIGHT — controls */}
@@ -1021,11 +1029,36 @@ const styles = StyleSheet.create({
   /* Landscape layout */
   lsBody: { flex: 1, flexDirection: "row" },
   lsLeft: {
-    width: 260,
+    width: 220,
     borderRightWidth: 1, borderRightColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
-    gap: Spacing.sm, paddingHorizontal: Spacing.lg,
+    gap: Spacing.sm, paddingHorizontal: Spacing.md,
     overflow: "hidden",
+    backgroundColor: Colors.dark.backgroundDefault,
+  },
+  lsColorWash: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 140,
+    opacity: 0.6,
+  },
+  lsPreviewEyebrow: {
+    fontSize: 9, fontWeight: "800", letterSpacing: 2.5,
+    color: Colors.dark.textSecondary, textTransform: "uppercase",
+    marginBottom: Spacing.xs,
+  },
+  lsBadgeRow: {
+    flexDirection: "row", gap: Spacing.xs, flexWrap: "wrap",
+    justifyContent: "center", minHeight: 20,
+  },
+  lsStatusChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: BorderRadius.full, borderWidth: 1,
+  },
+  lsStatusChipText: {
+    fontSize: 9, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase",
+  },
+  lsAccentStrip: {
+    position: "absolute", bottom: 0, left: 0, right: 0, height: 3, opacity: 0.7,
   },
   lsAvatarRing: {
     width: 100, height: 100, borderRadius: 50, borderWidth: 3,
@@ -1129,18 +1162,7 @@ const styles = StyleSheet.create({
   modalConfirmBtnFocused: { backgroundColor: "#FF8400" },
   modalConfirmBtnDisabled: { opacity: 0.6 },
   modalConfirmText: { fontSize: 14, fontWeight: "700", color: "#fff" },
-  lsProfileName: { fontSize: 17, fontWeight: "800", textAlign: "center", letterSpacing: 0.3 },
-  lsProfileSub: { fontSize: 11, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
-  lsPinBadge: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.dark.accentDim,
-    borderWidth: 1, borderColor: Colors.dark.accent + "55",
-    marginTop: 2,
-  },
-  lsPinBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.dark.accent, textTransform: "uppercase", letterSpacing: 0.8 },
-  lsAccentBar: { position: "absolute", bottom: 0, left: 32, right: 32, height: 2, borderRadius: 1, opacity: 0.5 },
+  lsProfileName: { fontSize: 16, fontWeight: "800", textAlign: "center", letterSpacing: 0.3, color: Colors.dark.text },
   lsRight: { flex: 1 },
   lsRightContent: { paddingLeft: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.lg },
   lsActions: { gap: Spacing.sm, marginTop: Spacing.xs },
