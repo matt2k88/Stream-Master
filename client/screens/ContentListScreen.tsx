@@ -1855,7 +1855,6 @@ export default function ContentListScreen() {
       <View style={styles.searchBarRow}>
         <View style={[
           styles.searchBar,
-          type === "live" && styles.searchBarLive,
           isSearching && styles.searchBarActive,
           showParentalBadge && styles.searchBarHalf,
         ]}>
@@ -1866,7 +1865,7 @@ export default function ContentListScreen() {
           />
           <TextInput
             ref={searchInputRef}
-            style={[styles.searchInput, type === "live" && styles.searchInputLive]}
+            style={styles.searchInput}
             placeholder={sectionPlaceholder}
             placeholderTextColor={Colors.dark.textSecondary}
             value={query}
@@ -2476,13 +2475,13 @@ const styles = StyleSheet.create({
   // Search bar
   searchBarWrap: { marginBottom: Spacing.sm, gap: Spacing.xs },
   searchBar: {
+    flex: 1,
     flexDirection: "row", alignItems: "center", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1.5, borderColor: Colors.dark.border,
     borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md, height: 42,
   },
-  searchBarLive: { height: 52 },
   searchBarActive: {
     borderColor: Colors.dark.accent,
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
@@ -2492,7 +2491,7 @@ const styles = StyleSheet.create({
     flex: 1, color: Colors.dark.text, fontSize: 13,
     height: 42, padding: 0,
   },
-  searchInputLive: { height: 52, fontSize: 14 },
+
   searchMeta: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, paddingHorizontal: Spacing.xs },
   searchMetaText: { flex: 1, color: Colors.dark.accent, fontSize: 12, fontWeight: "600" },
   searchMetaLimit: { color: Colors.dark.textSecondary, fontSize: 11 },
