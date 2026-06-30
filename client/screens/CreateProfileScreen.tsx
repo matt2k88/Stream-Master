@@ -955,7 +955,11 @@ export default function CreateProfileScreen() {
           {/* RIGHT — controls in 50/50 grid */}
           <ScrollView
             style={styles.lsRight}
-            contentContainerStyle={[styles.lsRightContent, { paddingBottom: padB, paddingRight: Math.max(insets.right + Spacing.sm, Spacing.lg) }]}
+            contentContainerStyle={[
+              styles.lsRightContent,
+              Platform.isTV && styles.lsRightContentCompact,
+              { paddingBottom: padB, paddingRight: Math.max(insets.right + Spacing.sm, Spacing.lg) },
+            ]}
             showsVerticalScrollIndicator={Platform.isTV ? false : true}
           >
             {/* Row 1: Profile Name (left) | Custom Avatar (right) */}
@@ -989,9 +993,18 @@ export default function CreateProfileScreen() {
               </View>
             </View>
 
-            {/* Full-width: PIN + Parental */}
-            {pinSection}
-            {parentalSection}
+            {/* PIN + Parental — side-by-side on TV, stacked otherwise */}
+            {Platform.isTV ? (
+              <View style={styles.lsFormRow}>
+                <View style={styles.lsFormCol}>{pinSection}</View>
+                <View style={styles.lsFormCol}>{parentalSection}</View>
+              </View>
+            ) : (
+              <>
+                {pinSection}
+                {parentalSection}
+              </>
+            )}
 
             <View style={styles.lsActions}>
               {actionButtons}
@@ -1273,6 +1286,7 @@ const styles = StyleSheet.create({
   lsProfileName: { fontSize: 16, fontWeight: "800", textAlign: "center", letterSpacing: 0.3, color: Colors.dark.text },
   lsRight: { flex: 1 },
   lsRightContent: { paddingLeft: Spacing.lg, paddingTop: Spacing.sm, gap: Spacing.md },
+  lsRightContentCompact: { gap: Spacing.sm, paddingTop: 4 },
 
   /* PIN entry modal */
   pinModalCard: {

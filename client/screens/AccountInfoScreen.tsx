@@ -134,6 +134,7 @@ function ActionTile({
   tint,
   busy,
   disabled,
+  compact,
 }: {
   icon: keyof typeof Feather.glyphMap;
   title: string;
@@ -142,11 +143,12 @@ function ActionTile({
   tint?: string;
   busy?: boolean;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   const accent = tint ?? Colors.dark.accent;
   return (
     <HoverBtn
-      style={styles.actionTile}
+      style={[styles.actionTile, compact && styles.actionTileCompact]}
       activeStyle={[styles.actionTileActive, { borderColor: accent, backgroundColor: accent + "1A" }]}
       onPress={onPress}
       disabled={disabled || busy}
@@ -156,18 +158,19 @@ function ActionTile({
           <View
             style={[
               styles.actionTileIcon,
+              compact && styles.actionTileIconCompact,
               { borderColor: accent + (active ? "" : "55"), backgroundColor: accent + (active ? "26" : "14") },
             ]}
           >
             {busy ? (
               <ActivityIndicator size="small" color={accent} />
             ) : (
-              <Feather name={icon} size={16} color={accent} />
+              <Feather name={icon} size={compact ? 13 : 16} color={accent} />
             )}
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <ThemedText
-              style={[styles.actionTileTitle, active && { color: accent }]}
+              style={[styles.actionTileTitle, compact && styles.actionTileTitleCompact, active && { color: accent }]}
               numberOfLines={2}
               adjustsFontSizeToFit
               minimumFontScale={0.85}
@@ -175,14 +178,14 @@ function ActionTile({
               {title}
             </ThemedText>
             {subtitle ? (
-              <ThemedText style={styles.actionTileSub} numberOfLines={1}>
+              <ThemedText style={[styles.actionTileSub, compact && styles.actionTileSubCompact]} numberOfLines={1}>
                 {subtitle}
               </ThemedText>
             ) : null}
           </View>
           <Feather
             name="chevron-right"
-            size={15}
+            size={compact ? 12 : 15}
             color={active ? accent : Colors.dark.textSecondary}
           />
         </>
@@ -623,13 +626,18 @@ export default function AccountInfoScreen() {
             </View>
           );
 
+          const isTVLandscape = Platform.isTV && isLandscape;
+          const sectionGap = isTVLandscape ? 3 : Spacing.sm;
+          const gridRowGap = isTVLandscape ? 4 : Spacing.sm;
+
           const profileSection = activeProfile ? (
-            <View style={{ gap: Spacing.sm }}>
+            <View style={{ gap: sectionGap }}>
               <SectionHeading label="Profile" />
-              <View style={styles.tileGrid}>
+              <View style={[styles.tileGrid, { rowGap: gridRowGap }]}>
                 {!isGuest ? (
                   <View style={styles.tileGridItem}>
                     <ActionTile
+                      compact={isTVLandscape}
                       icon="edit-2"
                       title="Edit Profile"
                       subtitle="Name, icon, colour"
@@ -639,6 +647,7 @@ export default function AccountInfoScreen() {
                 ) : null}
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="users"
                     title="Switch Profile"
                     subtitle={isGuest ? "Create or pick a profile" : "Change active profile"}
@@ -647,6 +656,7 @@ export default function AccountInfoScreen() {
                 </View>
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="gift"
                     title="Referrals"
                     subtitle="Code & rewards"
@@ -656,6 +666,7 @@ export default function AccountInfoScreen() {
                 {!isGuest ? (
                   <View style={styles.tileGridItem}>
                     <ActionTile
+                      compact={isTVLandscape}
                       icon={activeProfile?.private_viewing ? "eye-off" : "eye"}
                       title="Private Viewing"
                       subtitle={
@@ -683,6 +694,7 @@ export default function AccountInfoScreen() {
                 {!isGuest ? (
                   <View style={styles.tileGridItem}>
                     <ActionTile
+                      compact={isTVLandscape}
                       icon="shield"
                       title="Parental Controls"
                       subtitle={activeProfile?.parental_controls?.enabled ? "On — content filtered" : "Off — tap to manage"}
@@ -696,11 +708,12 @@ export default function AccountInfoScreen() {
           ) : null;
 
           const settingsSection = (
-            <View style={{ gap: Spacing.sm }}>
+            <View style={{ gap: sectionGap }}>
               <SectionHeading label="Settings" />
-              <View style={styles.tileGrid}>
+              <View style={[styles.tileGrid, { rowGap: gridRowGap }]}>
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="sliders"
                     title="Organise Categories"
                     subtitle="Reorder or hide"
@@ -709,6 +722,7 @@ export default function AccountInfoScreen() {
                 </View>
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="play-circle"
                     title="Player Settings"
                     subtitle="VLC or Expo"
@@ -717,6 +731,7 @@ export default function AccountInfoScreen() {
                 </View>
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="activity"
                     title="Speed Test"
                     subtitle="Ping & download"
@@ -726,6 +741,7 @@ export default function AccountInfoScreen() {
                 {footballGlobalEnabled ? (
                   <View style={styles.tileGridItem}>
                     <ActionTile
+                      compact={isTVLandscape}
                       icon="award"
                       title="Football"
                       subtitle="Team & live tracker"
@@ -735,6 +751,7 @@ export default function AccountInfoScreen() {
                 ) : null}
                 <View style={styles.tileGridItem}>
                   <ActionTile
+                    compact={isTVLandscape}
                     icon="type"
                     title={`Text Size: ${textSize === "large" ? "Large" : textSize === "medium" ? "Medium" : "Normal"}`}
                     subtitle="Tap to toggle"
@@ -1694,12 +1711,19 @@ const styles = StyleSheet.create({
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.35, shadowRadius: 6, elevation: 0,
   },
+  actionTileCompact: {
+    paddingVertical: 5, paddingHorizontal: Spacing.sm,
+    minHeight: 34,
+  },
   actionTileIcon: {
     width: 30, height: 30, borderRadius: BorderRadius.sm,
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
+  actionTileIconCompact: { width: 26, height: 26 },
   actionTileTitle: { color: Colors.dark.text, fontSize: 12.5, fontWeight: "700" },
+  actionTileTitleCompact: { fontSize: 11, fontWeight: "700" },
   actionTileSub: { color: Colors.dark.textSecondary, fontSize: 10.5, marginTop: 1 },
+  actionTileSubCompact: { fontSize: 9.5, marginTop: 0 },
 
   // Responsive 2-col tile grid (wraps automatically)
   tileGrid: {
