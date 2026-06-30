@@ -50,20 +50,6 @@ function ProfileAvatar({
   const ring = size + 14;
   return (
     <View style={{ width: ring, height: ring, alignItems: "center", justifyContent: "center" }}>
-      {/* Outer halo glow (only when active — iOS shadow only, no fill) */}
-      {active ? (
-        <View
-          style={[
-            styles.haloOuter,
-            {
-              width: ring + 22,
-              height: ring + 22,
-              borderRadius: (ring + 22) / 2,
-            },
-          ]}
-        />
-      ) : null}
-
       {/* Coloured ring */}
       <View
         style={[
@@ -240,18 +226,6 @@ function AddProfileCard({
         ]}
       >
         <View style={{ width: ring, height: ring, alignItems: "center", justifyContent: "center" }}>
-          {isActive ? (
-            <View
-              style={[
-                styles.haloOuter,
-                {
-                  width: ring + 22,
-                  height: ring + 22,
-                  borderRadius: (ring + 22) / 2,
-                },
-              ]}
-            />
-          ) : null}
           <View
             style={[
               styles.addRing,
@@ -350,18 +324,6 @@ function GuestCard({
         ]}
       >
         <View style={{ width: ring, height: ring, alignItems: "center", justifyContent: "center" }}>
-          {isActive ? (
-            <View
-              style={[
-                styles.haloOuter,
-                {
-                  width: ring + 22,
-                  height: ring + 22,
-                  borderRadius: (ring + 22) / 2,
-                },
-              ]}
-            />
-          ) : null}
           <View
             style={[
               styles.addRing,
@@ -720,13 +682,6 @@ const styles = StyleSheet.create({
 
   /* Avatar */
   avatarWrap: { position: "relative", alignItems: "center", justifyContent: "center" },
-  haloOuter: {
-    position: "absolute",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-  },
   avatarRing: {
     borderWidth: 2.5,
     justifyContent: "center",
