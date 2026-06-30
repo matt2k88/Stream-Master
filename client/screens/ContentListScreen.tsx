@@ -1942,6 +1942,14 @@ export default function ContentListScreen() {
     );
   }
 
+  const pinSm = Math.min(width, height) < 420;
+  const pinCardW = Math.min(260, width * 0.82);
+  const pinKeySize = pinSm ? 38 : 46;
+  const pinKeyGap = pinSm ? 5 : 6;
+  const pinPadW = 3 * pinKeySize + 2 * pinKeyGap;
+  const pinVPad = pinSm ? Spacing.md : Spacing.xl;
+  const pinHPad = pinSm ? Spacing.lg : Spacing["2xl"];
+
   return (
     <ThemedView style={styles.container}>
       {/* Parental PIN unlock modal for search results */}
@@ -1952,16 +1960,16 @@ export default function ContentListScreen() {
         onRequestClose={() => setShowParentalPinModal(false)}
       >
         <Pressable style={styles.pinModalBackdrop} onPress={() => setShowParentalPinModal(false)}>
-          <Pressable style={styles.pinModalCard} onPress={(e) => e.stopPropagation()}>
-            <Pressable
-              style={styles.pinModalClose}
-              onPress={() => setShowParentalPinModal(false)}
-            >
+          <Pressable
+            style={[styles.pinModalCard, { width: pinCardW, paddingVertical: pinVPad, paddingHorizontal: pinHPad, gap: pinSm ? 6 : Spacing.sm }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Pressable style={styles.pinModalClose} onPress={() => setShowParentalPinModal(false)}>
               <Feather name="x" size={14} color={Colors.dark.textSecondary} />
             </Pressable>
-            <Feather name="shield" size={22} color={Colors.dark.accent} />
-            <ThemedText style={styles.pinModalTitle}>Enter Parental PIN</ThemedText>
-            <ThemedText style={styles.pinModalSub}>Enter your PIN to view all search results</ThemedText>
+            <Feather name="shield" size={pinSm ? 18 : 22} color={Colors.dark.accent} />
+            <ThemedText style={[styles.pinModalTitle, pinSm && { fontSize: 13 }]}>Enter Parental PIN</ThemedText>
+            <ThemedText style={[styles.pinModalSub, pinSm && { fontSize: 11 }]}>Enter your PIN to view all search results</ThemedText>
             <Animated.View style={[styles.pinDots, { transform: [{ translateX: pinShakeAnim }] }]}>
               {[0, 1, 2, 3].map((i) => (
                 <View
@@ -1979,17 +1987,18 @@ export default function ContentListScreen() {
             {pinError ? (
               <ThemedText style={styles.pinErrorText}>Incorrect PIN</ThemedText>
             ) : (
-              <View style={{ height: 16 }} />
+              <View style={{ height: 14 }} />
             )}
-            <View style={styles.pinPad}>
+            <View style={[styles.pinPad, { gap: pinKeyGap, width: pinPadW }]}>
               {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((key, idx) => {
-                if (!key) return <View key={idx} style={styles.pinKeyEmpty} />;
+                if (!key) return <View key={idx} style={{ width: pinKeySize, height: pinKeySize }} />;
                 const isDelete = key === "⌫";
                 return (
                   <Pressable
                     key={idx}
                     style={({ pressed }) => [
                       styles.pinKey,
+                      { width: pinKeySize, height: pinKeySize },
                       isDelete && styles.pinKeyDelete,
                       pressed && styles.pinKeyActive,
                     ]}
