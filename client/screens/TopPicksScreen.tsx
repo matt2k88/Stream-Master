@@ -237,22 +237,25 @@ export default function TopPicksScreen() {
       const t = normaliseTitle(pick.title);
       let matchedId: number | null = null;
       let matchedCover: string | null = null;
+      // Fuzzy substring guard: shorter title must be ≥50% the length of the
+      // longer one, preventing a short title like "from" matching
+      // "from the earth to the moon".
+      const fuzzyMatch = (a: string, b: string) => {
+        const shorter = Math.min(a.length, b.length);
+        const longer = Math.max(a.length, b.length);
+        if (longer === 0 || shorter / longer < 0.5) return false;
+        return b.includes(a) || a.includes(b);
+      };
       if (pick.media_type === "movie") {
         const match =
           vodStreams.find((v) => normaliseTitle(v.name) === t) ??
-          vodStreams.find((v) => {
-            const n = normaliseTitle(v.name);
-            return n.includes(t) || t.includes(n);
-          });
+          vodStreams.find((v) => fuzzyMatch(t, normaliseTitle(v.name)));
         matchedId = match?.stream_id ?? null;
         matchedCover = match?.stream_icon ?? null;
       } else {
         const match =
           seriesList.find((s) => normaliseTitle(s.name) === t) ??
-          seriesList.find((s) => {
-            const n = normaliseTitle(s.name);
-            return n.includes(t) || t.includes(n);
-          });
+          seriesList.find((s) => fuzzyMatch(t, normaliseTitle(s.name)));
         matchedId = match?.series_id ?? null;
         matchedCover = match?.cover ?? null;
       }
