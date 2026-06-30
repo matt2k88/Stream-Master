@@ -317,7 +317,7 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<View>(null);
-  const { width: winW } = useWindowDimensions();
+  const { width: winW, height: winH } = useWindowDimensions();
 
   const openDropdown = useCallback(() => {
     btnRef.current?.measureInWindow((x, y, w, h) => {
@@ -417,7 +417,11 @@ function ProfileButton({ compact = false }: { compact?: boolean }) {
                 <ActivityIndicator color={Colors.dark.accent} />
               </View>
             ) : (
-              <ScrollView style={styles.profileDropdownScroll} contentContainerStyle={styles.profileDropdownContent}>
+              <ScrollView
+                style={[styles.profileDropdownScroll, { maxHeight: Math.min(400, winH - (anchor?.top ?? 64) - 24) }]}
+                contentContainerStyle={styles.profileDropdownContent}
+                showsVerticalScrollIndicator
+              >
                 {profiles.map((p) => {
                   const selected = p.id === activeProfile.id;
                   return (
