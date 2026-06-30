@@ -183,6 +183,15 @@ export default function AdvertCarousel({
     }, []) // eslint-disable-line
   );
 
+  // When adverts are (re)loaded after a focus event, restart the cycle.
+  // expo-image may skip onLoad for cached images, so we can't rely solely
+  // on handleLoad to kick things off on return navigation.
+  useEffect(() => {
+    if (adverts.length > 1 && !isActiveRef.current) {
+      startCycle();
+    }
+  }, [adverts]); // eslint-disable-line
+
   if (loading) {
     return (
       <View style={[styles.wrapper, style, styles.placeholder]}>

@@ -75,9 +75,9 @@ function ProfileAvatar({
             borderRadius: ring / 2,
             borderColor: color,
             shadowColor: color,
-            shadowOpacity: active ? 0.95 : 0.45,
-            shadowRadius: active ? 18 : 10,
-            elevation: active ? 14 : 6,
+            shadowOpacity: active ? 0.65 : 0,
+            shadowRadius: active ? 10 : 0,
+            elevation: 0,
           },
         ]}
       >
@@ -269,9 +269,9 @@ function AddProfileCard({
                 borderRadius: ring / 2,
                 borderColor: isActive ? Colors.dark.accent : Colors.dark.border,
                 shadowColor: Colors.dark.accent,
-                shadowOpacity: isActive ? 0.7 : 0,
-                shadowRadius: isActive ? 14 : 0,
-                elevation: isActive ? 10 : 0,
+                shadowOpacity: isActive ? 0.55 : 0,
+                shadowRadius: isActive ? 8 : 0,
+                elevation: 0,
               },
             ]}
           >
@@ -384,9 +384,9 @@ function GuestCard({
                 borderRadius: ring / 2,
                 borderColor: isActive ? Colors.dark.accent : Colors.dark.border,
                 shadowColor: Colors.dark.accent,
-                shadowOpacity: isActive ? 0.7 : 0,
-                shadowRadius: isActive ? 14 : 0,
-                elevation: isActive ? 10 : 0,
+                shadowOpacity: isActive ? 0.55 : 0,
+                shadowRadius: isActive ? 8 : 0,
+                elevation: 0,
               },
             ]}
           >
@@ -742,9 +742,9 @@ const styles = StyleSheet.create({
   haloOuter: {
     position: "absolute",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.7,
-    shadowRadius: 28,
-    elevation: 12,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 0,
   },
   avatarRing: {
     borderWidth: 2.5,

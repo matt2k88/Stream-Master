@@ -1521,8 +1521,8 @@ const styles = StyleSheet.create({
   landscapeBody: {
     flex: 1, flexDirection: "row", gap: Spacing.md,
   },
-  leftColLandscape: { width: 220, flexShrink: 0, gap: Spacing.sm },
-  midColLandscape: { flex: 1, gap: Spacing.sm, minWidth: 0 },
+  leftColLandscape: { width: 220, flexShrink: 0, gap: Spacing.xs },
+  midColLandscape: { flex: 1, gap: Spacing.xs, minWidth: 0 },
   rightColLandscape: { width: 310, flexShrink: 0, gap: Spacing.sm },
   sessionRowLandscape: {
     flexDirection: "row", gap: Spacing.sm, marginTop: "auto",
@@ -1533,7 +1533,7 @@ const styles = StyleSheet.create({
   sessionRowBottom: { flexDirection: "row", gap: Spacing.sm, marginTop: "auto" },
   appBarLandscape: {
     flexDirection: "row", alignItems: "center", gap: Spacing.sm + 2,
-    paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 1, paddingHorizontal: Spacing.md,
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1,
     borderColor: "rgba(255,102,0,0.55)",
@@ -1674,14 +1674,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault,
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm + 2,
-    minHeight: 50,
+    minHeight: 44,
   },
   actionTileActive: {
     shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.45, shadowRadius: 8, elevation: 4,
+    shadowOpacity: 0.35, shadowRadius: 6, elevation: 0,
   },
   actionTileIcon: {
-    width: 34, height: 34, borderRadius: BorderRadius.sm,
+    width: 30, height: 30, borderRadius: BorderRadius.sm,
     borderWidth: 1, justifyContent: "center", alignItems: "center",
   },
   actionTileTitle: { color: Colors.dark.text, fontSize: 12.5, fontWeight: "700" },
@@ -2078,7 +2078,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.backgroundDefault, borderRadius: BorderRadius.sm,
     paddingVertical: Spacing.md, borderWidth: 1, borderColor: "rgba(255,59,59,0.4)", gap: Spacing.sm,
   },
-  logoutBtnLandscape: { paddingVertical: Spacing.sm },
+  logoutBtnLandscape: { paddingVertical: Spacing.xs + 1 },
   logoutTextLandscape: { fontSize: 13 },
   logoutBtnPressed: { backgroundColor: "rgba(255,59,59,0.08)", borderColor: Colors.dark.error },
   exitAppBtn: {

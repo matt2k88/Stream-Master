@@ -1028,13 +1028,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   lsAvatarRing: {
-    width: 130, height: 130, borderRadius: 65, borderWidth: 3,
+    width: 100, height: 100, borderRadius: 50, borderWidth: 3,
     justifyContent: "center", alignItems: "center",
-    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 24, elevation: 16,
+    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 14, elevation: 0,
     marginBottom: Spacing.sm,
   },
-  lsAvatarInner: { width: 112, height: 112, borderRadius: 56, justifyContent: "center", alignItems: "center" },
-  lsAvatarImg: { width: 124, height: 124, borderRadius: 62 },
+  lsAvatarInner: { width: 86, height: 86, borderRadius: 43, justifyContent: "center", alignItems: "center" },
+  lsAvatarImg: { width: 94, height: 94, borderRadius: 47 },
   portraitAvatarImg: { width: 74, height: 74, borderRadius: 37 },
 
   /* Custom avatar upload button */
@@ -1129,7 +1129,7 @@ const styles = StyleSheet.create({
   modalConfirmBtnFocused: { backgroundColor: "#FF8400" },
   modalConfirmBtnDisabled: { opacity: 0.6 },
   modalConfirmText: { fontSize: 14, fontWeight: "700", color: "#fff" },
-  lsProfileName: { fontSize: 22, fontWeight: "800", textAlign: "center", letterSpacing: 0.3 },
+  lsProfileName: { fontSize: 17, fontWeight: "800", textAlign: "center", letterSpacing: 0.3 },
   lsProfileSub: { fontSize: 11, color: Colors.dark.textSecondary, textTransform: "uppercase", letterSpacing: 1 },
   lsPinBadge: {
     flexDirection: "row", alignItems: "center", gap: 4,
@@ -1165,7 +1165,7 @@ const styles = StyleSheet.create({
   },
   iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
   iconOption: {
-    width: 52, height: 52, borderRadius: BorderRadius.sm,
+    width: 44, height: 44, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1.5, justifyContent: "center", alignItems: "center",
   },
@@ -1175,7 +1175,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.08 }],
   },
   colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
-  colorSwatch: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  colorSwatch: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   colorSwatchSelected: {
     borderWidth: 3, borderColor: "#fff",
     shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 6,
@@ -1220,7 +1220,7 @@ const styles = StyleSheet.create({
   },
   ageStepBtnActive: { borderColor: Colors.dark.accent, backgroundColor: Colors.dark.accentDim },
   ageNumWrap: { alignItems: "center", minWidth: 60 },
-  ageNumText: { fontSize: 38, fontWeight: "800", color: Colors.dark.accent, lineHeight: 44 },
+  ageNumText: { fontSize: 28, fontWeight: "800", color: Colors.dark.accent, lineHeight: 34 },
   ageNumUnit: { fontSize: 10, color: Colors.dark.textSecondary },
   certPreviewBox: {
     backgroundColor: Colors.dark.backgroundSecondary,
@@ -1247,7 +1247,7 @@ const styles = StyleSheet.create({
   pinDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, backgroundColor: "transparent" },
   pinPad: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm, maxWidth: 220, justifyContent: "center" },
   pinKey: {
-    width: 64, height: 64, borderRadius: BorderRadius.sm,
+    width: 52, height: 52, borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.backgroundDefault,
     borderWidth: 1, borderColor: Colors.dark.border,
     justifyContent: "center", alignItems: "center",
@@ -1257,16 +1257,16 @@ const styles = StyleSheet.create({
   pinKeyText: { color: Colors.dark.text, fontSize: 20, fontWeight: "600" },
   pinKeyTextActive: { color: Colors.dark.accent },
   saveBtn: {
-    height: 52, borderRadius: BorderRadius.sm, overflow: "hidden",
+    height: 44, borderRadius: BorderRadius.sm, overflow: "hidden",
     justifyContent: "center", alignItems: "center", marginTop: Spacing.sm,
-    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 8,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 0,
   },
   saveBtnDisabled: { shadowOpacity: 0, elevation: 0 },
   saveBtnPressed: { opacity: 0.85 },
   saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   saveBtnTextDisabled: { color: Colors.dark.textSecondary },
   deleteBtn: {
-    height: 52, borderRadius: BorderRadius.sm,
+    height: 44, borderRadius: BorderRadius.sm,
     justifyContent: "center", alignItems: "center",
     flexDirection: "row", gap: Spacing.sm,
     backgroundColor: Colors.dark.backgroundDefault,
