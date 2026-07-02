@@ -191,6 +191,7 @@ export default function UltraMusicScreen() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [installPhase, setInstallPhase] = useState<InstallPhase>({ phase: "idle" });
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
   const resumableRef = useRef<LegacyFS.DownloadResumable | null>(null);
   const cancelledRef = useRef(false);
 
@@ -216,6 +217,14 @@ export default function UltraMusicScreen() {
           if (alive) setAccess(d);
         }
       } catch {}
+      // Probe whether Ultra Music is installed — android-app:// resolves iff the
+      // package is present on the device. Defaults false so the button stays hidden
+      // until the check resolves.
+      if (Platform.OS === "android") {
+        Linking.canOpenURL(`android-app://${ULTRA_MUSIC_PACKAGE}`)
+          .then((can) => { if (alive) setIsAppInstalled(can); })
+          .catch(() => {});
+      }
       if (alive) setLoading(false);
     })();
     return () => { alive = false; };
@@ -407,6 +416,7 @@ export default function UltraMusicScreen() {
               startInstall={startInstall}
               cancelInstall={cancelInstall}
               openUltraMusic={openUltraMusic}
+              isAppInstalled={isAppInstalled}
             />
           </View>
         </ScrollView>
@@ -579,6 +589,7 @@ function AccessView({
   startInstall,
   cancelInstall,
   openUltraMusic,
+  isAppInstalled,
 }: {
   access: AccessData;
   config: Config;
@@ -588,6 +599,7 @@ function AccessView({
   startInstall: () => void;
   cancelInstall: () => void;
   openUltraMusic: () => void;
+  isAppInstalled: boolean;
 }) {
   const isBusy = installPhase.phase !== "idle" && installPhase.phase !== "error";
   const [dlFocused, setDlFocused] = useState(false);
@@ -652,8 +664,8 @@ function AccessView({
 
       {/* ── Right: open / download / install ── */}
       <View style={styles.accessRight}>
-        {/* Open Ultra Music button — Android only */}
-        {Platform.OS === "android" ? (
+        {/* Open Ultra Music — only shown when the app is detected on this device */}
+        {isAppInstalled ? (
           <Pressable
             style={[styles.openBtn, openHighlight && styles.openBtnHover]}
             onPress={openUltraMusic}
