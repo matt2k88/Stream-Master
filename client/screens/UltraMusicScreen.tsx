@@ -10,7 +10,9 @@ import {
   Modal,
   Animated,
 } from "react-native";
+import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
+
 import * as Clipboard from "expo-clipboard";
 import * as LegacyFS from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
@@ -23,6 +25,8 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
 import SideMenuButton from "@/components/SideMenuButton";
+
+const ULTRA_MUSIC_LOGO = require("../assets/ultramusic/um-logo.png");
 
 const UM_ORANGE       = "#FF6600";
 const UM_ORANGE_DIM   = "rgba(255,102,0,0.12)";
@@ -357,10 +361,7 @@ export default function UltraMusicScreen() {
           locations={[0, 0.5]}
         />
         <View style={[styles.center, { gap: Spacing.sm }]}>
-          <View style={styles.logoPlaceholder}>
-            <Feather name="music" size={36} color={UM_ORANGE} />
-          </View>
-          <ThemedText style={styles.loadingText}>Ultra Music</ThemedText>
+          <Image source={ULTRA_MUSIC_LOGO} style={{ width: 200, height: 80 }} contentFit="contain" />
         </View>
       </View>
     );
@@ -500,28 +501,13 @@ export default function UltraMusicScreen() {
 
 // ── Sales / No-access view ────────────────────────────────────────────────────
 
-function MusicLogo({ size = 56 }: { size?: number }) {
+function UltraMusicLogo({ width = 200, height = 80 }: { width?: number; height?: number }) {
   return (
-    <View
-      style={{
-        width: size * 1.8,
-        height: size,
-        borderRadius: size * 0.2,
-        backgroundColor: UM_ORANGE_DIM,
-        borderWidth: 1,
-        borderColor: UM_ORANGE_BORDER,
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "row",
-        gap: 8,
-        alignSelf: "center",
-      }}
-    >
-      <Feather name="music" size={size * 0.5} color={UM_ORANGE} />
-      <ThemedText style={{ fontSize: size * 0.38, fontWeight: "900", color: UM_ORANGE, letterSpacing: 0.5 }}>
-        Ultra Music
-      </ThemedText>
-    </View>
+    <Image
+      source={ULTRA_MUSIC_LOGO}
+      style={{ width, height, alignSelf: "center" }}
+      contentFit="contain"
+    />
   );
 }
 
@@ -530,7 +516,7 @@ function SalesView() {
     <View style={styles.salesWrap}>
       {/* Left column — branding + pricing */}
       <View style={styles.salesLeft}>
-        <MusicLogo size={52} />
+        <UltraMusicLogo width={210} height={84} />
         <ThemedText style={styles.salesTagline}>
           Your music, without limits.
         </ThemedText>
@@ -618,7 +604,7 @@ function AccessView({
     <View style={styles.salesWrap}>
       {/* ── Left: identity + credentials ── */}
       <View style={styles.accessLeft}>
-        <MusicLogo size={48} />
+        <UltraMusicLogo width={190} height={76} />
 
         <View style={styles.activeBadge}>
           <Feather name="check-circle" size={12} color="#22c55e" />
@@ -743,12 +729,6 @@ function AccessView({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.dark.backgroundRoot },
   center: { justifyContent: "center", alignItems: "center", flex: 1 },
-  logoPlaceholder: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: UM_ORANGE_DIM, borderWidth: 1, borderColor: UM_ORANGE_BORDER,
-    alignItems: "center", justifyContent: "center",
-  },
-  loadingText: { fontSize: 16, fontWeight: "700", color: UM_ORANGE },
 
   topNav: {
     flexDirection: "row", alignItems: "center",
