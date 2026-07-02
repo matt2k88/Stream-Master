@@ -36,7 +36,7 @@ const APK_PREFIX = "ultramusic-";
 
 // Package name for Ultra Music — used for the "Open" button.
 // Update this once the final APK package name is confirmed.
-const ULTRA_MUSIC_PACKAGE = "com.ultracast.ultramusic";
+const ULTRA_MUSIC_PACKAGE = "com.beats4u.app";
 
 type InstallPhase =
   | { phase: "idle" }
