@@ -673,7 +673,57 @@ function cacheSet(key: string, data: any, ttlMs: number): void {
 function cacheDel(key: string): void { _cache.delete(key); }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Ultra Music portal page (full-screen iframe) ─────────────────────────────
+const ULTRA_MUSIC_PORTAL_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Ultra Music</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+    iframe {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <iframe
+    src="https://appsnbits.com/UltraMusic/customer_login.php"
+    allowfullscreen
+    allow="fullscreen"
+    title="Ultra Music"
+  ></iframe>
+</body>
+</html>`;
+
 export async function registerRoutes(app: Express): Promise<Server> {
+
+  // ── Ultra Music subdomain / portal route ─────────────────────────────────
+  // Serves the full-page iframe at:
+  //   • https://music.ultracast.co.uk  (subdomain — point CNAME to this server)
+  //   • /music-login                   (direct path for testing)
+  app.get("/music-login", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(ULTRA_MUSIC_PORTAL_HTML);
+  });
+
+  app.use((req, res, next) => {
+    const host = req.hostname ?? "";
+    if (host === "music.ultracast.co.uk" || host.startsWith("music.ultracast.")) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      return res.send(ULTRA_MUSIC_PORTAL_HTML);
+    }
+    next();
+  });
 
   // ── Servers ──────────────────────────────────────────────────────────────
   app.get("/api/servers", async (req, res) => {
