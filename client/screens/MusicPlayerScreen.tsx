@@ -6,88 +6,153 @@ import {
   Alert,
   Platform,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Colors } from "@/constants/theme";
 
 const MUSIC_URL = "https://appsnbits.com/WTCbeats/music/login.php";
 
-// ── TV D-pad navigation injected into the WebView ────────────────────────────
+// ── Spatial D-pad navigation — mirrors how Silk browser navigates ─────────────
+// For each arrow key press we find every focusable element, filter to those
+// that are genuinely in the pressed direction, then pick the closest one using
+// a weighted score that strongly penalises off-axis drift.
 const TV_NAV_JS = `
 (function () {
   if (window.__tvNavReady) return;
   window.__tvNavReady = true;
 
-  var style = document.createElement('style');
-  style.textContent = [
-    '*:focus { outline: 3px solid #FF6600 !important; outline-offset: 3px !important;',
-    '         box-shadow: 0 0 0 5px rgba(255,102,0,0.25) !important; }',
-  ].join('');
-  (document.head || document.documentElement).appendChild(style);
+  /* 1 ── Visible focus ring */
+  var s = document.createElement('style');
+  s.textContent =
+    '*:focus{outline:3px solid #FF6600!important;outline-offset:3px!important;' +
+    'box-shadow:0 0 0 6px rgba(255,102,0,0.22)!important;border-radius:4px!important;}';
+  (document.head || document.documentElement).appendChild(s);
 
-  var SEL = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  /* 2 ── Collect visible, interactive elements */
+  var SEL = 'a[href],button,input:not([type=hidden]),select,textarea,[tabindex]:not([tabindex="-1"]),[role=button],[role=link],[role=menuitem],[role=tab],[role=option]';
 
-  function focusables() {
-    return Array.prototype.slice
-      .call(document.querySelectorAll(SEL))
-      .filter(function (el) {
-        return !el.disabled && el.offsetParent !== null;
-      });
+  function getFocusables() {
+    return Array.prototype.filter.call(document.querySelectorAll(SEL), function (el) {
+      if (el.disabled) return false;
+      var r = el.getBoundingClientRect();
+      /* must have non-zero area and be inside the viewport */
+      return r.width > 0 && r.height > 0 &&
+             r.bottom > 0 && r.right > 0 &&
+             r.top < window.innerHeight && r.left < window.innerWidth;
+    });
   }
 
-  document.addEventListener('keydown', function (e) {
-    var els = focusables();
-    if (!els.length) return;
+  /* 3 ── Centre of a DOMRect */
+  function centre(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
 
+  /* 4 ── Spatial scoring: lower = better
+          Primary axis distance weighted 1×, perpendicular 2.5× so the
+          element straight ahead always wins over one that is diagonally near. */
+  function score(fromC, toR, axis) {
+    var toC = centre(toR);
+    var dx = toC.x - fromC.x;
+    var dy = toC.y - fromC.y;
+    if (axis === 'h') return Math.abs(dx) + Math.abs(dy) * 2.5;
+    return Math.abs(dy) + Math.abs(dx) * 2.5;
+  }
+
+  /* 5 ── Find best candidate in a given direction */
+  function spatialNext(direction) {
     var cur = document.activeElement;
-    var idx = els.indexOf(cur);
+    var els = getFocusables();
+    if (!els.length) return null;
 
-    if (e.keyCode === 38 || e.keyCode === 37) {
-      e.preventDefault();
-      var prev = idx > 0 ? idx - 1 : els.length - 1;
-      els[prev].focus();
-      els[prev].scrollIntoView({ block: 'nearest' });
-    } else if (e.keyCode === 40 || e.keyCode === 39) {
-      e.preventDefault();
-      var next = idx < els.length - 1 ? idx + 1 : 0;
-      els[next].focus();
-      els[next].scrollIntoView({ block: 'nearest' });
-    } else if (e.keyCode === 13) {
-      if (cur && cur !== document.body && cur.tagName !== 'INPUT'
-          && cur.tagName !== 'TEXTAREA' && cur.tagName !== 'SELECT') {
+    /* If nothing is focused yet, return the first element */
+    if (!cur || cur === document.body || cur === document.documentElement) {
+      return els[0];
+    }
+
+    var curR = cur.getBoundingClientRect();
+    var curC = centre(curR);
+    var best = null;
+    var bestScore = Infinity;
+
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el === cur) continue;
+      var r = el.getBoundingClientRect();
+      var c = centre(r);
+
+      /* Must be strictly in the pressed direction
+         (allow 20 px overlap to handle nearly-aligned rows/columns) */
+      var ok = false;
+      if (direction === 'right' && c.x > curC.x + 5)  ok = true;
+      if (direction === 'left'  && c.x < curC.x - 5)  ok = true;
+      if (direction === 'down'  && c.y > curC.y + 5)   ok = true;
+      if (direction === 'up'    && c.y < curC.y - 5)   ok = true;
+      if (!ok) continue;
+
+      var sc = score(curC, r, (direction === 'left' || direction === 'right') ? 'h' : 'v');
+      if (sc < bestScore) { bestScore = sc; best = el; }
+    }
+    return best;
+  }
+
+  /* 6 ── Focus helper: scroll the element into view and focus it */
+  function moveTo(el) {
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    el.focus({ preventScroll: true });
+  }
+
+  /* 7 ── Key handler */
+  document.addEventListener('keydown', function (e) {
+    var dir = null;
+    if (e.keyCode === 37) dir = 'left';
+    else if (e.keyCode === 38) dir = 'up';
+    else if (e.keyCode === 39) dir = 'right';
+    else if (e.keyCode === 40) dir = 'down';
+
+    if (dir) {
+      var target = spatialNext(dir);
+      if (target) {
         e.preventDefault();
-        cur.click();
+        moveTo(target);
+      }
+      return;
+    }
+
+    /* Enter / centre-button → click (skip for text inputs) */
+    if (e.keyCode === 13) {
+      var cur = document.activeElement;
+      if (cur && cur !== document.body) {
+        var tag = cur.tagName;
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          e.preventDefault();
+          cur.click();
+        }
       }
     }
   }, true);
 
+  /* 8 ── Auto-focus first element after page finishes loading */
   function focusFirst() {
-    var els = focusables();
-    if (els.length) els[0].focus();
+    var els = getFocusables();
+    if (els.length && (!document.activeElement || document.activeElement === document.body)) {
+      moveTo(els[0]);
+    }
   }
+  if (document.readyState === 'complete') { focusFirst(); }
+  else { window.addEventListener('load', focusFirst); }
 
-  if (document.readyState === 'complete') {
-    focusFirst();
-  } else {
-    window.addEventListener('load', focusFirst);
-  }
-
+  /* 9 ── Re-run after SPA content changes */
   if (window.MutationObserver) {
-    var observer = new MutationObserver(function () {
+    new MutationObserver(function () {
       if (!document.activeElement || document.activeElement === document.body) {
         focusFirst();
       }
-    });
-    observer.observe(document.body || document.documentElement, {
-      childList: true, subtree: true
-    });
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   true;
 })();
 `;
 
-// ── Web: plain iframe ─────────────────────────────────────────────────────────
+// ── Web (Replit preview): plain iframe ───────────────────────────────────────
 function WebFrame() {
   const [loading, setLoading] = useState(true);
   return (
@@ -99,13 +164,7 @@ function WebFrame() {
       ) : null}
       {React.createElement("iframe", {
         src: MUSIC_URL,
-        style: {
-          flex: 1,
-          width: "100%",
-          height: "100%",
-          border: "none",
-          backgroundColor: "#000",
-        },
+        style: { flex: 1, width: "100%", height: "100%", border: "none", backgroundColor: "#000" },
         allow: "autoplay; fullscreen; encrypted-media",
         onLoad: () => setLoading(false),
       })}
@@ -113,7 +172,7 @@ function WebFrame() {
   );
 }
 
-// ── Native / Fire TV: WebView with D-pad injection ────────────────────────────
+// ── Native / Fire TV: WebView with spatial D-pad injection ────────────────────
 function NativeFrame() {
   const { WebView } = require("react-native-webview");
   const webRef = useRef<any>(null);
@@ -157,7 +216,6 @@ function NativeFrame() {
 export default function MusicPlayerScreen() {
   const navigation = useNavigation();
 
-  // Intercept back navigation and show exit confirmation
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
       e.preventDefault();
