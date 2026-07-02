@@ -5,33 +5,48 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { WebView } from "react-native-webview";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import SideMenuButton from "@/components/SideMenuButton";
 
 const MUSIC_URL = "https://appsnbits.com/WTCbeats/music/login.php";
 
-export default function MusicPlayerScreen() {
-  const insets = useSafeAreaInsets();
-  const webRef = useRef<WebView>(null);
+// ── Web: plain iframe ──────────────────────────────────────────────────────────
+function WebFrame() {
+  const [loading, setLoading] = useState(true);
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {loading ? (
+        <View style={styles.loader} pointerEvents="none">
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+        </View>
+      ) : null}
+      {/* React Native Web allows creating real DOM elements via createElement */}
+      {React.createElement("iframe", {
+        src: MUSIC_URL,
+        style: {
+          flex: 1,
+          width: "100%",
+          height: "100%",
+          border: "none",
+          backgroundColor: "#000",
+        },
+        allow: "autoplay; fullscreen; encrypted-media",
+        onLoad: () => setLoading(false),
+      })}
+    </View>
+  );
+}
+
+// ── Native: react-native-webview ───────────────────────────────────────────────
+function NativeFrame() {
+  // Lazy import so web bundle never tries to resolve the native module
+  const { WebView } = require("react-native-webview");
   const [loading, setLoading] = useState(true);
 
   return (
-    <View style={styles.root}>
-      {/* Menu button — top-left, above the WebView */}
-      <View
-        style={[
-          styles.menuBar,
-          { paddingTop: insets.top + 6, paddingLeft: insets.left + 10 },
-        ]}
-      >
-        <SideMenuButton />
-      </View>
-
-      {/* Full-screen WebView */}
+    <View style={StyleSheet.absoluteFill}>
       <WebView
-        ref={webRef}
         source={{ uri: MUSIC_URL }}
         style={styles.webview}
         onLoadStart={() => setLoading(true)}
@@ -40,7 +55,6 @@ export default function MusicPlayerScreen() {
         mediaPlaybackRequiresUserAction={false}
         javaScriptEnabled
         domStorageEnabled
-        startInLoadingState={false}
         setSupportMultipleWindows={false}
         userAgent={
           Platform.OS === "android"
@@ -48,12 +62,32 @@ export default function MusicPlayerScreen() {
             : undefined
         }
       />
-
       {loading ? (
         <View style={styles.loader} pointerEvents="none">
           <ActivityIndicator size="large" color={Colors.dark.accent} />
         </View>
       ) : null}
+    </View>
+  );
+}
+
+// ── Screen ─────────────────────────────────────────────────────────────────────
+export default function MusicPlayerScreen() {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={styles.root}>
+      {Platform.OS === "web" ? <WebFrame /> : <NativeFrame />}
+
+      {/* Menu button always floats above the web content */}
+      <View
+        style={[
+          styles.menuBar,
+          { paddingTop: insets.top + 6, paddingLeft: insets.left + 10 },
+        ]}
+      >
+        <SideMenuButton />
+      </View>
     </View>
   );
 }
@@ -78,5 +112,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.6)",
+    zIndex: 5,
   },
 });
