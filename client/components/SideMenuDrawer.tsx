@@ -7,6 +7,7 @@ import {
   Animated,
   Image,
   ScrollView,
+  Platform,
   useWindowDimensions,
 } from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -304,12 +305,14 @@ export default function SideMenuDrawer() {
               active={routeName === "TopPicks"}
               onPress={() => navTo(() => navigationRef.navigate("TopPicks"))}
             />
-            <MenuItem
-              label="Music Player"
-              icon="music"
-              active={routeName === "MusicPlayer"}
-              onPress={() => navTo(() => navigationRef.navigate("MusicPlayer" as never))}
-            />
+            {(width > 768 || Platform.isTV) ? (
+              <MenuItem
+                label="Music Player"
+                icon="music"
+                active={routeName === "MusicPlayer"}
+                onPress={() => navTo(() => navigationRef.navigate("MusicPlayer" as never))}
+              />
+            ) : null}
             <MenuItem
               label="Ultra Tube"
               icon="play-circle"

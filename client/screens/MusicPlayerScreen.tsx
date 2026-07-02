@@ -21,6 +21,23 @@ const TV_CURSOR_JS = `
   if (window.__tvCursorReady) return;
   window.__tvCursorReady = true;
 
+  /* ── Constrain page to viewport so it never overflows ── */
+  (function fixViewport() {
+    var meta = document.getElementById('__tv_vp__');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.id      = '__tv_vp__';
+      meta.name    = 'viewport';
+      meta.content = 'width=device-width,initial-scale=1,maximum-scale=1';
+      (document.head || document.documentElement).appendChild(meta);
+    }
+    var vpSty = document.createElement('style');
+    vpSty.textContent =
+      'html,body{max-width:100vw!important;overflow-x:hidden!important;box-sizing:border-box!important;}' +
+      '*{box-sizing:inherit;}';
+    (document.head || document.documentElement).appendChild(vpSty);
+  })();
+
   /* ── Cursor element: small orange ring, transparent centre ── */
   var cur = document.createElement('div');
   cur.id = '__tv_cur__';
@@ -51,8 +68,30 @@ const TV_CURSOR_JS = `
   }
 
   /* ── Track held keys ── */
-  var held = {};       /* keyCode → true while pressed */
-  var heldSince = {};  /* keyCode → timestamp of first press */
+  var held = {};
+  var heldSince = {};
+
+  /* Fire a reliable click at the cursor position.
+     Sends MouseEvent sequence + a direct .click() call so both
+     mouse-listener and native-click handler sites respond.
+     keyCode 13 = Enter (Bluestacks / desktop)
+     keyCode 23 = DPAD_CENTER (Fire TV remote centre button) */
+  function fireClick() {
+    cur.style.display = 'none';
+    var t = document.elementFromPoint(vx, vy);
+    cur.style.display = '';
+    if (!t) return;
+    var opts = { bubbles: true, cancelable: true, clientX: vx, clientY: vy,
+                 screenX: vx, screenY: vy, view: window };
+    t.dispatchEvent(new MouseEvent('mousedown', opts));
+    t.dispatchEvent(new MouseEvent('mouseup',   opts));
+    t.dispatchEvent(new MouseEvent('click',     opts));
+    /* direct .click() catches elements that only bind via addEventListener */
+    try { t.click(); } catch(e) {}
+    if (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT') {
+      t.focus();
+    }
+  }
 
   document.addEventListener('keydown', function (e) {
     if (e.keyCode >= 37 && e.keyCode <= 40) {
@@ -62,22 +101,9 @@ const TV_CURSOR_JS = `
         heldSince[e.keyCode] = Date.now();
       }
     }
-    /* ENTER / centre button → click at cursor */
-    if (e.keyCode === 13) {
-      cur.style.display = 'none';
-      var t = document.elementFromPoint(vx, vy);
-      cur.style.display = '';
-      if (t) {
-        ['mousedown','mouseup','click'].forEach(function (type) {
-          t.dispatchEvent(new MouseEvent(type, {
-            bubbles: true, cancelable: true,
-            clientX: vx, clientY: vy,
-          }));
-        });
-        if (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT') {
-          t.focus();
-        }
-      }
+    if (e.keyCode === 13 || e.keyCode === 23) {
+      e.preventDefault();
+      fireClick();
     }
   }, true);
 
@@ -91,16 +117,18 @@ const TV_CURSOR_JS = `
          0 ms held  → ~1.5 px  (precise)
        400 ms held  → ~6 px
       1500 ms held  → ~16 px   (fast sweep)
-     Uses a quadratic ease-in so the ramp feels natural.              */
+     Quadratic ease-in so the ramp feels natural.              */
   function speed(keyCode) {
     if (!held[keyCode]) return 0;
     var ms = Math.min(Date.now() - (heldSince[keyCode] || Date.now()), 1500);
-    var t  = ms / 1500;           /* 0 → 1 */
-    return 1.5 + t * t * 14.5;   /* 1.5 → 16  quadratic */
+    var t  = ms / 1500;
+    return 1.5 + t * t * 14.5;
   }
 
-  /* ── rAF loop ── */
-  var lastHover = null;
+  /* ── rAF loop with edge-scroll ── */
+  var lastHover  = null;
+  var EDGE_ZONE  = 80;  /* px from top/bottom that triggers scroll */
+  var EDGE_SPEED = 12;  /* max px scrolled per frame at the very edge */
 
   function frame() {
     var dx = speed(39) - speed(37);
@@ -112,7 +140,16 @@ const TV_CURSOR_JS = `
       cur.style.left = vx + 'px';
       cur.style.top  = vy + 'px';
 
-      /* fire hover events so the site reacts to the cursor position */
+      /* ── Edge scroll: move page when cursor is near top or bottom ── */
+      if (vy < EDGE_ZONE) {
+        var ratio = 1 - vy / EDGE_ZONE;          /* 0→1 as cursor approaches top */
+        window.scrollBy(0, -Math.ceil(EDGE_SPEED * ratio));
+      } else if (vy > window.innerHeight - EDGE_ZONE) {
+        var ratio = 1 - (window.innerHeight - vy) / EDGE_ZONE;
+        window.scrollBy(0, Math.ceil(EDGE_SPEED * ratio));
+      }
+
+      /* ── Hover events so the site responds to cursor movement ── */
       cur.style.display = 'none';
       var el = document.elementFromPoint(vx, vy);
       cur.style.display = '';
