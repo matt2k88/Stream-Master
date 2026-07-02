@@ -310,6 +310,7 @@ export default function SideMenuDrawer() {
                 label="Music Player"
                 icon="music"
                 active={routeName === "MusicPlayer"}
+                activeTint="#a855f7"
                 onPress={() => navTo(() => navigationRef.navigate("MusicPlayer" as never))}
               />
             ) : null}
