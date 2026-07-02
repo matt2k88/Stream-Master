@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Dimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { Colors } from "@/constants/theme";
@@ -32,8 +33,8 @@ const TV_CURSOR_JS = `
     'transform:translate(-50%,-50%);' +
     'will-change:left,top;';
 
-  var vx = window.innerWidth  / 2;
-  var vy = window.innerHeight / 2;
+  var vx = window.innerWidth  - 40;
+  var vy = 40;
 
   function mount() {
     if (document.body && !document.getElementById('__tv_cur__')) {
@@ -176,9 +177,15 @@ function NativeFrame() {
         ref={webRef}
         source={{ uri: MUSIC_URL }}
         style={styles.webview}
-        // Enabled on all devices for testing — restrict to Platform.isTV once approved
-        injectedJavaScript={TV_CURSOR_JS}
-        injectedJavaScriptBeforeContentLoaded={`window.__tvCursorReady=false;true;`}
+        // Inject cursor on TV and large screens (desktop/emulator); skip phones
+        injectedJavaScript={
+          (Platform.isTV || Dimensions.get('window').width > 768) ? TV_CURSOR_JS : undefined
+        }
+        injectedJavaScriptBeforeContentLoaded={
+          (Platform.isTV || Dimensions.get('window').width > 768)
+            ? `window.__tvCursorReady=false;true;`
+            : undefined
+        }
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => {
           setLoading(false);
