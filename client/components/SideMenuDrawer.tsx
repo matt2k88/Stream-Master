@@ -305,6 +305,12 @@ export default function SideMenuDrawer() {
               onPress={() => navTo(() => navigationRef.navigate("TopPicks"))}
             />
             <MenuItem
+              label="Music Player"
+              icon="music"
+              active={routeName === "MusicPlayer"}
+              onPress={() => navTo(() => navigationRef.navigate("MusicPlayer" as never))}
+            />
+            <MenuItem
               label="Ultra Tube"
               icon="play-circle"
               isNew={showUltraTubeBadge}
