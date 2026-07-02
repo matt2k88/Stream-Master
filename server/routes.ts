@@ -683,6 +683,10 @@ const MUSIC_SKIP_HEADERS = new Set([
   "content-encoding", "transfer-encoding", "connection",
   "content-length", "keep-alive",
 ]);
+// Persistent agent — reuses SSL connections instead of handshaking on every request.
+// This prevents LiteSpeed from rate-limiting/timing-out rapid connection bursts from
+// Replit's static IP.
+const MUSIC_AGENT = new https.Agent({ keepAlive: true, maxSockets: 6, timeout: 15000 });
 
 function ultraMusicProxy(req: import("express").Request, res: import("express").Response): void {
   // Map incoming path: / → /UltraMusic/customer_login.php, /foo → /UltraMusic/foo
@@ -723,7 +727,7 @@ function ultraMusicProxy(req: import("express").Request, res: import("express").
   }
 
   const proxyReq = https.request(
-    { hostname: MUSIC_HOST, path: fullPath, method: req.method, headers: upstreamHeaders },
+    { hostname: MUSIC_HOST, path: fullPath, method: req.method, headers: upstreamHeaders, agent: MUSIC_AGENT },
     (proxyRes) => {
       const status = proxyRes.statusCode ?? 200;
 
@@ -785,8 +789,15 @@ function ultraMusicProxy(req: import("express").Request, res: import("express").
   );
 
   proxyReq.on("error", (err: Error) => {
-    console.error("[Ultra Music Proxy]", err.message);
+    console.error("[Ultra Music Proxy] error:", err.message);
     if (!res.headersSent) res.status(502).send("Upstream unavailable — please try again shortly.");
+  });
+
+  // Fail fast if upstream hangs — avoids browser spinner + LiteSpeed timeout cascade
+  proxyReq.setTimeout(12000, () => {
+    console.error("[Ultra Music Proxy] timeout — destroying request");
+    proxyReq.destroy();
+    if (!res.headersSent) res.status(504).send("Upstream timed out — please try again.");
   });
 
   if (bodyBuf) proxyReq.write(bodyBuf);
