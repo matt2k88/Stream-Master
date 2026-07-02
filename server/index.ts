@@ -170,6 +170,12 @@ function configureExpoAndLanding(app: express.Application) {
   log("Serving static Expo files with dynamic manifest routing");
 
   app.use((req: Request, res: Response, next: NextFunction) => {
+    // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
+    const hostname = (req.header("x-forwarded-host") || req.hostname || "").split(":")[0];
+    if (hostname === "music.ultracast.co.uk" || hostname.startsWith("music.ultracast.")) {
+      return next();
+    }
+
     if (req.path.startsWith("/api")) {
       return next();
     }

@@ -716,7 +716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.use((req, res, next) => {
-    const host = req.hostname ?? "";
+    const host = (req.header("x-forwarded-host") || req.hostname || "").split(":")[0];
     if (host === "music.ultracast.co.uk" || host.startsWith("music.ultracast.")) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
