@@ -525,9 +525,9 @@ function SalesView() {
         </ThemedText>
 
         <View style={styles.pricePill}>
-          <ThemedText style={styles.priceAmount}>£5</ThemedText>
+          <ThemedText style={styles.priceAmount}>£20</ThemedText>
           <View style={styles.priceMeta}>
-            <ThemedText style={styles.priceLabel}>per month</ThemedText>
+            <ThemedText style={styles.priceLabel}>per year</ThemedText>
             <ThemedText style={styles.priceSub}>Ultra Cast subscribers only</ThemedText>
           </View>
         </View>
