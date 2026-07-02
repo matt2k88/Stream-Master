@@ -727,13 +727,23 @@ function ultraMusicProxy(req: import("express").Request, res: import("express").
     (proxyRes) => {
       const status = proxyRes.statusCode ?? 200;
 
-      // Rewrite redirect Location headers back to our domain
+      // Handle 3xx responses
       if (status >= 300 && status < 400) {
-        const loc = proxyRes.headers["location"] ?? "";
-        const rewritten = loc
-          .replace(new RegExp(`https?://${MUSIC_HOST}${MUSIC_BASE}`, "g"), "")
-          .replace(new RegExp(`^${MUSIC_BASE}`), "") || "/";
-        res.redirect(status, rewritten);
+        const loc = proxyRes.headers["location"];
+        if (loc) {
+          // Actual redirect — rewrite Location back to our domain
+          const rewritten = loc
+            .replace(new RegExp(`https?://${MUSIC_HOST}${MUSIC_BASE}`, "g"), "")
+            .replace(new RegExp(`^${MUSIC_BASE}`), "") || "/";
+          res.redirect(status, rewritten);
+        } else {
+          // 304 Not Modified (and any other 3xx without Location) — pass through directly
+          for (const [key, val] of Object.entries(proxyRes.headers)) {
+            if (MUSIC_SKIP_HEADERS.has(key.toLowerCase())) continue;
+            res.setHeader(key, val as string | string[]);
+          }
+          res.status(status).end();
+        }
         return;
       }
 
