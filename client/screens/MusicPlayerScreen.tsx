@@ -9,7 +9,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { Colors } from "@/constants/theme";
 
-const MUSIC_URL = "https://appsnbits.com/WTCbeats/music/login.php";
+const MUSIC_URL = "https://appsnbits.com/UltraMusic/customer_login.php";
 
 // ── Spatial D-pad navigation — mirrors how Silk browser navigates ─────────────
 // For each arrow key press we find every focusable element, filter to those
