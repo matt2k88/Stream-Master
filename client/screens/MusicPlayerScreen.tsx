@@ -125,30 +125,61 @@ const TV_CURSOR_JS = `
     return 1.5 + t * t * 14.5;
   }
 
-  /* ── rAF loop with edge-scroll ── */
+  /* ── Find the nearest scrollable ancestor (many pages scroll a div, not window) ── */
+  function findScroller(el) {
+    while (el && el !== document.documentElement) {
+      var s = window.getComputedStyle(el);
+      if (/auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 1) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null; /* fall back to window */
+  }
+
+  function doScroll(amount) {
+    /* Try the element under the cursor first */
+    var el = findScroller(document.elementFromPoint(vx, vy));
+    if (el) {
+      el.scrollTop += amount;
+    }
+    /* Also scroll window/documentElement — belt-and-braces */
+    window.scrollBy(0, amount);
+    document.documentElement.scrollTop += amount;
+    document.body.scrollTop             += amount;
+  }
+
+  /* ── rAF loop ── */
   var lastHover  = null;
-  var EDGE_ZONE  = 80;  /* px from top/bottom that triggers scroll */
-  var EDGE_SPEED = 12;  /* max px scrolled per frame at the very edge */
+  var EDGE_ZONE  = 80;  /* px from viewport top/bottom that triggers scroll */
+  var EDGE_SPEED = 14;  /* max px scrolled per frame at the very edge */
 
   function frame() {
     var dx = speed(39) - speed(37);
     var dy = speed(40) - speed(38);
+    var moved = dx !== 0 || dy !== 0;
 
-    if (dx !== 0 || dy !== 0) {
+    if (moved) {
       vx = Math.max(1, Math.min(window.innerWidth  - 1, vx + dx));
       vy = Math.max(1, Math.min(window.innerHeight - 1, vy + dy));
       cur.style.left = vx + 'px';
       cur.style.top  = vy + 'px';
+    }
 
-      /* ── Edge scroll: move page when cursor is near top or bottom ── */
+    /* ── Edge scroll runs every frame as long as a direction key is held ──
+       Decoupled from cursor movement so it keeps firing when the cursor
+       is already pinned to the edge. */
+    if (held[40] || held[38]) {           /* down or up key held */
       if (vy < EDGE_ZONE) {
-        var ratio = 1 - vy / EDGE_ZONE;          /* 0→1 as cursor approaches top */
-        window.scrollBy(0, -Math.ceil(EDGE_SPEED * ratio));
+        var r = 1 - vy / EDGE_ZONE;
+        doScroll(-Math.ceil(EDGE_SPEED * r));
       } else if (vy > window.innerHeight - EDGE_ZONE) {
-        var ratio = 1 - (window.innerHeight - vy) / EDGE_ZONE;
-        window.scrollBy(0, Math.ceil(EDGE_SPEED * ratio));
+        var r = 1 - (window.innerHeight - vy) / EDGE_ZONE;
+        doScroll(Math.ceil(EDGE_SPEED * r));
       }
+    }
 
+    if (moved) {
       /* ── Hover events so the site responds to cursor movement ── */
       cur.style.display = 'none';
       var el = document.elementFromPoint(vx, vy);
