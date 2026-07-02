@@ -3107,6 +3107,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Ultra Music ─────────────────────────────────────────────────────────────
+  // Config row (id=1): apk_url, downloader_code, show_badge.
+  // Falls back to hardcoded defaults until migration 035 is run.
+  app.get("/api/ultra-music/config", async (_req, res) => {
+    const DEFAULTS = {
+      apk_url: "https://app.ultracast.co.uk/ultramusic.apk",
+      downloader_code: "",
+      show_badge: true,
+    };
+    try {
+      const { data, error } = await supabase
+        .from("ultra_music_config")
+        .select("apk_url, downloader_code, show_badge")
+        .eq("id", 1)
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") return res.json(DEFAULTS);
+      res.json(data ?? DEFAULTS);
+    } catch {
+      res.json(DEFAULTS);
+    }
+  });
+
+  // Access check: returns Ultra Music credentials for the given ultracast username.
+  app.get("/api/ultra-music/check", async (req, res) => {
+    const { username } = req.query;
+    if (!username || typeof username !== "string") return res.json({ hasAccess: false });
+    try {
+      const { data, error } = await supabase
+        .from("ultra_music_access")
+        .select("ultra_music_username, ultra_music_password")
+        .eq("username", username.trim().toLowerCase())
+        .maybeSingle();
+      if (error && error.code !== "PGRST116") {
+        console.error("[ultra-music] check error:", error.message);
+        return res.json({ hasAccess: false });
+      }
+      if (!data) return res.json({ hasAccess: false });
+      res.json({
+        hasAccess: true,
+        ultra_music_username: data.ultra_music_username,
+        ultra_music_password: data.ultra_music_password,
+      });
+    } catch (e: any) {
+      console.error("[ultra-music] check exception:", e?.message);
+      res.json({ hasAccess: false });
+    }
+  });
+
   // ── Sports Listings (Telegram + GPT-4o Vision) ──────────────────────────────
   {
     let _tgOffset: number | null = null;

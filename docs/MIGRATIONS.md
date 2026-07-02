@@ -42,4 +42,6 @@ degrade gracefully until run (endpoints return `[]`, defaults kick in).
 
 - `034_sport_listing_images_msg_unique.sql` — fixes Sports Listings sync deduplication. Drops the old `UNIQUE(message_date, file_unique_id)` index (which silently discarded repeated header images posted within the same day, breaking chronological sport grouping) and replaces it with `UNIQUE(telegram_msg_id)` so every Telegram message gets its own row regardless of the image content. The sync route already caches GPT results by `file_unique_id` so re-posted identical images incur zero extra GPT cost. **Must be run** before the next sync if the sports channel admin ever re-posts a header image during the day.
 
+- `035_ultra_music.sql` — creates `ultra_music_access` (username → ultra_music_username + ultra_music_password, unique on lowercase ultracast username) and `ultra_music_config` (id=1 row: apk_url, downloader_code, show_badge). Seeded with defaults. Used by `/api/ultra-music/config` and `/api/ultra-music/check`. Until run, both endpoints fall back to hardcoded defaults; the access-check will always return `{ hasAccess: false }` (PGRST116 is ignored silently).
+
 > **Note on numbering**: gaps (005–006, 010–011, 026–027) were intentionally skipped during earlier development; ordering above reflects application order.

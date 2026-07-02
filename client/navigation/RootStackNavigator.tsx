@@ -40,7 +40,7 @@ import TopPicksScreen from "@/screens/TopPicksScreen";
 import ReferralsScreen from "@/screens/ReferralsScreen";
 import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
-import MusicPlayerScreen from "@/screens/MusicPlayerScreen";
+import UltraMusicScreen from "@/screens/UltraMusicScreen";
 import ParentalControlsScreen from "@/screens/ParentalControlsScreen";
 
 export type RootStackParamList = {
@@ -158,11 +158,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="UltraTube" component={UltraTubeScreen} />
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
             <Stack.Screen name="ParentalControls" component={ParentalControlsScreen} />
-            <Stack.Screen
-              name="MusicPlayer"
-              component={MusicPlayerScreen}
-              options={{ headerShown: false }}
-            />
+            <Stack.Screen name="MusicPlayer" component={UltraMusicScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>
