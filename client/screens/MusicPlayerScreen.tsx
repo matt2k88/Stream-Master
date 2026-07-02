@@ -11,151 +11,134 @@ import { Colors } from "@/constants/theme";
 
 const MUSIC_URL = "https://appsnbits.com/UltraMusic/customer_login.php";
 
-// ── Virtual cursor injected into the WebView ──────────────────────────────────
-// A fixed orange dot that moves with the D-pad and fires real mouse events
-// (mouseover, mousedown, mouseup, click) at its current position, so every
-// element on the page is reachable regardless of keyboard-focusability.
+// ── Virtual cursor — rAF-based smooth movement with speed ramp ────────────────
+// Uses a requestAnimationFrame loop so the cursor moves a tiny amount every
+// frame based on held keys. Velocity ramps up the longer a key is held so
+// short taps = precise small movement, holding = fast sweep.
 const TV_CURSOR_JS = `
 (function () {
   if (window.__tvCursorReady) return;
   window.__tvCursorReady = true;
 
-  /* ── 1. Create cursor dot ── */
+  /* ── Cursor element: small orange ring, transparent centre ── */
   var cur = document.createElement('div');
+  cur.id = '__tv_cur__';
   cur.style.cssText =
     'position:fixed;z-index:2147483647;pointer-events:none;' +
-    'width:22px;height:22px;border-radius:50%;' +
-    'background:rgba(255,102,0,0.92);' +
-    'border:2px solid #fff;' +
-    'box-shadow:0 0 0 3px #FF6600,0 0 14px 4px rgba(255,102,0,0.55);' +
+    'width:14px;height:14px;border-radius:50%;' +
+    'background:transparent;' +
+    'border:2.5px solid #FF6600;' +
+    'box-shadow:0 0 5px 1px rgba(255,102,0,0.55);' +
     'transform:translate(-50%,-50%);' +
-    'transition:left 60ms linear,top 60ms linear;';
+    'will-change:left,top;';
 
-  /* inner cross-hair */
-  var ch = document.createElement('div');
-  ch.style.cssText =
-    'position:absolute;top:50%;left:50%;' +
-    'width:6px;height:6px;margin:-3px 0 0 -3px;' +
-    'border-radius:50%;background:#fff;';
-  cur.appendChild(ch);
-
-  /* ── 2. Place cursor at viewport centre ── */
-  var vx = Math.round(window.innerWidth  / 2);
-  var vy = Math.round(window.innerHeight / 2);
-
-  function applyPos() {
-    cur.style.left = vx + 'px';
-    cur.style.top  = vy + 'px';
-  }
+  var vx = window.innerWidth  / 2;
+  var vy = window.innerHeight / 2;
 
   function mount() {
     if (document.body && !document.getElementById('__tv_cur__')) {
-      cur.id = '__tv_cur__';
       document.body.appendChild(cur);
-      applyPos();
+      cur.style.left = vx + 'px';
+      cur.style.top  = vy + 'px';
     }
   }
-  mount();
+  if (document.body) { mount(); }
   document.addEventListener('DOMContentLoaded', mount);
-
-  /* ── 3. Step size — increases while key is held ── */
-  var STEP_BASE = 48;
-  var STEP_FAST = 96;
-  var pressStart = {};
-
-  /* ── 4. Fire mouse events at current cursor position ── */
-  function dispatchMouse(type, el) {
-    try {
-      el.dispatchEvent(new MouseEvent(type, {
-        bubbles: true, cancelable: true, view: window,
-        clientX: vx, clientY: vy, screenX: vx, screenY: vy,
-      }));
-    } catch(e) {}
-  }
-
-  var lastHover = null;
-
-  function hover() {
-    cur.style.display = 'none'; /* hide so elementFromPoint works through it */
-    var el = document.elementFromPoint(vx, vy);
-    cur.style.display = '';
-    if (!el) return;
-
-    /* update cursor shape: pointer over clickable, crosshair otherwise */
-    var cs = window.getComputedStyle(el).cursor;
-    cur.style.width  = (cs === 'pointer') ? '28px' : '22px';
-    cur.style.height = (cs === 'pointer') ? '28px' : '22px';
-
-    if (el !== lastHover) {
-      if (lastHover) {
-        dispatchMouse('mouseleave', lastHover);
-        dispatchMouse('mouseout',   lastHover);
-      }
-      dispatchMouse('mouseover',  el);
-      dispatchMouse('mouseenter', el);
-      lastHover = el;
-    }
-    dispatchMouse('mousemove', el);
-  }
-
-  /* ── 5. Key handler ── */
-  document.addEventListener('keydown', function (e) {
-    var STEP = (Date.now() - (pressStart[e.keyCode] || Date.now())) > 600
-               ? STEP_FAST : STEP_BASE;
-
-    if (!pressStart[e.keyCode]) pressStart[e.keyCode] = Date.now();
-
-    if (e.keyCode === 37) {        /* LEFT  */
-      e.preventDefault();
-      vx = Math.max(1, vx - STEP);
-    } else if (e.keyCode === 39) { /* RIGHT */
-      e.preventDefault();
-      vx = Math.min(window.innerWidth  - 1, vx + STEP);
-    } else if (e.keyCode === 38) { /* UP    */
-      e.preventDefault();
-      vy = Math.max(1, vy - STEP);
-    } else if (e.keyCode === 40) { /* DOWN  */
-      e.preventDefault();
-      vy = Math.min(window.innerHeight - 1, vy + STEP);
-    } else if (e.keyCode === 13) { /* ENTER / centre button */
-      cur.style.display = 'none';
-      var target = document.elementFromPoint(vx, vy);
-      cur.style.display = '';
-      if (target) {
-        dispatchMouse('mousedown', target);
-        dispatchMouse('mouseup',   target);
-        dispatchMouse('click',     target);
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
-            || target.tagName === 'SELECT') {
-          target.focus();
-        }
-      }
-      return;
-    } else {
-      return;
-    }
-
-    applyPos();
-    hover();
-  }, true);
-
-  document.addEventListener('keyup', function (e) {
-    delete pressStart[e.keyCode];
-  }, true);
-
-  /* ── 6. Focus ring for text inputs that the cursor clicks into ── */
-  var sty = document.createElement('style');
-  sty.textContent =
-    'input:focus,textarea:focus,select:focus{' +
-    'outline:3px solid #FF6600!important;' +
-    'outline-offset:2px!important;}';
-  (document.head || document.documentElement).appendChild(sty);
-
-  /* ── 7. Re-attach cursor after SPA navigation wipes document.body ── */
   if (window.MutationObserver) {
     new MutationObserver(mount)
       .observe(document.documentElement, { childList: true, subtree: false });
   }
+
+  /* ── Track held keys ── */
+  var held = {};       /* keyCode → true while pressed */
+  var heldSince = {};  /* keyCode → timestamp of first press */
+
+  document.addEventListener('keydown', function (e) {
+    if (e.keyCode >= 37 && e.keyCode <= 40) {
+      e.preventDefault();
+      if (!held[e.keyCode]) {
+        held[e.keyCode]      = true;
+        heldSince[e.keyCode] = Date.now();
+      }
+    }
+    /* ENTER / centre button → click at cursor */
+    if (e.keyCode === 13) {
+      cur.style.display = 'none';
+      var t = document.elementFromPoint(vx, vy);
+      cur.style.display = '';
+      if (t) {
+        ['mousedown','mouseup','click'].forEach(function (type) {
+          t.dispatchEvent(new MouseEvent(type, {
+            bubbles: true, cancelable: true,
+            clientX: vx, clientY: vy,
+          }));
+        });
+        if (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.tagName==='SELECT') {
+          t.focus();
+        }
+      }
+    }
+  }, true);
+
+  document.addEventListener('keyup', function (e) {
+    held[e.keyCode]      = false;
+    heldSince[e.keyCode] = 0;
+  }, true);
+
+  /* ── Speed ramp ──
+       px/frame at 60 fps:
+         0 ms held  → ~1.5 px  (precise)
+       400 ms held  → ~6 px
+      1500 ms held  → ~16 px   (fast sweep)
+     Uses a quadratic ease-in so the ramp feels natural.              */
+  function speed(keyCode) {
+    if (!held[keyCode]) return 0;
+    var ms = Math.min(Date.now() - (heldSince[keyCode] || Date.now()), 1500);
+    var t  = ms / 1500;           /* 0 → 1 */
+    return 1.5 + t * t * 14.5;   /* 1.5 → 16  quadratic */
+  }
+
+  /* ── rAF loop ── */
+  var lastHover = null;
+
+  function frame() {
+    var dx = speed(39) - speed(37);
+    var dy = speed(40) - speed(38);
+
+    if (dx !== 0 || dy !== 0) {
+      vx = Math.max(1, Math.min(window.innerWidth  - 1, vx + dx));
+      vy = Math.max(1, Math.min(window.innerHeight - 1, vy + dy));
+      cur.style.left = vx + 'px';
+      cur.style.top  = vy + 'px';
+
+      /* fire hover events so the site reacts to the cursor position */
+      cur.style.display = 'none';
+      var el = document.elementFromPoint(vx, vy);
+      cur.style.display = '';
+      if (el) {
+        if (el !== lastHover) {
+          if (lastHover) {
+            lastHover.dispatchEvent(new MouseEvent('mouseleave',{bubbles:false}));
+            lastHover.dispatchEvent(new MouseEvent('mouseout',  {bubbles:true}));
+          }
+          el.dispatchEvent(new MouseEvent('mouseenter',{bubbles:false,clientX:vx,clientY:vy}));
+          el.dispatchEvent(new MouseEvent('mouseover', {bubbles:true, clientX:vx,clientY:vy}));
+          lastHover = el;
+        }
+        el.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:vx,clientY:vy}));
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  /* ── Focus ring for text inputs ── */
+  var sty = document.createElement('style');
+  sty.textContent =
+    'input:focus,textarea:focus,select:focus{' +
+    'outline:3px solid #FF6600!important;outline-offset:2px!important;}';
+  (document.head || document.documentElement).appendChild(sty);
 
   true;
 })();
@@ -193,12 +176,9 @@ function NativeFrame() {
         ref={webRef}
         source={{ uri: MUSIC_URL }}
         style={styles.webview}
-        // Only inject the virtual cursor on TV — touch devices use their
-        // fingers and desktop/emulator uses a real mouse cursor.
-        injectedJavaScript={Platform.isTV ? TV_CURSOR_JS : undefined}
-        injectedJavaScriptBeforeContentLoaded={
-          Platform.isTV ? `window.__tvCursorReady=false;true;` : undefined
-        }
+        // Enabled on all devices for testing — restrict to Platform.isTV once approved
+        injectedJavaScript={TV_CURSOR_JS}
+        injectedJavaScriptBeforeContentLoaded={`window.__tvCursorReady=false;true;`}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => {
           setLoading(false);
