@@ -11,141 +11,150 @@ import { Colors } from "@/constants/theme";
 
 const MUSIC_URL = "https://appsnbits.com/UltraMusic/customer_login.php";
 
-// ── Spatial D-pad navigation — mirrors how Silk browser navigates ─────────────
-// For each arrow key press we find every focusable element, filter to those
-// that are genuinely in the pressed direction, then pick the closest one using
-// a weighted score that strongly penalises off-axis drift.
-const TV_NAV_JS = `
+// ── Virtual cursor injected into the WebView ──────────────────────────────────
+// A fixed orange dot that moves with the D-pad and fires real mouse events
+// (mouseover, mousedown, mouseup, click) at its current position, so every
+// element on the page is reachable regardless of keyboard-focusability.
+const TV_CURSOR_JS = `
 (function () {
-  if (window.__tvNavReady) return;
-  window.__tvNavReady = true;
+  if (window.__tvCursorReady) return;
+  window.__tvCursorReady = true;
 
-  /* 1 ── Visible focus ring */
-  var s = document.createElement('style');
-  s.textContent =
-    '*:focus{outline:3px solid #FF6600!important;outline-offset:3px!important;' +
-    'box-shadow:0 0 0 6px rgba(255,102,0,0.22)!important;border-radius:4px!important;}';
-  (document.head || document.documentElement).appendChild(s);
+  /* ── 1. Create cursor dot ── */
+  var cur = document.createElement('div');
+  cur.style.cssText =
+    'position:fixed;z-index:2147483647;pointer-events:none;' +
+    'width:22px;height:22px;border-radius:50%;' +
+    'background:rgba(255,102,0,0.92);' +
+    'border:2px solid #fff;' +
+    'box-shadow:0 0 0 3px #FF6600,0 0 14px 4px rgba(255,102,0,0.55);' +
+    'transform:translate(-50%,-50%);' +
+    'transition:left 60ms linear,top 60ms linear;';
 
-  /* 2 ── Collect visible, interactive elements */
-  var SEL = 'a[href],button,input:not([type=hidden]),select,textarea,[tabindex]:not([tabindex="-1"]),[role=button],[role=link],[role=menuitem],[role=tab],[role=option]';
+  /* inner cross-hair */
+  var ch = document.createElement('div');
+  ch.style.cssText =
+    'position:absolute;top:50%;left:50%;' +
+    'width:6px;height:6px;margin:-3px 0 0 -3px;' +
+    'border-radius:50%;background:#fff;';
+  cur.appendChild(ch);
 
-  function getFocusables() {
-    return Array.prototype.filter.call(document.querySelectorAll(SEL), function (el) {
-      if (el.disabled) return false;
-      var r = el.getBoundingClientRect();
-      /* must have non-zero area and be inside the viewport */
-      return r.width > 0 && r.height > 0 &&
-             r.bottom > 0 && r.right > 0 &&
-             r.top < window.innerHeight && r.left < window.innerWidth;
-    });
+  /* ── 2. Place cursor at viewport centre ── */
+  var vx = Math.round(window.innerWidth  / 2);
+  var vy = Math.round(window.innerHeight / 2);
+
+  function applyPos() {
+    cur.style.left = vx + 'px';
+    cur.style.top  = vy + 'px';
   }
 
-  /* 3 ── Centre of a DOMRect */
-  function centre(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
-
-  /* 4 ── Spatial scoring: lower = better
-          Primary axis distance weighted 1×, perpendicular 2.5× so the
-          element straight ahead always wins over one that is diagonally near. */
-  function score(fromC, toR, axis) {
-    var toC = centre(toR);
-    var dx = toC.x - fromC.x;
-    var dy = toC.y - fromC.y;
-    if (axis === 'h') return Math.abs(dx) + Math.abs(dy) * 2.5;
-    return Math.abs(dy) + Math.abs(dx) * 2.5;
-  }
-
-  /* 5 ── Find best candidate in a given direction */
-  function spatialNext(direction) {
-    var cur = document.activeElement;
-    var els = getFocusables();
-    if (!els.length) return null;
-
-    /* If nothing is focused yet, return the first element */
-    if (!cur || cur === document.body || cur === document.documentElement) {
-      return els[0];
+  function mount() {
+    if (document.body && !document.getElementById('__tv_cur__')) {
+      cur.id = '__tv_cur__';
+      document.body.appendChild(cur);
+      applyPos();
     }
+  }
+  mount();
+  document.addEventListener('DOMContentLoaded', mount);
 
-    var curR = cur.getBoundingClientRect();
-    var curC = centre(curR);
-    var best = null;
-    var bestScore = Infinity;
+  /* ── 3. Step size — increases while key is held ── */
+  var STEP_BASE = 48;
+  var STEP_FAST = 96;
+  var pressStart = {};
 
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      if (el === cur) continue;
-      var r = el.getBoundingClientRect();
-      var c = centre(r);
-
-      /* Must be strictly in the pressed direction
-         (allow 20 px overlap to handle nearly-aligned rows/columns) */
-      var ok = false;
-      if (direction === 'right' && c.x > curC.x + 5)  ok = true;
-      if (direction === 'left'  && c.x < curC.x - 5)  ok = true;
-      if (direction === 'down'  && c.y > curC.y + 5)   ok = true;
-      if (direction === 'up'    && c.y < curC.y - 5)   ok = true;
-      if (!ok) continue;
-
-      var sc = score(curC, r, (direction === 'left' || direction === 'right') ? 'h' : 'v');
-      if (sc < bestScore) { bestScore = sc; best = el; }
-    }
-    return best;
+  /* ── 4. Fire mouse events at current cursor position ── */
+  function dispatchMouse(type, el) {
+    try {
+      el.dispatchEvent(new MouseEvent(type, {
+        bubbles: true, cancelable: true, view: window,
+        clientX: vx, clientY: vy, screenX: vx, screenY: vy,
+      }));
+    } catch(e) {}
   }
 
-  /* 6 ── Focus helper: scroll the element into view and focus it */
-  function moveTo(el) {
+  var lastHover = null;
+
+  function hover() {
+    cur.style.display = 'none'; /* hide so elementFromPoint works through it */
+    var el = document.elementFromPoint(vx, vy);
+    cur.style.display = '';
     if (!el) return;
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    el.focus({ preventScroll: true });
+
+    /* update cursor shape: pointer over clickable, crosshair otherwise */
+    var cs = window.getComputedStyle(el).cursor;
+    cur.style.width  = (cs === 'pointer') ? '28px' : '22px';
+    cur.style.height = (cs === 'pointer') ? '28px' : '22px';
+
+    if (el !== lastHover) {
+      if (lastHover) {
+        dispatchMouse('mouseleave', lastHover);
+        dispatchMouse('mouseout',   lastHover);
+      }
+      dispatchMouse('mouseover',  el);
+      dispatchMouse('mouseenter', el);
+      lastHover = el;
+    }
+    dispatchMouse('mousemove', el);
   }
 
-  /* 7 ── Key handler */
+  /* ── 5. Key handler ── */
   document.addEventListener('keydown', function (e) {
-    var dir = null;
-    if (e.keyCode === 37) dir = 'left';
-    else if (e.keyCode === 38) dir = 'up';
-    else if (e.keyCode === 39) dir = 'right';
-    else if (e.keyCode === 40) dir = 'down';
+    var STEP = (Date.now() - (pressStart[e.keyCode] || Date.now())) > 600
+               ? STEP_FAST : STEP_BASE;
 
-    if (dir) {
-      var target = spatialNext(dir);
+    if (!pressStart[e.keyCode]) pressStart[e.keyCode] = Date.now();
+
+    if (e.keyCode === 37) {        /* LEFT  */
+      e.preventDefault();
+      vx = Math.max(1, vx - STEP);
+    } else if (e.keyCode === 39) { /* RIGHT */
+      e.preventDefault();
+      vx = Math.min(window.innerWidth  - 1, vx + STEP);
+    } else if (e.keyCode === 38) { /* UP    */
+      e.preventDefault();
+      vy = Math.max(1, vy - STEP);
+    } else if (e.keyCode === 40) { /* DOWN  */
+      e.preventDefault();
+      vy = Math.min(window.innerHeight - 1, vy + STEP);
+    } else if (e.keyCode === 13) { /* ENTER / centre button */
+      cur.style.display = 'none';
+      var target = document.elementFromPoint(vx, vy);
+      cur.style.display = '';
       if (target) {
-        e.preventDefault();
-        moveTo(target);
+        dispatchMouse('mousedown', target);
+        dispatchMouse('mouseup',   target);
+        dispatchMouse('click',     target);
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+            || target.tagName === 'SELECT') {
+          target.focus();
+        }
       }
+      return;
+    } else {
       return;
     }
 
-    /* Enter / centre-button → click (skip for text inputs) */
-    if (e.keyCode === 13) {
-      var cur = document.activeElement;
-      if (cur && cur !== document.body) {
-        var tag = cur.tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
-          e.preventDefault();
-          cur.click();
-        }
-      }
-    }
+    applyPos();
+    hover();
   }, true);
 
-  /* 8 ── Auto-focus first element after page finishes loading */
-  function focusFirst() {
-    var els = getFocusables();
-    if (els.length && (!document.activeElement || document.activeElement === document.body)) {
-      moveTo(els[0]);
-    }
-  }
-  if (document.readyState === 'complete') { focusFirst(); }
-  else { window.addEventListener('load', focusFirst); }
+  document.addEventListener('keyup', function (e) {
+    delete pressStart[e.keyCode];
+  }, true);
 
-  /* 9 ── Re-run after SPA content changes */
+  /* ── 6. Focus ring for text inputs that the cursor clicks into ── */
+  var sty = document.createElement('style');
+  sty.textContent =
+    'input:focus,textarea:focus,select:focus{' +
+    'outline:3px solid #FF6600!important;' +
+    'outline-offset:2px!important;}';
+  (document.head || document.documentElement).appendChild(sty);
+
+  /* ── 7. Re-attach cursor after SPA navigation wipes document.body ── */
   if (window.MutationObserver) {
-    new MutationObserver(function () {
-      if (!document.activeElement || document.activeElement === document.body) {
-        focusFirst();
-      }
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(mount)
+      .observe(document.documentElement, { childList: true, subtree: false });
   }
 
   true;
@@ -172,7 +181,7 @@ function WebFrame() {
   );
 }
 
-// ── Native / Fire TV: WebView with spatial D-pad injection ────────────────────
+// ── Native / Fire TV: WebView with virtual cursor ─────────────────────────────
 function NativeFrame() {
   const { WebView } = require("react-native-webview");
   const webRef = useRef<any>(null);
@@ -184,8 +193,8 @@ function NativeFrame() {
         ref={webRef}
         source={{ uri: MUSIC_URL }}
         style={styles.webview}
-        injectedJavaScript={TV_NAV_JS}
-        injectedJavaScriptBeforeContentLoaded={`window.__tvNavReady=false;true;`}
+        injectedJavaScript={TV_CURSOR_JS}
+        injectedJavaScriptBeforeContentLoaded={`window.__tvCursorReady=false;true;`}
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => {
           setLoading(false);
