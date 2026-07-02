@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
+import * as https from "node:https";
 import { supabase, lifetimeDb } from "./supabase";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
 import {
@@ -673,54 +674,124 @@ function cacheSet(key: string, data: any, ttlMs: number): void {
 function cacheDel(key: string): void { _cache.delete(key); }
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ── Ultra Music portal page (full-screen iframe) ─────────────────────────────
-const ULTRA_MUSIC_PORTAL_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="referrer" content="no-referrer" />
-  <title>Ultra Music</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    iframe {
-      position: fixed;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
+// ── Ultra Music reverse proxy ─────────────────────────────────────────────────
+// Proxies music.ultracast.co.uk → https://appsnbits.com/UltraMusic/
+// so all cookies/sessions appear first-party and login flows work correctly.
+const MUSIC_HOST = "appsnbits.com";
+const MUSIC_BASE = "/UltraMusic";
+const MUSIC_SKIP_HEADERS = new Set([
+  "content-encoding", "transfer-encoding", "connection",
+  "content-length", "keep-alive",
+]);
+
+function ultraMusicProxy(req: import("express").Request, res: import("express").Response): void {
+  // Map incoming path: / → /UltraMusic/customer_login.php, /foo → /UltraMusic/foo
+  const upstreamPath = req.path === "/"
+    ? `${MUSIC_BASE}/customer_login.php`
+    : `${MUSIC_BASE}${req.path}`;
+
+  const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  const fullPath = upstreamPath + qs;
+
+  // Build body buffer for POST/PUT
+  let bodyBuf: Buffer | null = null;
+  const ct = req.header("content-type") || "";
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    if (ct.includes("application/x-www-form-urlencoded") && req.body && typeof req.body === "object") {
+      bodyBuf = Buffer.from(new URLSearchParams(req.body as Record<string, string>).toString(), "utf8");
+    } else if (req.rawBody instanceof Buffer) {
+      bodyBuf = req.rawBody;
     }
-  </style>
-</head>
-<body>
-  <iframe
-    src="https://appsnbits.com/UltraMusic/customer_login.php"
-    allowfullscreen
-    allow="fullscreen"
-    title="Ultra Music"
-  ></iframe>
-</body>
-</html>`;
+  }
+
+  const upstreamHeaders: Record<string, string> = {
+    host: MUSIC_HOST,
+    "user-agent": req.header("user-agent") || "Mozilla/5.0",
+    accept: req.header("accept") || "text/html,*/*",
+    "accept-language": req.header("accept-language") || "en-US,en;q=0.9",
+  };
+  if (ct) upstreamHeaders["content-type"] = ct;
+  if (bodyBuf) upstreamHeaders["content-length"] = String(bodyBuf.length);
+  const cookieHeader = req.header("cookie");
+  if (cookieHeader) upstreamHeaders["cookie"] = cookieHeader;
+  const referer = req.header("referer");
+  if (referer) {
+    upstreamHeaders["referer"] = referer.replace(
+      /https?:\/\/music\.ultracast\.co\.uk/g,
+      `https://${MUSIC_HOST}${MUSIC_BASE}`,
+    );
+  }
+
+  const proxyReq = https.request(
+    { hostname: MUSIC_HOST, path: fullPath, method: req.method, headers: upstreamHeaders },
+    (proxyRes) => {
+      const status = proxyRes.statusCode ?? 200;
+
+      // Rewrite redirect Location headers back to our domain
+      if (status >= 300 && status < 400) {
+        const loc = proxyRes.headers["location"] ?? "";
+        const rewritten = loc
+          .replace(new RegExp(`https?://${MUSIC_HOST}${MUSIC_BASE}`, "g"), "")
+          .replace(new RegExp(`^${MUSIC_BASE}`), "") || "/";
+        res.redirect(status, rewritten);
+        return;
+      }
+
+      // Forward headers — strip Set-Cookie domain so cookies are first-party
+      for (const [key, val] of Object.entries(proxyRes.headers)) {
+        if (MUSIC_SKIP_HEADERS.has(key.toLowerCase())) continue;
+        if (key.toLowerCase() === "set-cookie") {
+          const cookies = (Array.isArray(val) ? val : [val]) as string[];
+          res.setHeader("set-cookie", cookies.map((c) =>
+            c.replace(/;\s*domain=[^;]*/gi, "")
+             .replace(new RegExp(`; path=${MUSIC_BASE}`, "gi"), "; path=/"),
+          ));
+        } else {
+          res.setHeader(key, val as string | string[]);
+        }
+      }
+      res.status(status);
+
+      const respCt = (proxyRes.headers["content-type"] ?? "").toLowerCase();
+      if (respCt.includes("text/html") || respCt.includes("text/css") || respCt.includes("javascript")) {
+        const chunks: Buffer[] = [];
+        proxyRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+        proxyRes.on("end", () => {
+          let body = Buffer.concat(chunks).toString("utf8");
+          // Rewrite absolute upstream URLs → relative
+          body = body.replace(
+            new RegExp(`https?://${MUSIC_HOST}${MUSIC_BASE}/`, "g"), "/",
+          );
+          // Rewrite root-relative upstream paths
+          body = body.replace(
+            new RegExp(`(href|src|action)=["']${MUSIC_BASE}/`, "g"), '$1="/',
+          );
+          res.send(body);
+        });
+      } else {
+        proxyRes.pipe(res);
+      }
+    },
+  );
+
+  proxyReq.on("error", (err: Error) => {
+    console.error("[Ultra Music Proxy]", err.message);
+    if (!res.headersSent) res.status(502).send("Upstream unavailable — please try again shortly.");
+  });
+
+  if (bodyBuf) proxyReq.write(bodyBuf);
+  proxyReq.end();
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
 
-  // ── Ultra Music subdomain / portal route ─────────────────────────────────
-  // Serves the full-page iframe at:
-  //   • https://music.ultracast.co.uk  (subdomain — point CNAME to this server)
-  //   • /music-login                   (direct path for testing)
-  app.get("/music-login", (_req, res) => {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(ULTRA_MUSIC_PORTAL_HTML);
-  });
-
+  // ── Ultra Music subdomain proxy ───────────────────────────────────────────
+  // Any request to music.ultracast.co.uk is proxied to appsnbits.com/UltraMusic/
+  // Cookies appear first-party so login sessions work correctly in a browser.
   app.use((req, res, next) => {
     const host = (req.header("x-forwarded-host") || req.hostname || "").split(":")[0];
     if (host === "music.ultracast.co.uk" || host.startsWith("music.ultracast.")) {
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Cache-Control", "no-store");
-      return res.send(ULTRA_MUSIC_PORTAL_HTML);
+      return ultraMusicProxy(req, res);
     }
     next();
   });
@@ -2640,7 +2711,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!first?.id) throw new Error("No results");
         // Evict oldest entry if at capacity
         if (resolveCache.size >= CACHE_MAX) {
-          resolveCache.delete(resolveCache.keys().next().value);
+          const firstKey = resolveCache.keys().next().value;
+          if (firstKey !== undefined) resolveCache.delete(firstKey);
         }
         resolveCache.set(key, { videoId: first.id, ts: Date.now() });
         res.json({ videoId: first.id as string });
