@@ -108,7 +108,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // badge fields default to true when the column is missing (migration not yet run)
       setShowTopPicksBadge(data?.show_top_picks_badge !== false);
       setShowSportsTvBadge(data?.show_sports_tv_badge !== false);
-      setShowMusicBadge(data?.show_music_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -128,13 +127,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         // ignore cache failures
       }
 
-      // 2) Fetch the latest from the server (theme + ultra tube config in parallel).
+      // 2) Fetch the latest from the server (theme + app configs in parallel).
       if (!cancelled) {
         await Promise.all([
           fetchTheme(),
           fetch(new URL("/api/ultra-tube/config", getApiUrl()).toString())
             .then((r) => r.ok ? r.json() : null)
             .then((d) => { if (!cancelled) setShowUltraTubeBadge(d?.show_badge === true); })
+            .catch(() => {}),
+          fetch(new URL("/api/ultra-music/config", getApiUrl()).toString())
+            .then((r) => r.ok ? r.json() : null)
+            .then((d) => { if (!cancelled) setShowMusicBadge(d?.show_badge === true); })
             .catch(() => {}),
         ]);
       }
