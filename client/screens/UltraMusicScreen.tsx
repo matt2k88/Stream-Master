@@ -175,6 +175,40 @@ function CopyButton({ value, label }: { value: string; label?: string }) {
   );
 }
 
+function ModalButton({
+  onPress,
+  style: extraStyle,
+  textStyle: extraTextStyle,
+  icon,
+  children,
+}: {
+  onPress: () => void;
+  style?: object;
+  textStyle?: object;
+  icon?: React.ComponentProps<typeof Feather>["name"];
+  children: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const active = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[styles.modalBtn, extraStyle, active && styles.modalBtnActive]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+    >
+      {icon ? <Feather name={icon} size={14} color={extraTextStyle ? (extraTextStyle as any).color ?? Colors.dark.text : Colors.dark.text} /> : null}
+      <ThemedText style={[styles.modalBtnText, extraTextStyle]}>{children}</ThemedText>
+    </Pressable>
+  );
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function UltraMusicScreen() {
@@ -486,20 +520,16 @@ export default function UltraMusicScreen() {
               ) : null}
               <View style={styles.modalActions}>
                 {installPhase.phase === "error" ? (
-                  <Pressable
-                    style={[styles.modalBtn, { backgroundColor: UM_ORANGE, borderColor: UM_ORANGE }]}
+                  <ModalButton
                     onPress={startInstall}
-                  >
-                    <Feather name="refresh-cw" size={14} color="#fff" />
-                    <ThemedText style={[styles.modalBtnText, { color: "#fff" }]}>Try Again</ThemedText>
-                  </Pressable>
+                    icon="refresh-cw"
+                    style={{ backgroundColor: UM_ORANGE, borderColor: UM_ORANGE }}
+                    textStyle={{ color: "#fff" }}
+                  >Try Again</ModalButton>
                 ) : null}
-                <Pressable style={styles.modalBtn} onPress={cancelInstall}>
-                  <Feather name="x" size={14} color={Colors.dark.text} />
-                  <ThemedText style={styles.modalBtnText}>
-                    {installPhase.phase === "downloading" ? "Cancel" : "Close"}
-                  </ThemedText>
-                </Pressable>
+                <ModalButton onPress={cancelInstall} icon="x">
+                  {installPhase.phase === "downloading" ? "Cancel" : "Close"}
+                </ModalButton>
               </View>
             </View>
           </View>
@@ -942,5 +972,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.dark.border,
     backgroundColor: Colors.dark.backgroundRoot,
   },
+  modalBtnActive: { backgroundColor: "rgba(255,255,255,0.07)", borderColor: Colors.dark.textSecondary },
   modalBtnText: { fontSize: 14, color: Colors.dark.text, fontWeight: "600" },
 });
