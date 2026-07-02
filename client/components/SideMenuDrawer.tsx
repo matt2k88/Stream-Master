@@ -107,7 +107,7 @@ export default function SideMenuDrawer() {
   const { liveCategories } = useData();
   const { isOpen, transparent, close } = useSideMenu();
   const { scores } = useFootball();
-  const { showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge } = useAppTheme();
+  const { showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge, showMusicBadge } = useAppTheme();
   const hasLiveGame = scores.some((s) => {
     const st = (s.status_short || "").toUpperCase();
     return !s.finished_at && !FOOTBALL_FINISHED.includes(st) && !FOOTBALL_NOT_STARTED.includes(st);
@@ -311,6 +311,7 @@ export default function SideMenuDrawer() {
                 icon="music"
                 active={routeName === "MusicPlayer"}
                 activeTint="#a855f7"
+                isNew={showMusicBadge}
                 onPress={() => navTo(() => navigationRef.navigate("MusicPlayer" as never))}
               />
             ) : null}

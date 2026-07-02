@@ -19,6 +19,8 @@ interface ThemeContextValue {
   showUltraTubeBadge: boolean;
   /** Admin-controlled toggle: whether the NEW badge shows on Sports on TV. Defaults true. */
   showSportsTvBadge: boolean;
+  /** Admin-controlled toggle: whether the NEW badge shows on Music Player. Defaults true. */
+  showMusicBadge: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
@@ -30,6 +32,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   showTopPicksBadge: true,
   showUltraTubeBadge: true,
   showSportsTvBadge: true,
+  showMusicBadge: true,
 });
 
 // ── Hex / RGBA helpers ────────────────────────────────────────────────────
@@ -83,6 +86,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [showTopPicksBadge, setShowTopPicksBadge] = useState(true);
   const [showUltraTubeBadge, setShowUltraTubeBadge] = useState(true);
   const [showSportsTvBadge, setShowSportsTvBadge] = useState(true);
+  const [showMusicBadge, setShowMusicBadge] = useState(true);
 
   const fetchTheme = React.useCallback(async () => {
     try {
@@ -104,6 +108,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       // badge fields default to true when the column is missing (migration not yet run)
       setShowTopPicksBadge(data?.show_top_picks_badge !== false);
       setShowSportsTvBadge(data?.show_sports_tv_badge !== false);
+      setShowMusicBadge(data?.show_music_badge !== false);
     } catch (err) {
       if (__DEV__) console.warn("[ThemeContext] fetch failed", err);
     }
@@ -151,8 +156,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       showTopPicksBadge,
       showUltraTubeBadge,
       showSportsTvBadge,
+      showMusicBadge,
     };
-  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge]);
+  }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge, showMusicBadge]);
 
   return (
     <ThemeContext.Provider value={value}>
