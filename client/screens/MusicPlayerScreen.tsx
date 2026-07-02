@@ -193,8 +193,12 @@ function NativeFrame() {
         ref={webRef}
         source={{ uri: MUSIC_URL }}
         style={styles.webview}
-        injectedJavaScript={TV_CURSOR_JS}
-        injectedJavaScriptBeforeContentLoaded={`window.__tvCursorReady=false;true;`}
+        // Only inject the virtual cursor on TV — touch devices use their
+        // fingers and desktop/emulator uses a real mouse cursor.
+        injectedJavaScript={Platform.isTV ? TV_CURSOR_JS : undefined}
+        injectedJavaScriptBeforeContentLoaded={
+          Platform.isTV ? `window.__tvCursorReady=false;true;` : undefined
+        }
         onLoadStart={() => setLoading(true)}
         onLoadEnd={() => {
           setLoading(false);
