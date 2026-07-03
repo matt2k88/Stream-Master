@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React from "react";
 import { View, StyleSheet, BackHandler, Platform } from "react-native";
 import { WebView } from "react-native-webview";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -12,17 +12,11 @@ const MUSIC_TEST_URL = "https://youtube-music-player-ax3a.bolt.host/";
 
 export default function MusicTestScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const webviewRef = useRef<WebView>(null);
-  const canGoBackRef = useRef(false);
 
   useFocusEffect(
     React.useCallback(() => {
       if (Platform.OS !== "android") return;
       const handler = BackHandler.addEventListener("hardwareBackPress", () => {
-        if (canGoBackRef.current) {
-          webviewRef.current?.goBack();
-          return true;
-        }
         navigation.goBack();
         return true;
       });
@@ -33,7 +27,6 @@ export default function MusicTestScreen() {
   return (
     <View style={styles.container}>
       <WebView
-        ref={webviewRef}
         source={{ uri: MUSIC_TEST_URL }}
         style={styles.webview}
         javaScriptEnabled
@@ -41,9 +34,6 @@ export default function MusicTestScreen() {
         allowsFullscreenVideo
         mediaPlaybackRequiresUserGesture={false}
         allowsInlineMediaPlayback
-        onNavigationStateChange={(state) => {
-          canGoBackRef.current = state.canGoBack;
-        }}
       />
     </View>
   );

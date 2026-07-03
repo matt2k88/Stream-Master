@@ -1551,6 +1551,14 @@ export default function HomeScreen() {
                 mciIcon="fire"
                 onPress={() => navigation.navigate("TopPicks")}
               />
+              <QuickActionCard
+                compact
+                style={styles.gridCard}
+                title="Music Test"
+                subtitle="WebView music player"
+                icon="headphones"
+                onPress={() => navigation.navigate("MusicTest" as never)}
+              />
             </View>
 
             {watchRows}
