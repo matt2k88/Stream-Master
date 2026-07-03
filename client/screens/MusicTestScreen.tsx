@@ -1,21 +1,71 @@
-import React from "react";
-import { View, StyleSheet, BackHandler, Platform } from "react-native";
+import React, { useState, useRef } from "react";
+import { View, StyleSheet, BackHandler, Platform, ActivityIndicator, Dimensions } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { Colors } from "@/constants/theme";
-import { ThemedText } from "@/components/ThemedText";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const MUSIC_TEST_URL = "https://youtube-music-player-ax3a.bolt.host/";
 
-// react-native-webview is native-only; import lazily so web bundle doesn't break
-let WebView: any = null;
-if (Platform.OS !== "web") {
-  WebView = require("react-native-webview").WebView;
+// ── Web (Replit preview): plain iframe ───────────────────────────────────────
+function WebFrame() {
+  const [loading, setLoading] = useState(true);
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {loading ? (
+        <View style={styles.loader} pointerEvents="none">
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+        </View>
+      ) : null}
+      {React.createElement("iframe", {
+        src: MUSIC_TEST_URL,
+        style: { flex: 1, width: "100%", height: "100%", border: "none", backgroundColor: "#000" },
+        allow: "autoplay; fullscreen; encrypted-media",
+        onLoad: () => setLoading(false),
+      })}
+    </View>
+  );
 }
 
+// ── Native / Fire TV: WebView ─────────────────────────────────────────────────
+function NativeFrame() {
+  const { WebView } = require("react-native-webview");
+  const webRef = useRef<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      <WebView
+        ref={webRef}
+        source={{ uri: MUSIC_TEST_URL }}
+        style={styles.webview}
+        onLoadStart={() => setLoading(true)}
+        onLoadEnd={() => setLoading(false)}
+        allowsInlineMediaPlayback
+        allowsFullscreenVideo
+        mediaPlaybackRequiresUserGesture={false}
+        javaScriptEnabled
+        domStorageEnabled
+        setSupportMultipleWindows={false}
+        onShouldStartLoadWithRequest={() => true}
+        userAgent={
+          Platform.OS === "android"
+            ? "Mozilla/5.0 (Linux; Android 9; Build/PPR2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            : undefined
+        }
+      />
+      {loading ? (
+        <View style={styles.loader} pointerEvents="none">
+          <ActivityIndicator size="large" color={Colors.dark.accent} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// ── Screen ────────────────────────────────────────────────────────────────────
 export default function MusicTestScreen() {
   const navigation = useNavigation<NavigationProp>();
 
@@ -30,68 +80,27 @@ export default function MusicTestScreen() {
     }, [navigation]),
   );
 
-  // Web preview fallback — WebView only works on native (Android / Fire TV APK)
-  if (Platform.OS === "web") {
-    return (
-      <View style={styles.container}>
-        <View style={styles.webFallback}>
-          <ThemedText style={styles.webFallbackTitle}>Music Test</ThemedText>
-          <ThemedText style={styles.webFallbackBody}>
-            This screen uses a native WebView which only works on Android / Fire TV.{"\n"}
-            Open the app via Expo Go or the APK to play music here.
-          </ThemedText>
-          <ThemedText style={styles.webFallbackUrl}>{MUSIC_TEST_URL}</ThemedText>
-        </View>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <WebView
-        source={{ uri: MUSIC_TEST_URL }}
-        style={styles.webview}
-        javaScriptEnabled
-        domStorageEnabled
-        allowsFullscreenVideo
-        mediaPlaybackRequiresUserGesture={false}
-        allowsInlineMediaPlayback
-      />
+    <View style={styles.root}>
+      {Platform.OS === "web" ? <WebFrame /> : <NativeFrame />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
+    backgroundColor: "#000",
   },
   webview: {
     flex: 1,
-    backgroundColor: Colors.dark.backgroundRoot,
+    backgroundColor: "#000",
   },
-  webFallback: {
-    flex: 1,
+  loader: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
-    padding: 32,
-    gap: 16,
-  },
-  webFallbackTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: Colors.dark.accent,
-  },
-  webFallbackBody: {
-    fontSize: 15,
-    color: Colors.dark.textSecondary,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  webFallbackUrl: {
-    fontSize: 12,
-    color: Colors.dark.textSecondary,
-    opacity: 0.5,
-    textAlign: "center",
+    backgroundColor: "#000",
+    zIndex: 10,
   },
 });
