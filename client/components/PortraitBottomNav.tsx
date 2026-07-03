@@ -20,7 +20,6 @@ const HIDDEN_ROUTES = new Set<string>([
   "MultiScreenLayout",
   "MultiScreen",
   "MultiScreenPicker",
-  "MusicTest",
 ]);
 
 type ContentType = "live" | "movies" | "series";

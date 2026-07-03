@@ -1344,7 +1344,6 @@ export default function HomeScreen() {
                 <SidebarItem label="Music Player" icon="music" isNew={showMusicBadge} activeTint="#a855f7" onPress={() => navigation.navigate("MusicPlayer" as never)} />
               ) : null}
               <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
-              <SidebarItem label="Music Test" icon="headphones" onPress={() => navigation.navigate("MusicTest" as never)} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
             </ScrollView>
           </View>
@@ -1550,14 +1549,6 @@ export default function HomeScreen() {
                 subtitle="Hand-picked for you"
                 mciIcon="fire"
                 onPress={() => navigation.navigate("TopPicks")}
-              />
-              <QuickActionCard
-                compact
-                style={styles.gridCard}
-                title="Music Test"
-                subtitle="WebView music player"
-                icon="headphones"
-                onPress={() => navigation.navigate("MusicTest" as never)}
               />
             </View>
 

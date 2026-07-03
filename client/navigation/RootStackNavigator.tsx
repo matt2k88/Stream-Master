@@ -41,7 +41,6 @@ import ReferralsScreen from "@/screens/ReferralsScreen";
 import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
 import UltraMusicScreen from "@/screens/UltraMusicScreen";
-import MusicTestScreen from "@/screens/MusicTestScreen";
 import ParentalControlsScreen from "@/screens/ParentalControlsScreen";
 
 export type RootStackParamList = {
@@ -84,7 +83,6 @@ export type RootStackParamList = {
   SportListings: undefined;
   ParentalControls: undefined;
   MusicPlayer: undefined;
-  MusicTest: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -161,7 +159,6 @@ export default function RootStackNavigator() {
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
             <Stack.Screen name="ParentalControls" component={ParentalControlsScreen} />
             <Stack.Screen name="MusicPlayer" component={UltraMusicScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="MusicTest" component={MusicTestScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>
