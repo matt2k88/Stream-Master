@@ -324,6 +324,12 @@ export default function SideMenuDrawer() {
               onPress={() => navTo(() => navigationRef.navigate("UltraTube" as never))}
             />
             <MenuItem
+              label="Music Test"
+              icon="headphones"
+              active={routeName === "MusicTest"}
+              onPress={() => navTo(() => navigationRef.navigate("MusicTest" as never))}
+            />
+            <MenuItem
               label="Settings"
               icon="settings"
               active={routeName === "AccountInfo"}
