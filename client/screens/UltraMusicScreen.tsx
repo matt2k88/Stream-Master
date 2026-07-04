@@ -579,7 +579,6 @@ function SalesView() {
           <FeatureRow text="Millions of tracks — completely ad-free" />
           <FeatureRow text="Audiobooks &amp; podcasts included" />
           <FeatureRow text="Playlists, albums, artists and radio" />
-          <FeatureRow text="Offline listening — download for later" />
           <FeatureRow text="High-quality audio up to 320kbps" />
           <FeatureRow text="Built for Android TV &amp; Fire TV big screen" />
           <FeatureRow text="Separate app — use alongside Ultra Cast" />
