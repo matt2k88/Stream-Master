@@ -307,7 +307,7 @@ export default function SideMenuDrawer() {
             />
             {(width > 768 || Platform.isTV) ? (
               <MenuItem
-                label="Music Player"
+                label="Ultra Music"
                 icon="music"
                 active={routeName === "MusicPlayer"}
                 activeTint="#a855f7"

@@ -1341,7 +1341,7 @@ export default function HomeScreen() {
               <SidebarItem label="Sports on TV" icon="tv" isNew={showSportsTvBadge} onPress={() => navigation.navigate("SportListings")} />
               <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
               {width > 768 || Platform.isTV ? (
-                <SidebarItem label="Music Player" icon="music" isNew={showMusicBadge} activeTint="#a855f7" onPress={() => navigation.navigate("MusicPlayer" as never)} />
+                <SidebarItem label="Ultra Music" icon="music" isNew={showMusicBadge} activeTint="#a855f7" onPress={() => navigation.navigate("MusicPlayer" as never)} />
               ) : null}
               <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
               <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
