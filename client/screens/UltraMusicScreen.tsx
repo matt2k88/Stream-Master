@@ -558,10 +558,10 @@ function SalesView() {
       <View style={styles.salesLeft}>
         <UltraMusicLogo width={210} height={84} />
         <ThemedText style={styles.salesTagline}>
-          Your music, without limits.
+          Music, audiobooks &amp; podcasts — without limits.
         </ThemedText>
         <ThemedText style={styles.salesDesc}>
-          A dedicated music streaming app built exclusively for Ultra Cast subscribers. Stream millions of tracks, ad-free, on your TV or Fire Stick.
+          A dedicated streaming app built exclusively for Ultra Cast subscribers. Stream millions of tracks, audiobooks and podcasts, ad-free, on your TV or Fire Stick.
         </ThemedText>
 
         <View style={styles.pricePill}>
@@ -577,6 +577,7 @@ function SalesView() {
       <View style={styles.salesRight}>
         <View style={styles.salesFeatures}>
           <FeatureRow text="Millions of tracks — completely ad-free" />
+          <FeatureRow text="Audiobooks &amp; podcasts included" />
           <FeatureRow text="Playlists, albums, artists and radio" />
           <FeatureRow text="Offline listening — download for later" />
           <FeatureRow text="High-quality audio up to 320kbps" />
