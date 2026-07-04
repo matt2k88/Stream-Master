@@ -585,7 +585,7 @@ function SalesView() {
         </View>
 
         <View style={styles.salesCompatRow}>
-          <Feather name="tv" size={13} color="#f59e0b" />
+          <Feather name="tv" size={13} color={UM_ORANGE} />
           <ThemedText style={styles.salesCompatText}>
             Android TV &amp; Fire TV — mobile supported too
           </ThemedText>
@@ -833,11 +833,11 @@ const styles = StyleSheet.create({
 
   salesCompatRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "rgba(245,158,11,0.08)", borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: "rgba(245,158,11,0.25)",
+    backgroundColor: UM_ORANGE_DIM, borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: UM_ORANGE_BORDER,
     paddingHorizontal: 10, paddingVertical: 6, alignSelf: "flex-start",
   },
-  salesCompatText: { fontSize: 12, color: "#f59e0b", fontWeight: "600" },
+  salesCompatText: { fontSize: 12, color: UM_ORANGE, fontWeight: "600" },
 
   salesWhatsApp: {
     flexDirection: "row", alignItems: "center", gap: 8,
@@ -927,12 +927,12 @@ const styles = StyleSheet.create({
 
   compatCard: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "rgba(245,158,11,0.07)", borderRadius: BorderRadius.sm,
-    borderWidth: 1, borderColor: "rgba(245,158,11,0.22)",
+    backgroundColor: UM_ORANGE_DIM, borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: UM_ORANGE_BORDER,
     paddingHorizontal: 10, paddingVertical: 8,
   },
   compatText: { flex: 1, gap: 1 },
-  compatTitle: { fontSize: 13, fontWeight: "700", color: "#f59e0b" },
+  compatTitle: { fontSize: 13, fontWeight: "700", color: UM_ORANGE },
   compatSub: { fontSize: 11, color: Colors.dark.textSecondary },
 
   // Icon buttons
