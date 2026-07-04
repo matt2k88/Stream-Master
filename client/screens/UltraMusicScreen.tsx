@@ -568,11 +568,21 @@ function SalesView() {
           A dedicated streaming app built exclusively for Ultra Cast subscribers. Stream millions of tracks, audiobooks and podcasts, ad-free, on your TV or Fire Stick.
         </ThemedText>
 
-        <View style={styles.pricePill}>
-          <ThemedText style={styles.priceAmount}>£20</ThemedText>
-          <View style={styles.priceMeta}>
-            <ThemedText style={styles.priceLabel}>per year</ThemedText>
-            <ThemedText style={styles.priceSub}>Ultra Cast subscribers only</ThemedText>
+        <View style={styles.priceRow}>
+          <View style={styles.pricePill}>
+            <ThemedText style={styles.priceAmount}>£20</ThemedText>
+            <View style={styles.priceMeta}>
+              <ThemedText style={styles.priceLabel}>per year</ThemedText>
+              <ThemedText style={styles.priceSub}>Ultra Cast subscribers only</ThemedText>
+            </View>
+          </View>
+          <View style={styles.priceDivider} />
+          <View style={styles.pricePill}>
+            <ThemedText style={styles.priceAmount}>£50</ThemedText>
+            <View style={styles.priceMeta}>
+              <ThemedText style={styles.priceLabel}>lifetime</ThemedText>
+              <ThemedText style={styles.priceSub}>Pay once, keep forever</ThemedText>
+            </View>
           </View>
         </View>
       </View>
@@ -815,12 +825,18 @@ const styles = StyleSheet.create({
   salesTagline: { fontSize: 15, fontWeight: "700", color: UM_ORANGE, textAlign: "center" },
   salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, textAlign: "center" },
 
+  priceRow: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
+    marginTop: Spacing.xs, alignSelf: "center",
+  },
+  priceDivider: {
+    width: 1, height: 36, backgroundColor: UM_ORANGE_BORDER,
+  },
   pricePill: {
     flexDirection: "row", alignItems: "center", gap: Spacing.md,
     backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.md,
     borderWidth: 1, borderColor: UM_ORANGE_BORDER,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
-    alignSelf: "center", marginTop: Spacing.xs,
   },
   priceAmount: { fontSize: 32, fontWeight: "900", color: UM_ORANGE },
   priceMeta: { gap: 2 },
