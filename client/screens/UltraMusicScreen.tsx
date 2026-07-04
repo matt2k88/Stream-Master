@@ -826,12 +826,10 @@ const styles = StyleSheet.create({
   salesDesc: { fontSize: 13, color: Colors.dark.textSecondary, lineHeight: 20, textAlign: "center" },
 
   priceRow: {
-    flexDirection: "row", alignItems: "center", gap: Spacing.sm,
-    marginTop: Spacing.xs, alignSelf: "center",
+    flexDirection: "column", gap: Spacing.xs,
+    marginTop: Spacing.xs, alignSelf: "stretch",
   },
-  priceDivider: {
-    width: 1, height: 36, backgroundColor: UM_ORANGE_BORDER,
-  },
+  priceDivider: { height: 0 },
   pricePill: {
     flexDirection: "row", alignItems: "center", gap: Spacing.md,
     backgroundColor: Colors.dark.backgroundSecondary, borderRadius: BorderRadius.md,
