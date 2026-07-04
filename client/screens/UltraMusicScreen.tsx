@@ -28,9 +28,13 @@ import SideMenuButton from "@/components/SideMenuButton";
 
 const ULTRA_MUSIC_LOGO = require("../assets/ultramusic/um-logo.png");
 
-const UM_ORANGE       = "#FF6600";
-const UM_ORANGE_DIM   = "rgba(255,102,0,0.12)";
-const UM_ORANGE_BORDER = "rgba(255,102,0,0.30)";
+const UM_PURPLE        = "#a855f7";
+const UM_PURPLE_DIM    = "rgba(168,85,247,0.12)";
+const UM_PURPLE_BORDER = "rgba(168,85,247,0.30)";
+// Keep legacy aliases so every reference below resolves without touching each line
+const UM_ORANGE        = UM_PURPLE;
+const UM_ORANGE_DIM    = UM_PURPLE_DIM;
+const UM_ORANGE_BORDER = UM_PURPLE_BORDER;
 const UNKNOWN_SOURCES_KEY = "@ultracast:ultramusic_unknown_sources_v1";
 const APK_PREFIX = "ultramusic-";
 
