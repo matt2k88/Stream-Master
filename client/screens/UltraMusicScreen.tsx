@@ -573,15 +573,21 @@ function SalesView() {
             <ThemedText style={styles.priceAmount}>£20</ThemedText>
             <View style={styles.priceMeta}>
               <ThemedText style={styles.priceLabel}>per year</ThemedText>
-              <ThemedText style={styles.priceSub}>Ultra Cast subscribers only</ThemedText>
+              <ThemedText style={styles.priceSub}>1 account</ThemedText>
             </View>
           </View>
-          <View style={styles.priceDivider} />
           <View style={styles.pricePill}>
-            <ThemedText style={styles.priceAmount}>£50</ThemedText>
+            <ThemedText style={styles.priceAmount}>£35</ThemedText>
             <View style={styles.priceMeta}>
-              <ThemedText style={styles.priceLabel}>lifetime</ThemedText>
-              <ThemedText style={styles.priceSub}>Pay once, keep forever</ThemedText>
+              <ThemedText style={styles.priceLabel}>duo — per year</ThemedText>
+              <ThemedText style={styles.priceSub}>2 accounts · £17.50 each</ThemedText>
+            </View>
+          </View>
+          <View style={styles.pricePill}>
+            <ThemedText style={styles.priceAmount}>£45</ThemedText>
+            <View style={styles.priceMeta}>
+              <ThemedText style={styles.priceLabel}>family — per year</ThemedText>
+              <ThemedText style={styles.priceSub}>4 accounts · £11.25 each</ThemedText>
             </View>
           </View>
         </View>
