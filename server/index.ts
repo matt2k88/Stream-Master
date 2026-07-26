@@ -1,6 +1,5 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import { startFootballPoller } from "./football";
 import * as fs from "fs";
@@ -159,21 +158,16 @@ function serveLandingPage({
 }
 
 function configureExpoAndLanding(app: express.Application) {
-  const isDev = process.env.NODE_ENV !== "production";
+  const templatePath = path.resolve(
+    process.cwd(),
+    "server",
+    "templates",
+    "landing-page.html",
+  );
+  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
 
   log("Serving static Expo files with dynamic manifest routing");
-
-  // In development: proxy web-browser traffic to Metro's web server (port 8081).
-  // In production: Metro is not running — serve the pre-built static bundle instead.
-  const metroProxy = isDev
-    ? createProxyMiddleware({
-        target: "http://localhost:8081",
-        changeOrigin: true,
-        ws: true,
-      })
-    : null;
-
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
@@ -186,45 +180,31 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    // Native Expo app manifest requests (dev + prod)
+    if (req.path !== "/" && req.path !== "/manifest") {
+      return next();
+    }
+
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      if (req.path === "/" || req.path === "/manifest") {
-        return serveExpoManifest(platform, res);
-      }
+      return serveExpoManifest(platform, res);
     }
 
-    if (isDev && metroProxy) {
-      // Dev: proxy everything else to Metro so web browsers get the live bundle
-      return (metroProxy as any)(req, res, next);
+    if (req.path === "/") {
+      return serveLandingPage({
+        req,
+        res,
+        landingPageTemplate,
+        appName,
+      });
     }
 
-    // Production: fall through — express.static('static-build') below serves
-    // the pre-built web bundle including index.html at /.
-    // Native Expo connections are already handled above via expo-platform header.
     next();
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  // Production: serve the Expo web export (dist/) for web browsers.
-  // `expo export --platform web` puts index.html + _expo bundles here.
-  if (!isDev) {
-    const distDir  = path.resolve(process.cwd(), "dist");
-    const indexHtml = path.join(distDir, "index.html");
-    app.use(express.static(distDir));
-    // SPA fallback — deep-linked paths also get index.html
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith("/api") || req.path.startsWith("/assets")) return next();
-      if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
-      next();
-    });
-  }
-
-  log(isDev
-    ? "Expo routing: Proxying web traffic to Metro on :8081"
-    : "Expo routing: Serving dist/ (expo export web) with SPA fallback");
+  log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 
 function setupErrorHandler(app: express.Application) {

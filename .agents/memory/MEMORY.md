@@ -13,4 +13,3 @@
 - [TMDB API key type](tmdb-api-key.md) — use v3 API key (TMDB_API_KEY, 32-char alphanumeric, ?api_key=) not v4 JWT Bearer (TMDB_READ_TOKEN); v4 JWTs can be silently revoked server-side.
 - [Stream enricher lessons](stream-enrich-lessons.md) — preload rated-set into memory, strip IPTV prefixes in parseName, cross-type TV/movie fallback search; Supabase caps bulk queries at 1000 rows without .range().
 - [Ultra Music package name](ultra-music-package.md) — Android package is `com.ultracast.ultramusic`; used in UltraMusicScreen to detect install and show "Open" button.
-- [Metro web platform resolution](metro-web-platform.md) — must add 'web' to resolver.platforms; Expo default omits it, breaking .web.tsx overrides on the web bundle.

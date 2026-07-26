@@ -6,7 +6,6 @@ import {
   Pressable,
   Animated,
   ActivityIndicator,
-  Platform,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "@/lib/video-player";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -152,13 +151,7 @@ export default function IntroOverlay({ onDone }: IntroOverlayProps) {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
   }, []);
 
-  // Skip intro video on web — expo-video doesn't fire readyToPlay reliably in browsers
   useEffect(() => {
-    if (Platform.OS === "web") onDone();
-  }, [onDone]);
-
-  useEffect(() => {
-    if (Platform.OS === "web") return;
     let cancelled = false;
     (async () => {
       try {
