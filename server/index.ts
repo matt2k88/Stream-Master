@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import { startFootballPoller } from "./football";
 import * as fs from "fs";
@@ -169,40 +170,43 @@ function configureExpoAndLanding(app: express.Application) {
 
   log("Serving static Expo files with dynamic manifest routing");
 
+  // Native app manifest requests
   app.use((req: Request, res: Response, next: NextFunction) => {
-    // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
-    const hostname = (req.header("x-forwarded-host") || req.hostname || "").split(":")[0];
-    if (hostname === "music.ultracast.co.uk" || hostname.startsWith("music.ultracast.")) {
-      return next();
-    }
-
-    if (req.path.startsWith("/api")) {
-      return next();
-    }
-
-    if (req.path !== "/" && req.path !== "/manifest") {
-      return next();
-    }
-
+    if (req.path !== "/" && req.path !== "/manifest") return next();
     const platform = req.header("expo-platform");
-    if (platform && (platform === "ios" || platform === "android")) {
+    if (platform === "ios" || platform === "android") {
       return serveExpoManifest(platform, res);
     }
-
-    if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
-    }
-
     next();
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  // Serve pre-built web app if it exists (production / static build)
+  const staticBuildPath = path.resolve(process.cwd(), "static-build");
+  if (fs.existsSync(staticBuildPath) && fs.readdirSync(staticBuildPath).length > 0) {
+    log("Serving static web build from static-build/");
+    app.use(express.static(staticBuildPath));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(staticBuildPath, "index.html"));
+    });
+  } else {
+    // Dev mode: proxy all non-API browser requests to the Expo web dev server
+    log("No static build found — proxying browser requests to Expo web dev server on :8081");
+    const expoWebProxy = createProxyMiddleware({
+      target: "http://localhost:8081",
+      changeOrigin: true,
+      ws: true,
+      on: {
+        error: (_err, _req, res) => {
+          (res as express.Response)
+            .status(503)
+            .send("Expo web dev server not ready yet — please wait a moment and refresh.");
+        },
+      },
+    });
+    app.use(expoWebProxy);
+  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
