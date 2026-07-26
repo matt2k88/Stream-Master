@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import { startFootballPoller } from "./football";
 import * as fs from "fs";
@@ -158,16 +159,16 @@ function serveLandingPage({
 }
 
 function configureExpoAndLanding(app: express.Application) {
-  const templatePath = path.resolve(
-    process.cwd(),
-    "server",
-    "templates",
-    "landing-page.html",
-  );
-  const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
 
   log("Serving static Expo files with dynamic manifest routing");
+
+  // Proxy to Metro's web server for all web-browser traffic
+  const metroProxy = createProxyMiddleware({
+    target: "http://localhost:8081",
+    changeOrigin: true,
+    ws: true,
+  });
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
@@ -180,31 +181,21 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    if (req.path !== "/" && req.path !== "/manifest") {
-      return next();
-    }
-
+    // Native Expo app manifest requests
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+      if (req.path === "/" || req.path === "/manifest") {
+        return serveExpoManifest(platform, res);
+      }
     }
 
-    if (req.path === "/") {
-      return serveLandingPage({
-        req,
-        res,
-        landingPageTemplate,
-        appName,
-      });
-    }
-
-    next();
+    // Proxy everything else (web browser) to Metro
+    return (metroProxy as any)(req, res, next);
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  log("Expo routing: Checking expo-platform header on / and /manifest");
+  log("Expo routing: Proxying web traffic to Metro on :8081");
 }
 
 function setupErrorHandler(app: express.Application) {
