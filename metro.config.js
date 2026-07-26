@@ -32,6 +32,13 @@ const SERVER_ONLY_PACKAGES = [
 config.resolver = {
   ...config.resolver,
 
+  // Add 'web' so Metro applies .web.tsx / .web.ts / .web.js suffix resolution
+  // when serving the web bundle (platform=web). Without this, video-player.web.tsx
+  // and other web shims are never preferred over their native counterparts, causing
+  // native-only imports (react-native-vlc-media-player, expo-video) to load in
+  // the browser and crash.
+  platforms: [...(config.resolver.platforms ?? ['ios', 'android']), 'web'],
+
   blockList: [
     // Replit internals
     /\.local\/state\/workflow-logs\/.*/,
