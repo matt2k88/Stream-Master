@@ -174,10 +174,6 @@ function configureExpoAndLanding(app: express.Application) {
       })
     : null;
 
-  // Production only: read the landing-page template for native Expo QR display
-  const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
-  const landingPageTemplate =
-    !isDev && fs.existsSync(templatePath) ? fs.readFileSync(templatePath, "utf-8") : "";
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
@@ -203,21 +199,29 @@ function configureExpoAndLanding(app: express.Application) {
       return (metroProxy as any)(req, res, next);
     }
 
-    // Production: only intercept / — serve landing page for non-web clients,
-    // everything else falls through to the static-build express.static below.
-    if (req.path === "/") {
-      return serveLandingPage({ req, res, landingPageTemplate, appName });
-    }
-
+    // Production: fall through — express.static('static-build') below serves
+    // the pre-built web bundle including index.html at /.
+    // Native Expo connections are already handled above via expo-platform header.
     next();
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
+  // Production SPA fallback: any non-API, non-asset path that wasn't matched
+  // above gets index.html so client-side routing works (e.g. /login, /home).
+  if (!isDev) {
+    const indexHtml = path.resolve(process.cwd(), "static-build", "index.html");
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith("/api") || req.path.startsWith("/assets")) return next();
+      if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
+      next();
+    });
+  }
+
   log(isDev
     ? "Expo routing: Proxying web traffic to Metro on :8081"
-    : "Expo routing: Serving static-build for web, landing page at /");
+    : "Expo routing: Serving static-build for web (SPA mode)");
 }
 
 function setupErrorHandler(app: express.Application) {
