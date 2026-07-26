@@ -159,16 +159,25 @@ function serveLandingPage({
 }
 
 function configureExpoAndLanding(app: express.Application) {
+  const isDev = process.env.NODE_ENV !== "production";
   const appName = getAppName();
 
   log("Serving static Expo files with dynamic manifest routing");
 
-  // Proxy to Metro's web server for all web-browser traffic
-  const metroProxy = createProxyMiddleware({
-    target: "http://localhost:8081",
-    changeOrigin: true,
-    ws: true,
-  });
+  // In development: proxy web-browser traffic to Metro's web server (port 8081).
+  // In production: Metro is not running — serve the pre-built static bundle instead.
+  const metroProxy = isDev
+    ? createProxyMiddleware({
+        target: "http://localhost:8081",
+        changeOrigin: true,
+        ws: true,
+      })
+    : null;
+
+  // Production only: read the landing-page template for native Expo QR display
+  const templatePath = path.resolve(process.cwd(), "server", "templates", "landing-page.html");
+  const landingPageTemplate =
+    !isDev && fs.existsSync(templatePath) ? fs.readFileSync(templatePath, "utf-8") : "";
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     // Let subdomain-specific routes (music, etc.) be handled by registerRoutes
@@ -181,7 +190,7 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    // Native Expo app manifest requests
+    // Native Expo app manifest requests (dev + prod)
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
       if (req.path === "/" || req.path === "/manifest") {
@@ -189,13 +198,26 @@ function configureExpoAndLanding(app: express.Application) {
       }
     }
 
-    // Proxy everything else (web browser) to Metro
-    return (metroProxy as any)(req, res, next);
+    if (isDev && metroProxy) {
+      // Dev: proxy everything else to Metro so web browsers get the live bundle
+      return (metroProxy as any)(req, res, next);
+    }
+
+    // Production: only intercept / — serve landing page for non-web clients,
+    // everything else falls through to the static-build express.static below.
+    if (req.path === "/") {
+      return serveLandingPage({ req, res, landingPageTemplate, appName });
+    }
+
+    next();
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
+  app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  log("Expo routing: Proxying web traffic to Metro on :8081");
+  log(isDev
+    ? "Expo routing: Proxying web traffic to Metro on :8081"
+    : "Expo routing: Serving static-build for web, landing page at /");
 }
 
 function setupErrorHandler(app: express.Application) {
