@@ -182,13 +182,14 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
 
-  // Serve pre-built web app if it exists (production / static build)
-  const staticBuildPath = path.resolve(process.cwd(), "static-build");
-  if (fs.existsSync(staticBuildPath) && fs.readdirSync(staticBuildPath).length > 0) {
-    log("Serving static web build from static-build/");
-    app.use(express.static(staticBuildPath));
+  // Serve pre-built web app if it exists (production — built by `expo export --platform web`)
+  const webDistPath = path.resolve(process.cwd(), "dist");
+  const webIndexPath = path.join(webDistPath, "index.html");
+  if (fs.existsSync(webIndexPath)) {
+    log("Serving static web build from dist/");
+    app.use(express.static(webDistPath));
     app.get("*", (_req, res) => {
-      res.sendFile(path.join(staticBuildPath, "index.html"));
+      res.sendFile(webIndexPath);
     });
   } else {
     // Dev mode: proxy all non-API browser requests to the Expo web dev server
