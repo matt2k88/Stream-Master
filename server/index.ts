@@ -208,10 +208,13 @@ function configureExpoAndLanding(app: express.Application) {
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
-  // Production SPA fallback: any non-API, non-asset path that wasn't matched
-  // above gets index.html so client-side routing works (e.g. /login, /home).
+  // Production: serve the Expo web export (dist/) for web browsers.
+  // `expo export --platform web` puts index.html + _expo bundles here.
   if (!isDev) {
-    const indexHtml = path.resolve(process.cwd(), "static-build", "index.html");
+    const distDir  = path.resolve(process.cwd(), "dist");
+    const indexHtml = path.join(distDir, "index.html");
+    app.use(express.static(distDir));
+    // SPA fallback — deep-linked paths also get index.html
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (req.path.startsWith("/api") || req.path.startsWith("/assets")) return next();
       if (fs.existsSync(indexHtml)) return res.sendFile(indexHtml);
@@ -221,7 +224,7 @@ function configureExpoAndLanding(app: express.Application) {
 
   log(isDev
     ? "Expo routing: Proxying web traffic to Metro on :8081"
-    : "Expo routing: Serving static-build for web (SPA mode)");
+    : "Expo routing: Serving dist/ (expo export web) with SPA fallback");
 }
 
 function setupErrorHandler(app: express.Application) {
