@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { StyleSheet, AppState, AppStateStatus, Platform } from "react-native";
+import { StyleSheet, AppState, AppStateStatus } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
 import { NavigationContainer } from "@react-navigation/native";
@@ -46,8 +46,7 @@ export default function App() {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
   }, []);
 
-  // Skip the video intro entirely on web — it requires native video playback
-  const [introComplete, setIntroComplete] = useState(Platform.OS === "web");
+  const [introComplete, setIntroComplete] = useState(false);
 
   const handleIntroDone = useCallback(() => {
     setIntroComplete(true);
