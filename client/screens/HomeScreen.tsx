@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView, findNodeHandle } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView, findNodeHandle, Animated } from "react-native";
 import Constants from "expo-constants";
 import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -733,25 +733,17 @@ const APP_VERSION: string =
 // version than the one bundled in this build. Mirrors the alert from
 // AccountInfoScreen's "Check for Updates" so users get the downloader
 // code without having to dig into the Account screen.
-function UpdateAvailableButton() {
-  const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
-  const accent = useAccent();
+// ── Update check hook ─────────────────────────────────────────────────────
+// Polls /api/app-version every 15 min and on foreground restore.
+// Returns the new version string + downloader code when available, plus the
+// apkInstaller modal element (must be rendered once in the tree).
+function useUpdateCheck() {
   const apkInstaller = useApkInstaller();
   const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
   const [downloaderCode, setDownloaderCode] = useState<string | null>(null);
 
-  // Re-check the version frequently so users on long-running TV
-  // sessions notice a release without restarting the app:
-  //   - on mount
-  //   - every 15 minutes while mounted
-  //   - whenever the app returns to the foreground
-  // The button stays mounted on the dashboard for the whole session,
-  // so this single hook owns the polling lifecycle.
   useEffect(() => {
     let cancelled = false;
-
     const checkOnce = async () => {
       try {
         const url = new URL("/api/app-version", getApiUrl());
@@ -765,33 +757,18 @@ function UpdateAvailableButton() {
           setRemoteVersion(v);
           setDownloaderCode(c);
         } else {
-          // Clear if the server has been rolled back to match the
-          // installed version (or if a previously-stale cache cleared).
           setRemoteVersion(null);
           setDownloaderCode(null);
         }
-      } catch {
-        // silent — header button just won't appear if the check fails
-      }
+      } catch { /* silent */ }
     };
-
     checkOnce();
     const intervalId = setInterval(checkOnce, 15 * 60 * 1000);
-
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") checkOnce();
-    });
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-      sub.remove();
-    };
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") checkOnce(); });
+    return () => { cancelled = true; clearInterval(intervalId); sub.remove(); };
   }, []);
 
-  if (!remoteVersion) return null;
-
-  const onPress = () => {
+  const onUpdatePress = useCallback(() => {
     const v = remoteVersion;
     if (!v) return;
     const baseMsg = `A new version (v${v}) is available.`;
@@ -807,11 +784,7 @@ function UpdateAvailableButton() {
       Alert.alert(
         "Update Available",
         `${baseMsg}\n\nDownload and install it now, or use the manual downloader code.`,
-        [
-          { text: "Later", style: "cancel" },
-          manualBtn,
-          { text: "Download & Install", onPress: apkInstaller.start },
-        ],
+        [{ text: "Later", style: "cancel" }, manualBtn, { text: "Download & Install", onPress: apkInstaller.start }],
       );
     } else {
       Alert.alert(
@@ -819,32 +792,76 @@ function UpdateAvailableButton() {
         `${baseMsg}\n\nUse downloader code ${downloaderCode ?? "N/A"} to install.\n\nIMPORTANT: Clear the cache in Downloader first so you receive the latest version and not an older cached copy.`,
       );
     }
-  };
+  }, [remoteVersion, downloaderCode, apkInstaller]);
+
+  return { remoteVersion, onUpdatePress, modal: apkInstaller.modal };
+}
+
+// ── Sidebar update card ────────────────────────────────────────────────────
+function UpdateSidebarCard({ version, onPress }: { version: string; onPress: () => void }) {
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = focused || hovered;
 
   return (
-    <View style={styles.btnGroup}>
-      {apkInstaller.modal}
-      <LabelledAction label="Update">
-        <Pressable
-          style={[
-            styles.headerBtn,
-            styles.headerBtnAlert,
-            { borderColor: accent.withAlpha(accent.accent, 0.5), backgroundColor: accent.accentDim },
-            isActive && { borderColor: accent.accent },
-          ]}
-          onPress={onPress}
-          onPressIn={() => setPressed(true)}
-          onPressOut={() => setPressed(false)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onHoverIn={() => setFocused(true)}
-          onHoverOut={() => setFocused(false)}
-        >
-          <Feather name="download" size={18} color={accent.accent} />
-          <View style={[styles.unreadBadge, { backgroundColor: accent.accent, minWidth: 8, height: 8, paddingHorizontal: 0 }]} />
-        </Pressable>
-      </LabelledAction>
+    <View style={styles.updateCard}>
+      <LinearGradient
+        colors={["rgba(255,102,0,0.22)", "rgba(255,102,0,0.10)"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+      <View style={styles.updateCardHeader}>
+        <Feather name="download-cloud" size={13} color={Colors.dark.accent} />
+        <ThemedText style={styles.updateCardTitle}>Update Available</ThemedText>
+      </View>
+      <ThemedText style={styles.updateCardVersion}>v{version} is ready to install</ThemedText>
+      <Pressable
+        style={[styles.updateCardBtn, isActive && styles.updateCardBtnActive]}
+        onPress={onPress}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+      >
+        <Feather name="download" size={11} color="#fff" />
+        <ThemedText style={styles.updateCardBtnText}>Install Update</ThemedText>
+      </Pressable>
     </View>
+  );
+}
+
+// ── Sidebar scroll-overflow arrow ─────────────────────────────────────────
+function SidebarScrollArrow({ bouncing }: { bouncing: boolean }) {
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (bouncing) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, { toValue: 5, duration: 420, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 0, duration: 420, useNativeDriver: true }),
+        ]),
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      anim.setValue(0);
+    }
+  }, [bouncing]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Animated.View
+      style={[styles.sidebarArrow, { transform: [{ translateY: anim }] }]}
+      pointerEvents="none"
+    >
+      <Feather
+        name="chevron-down"
+        size={14}
+        color={bouncing ? Colors.dark.accent : Colors.dark.textSecondary}
+      />
+    </Animated.View>
   );
 }
 
@@ -947,6 +964,12 @@ export default function HomeScreen() {
   // Native node handle of the first sidebar item, so D-pad LEFT from the
   // Continue Watching row exits to the sidebar instead of trapping focus.
   const [sidebarTag, setSidebarTag] = useState<number | undefined>();
+  // Update check — version polling for the sidebar update card.
+  const { remoteVersion, onUpdatePress, modal: updateModal } = useUpdateCheck();
+  // Sidebar overflow detection for the scroll-arrow indicator.
+  const [sidebarContentH, setSidebarContentH] = useState(0);
+  const [sidebarContainerH, setSidebarContainerH] = useState(0);
+  const sidebarOverflows = sidebarContentH > sidebarContainerH + 4;
 
   // ── Renewal notice (auto-popup once per expiry cycle) ──────────────────
   const { userInfo } = useAuth();
@@ -1320,45 +1343,61 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            <ScrollView
-              style={styles.sidebarScroll}
-              contentContainerStyle={styles.sidebarScrollContent}
-              showsVerticalScrollIndicator={false}
+            {/* Overflow-aware scroll container */}
+            <View
+              style={styles.sidebarScrollWrap}
+              onLayout={(e) => setSidebarContainerH(e.nativeEvent.layout.height)}
             >
-              <SidebarItem label="Home" icon="home" active onPress={() => {}} onFocusTag={(t) => setSidebarTag(t ?? undefined)} />
-              <SidebarItem
-                label="Live TV"
-                mciIcon="television-classic"
-                onPress={() => goToContent("live", "Live TV")}
-              />
-              <SidebarItem
-                label="Movies"
-                mciIcon="movie-open-outline"
-                onPress={() => goToContent("movies", "Movies")}
-              />
-              <SidebarItem
-                label="Series"
-                mciIcon="play-box-multiple-outline"
-                onPress={() => goToContent("series", "Series")}
-              />
-              <SidebarItem label="Catch Up" icon="clock" onPress={() => goToScreen("catchup", "CatchUp")} />
-              <SidebarItem label="TV Guide" icon="calendar" onPress={() => goToScreen("tvguide", "TvGuide")} />
+              <ScrollView
+                style={styles.sidebarScroll}
+                contentContainerStyle={styles.sidebarScrollContent}
+                showsVerticalScrollIndicator={false}
+                onContentSizeChange={(_w, h) => setSidebarContentH(h)}
+              >
+                <SidebarItem label="Home" icon="home" active onPress={() => {}} onFocusTag={(t) => setSidebarTag(t ?? undefined)} />
+                <SidebarItem
+                  label="Live TV"
+                  mciIcon="television-classic"
+                  onPress={() => goToContent("live", "Live TV")}
+                />
+                <SidebarItem
+                  label="Movies"
+                  mciIcon="movie-open-outline"
+                  onPress={() => goToContent("movies", "Movies")}
+                />
+                <SidebarItem
+                  label="Series"
+                  mciIcon="play-box-multiple-outline"
+                  onPress={() => goToContent("series", "Series")}
+                />
+                <SidebarItem label="Catch Up" icon="clock" onPress={() => goToScreen("catchup", "CatchUp")} />
+                <SidebarItem label="TV Guide" icon="calendar" onPress={() => goToScreen("tvguide", "TvGuide")} />
 
-              <View style={styles.sidebarDivider} />
+                <View style={styles.sidebarDivider} />
 
-              <SidebarItem label="Search" icon="search" onPress={() => navigation.navigate("Search")} />
-              {/* Football Centre stays reachable regardless of the kill-switch —
-                  the switch only hides the in-player GOAL tracker overlay, not the
-                  dedicated Centre (whose scores keep updating server-side). */}
-              <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
-              <SidebarItem label="Sports on TV" icon="tv" isNew={showSportsTvBadge} onPress={() => navigation.navigate("SportListings")} />
-              <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
-              {width > 768 || Platform.isTV ? (
-                <SidebarItem label="Ultra Music" icon="music" isNew={showMusicBadge} activeTint="#a855f7" onPress={() => navigation.navigate("MusicPlayer" as never)} />
-              ) : null}
-              <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
-              <SidebarItem label="Settings" icon="settings" onPress={() => navigation.navigate("AccountInfo")} />
-            </ScrollView>
+                {/* Football Centre stays reachable regardless of the kill-switch —
+                    the switch only hides the in-player GOAL tracker overlay. */}
+                <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />
+                <SidebarItem label="Sports on TV" icon="tv" isNew={showSportsTvBadge} onPress={() => navigation.navigate("SportListings")} />
+                <SidebarItem label="Top Picks" mciIcon="fire" isNew={showTopPicksBadge} onPress={() => navigation.navigate("TopPicks")} />
+                {width > 768 || Platform.isTV ? (
+                  <SidebarItem label="Ultra Music" icon="music" isNew={showMusicBadge} activeTint="#a855f7" onPress={() => navigation.navigate("MusicPlayer" as never)} />
+                ) : null}
+                <SidebarItem label="Ultra Tube" icon="play-circle" isNew={showUltraTubeBadge} activeTint="#ef4444" onPress={() => navigation.navigate("UltraTube")} />
+
+                {/* Update card — only rendered when a newer version is available */}
+                {remoteVersion ? (
+                  <>
+                    {updateModal}
+                    <View style={styles.sidebarDivider} />
+                    <UpdateSidebarCard version={remoteVersion} onPress={onUpdatePress} />
+                  </>
+                ) : null}
+              </ScrollView>
+
+              {/* Scroll overflow arrow — bounces when update card is present */}
+              {sidebarOverflows ? <SidebarScrollArrow bouncing={!!remoteVersion} /> : null}
+            </View>
           </View>
 
           {/* ── Content column ────────────────────────────────────────────── */}
@@ -1373,16 +1412,10 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.topBarActions}>
-                {/* Update group — only rendered when a newer build is available */}
-                <UpdateAvailableButton />
-
                 {/* Browse group */}
                 <View style={styles.btnGroup}>
                   <LabelledAction label="Search">
                     <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-                  </LabelledAction>
-                  <LabelledAction label="Refresh">
-                    <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
                   </LabelledAction>
                 </View>
 
@@ -1399,8 +1432,11 @@ export default function HomeScreen() {
                   </LabelledAction>
                 </View>
 
-                {/* Account group */}
+                {/* Account group — Refresh sits left of Settings */}
                 <View style={styles.btnGroup}>
+                  <LabelledAction label="Refresh">
+                    <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+                  </LabelledAction>
                   <LabelledAction label="Settings">
                     <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
                   </LabelledAction>
@@ -1490,7 +1526,6 @@ export default function HomeScreen() {
               <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
               <TopPicksButton onPress={() => navigation.navigate("TopPicks")} />
               <VpnButton />
-              <UpdateAvailableButton />
               <MessagesButton onPress={() => navigation.navigate("Messages")} />
               <ProfileButton compact />
             </View>
@@ -1941,6 +1976,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm, paddingBottom: Spacing.md,
   },
   sidebarLogo: { width: 34, height: 34 },
+  sidebarScrollWrap: { flex: 1, position: "relative" },
   sidebarScroll: { flex: 1 },
   sidebarScrollContent: { gap: 2, paddingBottom: Spacing.lg },
   sidebarItem: {
@@ -1960,6 +1996,55 @@ const styles = StyleSheet.create({
   sidebarDivider: {
     height: 1, backgroundColor: Colors.dark.border,
     marginVertical: Spacing.sm, marginHorizontal: Spacing.sm,
+  },
+
+  // Sidebar update card
+  updateCard: {
+    marginHorizontal: Spacing.xs,
+    marginTop: Spacing.xs,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.35)",
+    overflow: "hidden",
+    padding: Spacing.sm,
+    gap: 4,
+  },
+  updateCardHeader: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+  },
+  updateCardTitle: {
+    fontSize: 11, fontWeight: "800", color: Colors.dark.accent,
+    letterSpacing: 0.3,
+  },
+  updateCardVersion: {
+    fontSize: 10, color: Colors.dark.textSecondary, fontWeight: "500",
+  },
+  updateCardBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: Colors.dark.accent,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.sm, paddingVertical: 5,
+    marginTop: 2, alignSelf: "stretch",
+  },
+  updateCardBtnActive: {
+    opacity: 0.85,
+    shadowColor: Colors.dark.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  updateCardBtnText: {
+    fontSize: 11, fontWeight: "700", color: "#fff", flex: 1,
+  },
+
+  // Sidebar scroll-overflow arrow
+  sidebarArrow: {
+    position: "absolute",
+    bottom: 4,
+    left: 0,
+    right: 0,
+    alignItems: "center",
   },
   newBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: BorderRadius.xs },
   newBadgeText: { fontSize: 8, fontWeight: "800", color: "#fff", letterSpacing: 0.5 },

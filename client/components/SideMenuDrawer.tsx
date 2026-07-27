@@ -279,12 +279,6 @@ export default function SideMenuDrawer() {
             <View style={styles.divider} />
 
             <MenuItem
-              label="Search"
-              icon="search"
-              active={routeName === "Search"}
-              onPress={() => navTo(() => navigationRef.navigate("Search"))}
-            />
-            <MenuItem
               label="Football Centre"
               mciIcon="soccer"
               active={routeName === "FootballCentre"}
@@ -322,6 +316,16 @@ export default function SideMenuDrawer() {
               activeTint="#ef4444"
               active={routeName === "UltraTube"}
               onPress={() => navTo(() => navigationRef.navigate("UltraTube" as never))}
+            />
+
+            {/* ── Utility section — Search + Settings at the bottom ── */}
+            <View style={styles.divider} />
+
+            <MenuItem
+              label="Search"
+              icon="search"
+              active={routeName === "Search"}
+              onPress={() => navTo(() => navigationRef.navigate("Search"))}
             />
             <MenuItem
               label="Settings"
