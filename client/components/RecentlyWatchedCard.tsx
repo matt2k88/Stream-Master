@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { View, StyleSheet, Pressable, Image, ScrollView, Animated, useWindowDimensions, findNodeHandle, Platform } from "react-native";
+
+// `nextFocusLeft` / `nextFocusRight` exist at runtime on Android/Fire TV but
+// are absent from the legacy react-native `types/` declarations. Assign as
+// `any` once so every JSX usage accepts these TV-focus props without per-line
+// suppression — behaviour is identical to Pressable at runtime.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const TVPressable: any = Pressable;
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
@@ -70,6 +77,9 @@ interface Props {
   /** Native node handle of the focusable element directly above this card
    *  (e.g. the advert carousel) so D-pad UP from the top row goes up, not left. */
   aboveTag?: number;
+  /** Native node handle of the first sidebar item so D-pad LEFT exits
+   *  the continue-watching row instead of trapping focus inside it. */
+  leftTag?: number;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -231,6 +241,7 @@ function ContinueWatchingCard({
   cardH,
   expandedW,
   aboveTag,
+  leftTag,
 }: {
   item: RecentlyWatched;
   onPress: () => void;
@@ -240,6 +251,7 @@ function ContinueWatchingCard({
   cardH: number;
   expandedW: number;
   aboveTag?: number;
+  leftTag?: number;
 }) {
   const [outerFocused, setOuterFocused] = useState(false);
   const [outerHovered, setOuterHovered] = useState(false);
@@ -307,7 +319,7 @@ function ContinueWatchingCard({
       ]}
     >
       {/* Main press target — tapping the card resumes */}
-      <Pressable
+      <TVPressable
         ref={outerRef}
         style={styles.cwCardPressable}
         onPress={onPress}
@@ -318,6 +330,7 @@ function ContinueWatchingCard({
         onLayout={() => { const t = safeNodeHandle(outerRef.current); if (t) setOuterTag(t); }}
         nextFocusDown={resumeTag}
         nextFocusUp={aboveTag}
+        nextFocusLeft={leftTag}
       >
         {/* ── Row: thumbnail (left) + slide-in action panel (right) ── */}
         <View style={[styles.cwThumbRow, { height: cardH }]}>
@@ -383,7 +396,7 @@ function ContinueWatchingCard({
           {/* ── Right: action panel slides in on hover/focus ── */}
           <Animated.View style={[styles.cwPanel, { opacity: panelOpacity }]}>
             {/* Resume button */}
-            <Pressable
+            <TVPressable
               ref={resumeRef}
               focusable
               style={[
@@ -399,17 +412,18 @@ function ContinueWatchingCard({
               onHoverOut={() => setResumeHovered(false)}
               onLayout={() => { const t = safeNodeHandle(resumeRef.current); if (t) setResumeTag(t); }}
               nextFocusDown={infoTag}
-              nextFocusUp={outerTag}
+              nextFocusUp={aboveTag ?? outerTag}
+              nextFocusLeft={leftTag}
             >
               <View style={[styles.cwPanelBtnIcon, (resumeFocused || resumeHovered) && { backgroundColor: "rgba(255,255,255,0.25)" }]}>
                 <Feather name="play" size={13} color="#fff" />
               </View>
               <ThemedText style={styles.cwPanelBtnLabel}>Resume</ThemedText>
-            </Pressable>
+            </TVPressable>
 
             {/* Info button */}
             {onInfoPress ? (
-              <Pressable
+              <TVPressable
                 ref={infoRef}
                 focusable
                 style={[
@@ -424,7 +438,8 @@ function ContinueWatchingCard({
                 onHoverIn={() => setInfoHovered(true)}
                 onHoverOut={() => setInfoHovered(false)}
                 onLayout={() => { const t = safeNodeHandle(infoRef.current); if (t) setInfoTag(t); }}
-                nextFocusUp={resumeTag ?? outerTag}
+                nextFocusUp={aboveTag ?? resumeTag ?? outerTag}
+                nextFocusLeft={leftTag}
               >
                 <View style={[styles.cwPanelBtnIcon, (infoFocused || infoHovered) && { backgroundColor: accent.withAlpha(accent.accent, 0.15) }]}>
                   <Feather name="info" size={13} color={infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary} />
@@ -432,11 +447,11 @@ function ContinueWatchingCard({
                 <ThemedText style={[styles.cwPanelBtnLabel, { color: infoFocused || infoHovered ? accent.accent : Colors.dark.textSecondary }]}>
                   Details
                 </ThemedText>
-              </Pressable>
+              </TVPressable>
             ) : null}
           </Animated.View>
         </View>
-      </Pressable>
+      </TVPressable>
     </Animated.View>
   );
 }
@@ -475,6 +490,7 @@ function WatchSection({
   isLoading,
   accentColor,
   aboveTag,
+  leftTag,
 }: {
   cfg: WatchSectionConfig;
   entries: RecentlyWatched[];
@@ -485,6 +501,7 @@ function WatchSection({
   isLoading: boolean;
   accentColor: string;
   aboveTag?: number;
+  leftTag?: number;
 }) {
   const scale = useThumbnailScale();
   const cardW = Math.round(BASE_CW_W * scale);
@@ -534,6 +551,7 @@ function WatchSection({
                 cardH={cardH}
                 expandedW={expandedW}
                 aboveTag={aboveTag}
+                leftTag={leftTag}
               />
             ) : (
               <RecentlyWatchedRow
@@ -553,7 +571,7 @@ function WatchSection({
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function RecentlyWatchedCard({ style, onPress, onResumePress, onInfoPress, refreshKey, maxItems, onLayout, sections, aboveTag }: Props) {
+export default function RecentlyWatchedCard({ style, onPress, onResumePress, onInfoPress, refreshKey, maxItems, onLayout, sections, aboveTag, leftTag }: Props) {
   const { entries, isLoading: isCtxLoading, refetch } = useWatchHistory();
   const accent = useAccent();
 
@@ -580,6 +598,7 @@ export default function RecentlyWatchedCard({ style, onPress, onResumePress, onI
               isLoading={isLoading}
               accentColor={accent.accent}
               aboveTag={i === 0 ? aboveTag : undefined}
+              leftTag={leftTag}
             />
           </React.Fragment>
         ))}

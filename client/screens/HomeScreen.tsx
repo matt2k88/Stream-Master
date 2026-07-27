@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView, findNodeHandle } from "react-native";
 import Constants from "expo-constants";
 import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -89,7 +89,7 @@ const FOOTBALL_NOT_STARTED = ["NS", "PST", "CANC", "TBD", "SUSP"];
 
 // ── Sidebar item (landscape / TV) ─────────────────────────────────────────
 function SidebarItem({
-  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, activeTint, onPress, preferFocus,
+  icon, mciIcon, label, active = false, count, isNew = false, isLive = false, activeTint, onPress, preferFocus, onFocusTag,
 }: {
   icon?: keyof typeof Feather.glyphMap;
   mciIcon?: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -102,10 +102,13 @@ function SidebarItem({
   activeTint?: string;
   onPress: () => void;
   preferFocus?: boolean;
+  /** Called once on layout with the native node handle — used for D-pad routing. */
+  onFocusTag?: (tag: number | null) => void;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const selfRef = useRef<View>(null);
   const accent = useAccent();
   const highlight = focused || pressed || hovered || active;
   const effectiveTint = activeTint ?? accent.accent;
@@ -113,6 +116,7 @@ function SidebarItem({
 
   return (
     <Pressable
+      ref={selfRef}
       hasTVPreferredFocus={preferFocus}
       onPress={onPress}
       onPressIn={() => setPressed(true)}
@@ -121,6 +125,11 @@ function SidebarItem({
       onBlur={() => setFocused(false)}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
+      onLayout={() => {
+        if (onFocusTag && Platform.OS !== "web") {
+          onFocusTag(findNodeHandle(selfRef.current));
+        }
+      }}
       style={[
         styles.sidebarItem,
         highlight && {
@@ -935,6 +944,9 @@ export default function HomeScreen() {
   // Native node handle of the advert carousel, so D-pad UP from the top
   // Continue Watching row lands on the carousel above (not the card to the left).
   const [carouselTag, setCarouselTag] = useState<number | undefined>();
+  // Native node handle of the first sidebar item, so D-pad LEFT from the
+  // Continue Watching row exits to the sidebar instead of trapping focus.
+  const [sidebarTag, setSidebarTag] = useState<number | undefined>();
 
   // ── Renewal notice (auto-popup once per expiry cycle) ──────────────────
   const { userInfo } = useAuth();
@@ -1280,6 +1292,7 @@ export default function HomeScreen() {
       onResumePress={handleResumePress}
       onInfoPress={handleInfoPress}
       aboveTag={carouselTag}
+      leftTag={sidebarTag}
     />
   );
 
@@ -1312,7 +1325,7 @@ export default function HomeScreen() {
               contentContainerStyle={styles.sidebarScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              <SidebarItem label="Home" icon="home" active onPress={() => {}} />
+              <SidebarItem label="Home" icon="home" active onPress={() => {}} onFocusTag={(t) => setSidebarTag(t ?? undefined)} />
               <SidebarItem
                 label="Live TV"
                 mciIcon="television-classic"

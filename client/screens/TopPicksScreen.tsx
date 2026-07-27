@@ -232,39 +232,76 @@ export default function TopPicksScreen() {
     }, [])
   );
 
+  // Pre-build normalised lookup structures so matching is O(1) for exact hits
+  // and avoids re-normalising every entry on each fuzzy-scan pass.
+  // These only recompute when the underlying stream lists change.
+  const vodNormData = useMemo(() => {
+    const exact = new Map<string, typeof vodStreams[0]>();
+    const list: Array<{ item: typeof vodStreams[0]; norm: string }> = [];
+    for (const v of vodStreams) {
+      const n = normaliseTitle(v.name);
+      list.push({ item: v, norm: n });
+      if (!exact.has(n)) exact.set(n, v);
+    }
+    return { exact, list };
+  }, [vodStreams]);
+
+  const seriesNormData = useMemo(() => {
+    const exact = new Map<string, typeof seriesList[0]>();
+    const list: Array<{ item: typeof seriesList[0]; norm: string }> = [];
+    for (const s of seriesList) {
+      const n = normaliseTitle(s.name);
+      list.push({ item: s, norm: n });
+      if (!exact.has(n)) exact.set(n, s);
+    }
+    return { exact, list };
+  }, [seriesList]);
+
   const matchedPicks = useMemo<MatchedPick[]>(() => {
+    // Fuzzy substring guard: shorter title must be ≥50% the length of the
+    // longer one, preventing a short title like "from" matching
+    // "from the earth to the moon".
+    const fuzzyMatch = (a: string, b: string) => {
+      const shorter = Math.min(a.length, b.length);
+      const longer = Math.max(a.length, b.length);
+      if (longer === 0 || shorter / longer < 0.5) return false;
+      return b.includes(a) || a.includes(b);
+    };
+
     return picks.map((pick) => {
       const t = normaliseTitle(pick.title);
       let matchedId: number | null = null;
       let matchedCover: string | null = null;
-      // Fuzzy substring guard: shorter title must be ≥50% the length of the
-      // longer one, preventing a short title like "from" matching
-      // "from the earth to the moon".
-      const fuzzyMatch = (a: string, b: string) => {
-        const shorter = Math.min(a.length, b.length);
-        const longer = Math.max(a.length, b.length);
-        if (longer === 0 || shorter / longer < 0.5) return false;
-        return b.includes(a) || a.includes(b);
-      };
+
       if (pick.media_type === "movie") {
-        const match =
-          vodStreams.find((v) => normaliseTitle(v.name) === t) ??
-          vodStreams.find((v) => fuzzyMatch(t, normaliseTitle(v.name)));
-        matchedId = match?.stream_id ?? null;
-        matchedCover = match?.stream_icon ?? null;
+        // O(1) exact lookup first — only fall back to O(n) fuzzy scan if needed
+        const exact = vodNormData.exact.get(t);
+        if (exact) {
+          matchedId = exact.stream_id;
+          matchedCover = exact.stream_icon ?? null;
+        } else {
+          const fuzzy = vodNormData.list.find(({ norm }) => fuzzyMatch(t, norm));
+          matchedId = fuzzy?.item.stream_id ?? null;
+          matchedCover = fuzzy?.item.stream_icon ?? null;
+        }
       } else {
-        const match =
-          seriesList.find((s) => normaliseTitle(s.name) === t) ??
-          seriesList.find((s) => fuzzyMatch(t, normaliseTitle(s.name)));
-        matchedId = match?.series_id ?? null;
-        matchedCover = match?.cover ?? null;
+        const exact = seriesNormData.exact.get(t);
+        if (exact) {
+          matchedId = exact.series_id;
+          matchedCover = exact.cover ?? null;
+        } else {
+          const fuzzy = seriesNormData.list.find(({ norm }) => fuzzyMatch(t, norm));
+          matchedId = fuzzy?.item.series_id ?? null;
+          matchedCover = fuzzy?.item.cover ?? null;
+        }
       }
+
       const isRestricted = parentalFilter !== null
         ? !parentalFilter(matchedId, pick.title)
         : false;
       return { ...pick, matchedId, matchedCover, isRestricted };
     });
-  }, [picks, vodStreams, seriesList, parentalFilter]);
+  }, [picks, vodNormData, seriesNormData, parentalFilter]);
 
   const handlePress = (pick: MatchedPick) => {
     if (pick.matchedId === null) return;
