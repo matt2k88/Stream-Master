@@ -1411,71 +1411,70 @@ export default function HomeScreen() {
 
           {/* ── Content column ────────────────────────────────────────────── */}
           <View style={[styles.contentArea, { paddingTop: padT, paddingRight: padH, paddingBottom: padB }]}>
-            {/* Top bar: greeting row + action icons + search bar below */}
-            <View style={styles.topBarWrap}>
-              {/* Row 1: greeting + buttons */}
-              <View style={styles.topBar}>
-                <View style={styles.greetingWrap}>
-                  <ThemedText style={styles.greetingHello}>
-                    {getTimeGreeting()},{" "}
-                    <ThemedText style={[styles.greetingHello, { color: themeAccent.accent }]} numberOfLines={1}>
-                      {activeProfile?.name ?? "Guest"}
-                    </ThemedText>
+            {/* Top bar: left column (greeting + search bar) + right column (buttons) */}
+            <View style={styles.topBar}>
+              {/* Left column — greeting on top, search bar directly below */}
+              <View style={styles.greetingWrap}>
+                <ThemedText style={styles.greetingHello}>
+                  {getTimeGreeting()},{" "}
+                  <ThemedText style={[styles.greetingHello, { color: themeAccent.accent }]} numberOfLines={1}>
+                    {activeProfile?.name ?? "Guest"}
                   </ThemedText>
-                </View>
+                </ThemedText>
 
-                <View style={styles.topBarActions}>
-                  {/* Services group */}
-                  <View style={styles.btnGroup}>
-                    <LabelledAction label="Football">
-                      <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
-                    </LabelledAction>
-                    <LabelledAction label="VPN">
-                      <VpnButton />
-                    </LabelledAction>
-                    <LabelledAction label="Alerts">
-                      <MessagesButton onPress={() => navigation.navigate("Messages")} />
-                    </LabelledAction>
-                  </View>
-
-                  {/* Account group — Refresh sits left of Settings */}
-                  <View style={styles.btnGroup}>
-                    <LabelledAction label="Refresh">
-                      <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-                    </LabelledAction>
-                    <LabelledAction label="Settings">
-                      <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
-                    </LabelledAction>
-                    <ProfileButton />
-                  </View>
+                {/* Search bar — fills the left column width up to the buttons */}
+                <View style={styles.homeSearchBar}>
+                  <Feather name="search" size={14} color={Colors.dark.textSecondary} style={styles.homeSearchIcon} />
+                  <TextInput
+                    style={styles.homeSearchInput}
+                    placeholder="Search movies, series, channels…"
+                    placeholderTextColor={Colors.dark.textSecondary}
+                    value={homeQuery}
+                    onChangeText={setHomeQuery}
+                    returnKeyType="search"
+                    onSubmitEditing={() => {
+                      if (homeQuery.trim()) {
+                        navigation.navigate("Search", { initialQuery: homeQuery.trim() });
+                        setHomeQuery("");
+                      } else {
+                        navigation.navigate("Search");
+                      }
+                    }}
+                    blurOnSubmit={false}
+                  />
+                  {homeQuery.length > 0 ? (
+                    <Pressable onPress={() => setHomeQuery("")} hitSlop={8} style={styles.homeSearchClear}>
+                      <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
 
-              {/* Row 2: full-width home search bar */}
-              <View style={styles.homeSearchBar}>
-                <Feather name="search" size={14} color={Colors.dark.textSecondary} style={styles.homeSearchIcon} />
-                <TextInput
-                  style={styles.homeSearchInput}
-                  placeholder="Search movies, series, channels…"
-                  placeholderTextColor={Colors.dark.textSecondary}
-                  value={homeQuery}
-                  onChangeText={setHomeQuery}
-                  returnKeyType="search"
-                  onSubmitEditing={() => {
-                    if (homeQuery.trim()) {
-                      navigation.navigate("Search", { initialQuery: homeQuery.trim() });
-                      setHomeQuery("");
-                    } else {
-                      navigation.navigate("Search");
-                    }
-                  }}
-                  blurOnSubmit={false}
-                />
-                {homeQuery.length > 0 ? (
-                  <Pressable onPress={() => setHomeQuery("")} hitSlop={8} style={styles.homeSearchClear}>
-                    <Feather name="x" size={12} color={Colors.dark.textSecondary} />
-                  </Pressable>
-                ) : null}
+              {/* Right column — action buttons */}
+              <View style={styles.topBarActions}>
+                {/* Services group */}
+                <View style={styles.btnGroup}>
+                  <LabelledAction label="Football">
+                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
+                  </LabelledAction>
+                  <LabelledAction label="VPN">
+                    <VpnButton />
+                  </LabelledAction>
+                  <LabelledAction label="Alerts">
+                    <MessagesButton onPress={() => navigation.navigate("Messages")} />
+                  </LabelledAction>
+                </View>
+
+                {/* Account group — Refresh sits left of Settings */}
+                <View style={styles.btnGroup}>
+                  <LabelledAction label="Refresh">
+                    <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+                  </LabelledAction>
+                  <LabelledAction label="Settings">
+                    <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
+                  </LabelledAction>
+                  <ProfileButton />
+                </View>
               </View>
             </View>
 
@@ -2099,10 +2098,11 @@ const styles = StyleSheet.create({
   contentArea: { flex: 1, paddingLeft: Spacing.lg },
   topBarWrap: { gap: Spacing.xs },
   topBar: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: "row", alignItems: "flex-start",
+    justifyContent: "space-between", gap: Spacing.sm,
+    paddingBottom: Spacing.xs,
   },
-  greetingWrap: { justifyContent: "center", flexShrink: 1 },
+  greetingWrap: { flex: 1, flexDirection: "column", gap: 5 },
   greetingHello: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "600" },
   topBarActions: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.xs },
   homeSearchBar: {
