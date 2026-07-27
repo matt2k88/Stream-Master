@@ -49,7 +49,7 @@ export type RootStackParamList = {
   CreateProfile: { profile?: Profile } | undefined;
   PinEntry: { profile: Profile; fromHome?: boolean };
   Home: undefined;
-  Search: undefined;
+  Search: { initialQuery?: string } | undefined;
   Messages: undefined;
   TvGuide: { initialGroupId?: string } | undefined;
   CatchUp: undefined;

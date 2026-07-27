@@ -308,11 +308,17 @@ export default function AdvertCarousel({
         ) : null}
       </Pressable>
 
-      {/* Dot indicators */}
+      {/* Dot indicators — never focusable so D-pad never lands here */}
       {adverts.length > 1 ? (
         <View style={styles.dotsRow}>
           {adverts.map((_, i) => (
-            <Pressable key={i} onPress={() => goTo(i)} hitSlop={8}>
+            <Pressable
+              key={i}
+              onPress={() => goTo(i)}
+              hitSlop={8}
+              focusable={false}
+              accessible={false}
+            >
               <View style={[styles.dot, i === currIdx && styles.dotActive]} />
             </Pressable>
           ))}

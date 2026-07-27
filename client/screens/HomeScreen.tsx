@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView, findNodeHandle, Animated } from "react-native";
+import { View, StyleSheet, Pressable, Image, useWindowDimensions, Modal, BackHandler, Platform, ActivityIndicator, Alert, AppState, ScrollView, findNodeHandle, Animated, TextInput } from "react-native";
 import Constants from "expo-constants";
 import { getApiUrl } from "@/lib/query-client";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -726,6 +726,13 @@ function VpnButton() {
 // Local copy of the AccountInfoScreen APP_VERSION lookup so the
 // dashboard can do its own update check without importing that whole
 // screen.
+function getTimeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good Morning";
+  if (h < 18) return "Good Afternoon";
+  return "Good Evening";
+}
+
 const APP_VERSION: string =
   ((Constants.expoConfig as any)?.version as string | undefined) ?? "0.0.0";
 
@@ -964,6 +971,8 @@ export default function HomeScreen() {
   // Native node handle of the first sidebar item, so D-pad LEFT from the
   // Continue Watching row exits to the sidebar instead of trapping focus.
   const [sidebarTag, setSidebarTag] = useState<number | undefined>();
+  // Home search bar state — typing then Enter navigates to the Search screen.
+  const [homeQuery, setHomeQuery] = useState("");
   // Update check — version polling for the sidebar update card.
   const { remoteVersion, onUpdatePress, modal: updateModal } = useUpdateCheck();
   // Sidebar overflow detection for the scroll-arrow indicator.
@@ -1402,46 +1411,71 @@ export default function HomeScreen() {
 
           {/* ── Content column ────────────────────────────────────────────── */}
           <View style={[styles.contentArea, { paddingTop: padT, paddingRight: padH, paddingBottom: padB }]}>
-            {/* Top bar: greeting + labelled action icons + profile dropdown */}
-            <View style={styles.topBar}>
-              <View style={styles.greetingWrap}>
-                <ThemedText style={styles.greetingHello}>Welcome back,</ThemedText>
-                <ThemedText style={[styles.greetingName, { color: themeAccent.accent }]} numberOfLines={1}>
-                  {activeProfile?.name ?? "Guest"}
-                </ThemedText>
+            {/* Top bar: greeting row + action icons + search bar below */}
+            <View style={styles.topBarWrap}>
+              {/* Row 1: greeting + buttons */}
+              <View style={styles.topBar}>
+                <View style={styles.greetingWrap}>
+                  <ThemedText style={styles.greetingHello}>
+                    {getTimeGreeting()},{" "}
+                    <ThemedText style={[styles.greetingHello, { color: themeAccent.accent }]} numberOfLines={1}>
+                      {activeProfile?.name ?? "Guest"}
+                    </ThemedText>
+                  </ThemedText>
+                </View>
+
+                <View style={styles.topBarActions}>
+                  {/* Services group */}
+                  <View style={styles.btnGroup}>
+                    <LabelledAction label="Football">
+                      <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
+                    </LabelledAction>
+                    <LabelledAction label="VPN">
+                      <VpnButton />
+                    </LabelledAction>
+                    <LabelledAction label="Alerts">
+                      <MessagesButton onPress={() => navigation.navigate("Messages")} />
+                    </LabelledAction>
+                  </View>
+
+                  {/* Account group — Refresh sits left of Settings */}
+                  <View style={styles.btnGroup}>
+                    <LabelledAction label="Refresh">
+                      <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
+                    </LabelledAction>
+                    <LabelledAction label="Settings">
+                      <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
+                    </LabelledAction>
+                    <ProfileButton />
+                  </View>
+                </View>
               </View>
 
-              <View style={styles.topBarActions}>
-                {/* Browse group */}
-                <View style={styles.btnGroup}>
-                  <LabelledAction label="Search">
-                    <SearchHeaderButton onPress={() => navigation.navigate("Search")} />
-                  </LabelledAction>
-                </View>
-
-                {/* Services group */}
-                <View style={styles.btnGroup}>
-                  <LabelledAction label="Football">
-                    <FootballCentreButton onPress={() => navigation.navigate("FootballCentre")} hasLive={hasLiveGame} />
-                  </LabelledAction>
-                  <LabelledAction label="VPN">
-                    <VpnButton />
-                  </LabelledAction>
-                  <LabelledAction label="Alerts">
-                    <MessagesButton onPress={() => navigation.navigate("Messages")} />
-                  </LabelledAction>
-                </View>
-
-                {/* Account group — Refresh sits left of Settings */}
-                <View style={styles.btnGroup}>
-                  <LabelledAction label="Refresh">
-                    <RefreshButton onPress={handleRefresh} refreshing={refreshing} />
-                  </LabelledAction>
-                  <LabelledAction label="Settings">
-                    <AccountButton onPress={() => navigation.navigate("AccountInfo")} />
-                  </LabelledAction>
-                  <ProfileButton />
-                </View>
+              {/* Row 2: full-width home search bar */}
+              <View style={styles.homeSearchBar}>
+                <Feather name="search" size={14} color={Colors.dark.textSecondary} style={styles.homeSearchIcon} />
+                <TextInput
+                  style={styles.homeSearchInput}
+                  placeholder="Search movies, series, channels…"
+                  placeholderTextColor={Colors.dark.textSecondary}
+                  value={homeQuery}
+                  onChangeText={setHomeQuery}
+                  returnKeyType="search"
+                  onSubmitEditing={() => {
+                    if (homeQuery.trim()) {
+                      navigation.navigate("Search", { initialQuery: homeQuery.trim() });
+                      setHomeQuery("");
+                    } else {
+                      navigation.navigate("Search");
+                    }
+                  }}
+                  blurOnSubmit={false}
+                />
+                {homeQuery.length > 0 ? (
+                  <Pressable onPress={() => setHomeQuery("")} hitSlop={8} style={styles.homeSearchClear}>
+                    <Feather name="x" size={12} color={Colors.dark.textSecondary} />
+                  </Pressable>
+                ) : null}
               </View>
             </View>
 
@@ -2063,14 +2097,28 @@ const styles = StyleSheet.create({
   },
 
   contentArea: { flex: 1, paddingLeft: Spacing.lg },
+  topBarWrap: { gap: Spacing.xs },
   topBar: {
-    flexDirection: "row", alignItems: "flex-start",
-    justifyContent: "space-between", paddingBottom: 6,
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between",
   },
-  greetingWrap: { justifyContent: "center", flexShrink: 1, paddingTop: 2 },
-  greetingHello: { fontSize: 12, color: Colors.dark.textSecondary, fontWeight: "500" },
-  greetingName: { fontSize: 18, fontWeight: "800", letterSpacing: 0.3 },
+  greetingWrap: { justifyContent: "center", flexShrink: 1 },
+  greetingHello: { fontSize: 13, color: Colors.dark.textSecondary, fontWeight: "600" },
   topBarActions: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.xs },
+  homeSearchBar: {
+    flexDirection: "row", alignItems: "center", gap: Spacing.xs,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.sm, paddingVertical: 6,
+  },
+  homeSearchIcon: { flexShrink: 0 },
+  homeSearchInput: {
+    flex: 1, fontSize: 13, color: Colors.dark.text,
+    paddingVertical: 0,
+    outlineStyle: "none" as any,
+  },
+  homeSearchClear: { padding: 2 },
   btnGroup: {
     flexDirection: "row",
     alignItems: "flex-start",

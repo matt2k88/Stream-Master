@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import SideMenuButton from "@/components/SideMenuButton";
 import { Keyboard } from "react-native";
 import {
@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import SearchClearButton from "@/components/SearchClearButton";
@@ -25,6 +25,7 @@ import { useData } from "@/contexts/DataContext";
 import { normaliseSearch } from "@/lib/search";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type SearchRouteProp = RouteProp<RootStackParamList, "Search">;
 type AnyStream = LiveStream | VodStream | Series;
 
 const RESULT_LIMIT = 30;
@@ -185,10 +186,22 @@ function DesktopSectionGrid({
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<SearchRouteProp>();
   const { liveStreams, vodStreams, seriesList } = useData();
   const { width, height } = useWindowDimensions();
-  const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [query, setQuery] = useState(route.params?.initialQuery ?? "");
+  const [submittedQuery, setSubmittedQuery] = useState(route.params?.initialQuery ?? "");
+
+  // If an initialQuery was passed, auto-submit it so results appear immediately.
+  useEffect(() => {
+    const iq = route.params?.initialQuery;
+    if (iq) {
+      setQuery(iq);
+      setSubmittedQuery(iq);
+    }
+  // Only on first mount — route.params is stable after push.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inputRef = useRef<TextInput>(null);
   const [backFocused, setBackFocused] = useState(false);
   const [backPressed, setBackPressed] = useState(false);
