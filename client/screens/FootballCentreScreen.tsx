@@ -886,7 +886,7 @@ export default function FootballCentreScreen() {
   const favTeamIdRef = useRef<number | null>(favTeamId);
   favTeamIdRef.current = favTeamId;
 
-  const [tab, setTab] = useState<"live" | "upcoming" | "myteam" | "ultrafour">("live");
+  const [tab, setTab] = useState<"live" | "upcoming" | "myteam" | "ultrafour">("upcoming");
   const [scores, setScores] = useState<FootballScore[]>([]);
   const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
@@ -1282,6 +1282,22 @@ export default function FootballCentreScreen() {
       {/* Tab switch */}
       <View style={[styles.tabRow, { marginHorizontal: padH }]}>
         <Touchable
+          style={[styles.tab, tab === "upcoming" && styles.tabSelected]}
+          activeStyle={styles.tabActive}
+          onPress={() => setTab("upcoming")}
+        >
+          {(active) => (
+            <ThemedText
+              style={[
+                styles.tabText,
+                (tab === "upcoming" || active) && styles.tabTextSelected,
+              ]}
+            >
+              Upcoming
+            </ThemedText>
+          )}
+        </Touchable>
+        <Touchable
           style={[styles.tab, tab === "live" && styles.tabSelected]}
           activeStyle={styles.tabActive}
           onPress={() => setTab("live")}
@@ -1298,22 +1314,6 @@ export default function FootballCentreScreen() {
                 Live Now
               </ThemedText>
             </>
-          )}
-        </Touchable>
-        <Touchable
-          style={[styles.tab, tab === "upcoming" && styles.tabSelected]}
-          activeStyle={styles.tabActive}
-          onPress={() => setTab("upcoming")}
-        >
-          {(active) => (
-            <ThemedText
-              style={[
-                styles.tabText,
-                (tab === "upcoming" || active) && styles.tabTextSelected,
-              ]}
-            >
-              Upcoming
-            </ThemedText>
           )}
         </Touchable>
         <Touchable
@@ -1346,7 +1346,7 @@ export default function FootballCentreScreen() {
               ]}
               numberOfLines={1}
             >
-              Ultra 4
+              Ultra Four
             </ThemedText>
           )}
         </Touchable>

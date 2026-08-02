@@ -313,42 +313,41 @@ function CompetitionCard({
     <View style={styles.card}>
       {/* Header — always visible, tap to expand */}
       <Pressable style={styles.cardHeader} onPress={() => setExpanded((e) => !e)}>
-        <View style={styles.cardHeaderRow}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.titleRow}>
-              <Feather name="award" size={16} color={Colors.dark.accent} />
-              <ThemedText style={styles.compName} numberOfLines={2}>
-                {comp.name}
-              </ThemedText>
-              {anyLive && (
-                <View style={styles.livePill}>
-                  <ThemedText style={styles.livePillText}>LIVE</ThemedText>
-                </View>
-              )}
-            </View>
-            <ThemedText style={styles.prizeText}>
-              🏆 Win: {comp.prize ?? "a Lifetime Subscription"}
+        <View style={styles.cardHeaderInner}>
+          <View style={styles.titleRow}>
+            <Feather name="award" size={16} color={Colors.dark.accent} />
+            <ThemedText style={styles.compName} numberOfLines={2}>
+              {comp.name}
             </ThemedText>
-            {comp.is_rollover && comp.rollover_prize_text ? (
-              <View style={styles.rolloverBadge}>
-                <Feather name="gift" size={11} color="#fff" />
-                <ThemedText style={styles.rolloverText}>
-                  Rollover: {comp.rollover_prize_text}
-                </ThemedText>
+            {anyLive && (
+              <View style={styles.livePill}>
+                <ThemedText style={styles.livePillText}>LIVE</ThemedText>
               </View>
-            ) : null}
-            <View style={{ marginTop: 4 }}>
-              {closed ? (
-                <ThemedText style={styles.closedLabel}>Competition Closed</ThemedText>
-              ) : (
-                <Countdown closingTime={comp.closing_time} />
-              )}
+            )}
+          </View>
+          <ThemedText style={styles.prizeText}>
+            🏆 Win: {comp.prize ?? "a Lifetime Subscription"}
+          </ThemedText>
+          {comp.is_rollover && comp.rollover_prize_text ? (
+            <View style={styles.rolloverBadge}>
+              <Feather name="gift" size={11} color="#fff" />
+              <ThemedText style={styles.rolloverText}>
+                Rollover: {comp.rollover_prize_text}
+              </ThemedText>
             </View>
+          ) : null}
+          <View style={{ marginTop: 4, alignItems: "center" }}>
+            {closed ? (
+              <ThemedText style={styles.closedLabel}>Competition Closed</ThemedText>
+            ) : (
+              <Countdown closingTime={comp.closing_time} />
+            )}
           </View>
           <Feather
             name={expanded ? "chevron-up" : "chevron-down"}
             size={20}
             color={Colors.dark.textSecondary}
+            style={{ marginTop: 6 }}
           />
         </View>
       </Pressable>
@@ -786,10 +785,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   cardHeader: { padding: Spacing.md },
-  cardHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, flexWrap: "wrap" },
-  compName: { fontSize: 15, fontWeight: "800", color: Colors.dark.text, flex: 1 },
-  prizeText: { fontSize: 13, fontWeight: "600", color: "#fbbf24", marginTop: 2 },
+  cardHeaderInner: { alignItems: "center", gap: 4 },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.xs, flexWrap: "wrap" },
+  compName: { fontSize: 15, fontWeight: "800", color: Colors.dark.text, textAlign: "center" },
+  prizeText: { fontSize: 13, fontWeight: "600", color: "#fbbf24", marginTop: 2, textAlign: "center" },
   livePill: {
     backgroundColor: "#ef4444",
     borderRadius: BorderRadius.xs,
@@ -806,7 +805,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xs,
     paddingHorizontal: 6,
     paddingVertical: 3,
-    alignSelf: "flex-start",
     marginTop: 4,
   },
   rolloverText: { fontSize: 11, fontWeight: "700", color: Colors.dark.accent },
