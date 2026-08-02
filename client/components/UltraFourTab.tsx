@@ -699,11 +699,10 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
                   ]}
                 >
                   <View style={styles.historyTeamRow}>
+                    <View style={{ flex: 1 }} />
                     {f.home_team.logo ? (
                       <Image source={{ uri: f.home_team.logo }} style={styles.historyLogo} contentFit="contain" />
                     ) : null}
-                    {/* spacer pushes home name right up against score */}
-                    <View style={{ flex: 1 }} />
                     <ThemedText style={styles.historyTeamNameHome} numberOfLines={1}>
                       {f.home_team.name}
                     </ThemedText>
@@ -716,7 +715,6 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
                     {f.away_team.logo ? (
                       <Image source={{ uri: f.away_team.logo }} style={styles.historyLogo} contentFit="contain" />
                     ) : null}
-                    {/* spacer keeps away name left-adjacent to score */}
                     <View style={{ flex: 1 }} />
                   </View>
                   {p ? (
