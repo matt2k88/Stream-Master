@@ -3099,7 +3099,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from("ultra_four_competitions")
         .select("*")
         .eq("status", status)
-        .order("closing_time", { ascending: true });
+        .order("closing_time", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
       res.json(data ?? []);
     } catch {

@@ -22,6 +22,41 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 
+// ─── Touchable — fire-TV / D-pad aware pressable ──────────────────────────────
+function Touchable({
+  style,
+  activeStyle,
+  onPress,
+  children,
+  disabled,
+}: {
+  style?: any;
+  activeStyle?: any;
+  onPress?: () => void;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const active = focused || pressed || hovered;
+  return (
+    <Pressable
+      style={[style, active && activeStyle]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      disabled={disabled}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UF_Fixture = {
@@ -146,10 +181,12 @@ function ScoreInput({
   correct?: boolean;
   wrong?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <TextInput
       style={[
         styles.scoreInput,
+        focused && styles.scoreInputFocused,
         correct && styles.scoreInputCorrect,
         wrong && styles.scoreInputWrong,
         disabled && styles.scoreInputDisabled,
@@ -163,6 +200,8 @@ function ScoreInput({
       }}
       editable={!disabled}
       selectTextOnFocus
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
     />
   );
 }
@@ -312,7 +351,7 @@ function CompetitionCard({
   return (
     <View style={styles.card}>
       {/* Header — always visible, tap to expand */}
-      <Pressable style={styles.cardHeader} onPress={() => setExpanded((e) => !e)}>
+      <Touchable style={styles.cardHeader} activeStyle={styles.cardHeaderActive} onPress={() => setExpanded((e) => !e)}>
         <View style={styles.cardHeaderInner}>
           <View style={styles.titleRow}>
             <Feather name="award" size={16} color={Colors.dark.accent} />
@@ -350,7 +389,7 @@ function CompetitionCard({
             style={{ marginTop: 6 }}
           />
         </View>
-      </Pressable>
+      </Touchable>
 
       {/* Expandable body */}
       {expanded ? (
@@ -491,14 +530,15 @@ function CompetitionCard({
                   <ThemedText style={styles.savedBoxText}>
                     Predictions submitted! Tap below to edit before the deadline.
                   </ThemedText>
-                  <Pressable style={styles.editBtn} onPress={() => setIsEditing(true)}>
+                  <Touchable style={styles.editBtn} activeStyle={styles.editBtnActive} onPress={() => setIsEditing(true)}>
                     <Feather name="edit-2" size={13} color={Colors.dark.accent} />
                     <ThemedText style={styles.editBtnText}>Edit Predictions</ThemedText>
-                  </Pressable>
+                  </Touchable>
                 </View>
               ) : (
-                <Pressable
+                <Touchable
                   style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+                  activeStyle={styles.submitBtnActive}
                   onPress={handleSubmit}
                   disabled={submitting}
                 >
@@ -510,7 +550,7 @@ function CompetitionCard({
                   <ThemedText style={styles.submitBtnText}>
                     {submitting ? "Saving…" : savedPred ? "Update Predictions" : "Submit Predictions"}
                   </ThemedText>
-                </Pressable>
+                </Touchable>
               )}
             </>
           )}
@@ -591,9 +631,9 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
       <View style={styles.centerBox}>
         <Feather name="clock" size={36} color={Colors.dark.textSecondary} />
         <ThemedText style={styles.emptyText}>No finished competitions yet.</ThemedText>
-        <Pressable style={styles.backBtn} onPress={onBack}>
+        <Touchable style={styles.backBtn} activeStyle={styles.backBtnActive} onPress={onBack}>
           <ThemedText style={styles.backBtnText}>← Back to Active</ThemedText>
-        </Pressable>
+        </Touchable>
       </View>
     );
   }
@@ -601,9 +641,9 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
   return (
     <>
       <View style={styles.historyHeader}>
-        <Pressable onPress={onBack}>
+        <Touchable style={styles.backBtn} activeStyle={styles.backBtnActive} onPress={onBack}>
           <ThemedText style={styles.backBtnText}>← Active</ThemedText>
-        </Pressable>
+        </Touchable>
         <ThemedText style={styles.historyTitle}>Competition History</ThemedText>
       </View>
 
@@ -662,18 +702,22 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
                     {f.home_team.logo ? (
                       <Image source={{ uri: f.home_team.logo }} style={styles.historyLogo} contentFit="contain" />
                     ) : null}
-                    <ThemedText style={styles.historyTeamName} numberOfLines={1}>
+                    {/* spacer pushes home name right up against score */}
+                    <View style={{ flex: 1 }} />
+                    <ThemedText style={styles.historyTeamNameHome} numberOfLines={1}>
                       {f.home_team.name}
                     </ThemedText>
                     <ThemedText style={styles.historyScore}>
                       {l ? `${l.home ?? "?"} – ${l.away ?? "?"}` : "? – ?"}
                     </ThemedText>
-                    <ThemedText style={styles.historyTeamName} numberOfLines={1}>
+                    <ThemedText style={styles.historyTeamNameAway} numberOfLines={1}>
                       {f.away_team.name}
                     </ThemedText>
                     {f.away_team.logo ? (
                       <Image source={{ uri: f.away_team.logo }} style={styles.historyLogo} contentFit="contain" />
                     ) : null}
+                    {/* spacer keeps away name left-adjacent to score */}
+                    <View style={{ flex: 1 }} />
                   </View>
                   {p ? (
                     <ThemedText style={styles.historyPred}>
@@ -739,10 +783,10 @@ export default function UltraFourTab({ username }: { username?: string }) {
         <ThemedText style={styles.emptyText}>
           There's no Ultra Four competition running right now. Check back soon!
         </ThemedText>
-        <Pressable style={styles.historyLink} onPress={() => setView("history")}>
+        <Touchable style={styles.historyLink} activeStyle={styles.historyLinkActive} onPress={() => setView("history")}>
           <Feather name="clock" size={13} color={Colors.dark.accent} />
           <ThemedText style={styles.historyLinkText}>View Past Competitions</ThemedText>
-        </Pressable>
+        </Touchable>
       </View>
     );
   }
@@ -756,10 +800,10 @@ export default function UltraFourTab({ username }: { username?: string }) {
           username={username ?? ""}
         />
       ))}
-      <Pressable style={styles.historyLink} onPress={() => setView("history")}>
+      <Touchable style={styles.historyLink} activeStyle={styles.historyLinkActive} onPress={() => setView("history")}>
         <Feather name="clock" size={13} color={Colors.dark.accent} />
         <ThemedText style={styles.historyLinkText}>View Past Competitions</ThemedText>
-      </Pressable>
+      </Touchable>
     </>
   );
 }
@@ -785,6 +829,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   cardHeader: { padding: Spacing.md },
+  cardHeaderActive: { backgroundColor: "rgba(255,255,255,0.06)" },
   cardHeaderInner: { alignItems: "center", gap: 4 },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.xs, flexWrap: "wrap" },
   compName: { fontSize: 15, fontWeight: "800", color: Colors.dark.text, textAlign: "center" },
@@ -861,6 +906,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
+  scoreInputFocused: { borderColor: Colors.dark.accent, borderWidth: 2 },
   scoreInputCorrect: { borderColor: "#4ade80", color: "#4ade80" },
   scoreInputWrong: { borderColor: "#f87171", color: "#f87171" },
   scoreInputDisabled: { opacity: 0.6 },
@@ -916,6 +962,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 6,
   },
+  editBtnActive: { backgroundColor: Colors.dark.accentDim },
   editBtnText: { fontSize: 12, fontWeight: "700", color: Colors.dark.accent },
 
   submitBtn: {
@@ -928,6 +975,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginTop: Spacing.xs,
   },
+  submitBtnActive: { opacity: 0.85 },
   submitBtnText: { fontSize: 14, fontWeight: "800", color: "#fff" },
 
   toastBar: {
@@ -971,7 +1019,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   historyLogo: { width: 18, height: 18 },
-  historyTeamName: { flex: 1, fontSize: 11, color: Colors.dark.text, fontWeight: "600" },
+  historyTeamNameHome: { fontSize: 11, color: Colors.dark.text, fontWeight: "600", textAlign: "right" },
+  historyTeamNameAway: { fontSize: 11, color: Colors.dark.text, fontWeight: "600", textAlign: "left" },
   historyScore: { fontSize: 14, fontWeight: "900", color: Colors.dark.text, paddingHorizontal: 4 },
   historyPred: { fontSize: 11, color: Colors.dark.textSecondary, textAlign: "center" },
   historyNoPred: { fontSize: 11, color: Colors.dark.textSecondary, fontStyle: "italic", textAlign: "center" },
@@ -1001,8 +1050,10 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.backgroundSecondary,
   },
+  historyLinkActive: { backgroundColor: Colors.dark.backgroundDefault, borderColor: Colors.dark.accent },
   historyLinkText: { fontSize: 13, fontWeight: "600", color: Colors.dark.accent },
 
-  backBtn: { padding: Spacing.sm },
+  backBtn: { padding: Spacing.sm, borderRadius: BorderRadius.sm },
+  backBtnActive: { backgroundColor: "rgba(255,255,255,0.08)" },
   backBtnText: { fontSize: 13, fontWeight: "600", color: Colors.dark.accent },
 });
