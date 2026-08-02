@@ -1,0 +1,403 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Loader2, Send, Edit, Lock, ShieldCheck, Radio, Gift, CheckCircle, Trophy, ChevronDown } from 'lucide-react';
+import { format, isPast } from 'date-fns';
+import { useFootballApi } from '@/contexts/FootballApiContext';
+import { cn } from '@/lib/utils';
+import { LIVE_STATUSES } from './constants';
+import CountdownTimer from './CountdownTimer';
+import { Badge } from '@/components/ui/badge';
+
+const FINISHED_STATUSES = ['FT', 'AET', 'PEN'];
+
+const CompetitionCard = ({ competition, defaultOpen = false }) => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const { callApi } = useFootballApi();
+
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [userPrediction, setUserPrediction] = useState(null);
+  const [predictions, setPredictions] = useState({});
+  const [liveFixturesData, setLiveFixturesData] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [previousCompetitionName, setPreviousCompetitionName] = useState('');
+
+  const isCompetitionClosed = isPast(new Date(competition.closing_time));
+  const prizeText = competition.prize || 'a Lifetime Subscription';
+  const requiredCorrect = competition.correct_predictions_required || 4; // Default to 4 if not specified
+
+  const fetchLiveFixtureData = useCallback(async (fixtureIds) => {
+    if (fixtureIds.length === 0) return;
+    const idsString = fixtureIds.join('-');
+    const data = await callApi(`fixtures?ids=${idsString}`);
+    if (data && data.response) {
+      const fixturesMap = data.response.reduce((acc, fixture) => {
+        acc[fixture.fixture.id] = fixture;
+        return acc;
+      }, {});
+      setLiveFixturesData(prev => ({ ...prev, ...fixturesMap }));
+    }
+  }, [callApi]);
+
+  const fetchPredictionData = useCallback(async () => {
+    if (!user?.username) {
+      setLoading(false);
+      setIsEditing(true);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data: userPred, error: predError } = await supabase
+        .from('ultra_four_predictions')
+        .select('*')
+        .eq('competition_id', competition.id)
+        .eq('user_username', user.username)
+        .maybeSingle();
+
+      if (predError) throw predError;
+
+      if (userPred) {
+        setUserPrediction(userPred);
+        const initialPredictions = {};
+        userPred.predictions.forEach(p => {
+          initialPredictions[p.fixture_id] = { home_score: p.home_score, away_score: p.away_score };
+        });
+        setPredictions(initialPredictions);
+        setIsEditing(false);
+      } else {
+        setUserPrediction(null);
+        setPredictions({});
+        setIsEditing(true);
+      }
+    } catch (error) {
+      toast({ title: 'Error fetching your prediction', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [competition.id, user?.username, toast]);
+
+  useEffect(() => {
+    const fixtureIds = competition.fixtures.map(f => f.id);
+    fetchLiveFixtureData(fixtureIds);
+    fetchPredictionData();
+  }, [competition, fetchLiveFixtureData, fetchPredictionData]);
+
+  useEffect(() => {
+    if (competition.is_rollover && competition.rollover_from_competition_id) {
+      const fetchPreviousCompetitionName = async () => {
+        const { data, error } = await supabase
+          .from('ultra_four_competitions')
+          .select('name')
+          .eq('id', competition.rollover_from_competition_id)
+          .single();
+        if (data) {
+          setPreviousCompetitionName(data.name);
+        } else if (error) {
+          console.error('Error fetching previous competition name:', error);
+        }
+      };
+      fetchPreviousCompetitionName();
+    }
+  }, [competition.is_rollover, competition.rollover_from_competition_id]);
+
+  useEffect(() => {
+    const fixtureIds = competition.fixtures.map(f => f.id);
+    const hasLiveOrUnfinishedGames = Object.values(liveFixturesData).some(f => !FINISHED_STATUSES.includes(f.fixture.status.short)) || Object.values(liveFixturesData).length < fixtureIds.length;
+
+    if (isCompetitionClosed && hasLiveOrUnfinishedGames) {
+      const interval = setInterval(() => {
+        fetchLiveFixtureData(fixtureIds);
+      }, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [competition.fixtures, liveFixturesData, isCompetitionClosed, fetchLiveFixtureData]);
+
+  const handlePredictionChange = (fixtureId, team, value) => {
+    const score = Math.max(0, parseInt(value, 10) || 0);
+    setPredictions(prev => ({
+      ...prev,
+      [fixtureId]: {
+        ...prev[fixtureId],
+        [team]: score,
+      }
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (isCompetitionClosed) {
+      toast({ title: 'Competition Closed', description: 'The deadline for predictions has passed.', variant: 'destructive' });
+      return;
+    }
+    setSubmitting(true);
+
+    const predictionPayload = competition.fixtures.map(f => ({
+      fixture_id: f.id,
+      home_score: predictions[f.id]?.home_score ?? 0,
+      away_score: predictions[f.id]?.away_score ?? 0,
+    }));
+
+    try {
+      const { data, error } = await supabase.from('ultra_four_predictions').upsert({
+        id: userPrediction?.id,
+        competition_id: competition.id,
+        user_username: user.username,
+        predictions: predictionPayload,
+      }).select().single();
+
+      if (error) throw error;
+
+      toast({ title: 'Success!', description: `Your predictions have been ${userPrediction ? 'updated' : 'submitted'}. Good luck!` });
+      setUserPrediction(data);
+      setIsEditing(false);
+
+    } catch (error) {
+      toast({ title: 'Submission Failed', description: error.message, variant: 'destructive' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isAnyFixtureLive = Object.values(liveFixturesData).some(fixture =>
+    fixture && LIVE_STATUSES.includes(fixture.fixture.status.short)
+  );
+
+  const hasRolloverPrize = competition.is_rollover && competition.rollover_prize_text;
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+      <Card className="glass-effect overflow-hidden">
+        {/* ---------- ALWAYS-VISIBLE SUMMARY (click to expand/collapse) ---------- */}
+        <button
+          type="button"
+          onClick={() => setIsOpen(open => !open)}
+          aria-expanded={isOpen}
+          aria-controls={`competition-panel-${competition.id}`}
+          className="w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-t-lg transition-colors hover:bg-white/[0.03]"
+        >
+          <CardHeader className="relative text-center pr-12">
+            <motion.div
+              animate={{ rotate: isOpen ? 180 : 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="absolute right-4 top-5 text-muted-foreground"
+            >
+              <ChevronDown className="h-6 w-6" />
+            </motion.div>
+
+            <div className="flex items-center justify-center gap-4">
+              <CardTitle className="text-2xl md:text-4xl font-bold gradient-text flex items-center">
+                <Trophy className="mr-3 h-6 w-6 shrink-0 text-amber-400" />
+                {competition.name}
+              </CardTitle>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+              {requiredCorrect === 3 && (
+                <Badge className="bg-green-500/20 text-green-400 border-green-500/50 flex items-center gap-1">
+                  <CheckCircle className="h-4 w-4" /> Only 3/4 Needed to Win
+                </Badge>
+              )}
+              {hasRolloverPrize && !isOpen && (
+                <Badge className="bg-orange-500/20 text-orange-300 border-orange-500/50 flex items-center gap-1">
+                  <Gift className="h-4 w-4" /> Rollover: {competition.rollover_prize_text}
+                </Badge>
+              )}
+              {isAnyFixtureLive && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                  className="bg-destructive text-destructive-foreground px-3 py-1 rounded-md text-sm font-bold flex items-center gap-2 animate-pulse"
+                >
+                  <Radio className="h-4 w-4" />
+                  LIVE
+                </motion.div>
+              )}
+            </div>
+
+            {/* Prize — always visible */}
+            <p className="text-xl md:text-2xl font-semibold text-foreground mt-2">Win - {prizeText}!</p>
+
+            {/* Time remaining — always visible */}
+            <div className="mt-2">
+              {isCompetitionClosed ? (
+                <span className="text-destructive font-semibold">Competition Closed</span>
+              ) : (
+                <CountdownTimer closingTime={competition.closing_time} />
+              )}
+            </div>
+
+            {!isOpen && (
+              <p className="text-xs text-muted-foreground mt-3">
+                Tap to {userPrediction ? 'view or edit your predictions' : 'enter your predictions'}
+              </p>
+            )}
+          </CardHeader>
+        </button>
+
+        {/* ---------- COLLAPSIBLE PANEL ---------- */}
+        <AnimatePresence initial={false}>
+          {isOpen && (
+            <motion.div
+              key="content"
+              id={`competition-panel-${competition.id}`}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{
+                height: { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] },
+                opacity: { duration: 0.25, ease: 'easeInOut' },
+              }}
+              className="overflow-hidden"
+            >
+              {/* Inner wrapper so padding doesn't fight the height animation */}
+              <div className="px-6 pb-6">
+                {hasRolloverPrize && (
+                  <div className="mb-4 p-3 rounded-lg bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 shadow-inner border border-orange-500/50">
+                    <div className="flex flex-col items-center justify-center gap-1 text-center">
+                      {previousCompetitionName && (
+                        <p className="text-white/90 text-xs">
+                          As there were no winners in '{previousCompetitionName}', the prize is rolled over!
+                        </p>
+                      )}
+                      <div className="flex items-center justify-center gap-2 mt-1">
+                        <Gift className="h-5 w-5 text-white" />
+                        <p className="font-bold text-sm text-white drop-shadow-sm">EXTRA ROLLOVER PRIZE</p>
+                      </div>
+                      <p className="text-white text-xl font-bold drop-shadow-md">{competition.rollover_prize_text}</p>
+                    </div>
+                  </div>
+                )}
+
+                <CardDescription className="text-center mb-4">
+                  {`Predict ${requiredCorrect} out of 4 scores correctly to win.`}
+                  <br />
+                  {isCompetitionClosed ? (
+                    <span className="text-destructive font-semibold">Competition Closed</span>
+                  ) : (
+                    `Competition closes on ${format(new Date(competition.closing_time), 'PPpp')}.`
+                  )}
+                </CardDescription>
+
+                {loading ? (
+                  <div className="flex justify-center items-center p-8">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    {competition.fixtures.map(fixture => {
+                      const liveData = liveFixturesData[fixture.id];
+                      const isLive = liveData && LIVE_STATUSES.includes(liveData.fixture.status.short);
+                      const isFinished = liveData && FINISHED_STATUSES.includes(liveData.fixture.status.short);
+
+                      const userPred = predictions[fixture.id] || { home_score: null, away_score: null };
+                      const actualScore = isFinished ? { home: liveData.goals.home, away: liveData.goals.away } : null;
+
+                      const wasPredictedCorrectly = actualScore &&
+                        userPred.home_score === actualScore.home &&
+                        userPred.away_score === actualScore.away;
+
+                      const predictionResultClass = isFinished
+                        ? wasPredictedCorrectly ? 'border-green-500 focus-visible:ring-green-500' : 'border-red-500 focus-visible:ring-red-500'
+                        : '';
+
+                      return (
+                        <div key={fixture.id} className="p-4 md:p-6 border rounded-lg bg-background/30">
+                          <div className="grid grid-cols-3 items-center gap-4">
+                            <div className="flex flex-col items-center justify-center text-center gap-2">
+                              <img src={fixture.home_team.logo} alt={fixture.home_team.name} className="w-12 h-12 md:w-16 md:h-16" />
+                              <span className="font-semibold text-sm md:text-base truncate w-full">{fixture.home_team.name}</span>
+                            </div>
+
+                            <div className="text-center">
+                              <div className="font-bold text-lg">VS</div>
+                              <div className="text-xs text-muted-foreground">{format(new Date(fixture.date), 'EEE, MMM d')}</div>
+                              <div className="text-sm font-semibold">{format(new Date(fixture.date), 'HH:mm')}</div>
+                            </div>
+
+                            <div className="flex flex-col items-center justify-center text-center gap-2">
+                              <img src={fixture.away_team.logo} alt={fixture.away_team.name} className="w-12 h-12 md:w-16 md:h-16" />
+                              <span className="font-semibold text-sm md:text-base truncate w-full">{fixture.away_team.name}</span>
+                            </div>
+                          </div>
+
+                          <div className="relative flex justify-center items-center gap-2 md:gap-4 mt-4">
+                            <Input
+                              type="number"
+                              min="0"
+                              className={cn("w-16 md:w-20 text-center text-lg font-bold transition-colors", predictionResultClass)}
+                              value={predictions[fixture.id]?.home_score ?? ''}
+                              onChange={(e) => handlePredictionChange(fixture.id, 'home_score', e.target.value)}
+                              disabled={!isEditing || isCompetitionClosed}
+                              aria-label={`${fixture.home_team.name} score`}
+                            />
+                            <span className="font-bold text-xl text-muted-foreground">-</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              className={cn("w-16 md:w-20 text-center text-lg font-bold transition-colors", predictionResultClass)}
+                              value={predictions[fixture.id]?.away_score ?? ''}
+                              onChange={(e) => handlePredictionChange(fixture.id, 'away_score', e.target.value)}
+                              disabled={!isEditing || isCompetitionClosed}
+                              aria-label={`${fixture.away_team.name} score`}
+                            />
+                          </div>
+                          <div className="text-center text-xs text-muted-foreground mt-2 min-h-[16px]">
+                            {isLive && (
+                              <div className="flex items-center justify-center animate-pulse text-destructive">
+                                <Radio className="h-3 w-3 mr-1" />
+                                IN PLAY {liveData.fixture.status.elapsed}'
+                              </div>
+                            )}
+                            {isFinished && (
+                              <span>Full Time: {actualScore.home} - {actualScore.away}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="pt-4">
+                      {isCompetitionClosed ? (
+                        <div className="text-center p-4 bg-destructive/20 rounded-lg">
+                          <Lock className="mx-auto h-8 w-8 text-destructive mb-2" />
+                          <h3 className="font-semibold">Competition Closed</h3>
+                          <p className="text-sm text-muted-foreground">Predictions are now locked. Results will be announced after all matches are finished.</p>
+                        </div>
+                      ) : userPrediction && !isEditing ? (
+                        <div className="text-center p-4 bg-green-500/20 rounded-lg space-y-4">
+                          <div>
+                            <ShieldCheck className="mx-auto h-8 w-8 text-green-400 mb-2" />
+                            <h3 className="font-semibold">Your Predictions are Submitted!</h3>
+                            <p className="text-sm text-muted-foreground">You can still edit them until the competition closes.</p>
+                          </div>
+                          <Button type="button" onClick={() => setIsEditing(true)}><Edit className="mr-2 h-4 w-4" /> Edit Predictions</Button>
+                        </div>
+                      ) : (
+                        <Button type="submit" size="lg" className="w-full" disabled={submitting || !user?.username}>
+                          {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                          {userPrediction ? 'Update Predictions' : 'Submit Predictions'}
+                        </Button>
+                      )}
+                    </div>
+                  </form>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Card>
+    </motion.div>
+  );
+};
+
+export default CompetitionCard;

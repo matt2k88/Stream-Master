@@ -1,0 +1,172 @@
+import React, { useState, useEffect, useCallback } from 'react';
+    import { motion } from 'framer-motion';
+    import { supabase } from '@/lib/customSupabaseClient';
+    import { useAuth } from '@/contexts/AuthContext';
+    import { useToast } from '@/components/ui/use-toast';
+    import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+    import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+    import { Loader2, Trophy, History } from 'lucide-react';
+    import { format } from 'date-fns';
+    import { cn } from '@/lib/utils';
+    import { useFootballApi } from '@/contexts/FootballApiContext';
+
+    const UltraFourHistory = ({ onBack }) => {
+      const { user } = useAuth();
+      const { toast } = useToast();
+      const { callApi } = useFootballApi();
+      const [history, setHistory] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      const fetchHistory = useCallback(async () => {
+        setLoading(true);
+        try {
+          let query = supabase
+            .from('ultra_four_competitions')
+            .select(`
+              *,
+              ultra_four_predictions (
+                user_username,
+                predictions
+              )
+            `)
+            .eq('status', 'finished')
+            .order('created_at', { ascending: false });
+
+          if (user?.username) {
+            query = query.eq('ultra_four_predictions.user_username', user.username)
+          }
+
+          const { data, error } = await query;
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            const enrichedHistory = await Promise.all(data.map(async (comp) => {
+                const fixtureIds = comp.fixtures.map(f => f.id).join('-');
+                const apiData = await callApi(`fixtures?ids=${fixtureIds}`, `ultra-four-history-${comp.id}`, true);
+                
+                if (apiData && apiData.response) {
+                    const scoresMap = apiData.response.reduce((acc, f) => {
+                        acc[f.fixture.id] = { home: f.goals.home, away: f.goals.away };
+                        return acc;
+                    }, {});
+
+                    const updatedFixtures = comp.fixtures.map(f => ({
+                        ...f,
+                        score: scoresMap[f.id] || f.score || { home: '?', away: '?' }
+                    }));
+                    
+                    return { ...comp, fixtures: updatedFixtures };
+                }
+                return comp;
+            }));
+            setHistory(enrichedHistory);
+          } else {
+            setHistory([]);
+          }
+
+        } catch (error) {
+          toast({
+            title: 'Error fetching history',
+            description: error.message,
+            variant: 'destructive',
+          });
+        } finally {
+          setLoading(false);
+        }
+      }, [user?.username, toast, callApi]);
+
+      useEffect(() => {
+        fetchHistory();
+      }, [fetchHistory]);
+
+      return (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <Card className="glass-effect">
+            <CardHeader>
+              <div className="flex justify-between items-center">
+                <CardTitle className="flex items-center"><History className="mr-2 h-6 w-6" /> Competition History</CardTitle>
+                <button onClick={onBack} className="text-sm text-orange-400 hover:underline">Back to Active</button>
+              </div>
+              <CardDescription>Review past Ultra Four competitions and your predictions.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex justify-center items-center p-8"><Loader2 className="h-8 w-8 animate-spin" /></div>
+              ) : history.length === 0 ? (
+                <div className="text-center py-8">
+                  <Trophy className="mx-auto h-12 w-12 text-muted-foreground" />
+                  <p className="mt-4 font-semibold">No History Yet</p>
+                  <p className="text-sm text-muted-foreground">Finished competitions will appear here.</p>
+                </div>
+              ) : (
+                <Accordion type="single" collapsible className="w-full space-y-4">
+                  {history.map((comp) => (
+                    <CompetitionHistoryItem key={comp.id} competition={comp} />
+                  ))}
+                </Accordion>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      );
+    };
+
+    const CompetitionHistoryItem = ({ competition }) => {
+      const userPrediction = competition.ultra_four_predictions[0];
+      const userPredictionsMap = userPrediction?.predictions.reduce((acc, p) => {
+        acc[p.fixture_id] = { home: p.home_score, away: p.away_score };
+        return acc;
+      }, {}) || {};
+
+      return (
+        <AccordionItem value={`comp-${competition.id}`} className="glass-effect rounded-lg overflow-hidden border">
+          <AccordionTrigger className="px-4 py-3 hover:no-underline">
+            <div className="w-full flex justify-between items-center">
+              <span className="font-semibold">{competition.name}</span>
+              <span className="text-sm text-muted-foreground">{format(new Date(competition.closing_time), 'PPP')}</span>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="p-4">
+            <div className="space-y-3">
+              {competition.fixtures.map(fixture => {
+                const userPred = userPredictionsMap[fixture.id];
+                const actualScore = fixture.score || { home: '?', away: '?' };
+                
+                const wasPredictedCorrectly = userPred && actualScore.home !== '?' && userPred.home === actualScore.home && userPred.away === actualScore.away;
+                const resultClass = userPred
+                    ? wasPredictedCorrectly ? 'border-green-500' : 'border-red-500'
+                    : 'border-muted';
+
+                return (
+                  <div key={fixture.id} className={cn("p-3 rounded-md border bg-black/20", resultClass)}>
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2 w-2/5">
+                        <img src={fixture.home_team.logo} alt={fixture.home_team.name} className="w-5 h-5" />
+                        <span className="truncate">{fixture.home_team.name}</span>
+                      </div>
+                      <div className="text-center font-bold text-lg">
+                        {actualScore.home} - {actualScore.away}
+                      </div>
+                      <div className="flex items-center gap-2 w-2/5 justify-end">
+                        <span className="truncate text-right">{fixture.away_team.name}</span>
+                        <img src={fixture.away_team.logo} alt={fixture.away_team.name} className="w-5 h-5" />
+                      </div>
+                    </div>
+                    {userPred && (
+                      <div className="text-center text-xs text-muted-foreground mt-2">
+                        Your Prediction: {userPred.home} - {userPred.away}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {!userPrediction && (
+              <p className="text-center text-sm text-muted-foreground mt-4">You did not enter this competition.</p>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      );
+    };
+
+    export default UltraFourHistory;

@@ -27,6 +27,7 @@ import { leagueRank, FOOTBALL_LEAGUE_GROUPS } from "@/constants/football-leagues
 import { useFootball, type FootballScore } from "@/contexts/FootballContext";
 import { useMatchReminder } from "@/contexts/MatchReminderContext";
 import { useProfile } from "@/contexts/ProfileContext";
+import UltraFourTab from "@/components/UltraFourTab";
 import {
   loadHiddenLeagues,
   saveHiddenLeagues,
@@ -885,7 +886,7 @@ export default function FootballCentreScreen() {
   const favTeamIdRef = useRef<number | null>(favTeamId);
   favTeamIdRef.current = favTeamId;
 
-  const [tab, setTab] = useState<"live" | "upcoming" | "myteam">("live");
+  const [tab, setTab] = useState<"live" | "upcoming" | "myteam" | "ultrafour">("live");
   const [scores, setScores] = useState<FootballScore[]>([]);
   const [fixtures, setFixtures] = useState<FootballFixture[]>([]);
   const [channels, setChannels] = useState<FixtureChannel[]>([]);
@@ -1332,9 +1333,40 @@ export default function FootballCentreScreen() {
             </ThemedText>
           )}
         </Touchable>
+        <Touchable
+          style={[styles.tab, tab === "ultrafour" && styles.tabSelected]}
+          activeStyle={styles.tabActive}
+          onPress={() => setTab("ultrafour")}
+        >
+          {(active) => (
+            <ThemedText
+              style={[
+                styles.tabText,
+                (tab === "ultrafour" || active) && styles.tabTextSelected,
+              ]}
+              numberOfLines={1}
+            >
+              Ultra 4
+            </ThemedText>
+          )}
+        </Touchable>
       </View>
 
-      {loading ? (
+      {tab === "ultrafour" ? (
+        // Ultra Four has its own loading/scrolling — bypass the main football loading guard
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: padH,
+            paddingTop: Spacing.md,
+            paddingBottom: insets.bottom + Spacing.xl,
+            gap: Spacing.lg,
+          }}
+          scrollIndicatorInsets={{ bottom: insets.bottom }}
+        >
+          <UltraFourTab username={activeProfile?.account_username} />
+        </ScrollView>
+      ) : loading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={Colors.dark.accent} />
         </View>

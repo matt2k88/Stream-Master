@@ -3086,6 +3086,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Ultra Four ────────────────────────────────────────────────────────────
+  // Proxy routes into the lifetime Supabase for the Ultra Four prediction game.
+  // All DB writes are limited to ultra_four_predictions only, and only when the
+  // competition is still open.
+
+  // List competitions by status (active | finished)
+  app.get("/api/ultra-four/competitions", async (req, res) => {
+    const status = req.query.status === "finished" ? "finished" : "active";
+    try {
+      const { data, error } = await lifetimeDb
+        .from("ultra_four_competitions")
+        .select("*")
+        .eq("status", status)
+        .order("closing_time", { ascending: true });
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? []);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch competitions" });
+    }
+  });
+
+  // Get the requesting user's prediction for one competition
+  app.get("/api/ultra-four/predictions", async (req, res) => {
+    const { competition_id, username } = req.query;
+    if (!competition_id || !username) {
+      return res.status(400).json({ error: "competition_id and username required" });
+    }
+    try {
+      const { data, error } = await lifetimeDb
+        .from("ultra_four_predictions")
+        .select("*")
+        .eq("competition_id", competition_id)
+        .eq("user_username", username)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data ?? null);
+    } catch {
+      res.status(500).json({ error: "Failed to fetch prediction" });
+    }
+  });
+
+  // Upsert a prediction — only allowed while competition is still open
+  app.post("/api/ultra-four/predictions", async (req, res) => {
+    const { id, competition_id, user_username, predictions } = req.body ?? {};
+    if (!competition_id || !user_username || !Array.isArray(predictions)) {
+      return res.status(400).json({ error: "competition_id, user_username and predictions required" });
+    }
+    try {
+      // Guard: reject if competition is already closed
+      const { data: comp, error: compErr } = await lifetimeDb
+        .from("ultra_four_competitions")
+        .select("closing_time, status")
+        .eq("id", competition_id)
+        .maybeSingle();
+      if (compErr) return res.status(500).json({ error: compErr.message });
+      if (!comp || comp.status !== "active") {
+        return res.status(403).json({ error: "Competition is not active" });
+      }
+      if (new Date(comp.closing_time) < new Date()) {
+        return res.status(403).json({ error: "Competition is closed" });
+      }
+
+      const { data, error } = await lifetimeDb
+        .from("ultra_four_predictions")
+        .upsert({ id, competition_id, user_username, predictions })
+        .select()
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json(data);
+    } catch {
+      res.status(500).json({ error: "Failed to save prediction" });
+    }
+  });
+
+  // Fetch live/final scores for a set of fixture IDs from the football API.
+  // Returns { [fixtureId]: { status, elapsed, home, away } }
+  app.get("/api/ultra-four/fixture-scores", async (req, res) => {
+    const ids = typeof req.query.ids === "string" ? req.query.ids : "";
+    if (!ids) return res.json({});
+    const key = process.env.API_FOOTBALL_KEY;
+    if (!key) return res.json({});
+    try {
+      const apiRes = await fetch(
+        `https://v3.football.api-sports.io/fixtures?ids=${ids}`,
+        { headers: { "x-apisports-key": key } },
+      );
+      const json = await apiRes.json() as any;
+      const map: Record<number, { status: string; elapsed: number | null; home: number | null; away: number | null }> = {};
+      for (const item of json?.response ?? []) {
+        map[item.fixture.id] = {
+          status: item.fixture.status.short,
+          elapsed: item.fixture.status.elapsed ?? null,
+          home: item.goals.home,
+          away: item.goals.away,
+        };
+      }
+      res.json(map);
+    } catch {
+      res.json({});
+    }
+  });
+
   // ── Developer details ─────────────────────────────────────────────────────
   app.get("/api/developer-details", async (req, res) => {
     try {
