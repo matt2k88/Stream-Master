@@ -1630,13 +1630,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Recently Watched — clear all for profile/type ────────────────────────
   app.delete("/api/recently-watched", async (req, res) => {
-    const { profile_id, content_type, since } = req.query;
+    const { profile_id, content_type, minutes_ago } = req.query;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     try {
+      const mins = minutes_ago ? Number(minutes_ago) : null;
+
+      if (mins !== null && (!Number.isFinite(mins) || mins <= 0)) {
+        return res.status(400).json({ error: "minutes_ago must be a positive number" });
+      }
+
+      if (mins !== null) {
+        // Time-bounded delete: SELECT matching IDs first, then delete only those
+        // IDs. This is a safety net — if the time filter produced no rows we
+        // delete nothing, so a bad param can never wipe the whole history.
+        const cutoff = new Date(Date.now() - mins * 60 * 1000).toISOString();
+        let selectQ = supabase
+          .from("recently_watched")
+          .select("id")
+          .eq("profile_id", profile_id as string)
+          .gte("updated_at", cutoff);
+        if (content_type) selectQ = selectQ.eq("content_type", content_type as string);
+
+        const { data: rows, error: selErr } = await selectQ;
+        if (selErr) return res.status(500).json({ error: selErr.message });
+        if (!rows || rows.length === 0) return res.json({ success: true, deleted: 0 });
+
+        const ids = rows.map((r: any) => r.id);
+        const { error: delErr } = await supabase.from("recently_watched").delete().in("id", ids);
+        if (delErr) return res.status(500).json({ error: delErr.message });
+        return res.json({ success: true, deleted: ids.length });
+      }
+
+      // No time filter — delete ALL for this profile + optional content_type
       let q = supabase.from("recently_watched").delete().eq("profile_id", profile_id as string);
       if (content_type) q = q.eq("content_type", content_type as string);
-      // `since` = ISO timestamp — only delete entries watched on/after that time
-      if (since) q = q.gte("updated_at", since as string);
       const { error } = await q;
       if (error) return res.status(500).json({ error: error.message });
       res.json({ success: true });

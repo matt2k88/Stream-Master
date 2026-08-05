@@ -535,7 +535,9 @@ export default function AccountInfoScreen() {
       const url = new URL("/api/recently-watched", getApiUrl());
       url.searchParams.set("profile_id", activeProfile.id);
       url.searchParams.set("content_type", contentType);
-      if (ms !== null) url.searchParams.set("since", new Date(Date.now() - ms).toISOString());
+      // Send plain integer minutes instead of an ISO timestamp to avoid
+      // URL-encoding issues with colons/T in the timestamp string.
+      if (ms !== null) url.searchParams.set("minutes_ago", String(Math.round(ms / 60000)));
       const res = await fetch(url.toString(), { method: "DELETE" });
       if (!res.ok) throw new Error("Failed");
       setClearHistoryDone(key);
