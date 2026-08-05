@@ -2004,7 +2004,7 @@ const styles = StyleSheet.create({
     rowGap: Spacing.sm, columnGap: 0,
   },
   tileGridItem: {
-    width: "50%", paddingHorizontal: Spacing.xs / 2,
+    width: "100%", paddingHorizontal: Spacing.xs / 2,
   },
 
   // Active profile pill inside user hero card
