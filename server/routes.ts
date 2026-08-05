@@ -1947,7 +1947,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       ]);
       const { error } = await supabase
         .from("profiles")
-        .update({ private_viewing: false, parental_controls: null, parental_pin: null })
+        .update({
+          // Wipe all data & settings — profile becomes factory-fresh
+          private_viewing: false,
+          parental_controls: null,
+          parental_pin: null,
+          pin: null,
+          avatar_icon: "user",
+          avatar_color: "#FF6600",
+          avatar_image: null,
+          player_vod: null,
+          player_live: null,
+          player_hw_decode: null,
+          player_buffer_ms: null,
+        })
         .eq("id", id);
       if (error) return res.status(500).json({ error: error.message });
       res.json({ ok: true });

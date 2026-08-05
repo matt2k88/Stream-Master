@@ -576,8 +576,20 @@ export default function AccountInfoScreen() {
       });
       if (!res.ok) throw new Error("Failed");
       setResetProfileVisible(false);
-      updateActiveProfile({ private_viewing: false, parental_controls: null, parental_pin: null });
-      Alert.alert("Profile Reset", "Your profile has been reset to defaults. Watch history, favourites, watchlist and profile settings have been cleared.");
+      updateActiveProfile({
+        private_viewing: false,
+        parental_controls: null,
+        parental_pin: null,
+        pin: null,
+        avatar_icon: "user",
+        avatar_color: "#FF6600",
+        avatar_image: null,
+        player_vod: null,
+        player_live: null,
+        player_hw_decode: null,
+        player_buffer_ms: null,
+      });
+      Alert.alert("Profile Reset", "Your profile has been reset to defaults. Watch history, favourites, watchlist, avatar and all settings have been cleared.");
     } catch {
       Alert.alert("Error", "Failed to reset profile. Please try again.");
     } finally {
@@ -1342,15 +1354,16 @@ export default function AccountInfoScreen() {
             </View>
             <View style={styles.notesDivider} />
             <View style={styles.clearHistoryCols}>
-              {(["live", "movie", "series"] as const).map((ct) => (
+              {(["live", "movie", "series"] as const).map((ct, ctIdx) => (
                 <View key={ct} style={styles.clearHistoryCol}>
                   <ThemedText style={styles.clearHistoryColHeader}>
                     {ct === "live" ? "Live TV" : ct === "movie" ? "Movies" : "Series"}
                   </ThemedText>
-                  {HISTORY_TIME_RANGES.map(({ label, ms }) => {
+                  {HISTORY_TIME_RANGES.map(({ label, ms }, rangeIdx) => {
                     const key = `${ct}-${ms ?? "all"}`;
                     const isBusy = clearHistoryBusy === key;
                     const isDone = clearHistoryDone === key;
+                    const isFirst = ctIdx === 0 && rangeIdx === 0;
                     return (
                       <HoverBtn
                         key={label}
@@ -1358,6 +1371,7 @@ export default function AccountInfoScreen() {
                         activeStyle={styles.clearHistoryBtnActive}
                         onPress={() => handleClearHistory(ct, ms)}
                         disabled={!!clearHistoryBusy}
+                        hasTVPreferredFocus={clearHistoryVisible && isFirst}
                       >
                         {() => (
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -1421,7 +1435,12 @@ export default function AccountInfoScreen() {
                   <ThemedText style={styles.pinError}>{resetPinError}</ThemedText>
                 ) : null}
                 <View style={styles.privacyModalActions}>
-                  <HoverBtn style={styles.privacyModalCancel} activeStyle={styles.privacyModalCancelActive} onPress={() => setResetProfileVisible(false)}>
+                  <HoverBtn
+                    style={styles.privacyModalCancel}
+                    activeStyle={styles.privacyModalCancelActive}
+                    onPress={() => setResetProfileVisible(false)}
+                    hasTVPreferredFocus={resetProfileVisible && resetProfileStep === "pin"}
+                  >
                     {() => <ThemedText style={styles.privacyModalCancelText}>Cancel</ThemedText>}
                   </HoverBtn>
                   <HoverBtn
@@ -1446,7 +1465,15 @@ export default function AccountInfoScreen() {
                   This will permanently clear:
                 </ThemedText>
                 <View style={{ gap: 4, paddingLeft: Spacing.sm }}>
-                  {["Watch history (Live TV, Movies & Series)", "Favourites", "Watchlist", "Private Viewing setting", "Parental Controls & PIN"].map((item) => (
+                  {[
+                    "Watch history (Live TV, Movies & Series)",
+                    "Favourites & Watchlist",
+                    "Avatar & profile picture",
+                    "Profile PIN",
+                    "Player settings (VOD & Live)",
+                    "Private Viewing setting",
+                    "Parental Controls & PIN",
+                  ].map((item) => (
                     <ThemedText key={item} style={[styles.privacyModalBody, { color: Colors.dark.textSecondary }]}>
                       • {item}
                     </ThemedText>
@@ -1456,7 +1483,13 @@ export default function AccountInfoScreen() {
                   This cannot be undone.
                 </ThemedText>
                 <View style={styles.privacyModalActions}>
-                  <HoverBtn style={styles.privacyModalCancel} activeStyle={styles.privacyModalCancelActive} onPress={() => setResetProfileVisible(false)} disabled={resetProfileBusy}>
+                  <HoverBtn
+                    style={styles.privacyModalCancel}
+                    activeStyle={styles.privacyModalCancelActive}
+                    onPress={() => setResetProfileVisible(false)}
+                    disabled={resetProfileBusy}
+                    hasTVPreferredFocus={resetProfileVisible && resetProfileStep === "confirm"}
+                  >
                     {() => <ThemedText style={styles.privacyModalCancelText}>Cancel</ThemedText>}
                   </HoverBtn>
                   <HoverBtn
