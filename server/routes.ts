@@ -1630,11 +1630,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Recently Watched — clear all for profile/type ────────────────────────
   app.delete("/api/recently-watched", async (req, res) => {
-    const { profile_id, content_type } = req.query;
+    const { profile_id, content_type, since } = req.query;
     if (!profile_id) return res.status(400).json({ error: "profile_id required" });
     try {
       let q = supabase.from("recently_watched").delete().eq("profile_id", profile_id as string);
       if (content_type) q = q.eq("content_type", content_type as string);
+      // `since` = ISO timestamp — only delete entries watched on/after that time
+      if (since) q = q.gte("updated_at", since as string);
       const { error } = await q;
       if (error) return res.status(500).json({ error: error.message });
       res.json({ success: true });
@@ -1929,6 +1931,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       console.error("[watchlist] DELETE exception:", e?.message);
       res.status(500).json({ error: "Failed to remove from watchlist" });
+    }
+  });
+
+  // ── Profile reset — clears history, favourites, watchlist, resets settings ─
+  app.post("/api/profiles/:id/reset", async (req, res) => {
+    const { id } = req.params;
+    const { username } = req.body as { username?: string };
+    if (!id) return res.status(400).json({ error: "id required" });
+    try {
+      await Promise.all([
+        supabase.from("recently_watched").delete().eq("profile_id", id),
+        supabase.from("favourites").delete().eq("profile_id", id),
+        username ? lifetimeDb.from("watchlist").delete().eq("user_username", username) : Promise.resolve(),
+      ]);
+      const { error } = await supabase
+        .from("profiles")
+        .update({ private_viewing: false, parental_controls: null, parental_pin: null })
+        .eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to reset profile" });
     }
   });
 

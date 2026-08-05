@@ -12,6 +12,7 @@ import {
   BackHandler,
   Platform,
   Modal,
+  TextInput,
 } from "react-native";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,6 +71,15 @@ function showUpdateAvailableAlert(
 }
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const HISTORY_TIME_RANGES: { label: string; ms: number | null }[] = [
+  { label: "Last 15 min",   ms: 15 * 60 * 1000 },
+  { label: "Last hour",     ms: 60 * 60 * 1000 },
+  { label: "Last 24 hours", ms: 24 * 60 * 60 * 1000 },
+  { label: "Last 7 days",   ms: 7 * 24 * 60 * 60 * 1000 },
+  { label: "Last 4 weeks",  ms: 28 * 24 * 60 * 60 * 1000 },
+  { label: "All",           ms: null },
+];
 
 const APP_VERSION: string =
   (Constants?.expoConfig?.version as string | undefined) ?? "1.0.0";
@@ -326,6 +336,14 @@ export default function AccountInfoScreen() {
   const [supportVisible, setSupportVisible] = useState(false);
   const [privacySaving, setPrivacySaving] = useState(false);
   const [privacyConfirmVisible, setPrivacyConfirmVisible] = useState(false);
+  const [clearHistoryVisible, setClearHistoryVisible] = useState(false);
+  const [clearHistoryBusy, setClearHistoryBusy] = useState<string | null>(null);
+  const [clearHistoryDone, setClearHistoryDone] = useState<string | null>(null);
+  const [resetProfileVisible, setResetProfileVisible] = useState(false);
+  const [resetProfileStep, setResetProfileStep] = useState<"pin" | "confirm">("confirm");
+  const [resetPinInput, setResetPinInput] = useState("");
+  const [resetPinError, setResetPinError] = useState<string | null>(null);
+  const [resetProfileBusy, setResetProfileBusy] = useState(false);
 
   const handleOpenNotes = async () => {
     setNotesVisible(true);
@@ -507,6 +525,64 @@ export default function AccountInfoScreen() {
   const confirmEnablePrivateViewing = async () => {
     setPrivacyConfirmVisible(false);
     await savePrivateViewing(true);
+  };
+
+  const handleClearHistory = async (contentType: "live" | "movie" | "series", ms: number | null) => {
+    if (!activeProfile?.id) return;
+    const key = `${contentType}-${ms ?? "all"}`;
+    setClearHistoryBusy(key);
+    try {
+      const url = new URL("/api/recently-watched", getApiUrl());
+      url.searchParams.set("profile_id", activeProfile.id);
+      url.searchParams.set("content_type", contentType);
+      if (ms !== null) url.searchParams.set("since", new Date(Date.now() - ms).toISOString());
+      const res = await fetch(url.toString(), { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setClearHistoryDone(key);
+      setTimeout(() => setClearHistoryDone((d) => (d === key ? null : d)), 2000);
+    } catch {
+      Alert.alert("Error", "Failed to clear history. Please try again.");
+    } finally {
+      setClearHistoryBusy(null);
+    }
+  };
+
+  const openResetProfile = () => {
+    const hasPIN = !!(activeProfile?.pin);
+    setResetProfileStep(hasPIN ? "pin" : "confirm");
+    setResetPinInput("");
+    setResetPinError(null);
+    setResetProfileVisible(true);
+  };
+
+  const handleResetPinNext = () => {
+    if (resetPinInput !== activeProfile?.pin) {
+      setResetPinError("Incorrect PIN. Please try again.");
+      return;
+    }
+    setResetPinError(null);
+    setResetProfileStep("confirm");
+  };
+
+  const handleDoReset = async () => {
+    if (!activeProfile?.id) return;
+    setResetProfileBusy(true);
+    try {
+      const url = new URL(`/api/profiles/${activeProfile.id}/reset`, getApiUrl());
+      const res = await fetch(url.toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: activeProfile.account_username }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      setResetProfileVisible(false);
+      updateActiveProfile({ private_viewing: false, parental_controls: null, parental_pin: null });
+      Alert.alert("Profile Reset", "Your profile has been reset to defaults. Watch history, favourites, watchlist and profile settings have been cleared.");
+    } catch {
+      Alert.alert("Error", "Failed to reset profile. Please try again.");
+    } finally {
+      setResetProfileBusy(false);
+    }
   };
 
   const padH = Math.max(insets.left + Spacing.sm, Spacing.lg);
@@ -700,6 +776,29 @@ export default function AccountInfoScreen() {
                       subtitle={activeProfile?.parental_controls?.enabled ? "On — content filtered" : "Off — tap to manage"}
                       tint={activeProfile?.parental_controls?.enabled ? Colors.dark.accent : Colors.dark.textSecondary}
                       onPress={() => navigation.navigate("ParentalControls")}
+                    />
+                  </View>
+                ) : null}
+                {!isGuest ? (
+                  <View style={styles.tileGridItem}>
+                    <ActionTile
+                      compact={isTVLandscape}
+                      icon="clock"
+                      title="Clear Watch History"
+                      subtitle="By type & time range"
+                      onPress={() => setClearHistoryVisible(true)}
+                    />
+                  </View>
+                ) : null}
+                {!isGuest ? (
+                  <View style={styles.tileGridItem}>
+                    <ActionTile
+                      compact={isTVLandscape}
+                      icon="rotate-ccw"
+                      title="Reset Profile"
+                      subtitle="Clear all data & settings"
+                      tint={Colors.dark.error}
+                      onPress={openResetProfile}
                     />
                   </View>
                 ) : null}
@@ -914,8 +1013,11 @@ export default function AccountInfoScreen() {
                     {subscriptionCard}
                   </View>
                   <View style={styles.midColLandscape}>
-                    {profileSection}
-                    {settingsSection}
+                    <View style={styles.profileSettingsRow}>
+                      <View style={{ flex: 1, gap: Spacing.xs }}>{settingsSection}</View>
+                      <View style={styles.profileSettingsDivider} />
+                      <View style={{ flex: 1, gap: Spacing.xs }}>{profileSection}</View>
+                    </View>
                   </View>
                 </View>
 
@@ -1062,8 +1164,11 @@ export default function AccountInfoScreen() {
               <View style={styles.portraitCol}>
                 {userHero}
                 {subscriptionCard}
-                {profileSection}
-                {settingsSection}
+                <View style={styles.profileSettingsRow}>
+                  <View style={styles.profileSettingsCol}>{settingsSection}</View>
+                  <View style={styles.profileSettingsDivider} />
+                  <View style={styles.profileSettingsCol}>{profileSection}</View>
+                </View>
                 {appSection}
                 {sessionSection}
               </View>
@@ -1201,6 +1306,173 @@ export default function AccountInfoScreen() {
                 </View>
               )}
             </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Clear Watch History modal */}
+      <Modal
+        visible={clearHistoryVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !clearHistoryBusy && setClearHistoryVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => !clearHistoryBusy && setClearHistoryVisible(false)}>
+          <Pressable style={styles.clearHistoryModal} onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(255,102,0,0.12)", "rgba(255,102,0,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            <View style={styles.notesHeader}>
+              <View style={{ flex: 1 }}>
+                <ThemedText style={styles.notesEyebrow}>PROFILE</ThemedText>
+                <ThemedText style={styles.notesTitle}>Clear Watch History</ThemedText>
+                <ThemedText style={styles.notesSub}>Tap a range to clear that window for each category</ThemedText>
+              </View>
+              <HoverBtn
+                style={styles.notesCloseBtn}
+                activeStyle={styles.notesCloseBtnActive}
+                onPress={() => setClearHistoryVisible(false)}
+              >
+                {(active) => <Feather name="x" size={18} color={active ? Colors.dark.accent : Colors.dark.text} />}
+              </HoverBtn>
+            </View>
+            <View style={styles.notesDivider} />
+            <View style={styles.clearHistoryCols}>
+              {(["live", "movie", "series"] as const).map((ct) => (
+                <View key={ct} style={styles.clearHistoryCol}>
+                  <ThemedText style={styles.clearHistoryColHeader}>
+                    {ct === "live" ? "Live TV" : ct === "movie" ? "Movies" : "Series"}
+                  </ThemedText>
+                  {HISTORY_TIME_RANGES.map(({ label, ms }) => {
+                    const key = `${ct}-${ms ?? "all"}`;
+                    const isBusy = clearHistoryBusy === key;
+                    const isDone = clearHistoryDone === key;
+                    return (
+                      <HoverBtn
+                        key={label}
+                        style={[styles.clearHistoryBtn, isDone && styles.clearHistoryBtnDone]}
+                        activeStyle={styles.clearHistoryBtnActive}
+                        onPress={() => handleClearHistory(ct, ms)}
+                        disabled={!!clearHistoryBusy}
+                      >
+                        {() => (
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                            {isBusy ? (
+                              <ActivityIndicator size="small" color={Colors.dark.accent} />
+                            ) : isDone ? (
+                              <Feather name="check" size={12} color={Colors.dark.success} />
+                            ) : null}
+                            <ThemedText style={[styles.clearHistoryBtnText, isDone && { color: Colors.dark.success }]}>
+                              {isDone ? "Cleared!" : label}
+                            </ThemedText>
+                          </View>
+                        )}
+                      </HoverBtn>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Reset Profile modal */}
+      <Modal
+        visible={resetProfileVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !resetProfileBusy && setResetProfileVisible(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => !resetProfileBusy && setResetProfileVisible(false)}>
+          <Pressable style={styles.resetProfileModal} onPress={(e) => e.stopPropagation()}>
+            <LinearGradient
+              colors={["rgba(255,59,59,0.12)", "rgba(255,59,59,0.02)"]}
+              style={StyleSheet.absoluteFill}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              pointerEvents="none"
+            />
+            {resetProfileStep === "pin" ? (
+              <>
+                <View style={styles.privacyModalHeader}>
+                  <View style={[styles.actionTileIcon, { borderColor: Colors.dark.error + "55", backgroundColor: Colors.dark.error + "14" }]}>
+                    <Feather name="lock" size={18} color={Colors.dark.error} />
+                  </View>
+                  <ThemedText style={[styles.privacyModalTitle, { color: Colors.dark.error }]}>PIN Required</ThemedText>
+                </View>
+                <ThemedText style={styles.privacyModalBody}>Enter your profile PIN to continue with the reset.</ThemedText>
+                <TextInput
+                  style={styles.pinInput}
+                  value={resetPinInput}
+                  onChangeText={(t) => { setResetPinInput(t.replace(/\D/g, "").slice(0, 4)); setResetPinError(null); }}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry
+                  placeholder="••••"
+                  placeholderTextColor={Colors.dark.textSecondary}
+                  autoFocus
+                />
+                {resetPinError ? (
+                  <ThemedText style={styles.pinError}>{resetPinError}</ThemedText>
+                ) : null}
+                <View style={styles.privacyModalActions}>
+                  <HoverBtn style={styles.privacyModalCancel} activeStyle={styles.privacyModalCancelActive} onPress={() => setResetProfileVisible(false)}>
+                    {() => <ThemedText style={styles.privacyModalCancelText}>Cancel</ThemedText>}
+                  </HoverBtn>
+                  <HoverBtn
+                    style={[styles.privacyModalConfirm, { borderColor: Colors.dark.error, backgroundColor: Colors.dark.error + "1A" }]}
+                    activeStyle={{ backgroundColor: Colors.dark.error + "33" }}
+                    onPress={handleResetPinNext}
+                    disabled={resetPinInput.length === 0}
+                  >
+                    {() => <ThemedText style={[styles.privacyModalConfirmText, { color: Colors.dark.error }]}>Next →</ThemedText>}
+                  </HoverBtn>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.privacyModalHeader}>
+                  <View style={[styles.actionTileIcon, { borderColor: Colors.dark.error + "55", backgroundColor: Colors.dark.error + "14" }]}>
+                    <Feather name="alert-triangle" size={18} color={Colors.dark.error} />
+                  </View>
+                  <ThemedText style={[styles.privacyModalTitle, { color: Colors.dark.error }]}>Reset Profile?</ThemedText>
+                </View>
+                <ThemedText style={styles.privacyModalBody}>
+                  This will permanently clear:
+                </ThemedText>
+                <View style={{ gap: 4, paddingLeft: Spacing.sm }}>
+                  {["Watch history (Live TV, Movies & Series)", "Favourites", "Watchlist", "Private Viewing setting", "Parental Controls & PIN"].map((item) => (
+                    <ThemedText key={item} style={[styles.privacyModalBody, { color: Colors.dark.textSecondary }]}>
+                      • {item}
+                    </ThemedText>
+                  ))}
+                </View>
+                <ThemedText style={[styles.privacyModalBody, { color: Colors.dark.error, fontWeight: "700", marginTop: Spacing.xs }]}>
+                  This cannot be undone.
+                </ThemedText>
+                <View style={styles.privacyModalActions}>
+                  <HoverBtn style={styles.privacyModalCancel} activeStyle={styles.privacyModalCancelActive} onPress={() => setResetProfileVisible(false)} disabled={resetProfileBusy}>
+                    {() => <ThemedText style={styles.privacyModalCancelText}>Cancel</ThemedText>}
+                  </HoverBtn>
+                  <HoverBtn
+                    style={[styles.privacyModalConfirm, { borderColor: Colors.dark.error, backgroundColor: Colors.dark.error + "1A" }]}
+                    activeStyle={{ backgroundColor: Colors.dark.error + "33" }}
+                    onPress={handleDoReset}
+                    disabled={resetProfileBusy}
+                  >
+                    {() => resetProfileBusy
+                      ? <ActivityIndicator size="small" color={Colors.dark.error} />
+                      : <ThemedText style={[styles.privacyModalConfirmText, { color: Colors.dark.error }]}>Reset Profile</ThemedText>
+                    }
+                  </HoverBtn>
+                </View>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -2158,4 +2430,84 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.03 }],
   },
   retryBtnText: { color: "#fff", fontWeight: "700" },
+
+  // ── Two-column profile / settings layout ─────────────────────────────────
+  profileSettingsRow: {
+    flexDirection: "row", alignItems: "flex-start",
+  },
+  profileSettingsCol: { flex: 1, gap: Spacing.sm },
+  profileSettingsDivider: {
+    width: 1, backgroundColor: Colors.dark.border,
+    alignSelf: "stretch", marginHorizontal: Spacing.md,
+  },
+
+  // ── Clear Watch History modal ─────────────────────────────────────────────
+  clearHistoryModal: {
+    width: "100%", maxWidth: 680,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: "rgba(255,102,0,0.4)",
+    overflow: "hidden",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5, shadowRadius: 20, elevation: 14,
+  },
+  clearHistoryCols: {
+    flexDirection: "row", gap: 0,
+    padding: Spacing.lg, paddingTop: Spacing.md,
+  },
+  clearHistoryCol: {
+    flex: 1, gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRightWidth: 1, borderRightColor: Colors.dark.border,
+  },
+  clearHistoryColHeader: {
+    fontSize: 11, fontWeight: "800", color: Colors.dark.accent,
+    textTransform: "uppercase", letterSpacing: 1.2,
+    marginBottom: Spacing.xs, textAlign: "center",
+  },
+  clearHistoryBtn: {
+    alignItems: "center", justifyContent: "center",
+    paddingVertical: 9, paddingHorizontal: 6,
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1, borderColor: Colors.dark.border,
+  },
+  clearHistoryBtnActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.accentDim,
+  },
+  clearHistoryBtnDone: {
+    borderColor: Colors.dark.success,
+    backgroundColor: Colors.dark.success + "14",
+  },
+  clearHistoryBtnText: {
+    color: Colors.dark.text, fontSize: 11.5, fontWeight: "600",
+  },
+
+  // ── Reset Profile modal ───────────────────────────────────────────────────
+  resetProfileModal: {
+    width: "100%", maxWidth: 460,
+    backgroundColor: Colors.dark.backgroundDefault,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1, borderColor: Colors.dark.error + "55",
+    overflow: "hidden", padding: Spacing.lg, gap: Spacing.sm,
+    shadowColor: "#FF3B3B",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 18, elevation: 14,
+  },
+  pinInput: {
+    backgroundColor: Colors.dark.backgroundSecondary,
+    borderWidth: 1, borderColor: Colors.dark.border,
+    borderRadius: BorderRadius.md,
+    color: Colors.dark.text,
+    fontSize: 22, fontWeight: "700", letterSpacing: 8,
+    paddingVertical: Spacing.sm + 2, paddingHorizontal: Spacing.md,
+    textAlign: "center",
+    marginVertical: Spacing.xs,
+  },
+  pinError: {
+    color: Colors.dark.error, fontSize: 12, fontWeight: "600",
+    textAlign: "center",
+  },
 });
