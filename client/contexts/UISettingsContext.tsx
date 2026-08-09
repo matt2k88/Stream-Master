@@ -18,6 +18,8 @@ interface UISettingsContextType {
   toggleTextSize: () => Promise<void>;
   scaleFont: (base: number) => number;
   scaleLineHeight: (base: number) => number;
+  autoPlayNext: boolean;
+  toggleAutoPlayNext: () => Promise<void>;
 }
 
 const UISettingsContext = createContext<UISettingsContextType | undefined>(undefined);
@@ -27,6 +29,8 @@ const STORAGE_KEY = "ultracast.ui.textSize.v2";
 // after the upgrade we migrate the old value across so users don't get
 // silently bumped to the new 1.4x Large tier.
 const LEGACY_STORAGE_KEY_V1 = "ultracast.ui.textSize.v1";
+
+const AUTO_PLAY_NEXT_KEY = "ultracast.ui.autoPlayNext.v1";
 
 // Three readability tiers:
 //   normal  — original sizes everywhere (1.0x)
@@ -51,6 +55,7 @@ function isValidTextSize(v: unknown): v is TextSize {
 export function UISettingsProvider({ children }: { children: ReactNode }) {
   const [textSize, setTextSizeState] = useState<TextSize>("normal");
   const [hydrated, setHydrated] = useState(false);
+  const [autoPlayNext, setAutoPlayNextState] = useState(true);
 
   // Load persisted preference once on mount
   useEffect(() => {
@@ -80,9 +85,19 @@ export function UISettingsProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // ignore — fall back to default "normal"
-      } finally {
-        if (!cancelled) setHydrated(true);
       }
+
+      // Load autoPlayNext setting (default true — existing users keep auto-play on)
+      try {
+        const apn = await AsyncStorage.getItem(AUTO_PLAY_NEXT_KEY);
+        if (!cancelled && apn !== null) {
+          setAutoPlayNextState(apn === "true");
+        }
+      } catch {
+        // ignore — fall back to default true
+      }
+
+      if (!cancelled) setHydrated(true);
     })();
     return () => {
       cancelled = true;
@@ -105,6 +120,16 @@ export function UISettingsProvider({ children }: { children: ReactNode }) {
     await setTextSize(next);
   }, [textSize, setTextSize]);
 
+  const toggleAutoPlayNext = useCallback(async () => {
+    const next = !autoPlayNext;
+    setAutoPlayNextState(next);
+    try {
+      await AsyncStorage.setItem(AUTO_PLAY_NEXT_KEY, String(next));
+    } catch {
+      // best-effort persistence
+    }
+  }, [autoPlayNext]);
+
   const textScale = SCALE_MAP[textSize];
 
   // Backwards-compat helpers. ThemedText now auto-scales fontSize/lineHeight
@@ -114,8 +139,8 @@ export function UISettingsProvider({ children }: { children: ReactNode }) {
   const scaleLineHeight = useCallback((base: number) => Math.round(base), []);
 
   const value = useMemo<UISettingsContextType>(
-    () => ({ textSize, textScale, setTextSize, toggleTextSize, scaleFont, scaleLineHeight }),
-    [textSize, textScale, setTextSize, toggleTextSize, scaleFont, scaleLineHeight],
+    () => ({ textSize, textScale, setTextSize, toggleTextSize, scaleFont, scaleLineHeight, autoPlayNext, toggleAutoPlayNext }),
+    [textSize, textScale, setTextSize, toggleTextSize, scaleFont, scaleLineHeight, autoPlayNext, toggleAutoPlayNext],
   );
 
   // Avoid rendering subtree against the wrong default until storage is loaded.
@@ -143,6 +168,8 @@ const DEFAULT_UI_SETTINGS: UISettingsContextType = {
   toggleTextSize: async () => {},
   scaleFont: (base: number) => Math.round(base),
   scaleLineHeight: (base: number) => Math.round(base),
+  autoPlayNext: true,
+  toggleAutoPlayNext: async () => {},
 };
 
 export function useUISettingsSafe(): UISettingsContextType {

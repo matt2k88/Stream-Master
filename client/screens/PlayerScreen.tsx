@@ -37,6 +37,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 // Lazy-require VlcPlayerScreen ONLY on Android — react-native-vlc-media-player
@@ -446,6 +447,7 @@ function LegacyPlayerScreen() {
   const isLive = type === "live";
   const { activeProfile } = useProfile();
   const { upsertLocal, getByStreamId } = useWatchHistory();
+  const { autoPlayNext } = useUISettings();
   // Independent latches so audio and subtitle restoration don't race —
   // whichever `availableTracksChange` event fires first only marks its
   // own slot done; the other event still gets a chance to restore.
@@ -1214,15 +1216,16 @@ function LegacyPlayerScreen() {
     return () => { cancelled = true; };
   }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
 
-  // Trigger next-episode prompt when within 30s of end
+  // Trigger next-episode prompt when within 20s of end (only when auto-play is enabled)
   useEffect(() => {
     if (isLive || nextPromptShownRef.current || !nextEp) return;
-    if (duration > 0 && currentTime > 0 && currentTime >= duration - 30) {
+    if (!autoPlayNext) return;
+    if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
       nextPromptShownRef.current = true;
       setShowNext(true);
       setCountdown(10);
     }
-  }, [currentTime, duration, isLive, nextEp]);
+  }, [currentTime, duration, isLive, nextEp, autoPlayNext]);
 
   const nextFiredRef = useRef(false);
   const handleNextConfirm = useCallback(() => {
@@ -1245,6 +1248,10 @@ function LegacyPlayerScreen() {
       episodeNum: Number(ep.episode_num),
     });
   }, [nextEp, navigation, player, seriesIdParam, seriesNameParam, thumbnail, title]);
+
+  const handleNextCancel = useCallback(() => {
+    setShowNext(false);
+  }, []);
 
   // Countdown ticker
   useEffect(() => {
@@ -1832,29 +1839,41 @@ function LegacyPlayerScreen() {
         ) : null}
       </View>
 
-      {/* Next-episode prompt — countdown only, auto-advances */}
-      {showNext && nextEp ? (
-        <View style={styles.nextOverlay} pointerEvents="none">
-          <View style={styles.nextCard}>
-            <LinearGradient
-              colors={["rgba(20,20,20,0.98)", "rgba(8,8,8,0.98)"]}
-              style={StyleSheet.absoluteFill}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-            <ThemedText style={styles.nextLabel}>UP NEXT</ThemedText>
-            <ThemedText style={styles.nextTitle} numberOfLines={2}>
-              S{nextEp.season} · E{nextEp.episode.episode_num} — {nextEp.episode.title}
-            </ThemedText>
-            <View style={styles.nextCountdownRow}>
-              <Feather name="play-circle" size={18} color={Colors.dark.accent} />
-              <ThemedText style={styles.nextCountdown}>
-                Playing in {countdown}s
+      {/* Next-episode prompt — wrapped in Modal so it renders above the native video surface on Fire TV/Android */}
+      <Modal
+        visible={showNext && !!nextEp}
+        transparent
+        animationType="fade"
+        onRequestClose={handleNextCancel}
+        statusBarTranslucent
+      >
+        <View style={styles.nextModalBackdrop} pointerEvents="box-none">
+          {nextEp ? (
+            <View style={styles.nextCard}>
+              <LinearGradient
+                colors={["rgba(20,20,20,0.98)", "rgba(8,8,8,0.98)"]}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              />
+              <ThemedText style={styles.nextLabel}>UP NEXT</ThemedText>
+              <ThemedText style={styles.nextTitle} numberOfLines={2}>
+                S{nextEp.season} · E{nextEp.episode.episode_num} — {nextEp.episode.title}
               </ThemedText>
+              <View style={styles.nextCountdownRow}>
+                <Feather name="play-circle" size={16} color={Colors.dark.accent} />
+                <ThemedText style={styles.nextCountdown}>
+                  Playing in {countdown}s
+                </ThemedText>
+              </View>
+              <View style={styles.nextBtnRow}>
+                <NextEpBtn label="Cancel" onPress={handleNextCancel} variant="cancel" />
+                <NextEpBtn label="Play Now" onPress={handleNextConfirm} variant="confirm" autoFocus />
+              </View>
             </View>
-          </View>
+          ) : null}
         </View>
-      ) : null}
+      </Modal>
 
       {/* Favourite toast */}
       {toastVisible ? (
@@ -1870,6 +1889,35 @@ function LegacyPlayerScreen() {
       {/* Report content modal — shared with the error screen via reportModalNode */}
       {reportModalNode}
     </View>
+  );
+}
+
+function NextEpBtn({
+  label, onPress, variant, autoFocus,
+}: { label: string; onPress: () => void; variant: "cancel" | "confirm"; autoFocus?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.nextBtn,
+        variant === "confirm" ? styles.nextBtnConfirm : styles.nextBtnCancel,
+        isActive && (variant === "confirm" ? styles.nextBtnConfirmActive : styles.nextBtnCancelActive),
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
+    >
+      {variant === "confirm" && (
+        <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+      )}
+      {variant === "confirm" && <Feather name="skip-forward" size={13} color="#fff" />}
+      <ThemedText style={[styles.nextBtnText, variant === "confirm" && styles.nextBtnTextConfirm]}>{label}</ThemedText>
+    </Pressable>
   );
 }
 
@@ -2007,11 +2055,11 @@ function ReportSubmitBtn({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
 
-  nextOverlay: {
-    position: "absolute",
-    right: Spacing.lg,
-    bottom: Spacing.lg,
-    maxWidth: 380,
+  nextModalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    alignItems: "flex-end",
+    padding: Spacing.lg,
   },
   nextCard: {
     borderRadius: BorderRadius.md,
@@ -2050,7 +2098,52 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
   },
-
+  nextBtnRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  nextBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 9,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    overflow: "hidden",
+  },
+  nextBtnCancel: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  nextBtnCancelActive: {
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  nextBtnConfirm: {
+    borderWidth: 1,
+    borderColor: Colors.dark.accent,
+  },
+  nextBtnConfirmActive: {
+    borderColor: "#FF8C1A",
+    shadowColor: "#FF6600",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nextBtnText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  nextBtnTextConfirm: {
+    color: "#fff",
+    fontWeight: "700",
+  },
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

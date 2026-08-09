@@ -317,7 +317,7 @@ export default function AccountInfoScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { userInfo, logout, refreshUserInfo, isLoading } = useAuth();
   const { activeProfile, clearProfile, isGuest, updateActiveProfile } = useProfile();
-  const { textSize, toggleTextSize } = useUISettings();
+  const { textSize, toggleTextSize, autoPlayNext, toggleAutoPlayNext } = useUISettings();
   const { globalEnabled: footballGlobalEnabled } = useFootball();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [devDetails, setDevDetails] = useState<DeveloperDetails | null>(null);
@@ -869,6 +869,15 @@ export default function AccountInfoScreen() {
                     title={`Text Size: ${textSize === "large" ? "Large" : textSize === "medium" ? "Medium" : "Normal"}`}
                     subtitle="Tap to toggle"
                     onPress={() => { void toggleTextSize(); }}
+                  />
+                </View>
+                <View style={styles.tileGridItem}>
+                  <ActionTile
+                    compact={isTVLandscape}
+                    icon={autoPlayNext ? "skip-forward" : "pause-circle"}
+                    title={`Auto Play: ${autoPlayNext ? "On" : "Off"}`}
+                    subtitle="Next episode"
+                    onPress={() => { void toggleAutoPlayNext(); }}
                   />
                 </View>
               </View>

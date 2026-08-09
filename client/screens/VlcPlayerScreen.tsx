@@ -54,6 +54,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
+import { useUISettings } from "@/contexts/UISettingsContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -104,6 +105,7 @@ export default function VlcPlayerScreen() {
   const { upsertLocal, getByStreamId } = useWatchHistory();
   const { isFavourite, toggleFavourite } = useFavourites();
   const { open: openSideMenu } = useSideMenu();
+  const { autoPlayNext } = useUISettings();
 
   // ─── Player state ────────────────────────────────────────────────────────
   const vlcRef = useRef<any>(null);
@@ -336,12 +338,13 @@ export default function VlcPlayerScreen() {
 
   useEffect(() => {
     if (nextPromptShownRef.current || !nextEp) return;
-    if (duration > 0 && currentTime > 0 && currentTime >= duration - 30) {
+    if (!autoPlayNext) return;
+    if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
       nextPromptShownRef.current = true;
       setShowNext(true);
       setCountdown(10);
     }
-  }, [currentTime, duration, nextEp]);
+  }, [currentTime, duration, nextEp, autoPlayNext]);
 
   const handleNextConfirm = useCallback(() => {
     if (nextFiredRef.current) return;
@@ -361,6 +364,10 @@ export default function VlcPlayerScreen() {
       episodeNum: Number(ep.episode_num),
     });
   }, [nextEp, navigation, seriesIdParam, seriesNameParam, thumbnail, title]);
+
+  const handleNextCancel = useCallback(() => {
+    setShowNext(false);
+  }, []);
 
   useEffect(() => {
     if (!showNext) return;
@@ -634,14 +641,14 @@ export default function VlcPlayerScreen() {
   }, [resumeTime]);
 
   const onEnded = useCallback(() => {
-    if (nextEp && !nextFiredRef.current) {
+    if (autoPlayNext && nextEp && !nextFiredRef.current) {
       nextPromptShownRef.current = true;
       setShowNext(true);
       setCountdown(3);
     } else {
       navigation.goBack();
     }
-  }, [nextEp, navigation]);
+  }, [autoPlayNext, nextEp, navigation]);
 
   const onError = useCallback((_e: any) => {
     setIsLoading(false);
@@ -1077,21 +1084,34 @@ export default function VlcPlayerScreen() {
       )}
 
       {/* Next episode prompt */}
-      {showNext && nextEp && (
-        <View style={styles.nextOverlay} pointerEvents="none">
-          <View style={styles.nextCard}>
-            <LinearGradient colors={["rgba(8,8,8,0.95)", "rgba(8,8,8,0.85)"]} style={StyleSheet.absoluteFill} />
-            <ThemedText style={styles.nextLabel}>UP NEXT</ThemedText>
-            <ThemedText style={styles.nextTitle} numberOfLines={2}>
-              S{nextEp.season} • E{nextEp.episode.episode_num} — {nextEp.episode.title}
-            </ThemedText>
-            <View style={styles.nextCountdownRow}>
-              <Feather name="clock" size={12} color={Colors.dark.accent} />
-              <ThemedText style={styles.nextCountdown}>Playing in {countdown}s…</ThemedText>
+      {/* Next-episode prompt — wrapped in Modal so it renders above the native VLC surface on Fire TV/Android */}
+      <Modal
+        visible={showNext && !!nextEp}
+        transparent
+        animationType="fade"
+        onRequestClose={handleNextCancel}
+        statusBarTranslucent
+      >
+        <View style={styles.nextModalBackdrop} pointerEvents="box-none">
+          {nextEp ? (
+            <View style={styles.nextCard}>
+              <LinearGradient colors={["rgba(20,20,20,0.98)", "rgba(8,8,8,0.98)"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+              <ThemedText style={styles.nextLabel}>UP NEXT</ThemedText>
+              <ThemedText style={styles.nextTitle} numberOfLines={2}>
+                S{nextEp.season} • E{nextEp.episode.episode_num} — {nextEp.episode.title}
+              </ThemedText>
+              <View style={styles.nextCountdownRow}>
+                <Feather name="play-circle" size={16} color={Colors.dark.accent} />
+                <ThemedText style={styles.nextCountdown}>Playing in {countdown}s</ThemedText>
+              </View>
+              <View style={styles.nextBtnRow}>
+                <VlcNextEpBtn label="Cancel" onPress={handleNextCancel} variant="cancel" />
+                <VlcNextEpBtn label="Play Now" onPress={handleNextConfirm} variant="confirm" autoFocus />
+              </View>
             </View>
-          </View>
+          ) : null}
         </View>
-      )}
+      </Modal>
 
       {/* Report modal */}
       <Modal visible={showReport} transparent animationType="fade" onRequestClose={() => setShowReport(false)}>
@@ -1168,6 +1188,35 @@ export default function VlcPlayerScreen() {
 }
 
 // ─── CtrlBtn ──────────────────────────────────────────────────────────────
+function VlcNextEpBtn({
+  label, onPress, variant, autoFocus,
+}: { label: string; onPress: () => void; variant: "cancel" | "confirm"; autoFocus?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const isActive = focused || pressed;
+  return (
+    <Pressable
+      style={[
+        styles.nextBtn,
+        variant === "confirm" ? styles.nextBtnConfirm : styles.nextBtnCancel,
+        isActive && (variant === "confirm" ? styles.nextBtnConfirmActive : styles.nextBtnCancelActive),
+      ]}
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      hasTVPreferredFocus={autoFocus}
+    >
+      {variant === "confirm" && (
+        <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
+      )}
+      {variant === "confirm" && <Feather name="skip-forward" size={13} color="#fff" />}
+      <ThemedText style={[styles.nextBtnText, variant === "confirm" && styles.nextBtnTextConfirm]}>{label}</ThemedText>
+    </Pressable>
+  );
+}
+
 function CtrlBtn({
   icon, label, onPress, onFocus, active, primary, preferFocus,
 }: {
@@ -1404,15 +1453,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl, paddingVertical: Spacing.sm, borderWidth: 1, borderColor: Colors.dark.accent,
   },
   toastText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  nextOverlay: { position: "absolute", right: Spacing.lg, bottom: Spacing.lg, maxWidth: 380 },
+  nextModalBackdrop: { flex: 1, justifyContent: "flex-end", alignItems: "flex-end", padding: Spacing.lg },
   nextCard: {
     borderRadius: BorderRadius.md, borderWidth: 1, borderColor: "rgba(255,102,0,0.4)",
     padding: Spacing.md, overflow: "hidden", gap: Spacing.xs,
+    shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 14, elevation: 10,
+    maxWidth: 380,
   },
   nextLabel: { color: Colors.dark.accent, fontSize: 10, fontWeight: "800", letterSpacing: 1.2 },
   nextTitle: { color: Colors.dark.text, fontSize: 14, fontWeight: "700", lineHeight: 18 },
   nextCountdownRow: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, marginTop: Spacing.xs },
   nextCountdown: { color: Colors.dark.accent, fontSize: 13, fontWeight: "700" },
+  nextBtnRow: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.sm },
+  nextBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 9, paddingHorizontal: Spacing.md, borderRadius: BorderRadius.sm, overflow: "hidden" },
+  nextBtnCancel: { backgroundColor: "rgba(255,255,255,0.1)", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
+  nextBtnCancelActive: { backgroundColor: "rgba(255,255,255,0.2)", borderColor: "rgba(255,255,255,0.4)" },
+  nextBtnConfirm: { borderWidth: 1, borderColor: Colors.dark.accent },
+  nextBtnConfirmActive: { borderColor: "#FF8C1A", shadowColor: "#FF6600", shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 6 },
+  nextBtnText: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600" },
+  nextBtnTextConfirm: { color: "#fff", fontWeight: "700" },
 
   errorWrap: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.dark.backgroundRoot, padding: Spacing["3xl"], gap: Spacing.md },
   errorIcon: { width: 70, height: 70, borderRadius: 35, borderWidth: 2, borderColor: "rgba(255,59,59,0.4)", justifyContent: "center", alignItems: "center", backgroundColor: "rgba(255,59,59,0.08)" },
