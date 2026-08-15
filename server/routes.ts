@@ -3267,6 +3267,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Referral helpers ──────────────────────────────────────────────────────
+  // Generates a 6-character uppercase alphanumeric code (e.g. "5HCTQL").
+  function makeReferralCode(): string {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  }
+
+  // Returns a 5-digit iptv_user_id string (10000–99999) not already present
+  // in the lifetime DB profiles table (max 10 attempts before throwing).
+  async function makeUniqueIptvUserId(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const id = String(Math.floor(10000 + Math.random() * 90000));
+      const { data } = await lifetimeDb
+        .from("profiles")
+        .select("iptv_user_id")
+        .eq("iptv_user_id", id)
+        .maybeSingle();
+      if (!data) return id;
+    }
+    throw new Error("Could not generate a unique iptv_user_id after 10 attempts");
+  }
+
   // ── Referrals ─────────────────────────────────────────────────────────────
   // Queries the lifetime DB `profiles` table by Xtream username.
   // Returns referral_code (null if not yet generated), referral_count,
@@ -3293,20 +3317,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Calls the Supabase RPC `create_referral_code_for_user` on the lifetime DB.
-  // Returns { referral_code } on success.
+  // Generates a referral code for the user and persists it.
+  // If a lifetime DB profile row already exists → call the existing RPC which
+  // generates + saves the code.
+  // If no row exists yet (user hasn't used the companion app) → create a new
+  // row in exactly the format the companion app would, then save the code there.
+  // This prevents codes from being generated but lost due to a missing DB row.
   app.post("/api/referrals/generate", async (req, res) => {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "username required" });
     try {
-      const { data, error } = await lifetimeDb.rpc("create_referral_code_for_user", {
-        p_username: username,
-      });
-      if (error) {
-        console.error("[referrals/generate] rpc error:", error.message);
-        return res.status(500).json({ error: error.message });
+      // Check whether a profile row exists in the lifetime DB
+      const { data: existing, error: checkErr } = await lifetimeDb
+        .from("profiles")
+        .select("username")
+        .eq("username", username)
+        .maybeSingle();
+
+      if (checkErr) {
+        console.error("[referrals/generate] existence check error:", checkErr.message);
+        return res.status(500).json({ error: checkErr.message });
       }
-      res.json({ referral_code: data });
+
+      if (existing) {
+        // Row exists — use the RPC which handles code generation + save
+        const { data, error } = await lifetimeDb.rpc("create_referral_code_for_user", {
+          p_username: username,
+        });
+        if (error) {
+          console.error("[referrals/generate] rpc error:", error.message);
+          return res.status(500).json({ error: error.message });
+        }
+        return res.json({ referral_code: data });
+      }
+
+      // No profile row yet — create one matching the companion app's format exactly
+      const referralCode = makeReferralCode();
+      const iptvUserId = await makeUniqueIptvUserId();
+
+      const { error: insertError } = await lifetimeDb
+        .from("profiles")
+        .insert({
+          username,
+          created_at: new Date().toISOString(),
+          referral_count: 0,
+          referral_code: referralCode,
+          iptv_user_id: iptvUserId,
+          referral_tokens: 0,
+          has_claimed_subscription_bonus: false,
+          whatsapp_number: null,
+          whatsapp_prompt_dismissed: false,
+        });
+
+      if (insertError) {
+        console.error("[referrals/generate] insert error:", insertError.message);
+        return res.status(500).json({ error: insertError.message });
+      }
+
+      console.log(`[referrals/generate] created new lifetime profile for ${username} with code ${referralCode}`);
+      res.json({ referral_code: referralCode });
     } catch (e: any) {
       console.error("[referrals/generate] exception:", e?.message);
       res.status(500).json({ error: "Failed to generate referral code" });
