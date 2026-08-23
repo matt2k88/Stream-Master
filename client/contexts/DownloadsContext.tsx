@@ -29,6 +29,7 @@ export type DownloadItem = {
   kind: DownloadKind;
   streamId: string;
   extension: string;
+  sourceExtension?: string;
   title: string;
   thumbnail?: string;
   seriesId?: string;
@@ -51,6 +52,7 @@ export type DownloadRequest = Omit<
   | "id"
   | "profileId"
   | "status"
+  | "sourceExtension"
   | "localUri"
   | "exportedUri"
   | "bytesDownloaded"
@@ -116,6 +118,49 @@ function mediaMimeType(extension: string) {
   return "video/mp4";
 }
 
+function requestedExtension(extension: string) {
+  const normalised = extension.toLowerCase().replace(/^\./, "");
+  return normalised === "mkv" ? "mp4" : normalised;
+}
+
+function exportFileName(item: Pick<DownloadItem, "title" | "streamId" | "extension">) {
+  const displayName = safeSegment(item.title || item.streamId).replace(/\.[^.]+$/, "") || item.streamId;
+  return `${displayName}.${safeSegment(item.extension).replace(/^\./, "")}`;
+}
+
+function folderUriMatchesFile(uri: string, fileName: string) {
+  try {
+    return decodeURIComponent(uri).endsWith(`/${fileName}`);
+  } catch {
+    return uri.endsWith(`/${fileName}`) || uri.endsWith(encodeURIComponent(fileName));
+  }
+}
+
+function decodeBase64Ascii(value: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+  let output = "";
+  for (let index = 0; index < value.length; index += 4) {
+    const a = alphabet.indexOf(value[index]);
+    const b = alphabet.indexOf(value[index + 1]);
+    const c = alphabet.indexOf(value[index + 2]);
+    const d = alphabet.indexOf(value[index + 3]);
+    if (a < 0 || b < 0) continue;
+    output += String.fromCharCode((a << 2) | (b >> 4));
+    if (c >= 0 && c < 64) output += String.fromCharCode(((b & 15) << 4) | (c >> 2));
+    if (d >= 0 && d < 64) output += String.fromCharCode(((c & 3) << 6) | d);
+  }
+  return output;
+}
+
+async function isMp4Container(uri: string) {
+  const header = await FileSystem.readAsStringAsync(uri, {
+    encoding: "base64",
+    position: 0,
+    length: 128,
+  });
+  return decodeBase64Ascii(header).includes("ftyp");
+}
+
 function buildSourceUrl(item: DownloadItem) {
   if (item.kind === "movie") {
     return xtreamApi.getVodStreamUrl(Number(item.streamId), item.extension);
@@ -147,6 +192,7 @@ function normaliseItems(value: unknown, profileId: string): DownloadItem[] {
       kind: item.kind!,
       streamId: String(item.streamId ?? ""),
       extension: typeof item.extension === "string" && item.extension ? item.extension : "mp4",
+      sourceExtension: typeof item.sourceExtension === "string" ? item.sourceExtension : undefined,
       title: typeof item.title === "string" && item.title ? item.title : "Untitled download",
       thumbnail: typeof item.thumbnail === "string" ? item.thumbnail : undefined,
       seriesId: typeof item.seriesId === "string" ? item.seriesId : undefined,
@@ -162,7 +208,12 @@ function normaliseItems(value: unknown, profileId: string): DownloadItem[] {
         item.status === "cancelled"
           ? item.status
           : "failed",
-      localUri: typeof item.localUri === "string" ? item.localUri : undefined,
+      localUri:
+        typeof item.localUri === "string"
+          ? item.localUri
+          : typeof item.exportedUri === "string"
+            ? item.exportedUri
+            : undefined,
       exportedUri: typeof item.exportedUri === "string" ? item.exportedUri : undefined,
       bytesDownloaded: typeof item.bytesDownloaded === "number" ? item.bytesDownloaded : 0,
       bytesTotal: typeof item.bytesTotal === "number" ? item.bytesTotal : undefined,
@@ -184,6 +235,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const itemsRef = useRef<DownloadItem[]>([]);
   const profileRef = useRef(profileId);
   const selectedFolderRef = useRef<string | null>(null);
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const intentionallyStoppedRef = useRef(new Set<string>());
   const runningIdsRef = useRef(new Set<string>());
 
@@ -192,12 +244,19 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const persist = useCallback(async (next: DownloadItem[], forProfile = profileRef.current) => {
-    try {
-      await AsyncStorage.setItem(storageKey(forProfile), JSON.stringify(next));
-    } catch {
-      // The in-memory queue still works this session. A failed persistence must
-      // never make a completed local file disappear from the visible list.
-    }
+    // Progress callbacks can arrive much faster than AsyncStorage writes.
+    // Serialising writes prevents an older progress snapshot from completing
+    // after and overwriting the final completed SAF record.
+    const write = persistQueueRef.current.then(async () => {
+      try {
+        await AsyncStorage.setItem(storageKey(forProfile), JSON.stringify(next));
+      } catch {
+        // The in-memory queue still works this session. A failed persistence
+        // must never make a completed local file disappear this session.
+      }
+    });
+    persistQueueRef.current = write;
+    await write;
   }, []);
 
   const replaceItems = useCallback(
@@ -241,8 +300,23 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     ])
       .then(async ([rawItems, rawFolder]) => {
         const loaded = normaliseItems(rawItems ? JSON.parse(rawItems) : [], profileId);
+        const folderFiles =
+          Platform.OS === "android" && rawFolder
+            ? await FileSystem.StorageAccessFramework.readDirectoryAsync(rawFolder).catch(() => [])
+            : [];
         const reconciled = await Promise.all(
           loaded.map(async (item) => {
+            const folderUri = folderFiles.find((uri) => folderUriMatchesFile(uri, exportFileName(item)));
+            if (folderUri && (item.status !== "completed" || !item.localUri?.startsWith("content://"))) {
+              return {
+                ...item,
+                status: "completed" as const,
+                localUri: folderUri,
+                exportedUri: folderUri,
+                resumeData: undefined,
+                error: undefined,
+              };
+            }
             if (item.status !== "completed" || !item.localUri) {
               return item.status === "downloading" ? { ...item, status: "paused" as const } : item;
             }
@@ -307,8 +381,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       if (Platform.OS !== "android" || !folderUri) {
         throw new Error("Choose a download folder before downloading.");
       }
-      const displayName = safeSegment(item.title || item.streamId).replace(/\.[^.]+$/, "") || item.streamId;
-      const exportName = `${displayName}.${safeSegment(item.extension).replace(/^\./, "")}`;
+      const exportName = exportFileName(item);
       try {
         const destination = await FileSystem.StorageAccessFramework.createFileAsync(
           folderUri,
@@ -389,6 +462,16 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         const finalInfo = await FileSystem.getInfoAsync(locations.finalUri);
         const localUri = finalInfo.exists ? locations.finalUri : locations.partUri;
         const finalSize = finalInfo.exists ? finalInfo.size : info.size;
+        if (
+          item.sourceExtension?.toLowerCase().replace(/^\./, "") === "mkv" &&
+          item.extension.toLowerCase() === "mp4" &&
+          !(await isMp4Container(localUri))
+        ) {
+          await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+          throw new Error(
+            "The provider did not return a compatible MP4 file. The original stream is MKV and may not play on this device.",
+          );
+        }
         const destinationUri = await saveToSelectedFolder(item, localUri);
         const completed: DownloadItem = {
           ...item,
@@ -440,11 +523,13 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         return existing;
       }
       const now = Date.now();
+      const sourceExtension = request.extension.replace(/^\./, "") || "mp4";
       const item: DownloadItem = {
         ...request,
         id,
         profileId: profileRef.current,
-        extension: request.extension.replace(/^\./, "") || "mp4",
+        extension: requestedExtension(sourceExtension),
+        sourceExtension,
         status: "queued",
         bytesDownloaded: 0,
         createdAt: now,
