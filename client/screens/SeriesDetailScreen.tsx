@@ -22,6 +22,7 @@ import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, SeriesInfo, Episode } from "@/lib/xtream-api";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useData } from "@/contexts/DataContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
@@ -71,10 +72,12 @@ function SeasonBtn({ label, active, onPress }: { label: string; active: boolean;
 function EpisodeCard({
   episode,
   onPress,
+  onDownload,
   watchEntry,
 }: {
   episode: Episode;
   onPress: () => void;
+  onDownload: () => void;
   watchEntry?: RecentlyWatched;
 }) {
   const [focused, setFocused] = useState(false);
@@ -134,7 +137,19 @@ function EpisodeCard({
           <ThemedText style={styles.episodePlot} numberOfLines={2}>{episode.info.plot}</ThemedText>
         ) : null}
       </View>
-      <Feather name="play-circle" size={24} color={isActive ? Colors.dark.accent : Colors.dark.border} style={styles.playIcon} />
+      <View style={styles.episodeActions}>
+        <Pressable
+          accessibilityLabel={`Download ${episode.title}`}
+          onPress={(event) => {
+            event.stopPropagation();
+            onDownload();
+          }}
+          style={({ pressed }) => [styles.episodeDownloadButton, pressed && styles.episodeDownloadButtonActive]}
+        >
+          <Feather name="download" size={17} color={Colors.dark.accent} />
+        </Pressable>
+        <Feather name="play-circle" size={24} color={isActive ? Colors.dark.accent : Colors.dark.border} />
+      </View>
       {isActive ? <View style={styles.activeBar} /> : null}
     </Pressable>
   );
@@ -208,6 +223,7 @@ export default function SeriesDetailScreen() {
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
+  const { enqueue, enqueueMany } = useDownloads();
   const isFav = isFavourite(seriesId, "series");
   const tmdbSeriesId = (seriesInfo?.info as any)?.tmdb ?? (seriesInfo?.info as any)?.tmdb_id ?? null;
   const tmdbSeriesIdNum = tmdbSeriesId ? Number(tmdbSeriesId) : null;
@@ -294,6 +310,27 @@ export default function SeriesDetailScreen() {
 
   const seasons = seriesInfo ? Object.keys(seriesInfo.episodes || {}) : [];
   const currentEpisodes = selectedSeason && seriesInfo ? seriesInfo.episodes[selectedSeason] || [] : [];
+  const toDownloadRequest = (ep: Episode) => ({
+    kind: "episode" as const,
+    streamId: String(ep.id),
+    extension: ep.container_extension || "mp4",
+    title: `${seriesName} — ${ep.title}`,
+    thumbnail: ep.info?.movie_image ?? cover ?? undefined,
+    seriesId: String(seriesId),
+    seriesName,
+    seasonNum: Number(ep.season ?? selectedSeason ?? 1) || 1,
+    episodeNum: Number(ep.episode_num) || undefined,
+  });
+  const handleEpisodeDownload = (ep: Episode) => {
+    void enqueue(toDownloadRequest(ep));
+  };
+  const handleSeasonDownload = () => {
+    void enqueueMany(currentEpisodes.map(toDownloadRequest));
+  };
+  const handleSeriesDownload = () => {
+    const allEpisodes = Object.values(seriesInfo?.episodes ?? {}).flat();
+    void enqueueMany(allEpisodes.map(toDownloadRequest));
+  };
 
   if (isLoading) {
     return (
@@ -438,6 +475,16 @@ export default function SeriesDetailScreen() {
               ))}
             </ScrollView>
           ) : null}
+          <View style={styles.downloadActions}>
+            <Pressable onPress={handleSeasonDownload} style={styles.downloadAction}>
+              <Feather name="download" size={15} color={Colors.dark.accent} />
+              <ThemedText style={styles.downloadActionText}>DOWNLOAD SEASON</ThemedText>
+            </Pressable>
+            <Pressable onPress={handleSeriesDownload} style={styles.downloadAction}>
+              <Feather name="layers" size={15} color={Colors.dark.accent} />
+              <ThemedText style={styles.downloadActionText}>DOWNLOAD FULL SERIES</ThemedText>
+            </Pressable>
+          </View>
 
           <FlatList
             data={currentEpisodes}
@@ -448,6 +495,7 @@ export default function SeriesDetailScreen() {
               <EpisodeCard
                 episode={item}
                 onPress={() => handleEpisodePress(item)}
+                onDownload={() => handleEpisodeDownload(item)}
                 watchEntry={getByStreamId(item.id)}
               />
             )}
@@ -660,6 +708,46 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.7,
     shadowRadius: 10,
     elevation: 8,
+  },
+  episodeActions: {
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  episodeDownloadButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,102,0,0.11)",
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.35)",
+  },
+  episodeDownloadButtonActive: {
+    backgroundColor: "rgba(255,102,0,0.25)",
+  },
+  downloadActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  downloadAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(255,102,0,0.4)",
+    backgroundColor: "rgba(255,102,0,0.08)",
+  },
+  downloadActionText: {
+    color: Colors.dark.text,
+    fontSize: 11,
+    fontWeight: "800",
   },
   episodeThumb: {
     width: 112,

@@ -26,6 +26,7 @@ import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
 import { useData } from "@/contexts/DataContext";
 import { getApiUrl } from "@/lib/query-client";
 import AgeRatingBadge from "@/components/AgeRatingBadge";
+import { useDownloads } from "@/contexts/DownloadsContext";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type MovieInfoRouteProp = RouteProp<RootStackParamList, "MovieInfo">;
@@ -193,6 +194,7 @@ export default function MovieInfoScreen() {
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
+  const { enqueue, getByStreamId: getDownloadByStreamId } = useDownloads();
   const isFav = isFavourite(streamId, "movies");
   const watch = getByStreamId(streamId);
   const ws = getWatchState(watch);
@@ -340,6 +342,18 @@ export default function MovieInfoScreen() {
     });
   };
 
+  const downloadedItem = getDownloadByStreamId(String(streamId));
+  const handleDownload = () => {
+    const ext = containerExtension ?? cachedVod?.container_extension ?? vodInfo?.movie_data?.container_extension ?? "mp4";
+    void enqueue({
+      kind: "movie",
+      streamId: String(streamId),
+      extension: ext,
+      title: name,
+      thumbnail: posterUrl ?? streamIcon,
+    });
+  };
+
   const padH = Math.max(insets.left + Spacing.md, Spacing.lg);
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.lg, Spacing.xl);
@@ -451,6 +465,19 @@ export default function MovieInfoScreen() {
           ) : (
             <PlayBtn label="PLAY MOVIE" icon="play" primary autoFocus onPress={() => handlePlay(true)} />
           )}
+          <PlayBtn
+            label={
+              downloadedItem?.status === "completed"
+                ? "DOWNLOADED"
+                : downloadedItem?.status === "downloading"
+                  ? "DOWNLOADING"
+                  : downloadedItem?.status === "paused"
+                    ? "RESUME DOWNLOAD"
+                    : "DOWNLOAD"
+            }
+            icon="download"
+            onPress={handleDownload}
+          />
         </View>
 
         {/* Description */}

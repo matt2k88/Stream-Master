@@ -98,7 +98,7 @@ export default function VlcPlayerScreen() {
   const {
     streamUrl, title, type, thumbnail, streamId,
     seriesId: seriesIdParam, seriesName: seriesNameParam,
-    resumeTime, seasonNum, episodeNum,
+    resumeTime, seasonNum, episodeNum, offline = false,
   } = route.params;
 
   const { activeProfile } = useProfile();
@@ -270,7 +270,7 @@ export default function VlcPlayerScreen() {
   }>({});
 
   useEffect(() => {
-    if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
+    if (offline || type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
     let cancelled = false;
     (async () => {
       try {
@@ -334,10 +334,10 @@ export default function VlcPlayerScreen() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
+  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal, offline]);
 
   useEffect(() => {
-    if (nextPromptShownRef.current || !nextEp) return;
+    if (offline || nextPromptShownRef.current || !nextEp) return;
     if (!autoPlayNext) return;
     if (paused) return;
     if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
@@ -345,7 +345,7 @@ export default function VlcPlayerScreen() {
       setShowNext(true);
       setCountdown(10);
     }
-  }, [currentTime, duration, nextEp, autoPlayNext]);
+  }, [currentTime, duration, nextEp, autoPlayNext, offline]);
 
   const handleNextConfirm = useCallback(() => {
     if (nextFiredRef.current) return;
@@ -511,7 +511,7 @@ export default function VlcPlayerScreen() {
     // previously-saved track prefs forward so the dedup-then-insert on the
     // server doesn't null them out when the user exits before the periodic
     // 10s save fires.
-    if (activeProfile && !savedRef.current) {
+    if (!offline && activeProfile && !savedRef.current) {
       savedRef.current = true;
       const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
       const prev = streamId ? getByStreamId(streamId) : undefined;
@@ -533,7 +533,7 @@ export default function VlcPlayerScreen() {
         seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, getByStreamId]);
+  }, [activeProfile, seekTo, resumeTime, type, streamId, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, getByStreamId, offline]);
 
   const onProgress = useCallback((e: any) => {
     if (typeof e?.currentTime !== "number") return;
@@ -602,7 +602,7 @@ export default function VlcPlayerScreen() {
     // and the app crashes / closes, the resume point can be far behind
     // where they actually stopped. Persist immediately on pause so the
     // saved position is always within ~1s of reality.
-    if (!activeProfile || !streamId) return;
+    if (offline || !activeProfile || !streamId) return;
     const cur = seekSettledTimeRef.current > 0 ? seekSettledTimeRef.current : currentTimeRef.current;
     const dur = durationRef.current;
     if (cur <= 5 || dur <= 0) return;
@@ -621,7 +621,7 @@ export default function VlcPlayerScreen() {
       seriesFinalSeason: seriesSnapshotRef.current.finalSeason,
       seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
     }).then((entry) => { if (entry) upsertLocal(entry); });
-  }, [activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeText, upsertLocal]);
+  }, [activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeText, upsertLocal, offline]);
 
   const onStopped = useCallback(() => {
     // The library auto-applies paused:true on stopped (via setNativeProps),
@@ -666,14 +666,14 @@ export default function VlcPlayerScreen() {
       setError("Playback ended unexpectedly before the episode finished");
       return;
     }
-    if (autoPlayNext && nextEp && !nextFiredRef.current) {
+    if (!offline && autoPlayNext && nextEp && !nextFiredRef.current) {
       nextPromptShownRef.current = true;
       setShowNext(true);
       setCountdown(3);
     } else {
       navigation.goBack();
     }
-  }, [autoPlayNext, nextEp, navigation]);
+  }, [autoPlayNext, nextEp, navigation, offline]);
 
   const onError = useCallback((_e: any) => {
     setIsLoading(false);
@@ -693,7 +693,7 @@ export default function VlcPlayerScreen() {
   // jump the saved position forward. seekSettledTimeRef is the last value
   // observed via onProgress outside the seek window.
   useEffect(() => {
-    if (!activeProfile || !streamId || duration <= 0) return;
+    if (offline || !activeProfile || !streamId || duration <= 0) return;
     if (seekInFlightRef.current) return; // wait for libvlc to confirm
     const settled = seekSettledTimeRef.current;
     if (settled <= 0) return;
@@ -729,7 +729,7 @@ export default function VlcPlayerScreen() {
         seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, activeAudio, activeText]);
+  }, [currentTime, duration, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, upsertLocal, activeAudio, activeText, offline]);
 
   // ─── Hardware back ───────────────────────────────────────────────────────
   useEffect(() => {

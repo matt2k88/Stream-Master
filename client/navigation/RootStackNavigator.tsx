@@ -42,6 +42,7 @@ import UltraTubeScreen from "@/screens/UltraTubeScreen";
 import SportListingsScreen from "@/screens/SportListingsScreen";
 import UltraMusicScreen from "@/screens/UltraMusicScreen";
 import ParentalControlsScreen from "@/screens/ParentalControlsScreen";
+import DownloadsScreen from "@/screens/DownloadsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -63,7 +64,7 @@ export type RootStackParamList = {
     containerExtension?: string;
     categoryId?: string;
   };
-  Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number; forceEngine?: "expo" | "vlc" };
+  Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number; forceEngine?: "expo" | "vlc"; offline?: boolean };
   LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string; categoryId?: string; initialFullscreen?: boolean };
   AccountInfo: undefined;
   OrganiseTypePicker: undefined;
@@ -83,6 +84,7 @@ export type RootStackParamList = {
   SportListings: undefined;
   ParentalControls: undefined;
   MusicPlayer: undefined;
+  Downloads: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -159,6 +161,7 @@ export default function RootStackNavigator() {
             <Stack.Screen name="SportListings" component={SportListingsScreen} />
             <Stack.Screen name="ParentalControls" component={ParentalControlsScreen} />
             <Stack.Screen name="MusicPlayer" component={UltraMusicScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Downloads" component={DownloadsScreen} />
           </>
         )}
       </Stack.Navigator>

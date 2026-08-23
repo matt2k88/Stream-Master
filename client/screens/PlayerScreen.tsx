@@ -442,7 +442,7 @@ function LegacyPlayerScreen() {
   const {
     streamUrl, title, type, thumbnail, streamId,
     seriesId: seriesIdParam, seriesName: seriesNameParam,
-    resumeTime, seasonNum, episodeNum,
+    resumeTime, seasonNum, episodeNum, offline = false,
   } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
@@ -935,7 +935,7 @@ function LegacyPlayerScreen() {
         setReconnecting(false);
         lastLiveTimeRef.current = -1;
         lastLiveTimeAtRef.current = Date.now();
-        if (activeProfile && !savedRef.current) {
+        if (!offline && activeProfile && !savedRef.current) {
           savedRef.current = true;
           const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
           // Carry the previously-saved track prefs into this first insert
@@ -1075,7 +1075,7 @@ function LegacyPlayerScreen() {
       // pause that ends in an app close / crash would resume from there.
       // Persist immediately on pause so the resume point is always within
       // ~1s of where the user actually stopped.
-      if (e.isPlaying || isLive || !activeProfile || !streamId) return;
+      if (offline || e.isPlaying || isLive || !activeProfile || !streamId) return;
       const cur = currentTimeRef.current;
       const dur = tvDurationRef.current;
       if (cur <= 5 || dur <= 0) return;
@@ -1098,7 +1098,7 @@ function LegacyPlayerScreen() {
       }).then((entry) => { if (entry) upsertLocal(entry); });
     });
     return () => sub.remove();
-  }, [player, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
+  }, [player, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal, offline]);
 
   useEffect(() => {
     if (isLive) return;
@@ -1114,7 +1114,7 @@ function LegacyPlayerScreen() {
 
   // ── Progress save (throttled) + auto-mark-completed within 30s of end ─────
   useEffect(() => {
-    if (isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
+    if (offline || isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
     const contentType = type === "series" ? "series" : "movie";
     const remaining = duration - currentTime;
     const audioTrackId = activeAudio ? Number((activeAudio as any).id) : undefined;
@@ -1149,7 +1149,7 @@ function LegacyPlayerScreen() {
         seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
+  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal, offline]);
 
   // ── Series: pre-fetch next episode ────────────────────────────────────────
   // Same effect also snapshots series-wide info into `seriesSnapshotRef` so
@@ -1157,7 +1157,7 @@ function LegacyPlayerScreen() {
   // and `series_last_modified`. The dashboard uses these to decide whether
   // a series is fully watched and whether new episodes are available.
   useEffect(() => {
-    if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
+    if (offline || type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1227,11 +1227,11 @@ function LegacyPlayerScreen() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
+  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal, offline]);
 
   // Trigger next-episode prompt when within 20s of end (only when auto-play is enabled)
   useEffect(() => {
-    if (isLive || nextPromptShownRef.current || !nextEp) return;
+    if (offline || isLive || nextPromptShownRef.current || !nextEp) return;
     if (!autoPlayNext) return;
     if (!isPlaying) return;
     if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
@@ -1239,7 +1239,7 @@ function LegacyPlayerScreen() {
       setShowNext(true);
       setCountdown(10);
     }
-  }, [currentTime, duration, isLive, nextEp, autoPlayNext]);
+  }, [currentTime, duration, isLive, nextEp, autoPlayNext, offline]);
 
   const nextFiredRef = useRef(false);
   const handleNextConfirm = useCallback(() => {

@@ -29,6 +29,7 @@ import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import MessagePopup from "@/components/MessagePopup";
 import MatchReminderOverlay from "@/components/MatchReminderOverlay";
 import IntroOverlay from "@/components/IntroOverlay";
@@ -96,29 +97,31 @@ export default function App() {
                     <FavouritesProvider>
                       <WatchHistoryProvider>
                         <WatchlistProvider>
-                        <GroupsProvider>
-                        <FootballProvider>
-                        <MatchReminderProvider>
-                        <MessageProvider>
-                          <VpnProvider>
-                          <KeyboardProvider>
-                            <PortalProvider>
-                            <SideMenuProvider>
-                              <NavigationContainer ref={navigationRef}>
-                                <RootStackNavigator />
-                              </NavigationContainer>
-                              <StatusBar style="light" hidden={false} />
-                              <MessagePopup />
-                              <MatchReminderOverlay />
-                              <SideMenuDrawer />
-                            </SideMenuProvider>
-                            </PortalProvider>
-                          </KeyboardProvider>
-                          </VpnProvider>
-                        </MessageProvider>
-                        </MatchReminderProvider>
-                        </FootballProvider>
-                        </GroupsProvider>
+                          <DownloadsProvider>
+                            <GroupsProvider>
+                            <FootballProvider>
+                            <MatchReminderProvider>
+                            <MessageProvider>
+                              <VpnProvider>
+                              <KeyboardProvider>
+                                <PortalProvider>
+                                <SideMenuProvider>
+                                  <NavigationContainer ref={navigationRef}>
+                                    <RootStackNavigator />
+                                  </NavigationContainer>
+                                  <StatusBar style="light" hidden={false} />
+                                  <MessagePopup />
+                                  <MatchReminderOverlay />
+                                  <SideMenuDrawer />
+                                </SideMenuProvider>
+                                </PortalProvider>
+                              </KeyboardProvider>
+                              </VpnProvider>
+                            </MessageProvider>
+                            </MatchReminderProvider>
+                            </FootballProvider>
+                            </GroupsProvider>
+                          </DownloadsProvider>
                         </WatchlistProvider>
                       </WatchHistoryProvider>
                     </FavouritesProvider>
