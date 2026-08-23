@@ -194,7 +194,7 @@ export default function MovieInfoScreen() {
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
-  const { enqueue, getByStreamId: getDownloadByStreamId } = useDownloads();
+  const { enqueue, getByStreamId: getDownloadByStreamId, storage } = useDownloads();
   const isFav = isFavourite(streamId, "movies");
   const watch = getByStreamId(streamId);
   const ws = getWatchState(watch);
@@ -344,6 +344,10 @@ export default function MovieInfoScreen() {
 
   const downloadedItem = getDownloadByStreamId(String(streamId));
   const handleDownload = () => {
+    if (storage.isPrivateFallback) {
+      navigation.navigate("Downloads");
+      return;
+    }
     const ext = containerExtension ?? cachedVod?.container_extension ?? vodInfo?.movie_data?.container_extension ?? "mp4";
     void enqueue({
       kind: "movie",
@@ -473,7 +477,9 @@ export default function MovieInfoScreen() {
                   ? "DOWNLOADING"
                   : downloadedItem?.status === "paused"
                     ? "RESUME DOWNLOAD"
-                    : "DOWNLOAD"
+                    : storage.isPrivateFallback
+                      ? "SET DOWNLOAD FOLDER"
+                      : "DOWNLOAD"
             }
             icon="download"
             onPress={handleDownload}

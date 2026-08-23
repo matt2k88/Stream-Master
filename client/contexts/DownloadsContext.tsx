@@ -183,6 +183,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const [totalBytes, setTotalBytes] = useState<number | null>(null);
   const itemsRef = useRef<DownloadItem[]>([]);
   const profileRef = useRef(profileId);
+  const selectedFolderRef = useRef<string | null>(null);
   const intentionallyStoppedRef = useRef(new Set<string>());
   const runningIdsRef = useRef(new Set<string>());
 
@@ -246,10 +247,17 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
               return item.status === "downloading" ? { ...item, status: "paused" as const } : item;
             }
             try {
-              const info = await FileSystem.getInfoAsync(item.localUri);
-              if (info.exists) {
-                return { ...item, bytesDownloaded: info.size ?? item.bytesDownloaded, bytesTotal: info.size ?? item.bytesTotal };
+              // SAF document URIs are durable Android content handles, but
+              // expo-file-system cannot reliably stat every provider URI.
+              // Keep those entries rather than falsely marking them missing
+              // after an app restart.
+              if (!item.localUri.startsWith("content://")) {
+                const info = await FileSystem.getInfoAsync(item.localUri);
+                if (info.exists) {
+                  return { ...item, bytesDownloaded: info.size ?? item.bytesDownloaded, bytesTotal: info.size ?? item.bytesTotal };
+                }
               }
+              return item;
             } catch {}
             return { ...item, status: "failed" as const, error: "The saved file is no longer on this device.", localUri: undefined };
           }),
@@ -257,6 +265,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         setItems(reconciled);
         itemsRef.current = reconciled;
+        selectedFolderRef.current = rawFolder || null;
         setSelectedFolderUri(rawFolder || null);
         await persist(reconciled, profileId);
       })
@@ -292,26 +301,31 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     [replaceItems],
   );
 
-  const exportCopy = useCallback(
+  const saveToSelectedFolder = useCallback(
     async (item: DownloadItem, localUri: string) => {
-      if (Platform.OS !== "android" || !selectedFolderUri) return undefined;
+      const folderUri = selectedFolderRef.current;
+      if (Platform.OS !== "android" || !folderUri) {
+        throw new Error("Choose a download folder before downloading.");
+      }
       const displayName = safeSegment(item.title || item.streamId).replace(/\.[^.]+$/, "") || item.streamId;
       const exportName = `${displayName}.${safeSegment(item.extension).replace(/^\./, "")}`;
       try {
         const destination = await FileSystem.StorageAccessFramework.createFileAsync(
-          selectedFolderUri,
+          folderUri,
           exportName,
           mediaMimeType(item.extension),
         );
         await FileSystem.copyAsync({ from: localUri, to: destination });
         return destination;
-      } catch {
-        // The private copy remains playable. The user can choose another folder
-        // from Downloads without having to fetch the media again.
-        return undefined;
+      } catch (error) {
+        throw new Error(
+          error instanceof Error && error.message
+            ? `Could not save to the selected folder: ${error.message}`
+            : "Could not save to the selected folder. Please choose it again and retry.",
+        );
       }
     },
-    [selectedFolderUri],
+    [],
   );
 
   const run = useCallback(
@@ -319,6 +333,10 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       const item = itemsRef.current.find((candidate) => candidate.id === id);
       if (!item || item.profileId !== profileRef.current || Platform.OS === "web") {
         if (item && Platform.OS === "web") patch(id, { status: "failed", error: "Offline downloads are available in the Android and iOS app." });
+        return;
+      }
+      if (Platform.OS === "android" && !selectedFolderRef.current) {
+        patch(id, { status: "failed", error: "Choose a download folder before downloading." });
         return;
       }
       const taskKey = liveTaskKey(item);
@@ -371,18 +389,22 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         const finalInfo = await FileSystem.getInfoAsync(locations.finalUri);
         const localUri = finalInfo.exists ? locations.finalUri : locations.partUri;
         const finalSize = finalInfo.exists ? finalInfo.size : info.size;
+        const destinationUri = await saveToSelectedFolder(item, localUri);
         const completed: DownloadItem = {
           ...item,
           status: "completed",
-          localUri,
+          // The selected folder is the permanent copy. The app-private file
+          // only exists while SAF is receiving the download.
+          localUri: destinationUri,
+          exportedUri: destinationUri,
           resumeData: undefined,
           bytesDownloaded: finalSize ?? item.bytesDownloaded,
           bytesTotal: finalSize ?? item.bytesTotal,
           error: undefined,
           updatedAt: Date.now(),
         };
-        const exportedUri = await exportCopy(completed, localUri);
-        if (profileRef.current === item.profileId) patch(id, { ...completed, exportedUri });
+        await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => {});
+        if (profileRef.current === item.profileId) patch(id, completed);
         void refreshStorage();
         runningIdsRef.current.delete(taskKey);
         const next = itemsRef.current.find((candidate) => candidate.profileId === item.profileId && candidate.status === "queued");
@@ -401,11 +423,14 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         if (next) setTimeout(() => void run(next.id), 0);
       }
     },
-    [exportCopy, patch, refreshStorage],
+    [patch, refreshStorage, saveToSelectedFolder],
   );
 
   const enqueue = useCallback(
     async (request: DownloadRequest) => {
+      if (Platform.OS === "android" && !selectedFolderRef.current) {
+        return null;
+      }
       const id = stableId(request.kind, request.streamId);
       const existing = itemsRef.current.find((item) => item.id === id);
       if (existing) {
@@ -516,9 +541,13 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       await cancel(id);
       const item = itemsRef.current.find((candidate) => candidate.id === id);
-      if (item?.localUri) await FileSystem.deleteAsync(item.localUri, { idempotent: true }).catch(() => {});
-      if (item?.exportedUri && Platform.OS === "android") {
-        await FileSystem.StorageAccessFramework.deleteAsync(item.exportedUri).catch(() => {});
+      const savedUris = Array.from(new Set([item?.localUri, item?.exportedUri].filter(Boolean))) as string[];
+      for (const uri of savedUris) {
+        if (uri.startsWith("content://") && Platform.OS === "android") {
+          await FileSystem.StorageAccessFramework.deleteAsync(uri).catch(() => {});
+        } else {
+          await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+        }
       }
       replaceItems((current) => current.filter((candidate) => candidate.id !== id));
       void refreshStorage();
@@ -532,6 +561,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       const result = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(selectedFolderUri);
       if (!result.granted || !result.directoryUri) return false;
       await AsyncStorage.setItem(FOLDER_STORAGE_KEY, result.directoryUri);
+      selectedFolderRef.current = result.directoryUri;
       setSelectedFolderUri(result.directoryUri);
       return true;
     } catch {
@@ -541,6 +571,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
   const clearFolder = useCallback(async () => {
     await AsyncStorage.removeItem(FOLDER_STORAGE_KEY);
+    selectedFolderRef.current = null;
     setSelectedFolderUri(null);
   }, []);
 

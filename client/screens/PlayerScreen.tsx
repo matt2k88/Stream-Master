@@ -426,7 +426,12 @@ export default function PlayerScreen() {
   // but skip & scrub silently no-op).
   const routeForce = route.params.forceEngine === "expo" || route.params.forceEngine === "vlc"
     ? route.params.forceEngine : null;
-  const engine = vlcUnsupported ? "expo" : (routeForce ?? profileEngine);
+  // Android SAF downloads are exposed as content:// document URIs. Media3
+  // understands those handles directly, whereas VLC's bridge is designed
+  // around provider network URLs and can fail to open a persisted document.
+  // Keep offline media on the Expo/Media3 path regardless of the profile's
+  // network-player preference.
+  const engine = route.params.offline ? "expo" : (vlcUnsupported ? "expo" : (routeForce ?? profileEngine));
   // Android + VLC + non-live → use the dedicated raw-VLC screen.
   // Live TV, web, iOS, and the expo engine all keep the legacy screen.
   if (Platform.OS === "android" && engine === "vlc" && !isLive && VlcPlayerScreen) {

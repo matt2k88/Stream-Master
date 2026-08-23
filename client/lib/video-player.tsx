@@ -52,6 +52,10 @@ export function makeVideoSource(url: string): { uri: string; headers: { "User-Ag
   return { uri: url, headers: { "User-Agent": UA_EXPO } };
 }
 
+function isLocalMediaUri(uri: string) {
+  return uri.startsWith("file://") || uri.startsWith("content://");
+}
+
 // VLC's native code (react-native-vlc-media-player) requires Android
 // 8.0+ (API 26) — it calls AudioAttributes / MediaCodec methods that
 // don't exist on older OS versions. We bundle VLC anyway and override
@@ -689,9 +693,11 @@ export function useVideoPlayer(
   // brand+version that the VLC path does (suffixed " Expo" instead of
   // " VLC" so the engine in use is identifiable).
   const expoSource: any = useExpo && url
-    ? (typeof source === "object" && source?.headers
-        ? source
-        : { uri: url, headers: { "User-Agent": UA_EXPO } })
+    ? (isLocalMediaUri(url)
+        ? { uri: url }
+        : typeof source === "object" && source?.headers
+          ? source
+          : { uri: url, headers: { "User-Agent": UA_EXPO } })
     : (null as any);
   // Capture the hardware-decode mode once per mount, same as the engine.
   const hwDecodeRef = useRef<HwDecodeMode>(

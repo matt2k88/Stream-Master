@@ -69,19 +69,55 @@ function SeasonBtn({ label, active, onPress }: { label: string; active: boolean;
   );
 }
 
+function DownloadAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Feather.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const active = focused || pressed || hovered;
+  return (
+    <Pressable
+      onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[styles.downloadAction, active && styles.downloadActionActive]}
+    >
+      {active ? <View style={styles.downloadActionOverlay} /> : null}
+      <Feather name={icon} size={15} color={active ? "#000" : Colors.dark.accent} />
+      <ThemedText style={[styles.downloadActionText, active && styles.downloadActionTextActive]}>{label}</ThemedText>
+    </Pressable>
+  );
+}
+
 function EpisodeCard({
   episode,
   onPress,
   onDownload,
   watchEntry,
+  downloadStatus,
+  folderReady,
 }: {
   episode: Episode;
   onPress: () => void;
   onDownload: () => void;
   watchEntry?: RecentlyWatched;
+  downloadStatus?: string;
+  folderReady: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [downloadFocused, setDownloadFocused] = useState(false);
   const isActive = focused || pressed;
   const ws = getWatchState(watchEntry);
 
@@ -139,14 +175,36 @@ function EpisodeCard({
       </View>
       <View style={styles.episodeActions}>
         <Pressable
-          accessibilityLabel={`Download ${episode.title}`}
+          accessibilityLabel={folderReady ? `Download ${episode.title}` : "Set download folder"}
           onPress={(event) => {
             event.stopPropagation();
             onDownload();
           }}
-          style={({ pressed }) => [styles.episodeDownloadButton, pressed && styles.episodeDownloadButtonActive]}
+          onFocus={() => setDownloadFocused(true)}
+          onBlur={() => setDownloadFocused(false)}
+          onHoverIn={() => setDownloadFocused(true)}
+          onHoverOut={() => setDownloadFocused(false)}
+          style={({ pressed }) => [
+            styles.episodeDownloadButton,
+            (pressed || downloadFocused) && styles.episodeDownloadButtonActive,
+          ]}
         >
-          <Feather name="download" size={17} color={Colors.dark.accent} />
+          {downloadFocused ? <View style={styles.episodeDownloadOverlay} /> : null}
+          <Feather
+            name={
+              downloadStatus === "completed"
+                ? "check"
+                : downloadStatus === "downloading" || downloadStatus === "queued"
+                  ? "clock"
+                  : downloadStatus === "paused"
+                    ? "pause"
+                    : folderReady
+                      ? "download"
+                      : "folder"
+            }
+            size={17}
+            color={downloadFocused ? "#000" : Colors.dark.accent}
+          />
         </Pressable>
         <Feather name="play-circle" size={24} color={isActive ? Colors.dark.accent : Colors.dark.border} />
       </View>
@@ -223,7 +281,7 @@ export default function SeriesDetailScreen() {
   const { isFavourite, toggleFavourite } = useFavourites();
   const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
-  const { enqueue, enqueueMany } = useDownloads();
+  const { enqueue, enqueueMany, getByStreamId: getDownloadByStreamId, storage } = useDownloads();
   const isFav = isFavourite(seriesId, "series");
   const tmdbSeriesId = (seriesInfo?.info as any)?.tmdb ?? (seriesInfo?.info as any)?.tmdb_id ?? null;
   const tmdbSeriesIdNum = tmdbSeriesId ? Number(tmdbSeriesId) : null;
@@ -322,15 +380,44 @@ export default function SeriesDetailScreen() {
     episodeNum: Number(ep.episode_num) || undefined,
   });
   const handleEpisodeDownload = (ep: Episode) => {
+    if (storage.isPrivateFallback) {
+      navigation.navigate("Downloads");
+      return;
+    }
     void enqueue(toDownloadRequest(ep));
   };
   const handleSeasonDownload = () => {
+    if (storage.isPrivateFallback) {
+      navigation.navigate("Downloads");
+      return;
+    }
     void enqueueMany(currentEpisodes.map(toDownloadRequest));
   };
   const handleSeriesDownload = () => {
+    if (storage.isPrivateFallback) {
+      navigation.navigate("Downloads");
+      return;
+    }
     const allEpisodes = Object.values(seriesInfo?.episodes ?? {}).flat();
     void enqueueMany(allEpisodes.map(toDownloadRequest));
   };
+  const allSeriesEpisodes = Object.values(seriesInfo?.episodes ?? {}).flat();
+  const seasonDownloadCount = currentEpisodes.filter((episode) => getDownloadByStreamId(String(episode.id))?.status === "completed").length;
+  const seriesDownloadCount = allSeriesEpisodes.filter((episode) => getDownloadByStreamId(String(episode.id))?.status === "completed").length;
+  const seasonLabel = storage.isPrivateFallback
+    ? "SET DOWNLOAD FOLDER"
+    : seasonDownloadCount === currentEpisodes.length && currentEpisodes.length > 0
+      ? "SEASON DOWNLOADED"
+      : seasonDownloadCount > 0
+        ? `DOWNLOAD SEASON (${seasonDownloadCount}/${currentEpisodes.length})`
+        : "DOWNLOAD SEASON";
+  const seriesLabel = storage.isPrivateFallback
+    ? "SET DOWNLOAD FOLDER"
+    : seriesDownloadCount === allSeriesEpisodes.length && allSeriesEpisodes.length > 0
+      ? "SERIES DOWNLOADED"
+      : seriesDownloadCount > 0
+        ? `DOWNLOAD SERIES (${seriesDownloadCount}/${allSeriesEpisodes.length})`
+        : "DOWNLOAD FULL SERIES";
 
   if (isLoading) {
     return (
@@ -476,14 +563,8 @@ export default function SeriesDetailScreen() {
             </ScrollView>
           ) : null}
           <View style={styles.downloadActions}>
-            <Pressable onPress={handleSeasonDownload} style={styles.downloadAction}>
-              <Feather name="download" size={15} color={Colors.dark.accent} />
-              <ThemedText style={styles.downloadActionText}>DOWNLOAD SEASON</ThemedText>
-            </Pressable>
-            <Pressable onPress={handleSeriesDownload} style={styles.downloadAction}>
-              <Feather name="layers" size={15} color={Colors.dark.accent} />
-              <ThemedText style={styles.downloadActionText}>DOWNLOAD FULL SERIES</ThemedText>
-            </Pressable>
+            <DownloadAction icon={storage.isPrivateFallback ? "folder" : "download"} label={seasonLabel} onPress={handleSeasonDownload} />
+            <DownloadAction icon={storage.isPrivateFallback ? "folder" : "layers"} label={seriesLabel} onPress={handleSeriesDownload} />
           </View>
 
           <FlatList
@@ -497,6 +578,8 @@ export default function SeriesDetailScreen() {
                 onPress={() => handleEpisodePress(item)}
                 onDownload={() => handleEpisodeDownload(item)}
                 watchEntry={getByStreamId(item.id)}
+                downloadStatus={getDownloadByStreamId(String(item.id))?.status}
+                folderReady={!storage.isPrivateFallback}
               />
             )}
           />
@@ -724,7 +807,16 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,102,0,0.35)",
   },
   episodeDownloadButtonActive: {
-    backgroundColor: "rgba(255,102,0,0.25)",
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 7,
+  },
+  episodeDownloadOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.12)",
   },
   downloadActions: {
     flexDirection: "row",
@@ -743,11 +835,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,102,0,0.4)",
     backgroundColor: "rgba(255,102,0,0.08)",
+    overflow: "hidden",
+  },
+  downloadActionActive: {
+    backgroundColor: Colors.dark.accent,
+    borderColor: Colors.dark.accent,
+    shadowColor: "#FF6600",
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 9,
+  },
+  downloadActionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.14)",
   },
   downloadActionText: {
     color: Colors.dark.text,
     fontSize: 11,
     fontWeight: "800",
+  },
+  downloadActionTextActive: {
+    color: "#000",
   },
   episodeThumb: {
     width: 112,

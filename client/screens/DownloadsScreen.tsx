@@ -61,12 +61,35 @@ function ActionButton({
       onBlur={() => setActive(false)}
       onPressIn={() => setActive(true)}
       onPressOut={() => setActive(false)}
+      onHoverIn={() => setActive(true)}
+      onHoverOut={() => setActive(false)}
       style={[styles.actionButton, active && styles.actionButtonActive, danger && styles.actionDanger]}
     >
       <Feather name={icon} size={14} color={danger ? Colors.dark.error : active ? "#000" : Colors.dark.text} />
       <ThemedText style={[styles.actionText, active && { color: "#000" }, danger && { color: Colors.dark.error }]}>
         {label}
       </ThemedText>
+    </Pressable>
+  );
+}
+
+function HeaderAction({ onPress }: { onPress: () => void }) {
+  const [active, setActive] = useState(false);
+  return (
+    <Pressable
+      onPress={onPress}
+      onFocus={() => setActive(true)}
+      onBlur={() => setActive(false)}
+      onPressIn={() => setActive(true)}
+      onPressOut={() => setActive(false)}
+      onHoverIn={() => setActive(true)}
+      onHoverOut={() => setActive(false)}
+      accessibilityRole="button"
+      accessibilityLabel="Refresh storage"
+      style={[styles.refreshButton, active && styles.refreshButtonActive]}
+    >
+      {active ? <View style={styles.refreshOverlay} /> : null}
+      <Feather name="refresh-cw" size={18} color={active ? "#000" : Colors.dark.textSecondary} />
     </Pressable>
   );
 }
@@ -83,7 +106,6 @@ export default function DownloadsScreen() {
     cancel,
     remove,
     selectFolder,
-    clearFolder,
     refreshStorage,
   } = useDownloads();
   const { width, height } = useWindowDimensions();
@@ -91,6 +113,28 @@ export default function DownloadsScreen() {
   const [folderLoading, setFolderLoading] = useState(false);
 
   const completed = useMemo(() => items.filter((item) => item.status === "completed"), [items]);
+  const completedMovies = useMemo(() => completed.filter((item) => item.kind === "movie"), [completed]);
+  const completedSeries = useMemo(() => {
+    const groups = new Map<string, Map<number, DownloadItem[]>>();
+    for (const item of completed.filter((candidate) => candidate.kind === "episode")) {
+      const seriesName = item.seriesName || "Series";
+      const season = item.seasonNum ?? 0;
+      const seasons = groups.get(seriesName) ?? new Map<number, DownloadItem[]>();
+      seasons.set(season, [...(seasons.get(season) ?? []), item]);
+      groups.set(seriesName, seasons);
+    }
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([seriesName, seasons]) => ({
+        seriesName,
+        seasons: Array.from(seasons.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([season, episodes]) => ({
+            season,
+            episodes: [...episodes].sort((a, b) => (a.episodeNum ?? 0) - (b.episodeNum ?? 0)),
+          })),
+      }));
+  }, [completed]);
   const active = useMemo(
     () => items.filter((item) => item.status === "downloading" || item.status === "queued" || item.status === "paused"),
     [items],
@@ -102,8 +146,8 @@ export default function DownloadsScreen() {
     setFolderLoading(false);
     if (!selected) {
       Alert.alert(
-        "Private playback storage",
-        "No folder was selected. Downloads will still be saved securely for offline playback inside Ultra Cast.",
+        "Download folder required",
+        "Choose a device folder before starting a download. Ultra Cast will save completed downloads there.",
       );
     }
   }, [selectFolder]);
@@ -135,9 +179,7 @@ export default function DownloadsScreen() {
           <ThemedText style={styles.headerEyebrow}>OFFLINE LIBRARY</ThemedText>
           <ThemedText style={styles.headerTitle}>Downloads</ThemedText>
         </View>
-        <Pressable onPress={() => void refreshStorage()} style={styles.refreshButton}>
-          <Feather name="refresh-cw" size={18} color={Colors.dark.textSecondary} />
-        </Pressable>
+        <HeaderAction onPress={() => void refreshStorage()} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -176,15 +218,15 @@ export default function DownloadsScreen() {
 
           <View style={styles.locationCard}>
             <View style={styles.locationTop}>
-              <Feather name={storage.isPrivateFallback ? "shield" : "folder"} size={18} color={Colors.dark.accent} />
+               <Feather name={storage.isPrivateFallback ? "folder-plus" : "folder"} size={18} color={Colors.dark.accent} />
               <View style={{ flex: 1 }}>
                 <ThemedText style={styles.locationTitle}>
-                  {storage.isPrivateFallback ? "Secure app storage" : "Selected device folder"}
+                   {storage.isPrivateFallback ? "Choose a download folder" : "Selected download folder"}
                 </ThemedText>
                 <ThemedText style={styles.locationMeta} numberOfLines={2}>
                   {storage.isPrivateFallback
-                    ? "Offline playback is ready. Choose a folder to keep a second copy that you can find outside the app."
-                    : "Finished downloads are exported to your selected device folder as well as kept ready for offline playback."}
+                     ? "A folder is required before downloads can start. Your completed files will be saved there."
+                     : "All completed downloads are saved in this folder and ready for offline playback."}
                 </ThemedText>
               </View>
             </View>
@@ -194,9 +236,6 @@ export default function DownloadsScreen() {
                 label={folderLoading ? "Opening…" : storage.isPrivateFallback ? "CHOOSE FOLDER" : "CHANGE FOLDER"}
                 onPress={() => void chooseFolder()}
               />
-              {!storage.isPrivateFallback ? (
-                <ActionButton icon="x" label="USE APP STORAGE" onPress={() => void clearFolder()} />
-              ) : null}
             </View>
           </View>
         </View>
@@ -244,18 +283,56 @@ export default function DownloadsScreen() {
             </ThemedText>
           </View>
         ) : (
-          completed.map((item) => (
-            <DownloadRow
-              key={item.id}
-              item={item}
-              onPlay={() => playOffline(item)}
-              onPause={() => void pause(item.id)}
-              onResume={() => void resume(item.id)}
-              onRetry={() => void retry(item.id)}
-              onCancel={() => void cancel(item.id)}
-              onRemove={() => void remove(item.id)}
-            />
-          ))
+          <>
+            {completedMovies.length > 0 ? (
+              <>
+                <View style={styles.librarySubheader}>
+                  <Feather name="film" size={15} color={Colors.dark.accent} />
+                  <ThemedText style={styles.librarySubheaderText}>MOVIES</ThemedText>
+                  <ThemedText style={styles.sectionCount}>{completedMovies.length}</ThemedText>
+                </View>
+                {completedMovies.map((item) => (
+                  <DownloadRow
+                    key={item.id}
+                    item={item}
+                    onPlay={() => playOffline(item)}
+                    onPause={() => void pause(item.id)}
+                    onResume={() => void resume(item.id)}
+                    onRetry={() => void retry(item.id)}
+                    onCancel={() => void cancel(item.id)}
+                    onRemove={() => void remove(item.id)}
+                  />
+                ))}
+              </>
+            ) : null}
+            {completedSeries.map((group) => (
+              <View key={group.seriesName} style={styles.seriesGroup}>
+                <View style={styles.seriesGroupHeader}>
+                  <Feather name="tv" size={16} color={Colors.dark.accent} />
+                  <ThemedText style={styles.seriesGroupTitle}>{group.seriesName}</ThemedText>
+                </View>
+                {group.seasons.map((season) => (
+                  <View key={`${group.seriesName}-${season.season}`} style={styles.seasonGroup}>
+                    <ThemedText style={styles.seasonGroupTitle}>
+                      {season.season > 0 ? `SEASON ${season.season}` : "EPISODES"}
+                    </ThemedText>
+                    {season.episodes.map((item) => (
+                      <DownloadRow
+                        key={item.id}
+                        item={item}
+                        onPlay={() => playOffline(item)}
+                        onPause={() => void pause(item.id)}
+                        onResume={() => void resume(item.id)}
+                        onRetry={() => void retry(item.id)}
+                        onCancel={() => void cancel(item.id)}
+                        onRemove={() => void remove(item.id)}
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ))}
+          </>
         )}
       </ScrollView>
     </ThemedView>
@@ -321,7 +398,7 @@ function DownloadRow({
           <ThemedText style={styles.errorText} numberOfLines={2}>{item.error}</ThemedText>
         ) : (
           <ThemedText style={styles.progressText}>
-            {bytes(item.bytesDownloaded)} · {item.exportedUri ? "also saved to your folder" : "ready for offline playback"}
+             {bytes(item.bytesDownloaded)} · saved to your download folder
           </ThemedText>
         )}
       </View>
@@ -367,7 +444,9 @@ const styles = StyleSheet.create({
   headerTitleWrap: { flex: 1 },
   headerEyebrow: { fontSize: 10, fontWeight: "800", letterSpacing: 1.4, color: Colors.dark.accent },
   headerTitle: { fontSize: 25, fontWeight: "800", color: Colors.dark.text },
-  refreshButton: { padding: Spacing.sm, borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault },
+  refreshButton: { padding: Spacing.sm, borderRadius: BorderRadius.full, backgroundColor: Colors.dark.backgroundDefault, overflow: "hidden" },
+  refreshButtonActive: { backgroundColor: Colors.dark.accent, shadowColor: "#FF6600", shadowOpacity: 0.9, shadowRadius: 9, elevation: 8 },
+  refreshOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.14)" },
   content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing["2xl"] },
   summaryRow: { flexDirection: "row", gap: Spacing.md },
   summaryColumn: { flexDirection: "column" },
@@ -387,6 +466,13 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginTop: Spacing.lg },
   sectionTitle: { color: Colors.dark.text, fontSize: 13, fontWeight: "800", letterSpacing: 0.8 },
   sectionCount: { minWidth: 20, textAlign: "center", color: Colors.dark.accent, backgroundColor: "rgba(255,102,0,0.12)", fontSize: 11, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 20 },
+  librarySubheader: { flexDirection: "row", alignItems: "center", gap: Spacing.xs, marginTop: Spacing.sm, marginBottom: Spacing.xs },
+  librarySubheaderText: { color: Colors.dark.text, fontSize: 12, fontWeight: "800", letterSpacing: 0.7, flex: 1 },
+  seriesGroup: { marginTop: Spacing.md, gap: Spacing.sm },
+  seriesGroupHeader: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, paddingHorizontal: Spacing.sm, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, backgroundColor: "rgba(255,102,0,0.08)", borderWidth: 1, borderColor: "rgba(255,102,0,0.2)" },
+  seriesGroupTitle: { color: Colors.dark.text, fontSize: 14, fontWeight: "800", flex: 1 },
+  seasonGroup: { gap: Spacing.xs, paddingLeft: Spacing.sm },
+  seasonGroupTitle: { color: Colors.dark.accent, fontSize: 10, fontWeight: "800", letterSpacing: 0.8, marginTop: Spacing.xs },
   emptyCompact: { flexDirection: "row", gap: Spacing.sm, alignItems: "center", padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.dark.backgroundDefault },
   emptyCompactText: { color: Colors.dark.textSecondary, fontSize: 13 },
   emptyState: { padding: Spacing["2xl"], borderRadius: BorderRadius.lg, alignItems: "center", gap: Spacing.sm, borderWidth: 1, borderColor: Colors.dark.border, borderStyle: "dashed" },
