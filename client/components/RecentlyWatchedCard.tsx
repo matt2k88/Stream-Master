@@ -644,9 +644,28 @@ export default function RecentlyWatchedCard({ style, onPress, onResumePress, onI
   );
 }
 
-// ── Async helpers (unchanged) ──────────────────────────────────────────────
+// ── Async helpers ──────────────────────────────────────────────────────────
 
-export async function saveRecentlyWatched(params: {
+// A player can request a progress save, then immediately request another save
+// on pause. Sending those requests concurrently lets a slow, older request
+// reach the delete-then-insert server route after the newer one and overwrite
+// the true resume position. Keep one ordered queue per profile/stream so each
+// save reaches the server in the same order the player produced it.
+const recentlyWatchedSaveQueues = new Map<string, Promise<RecentlyWatched | null>>();
+
+function recentlyWatchedSaveKey(params: {
+  profileId: string;
+  contentType: "live" | "movie" | "series";
+  streamId?: string;
+  name: string;
+}) {
+  return [
+    params.profileId,
+    params.streamId ?? `untagged:${params.contentType}:${params.name}`,
+  ].join(":");
+}
+
+async function postRecentlyWatched(params: {
   profileId: string;
   contentType: "live" | "movie" | "series";
   streamId?: string;
@@ -698,6 +717,50 @@ export async function saveRecentlyWatched(params: {
   } catch {
     return null;
   }
+}
+
+export function saveRecentlyWatched(params: {
+  profileId: string;
+  contentType: "live" | "movie" | "series";
+  streamId?: string;
+  name: string;
+  thumbnailUrl?: string;
+  streamUrl?: string;
+  currentTime?: number;
+  duration?: number;
+  isCompleted?: boolean;
+  seriesId?: string;
+  seasonNum?: number;
+  episodeNum?: number;
+  audioTrack?: number;
+  textTrack?: number;
+  seriesLastModified?: string;
+  seriesTotalEpisodes?: number;
+  seriesFinalSeason?: number;
+  seriesFinalEpisode?: number;
+}): Promise<RecentlyWatched | null> {
+  if (params.profileId === GUEST_PROFILE_ID) return Promise.resolve(null);
+
+  const key = recentlyWatchedSaveKey(params);
+  const previous = recentlyWatchedSaveQueues.get(key) ?? Promise.resolve(null);
+  const queued = previous
+    .catch(() => null)
+    .then(() => postRecentlyWatched(params));
+
+  recentlyWatchedSaveQueues.set(key, queued);
+  void queued.then(
+    () => {
+      if (recentlyWatchedSaveQueues.get(key) === queued) {
+        recentlyWatchedSaveQueues.delete(key);
+      }
+    },
+    () => {
+      if (recentlyWatchedSaveQueues.get(key) === queued) {
+        recentlyWatchedSaveQueues.delete(key);
+      }
+    },
+  );
+  return queued;
 }
 
 export async function fetchResumeFor(profileId: string, streamId: string): Promise<RecentlyWatched | null> {

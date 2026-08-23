@@ -339,6 +339,7 @@ export default function VlcPlayerScreen() {
   useEffect(() => {
     if (nextPromptShownRef.current || !nextEp) return;
     if (!autoPlayNext) return;
+    if (paused) return;
     if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
       nextPromptShownRef.current = true;
       setShowNext(true);
@@ -348,6 +349,14 @@ export default function VlcPlayerScreen() {
 
   const handleNextConfirm = useCallback(() => {
     if (nextFiredRef.current) return;
+    // A countdown may have reached zero just as the user paused. Do not
+    // replace the episode unless VLC is still actively playing.
+    if (pausedRef.current) {
+      setShowNext(false);
+      setCountdown(10);
+      nextPromptShownRef.current = false;
+      return;
+    }
     if (!nextEp || !seriesIdParam) { setShowNext(false); return; }
     nextFiredRef.current = true;
     setShowNext(false);
@@ -370,11 +379,11 @@ export default function VlcPlayerScreen() {
   }, []);
 
   useEffect(() => {
-    if (!showNext) return;
+    if (!showNext || paused) return;
     if (countdown <= 0) { handleNextConfirm(); return; }
     const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
     return () => clearTimeout(t);
-  }, [showNext, countdown, handleNextConfirm]);
+  }, [showNext, paused, countdown, handleNextConfirm]);
 
   // Reset everything when stream changes (navigation.replace path)
   useEffect(() => {
@@ -583,6 +592,10 @@ export default function VlcPlayerScreen() {
     if (stoppedRecoveryRef.current) return; // ignore the auto-pause on stop
     setPaused(true);
     pausedRef.current = true;
+    // Never leave an unattended Up Next countdown alive after pause.
+    setShowNext(false);
+    setCountdown(10);
+    nextPromptShownRef.current = false;
     // ── Save-on-pause ─────────────────────────────────────────────────────
     // The throttled progress effect below only saves while currentTime
     // ticks (i.e. while playing). If the user pauses for several minutes
@@ -641,6 +654,18 @@ export default function VlcPlayerScreen() {
   }, [resumeTime]);
 
   const onEnded = useCallback(() => {
+    // VLC can report an end event after an interrupted native state. Only
+    // honour it when recent progress confirms this episode was genuinely near
+    // its end; otherwise a mid-episode event must never skip to the next one.
+    if (pausedRef.current) return;
+    const dur = durationRef.current;
+    const position = currentTimeRef.current;
+    const confirmedEnd = dur > 0 && position > 0 && position >= dur - 20;
+    if (!confirmedEnd) {
+      setIsLoading(false);
+      setError("Playback ended unexpectedly before the episode finished");
+      return;
+    }
     if (autoPlayNext && nextEp && !nextFiredRef.current) {
       nextPromptShownRef.current = true;
       setShowNext(true);

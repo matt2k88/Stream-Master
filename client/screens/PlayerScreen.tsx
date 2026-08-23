@@ -526,6 +526,7 @@ function LegacyPlayerScreen() {
   const [ctrlsKey, setCtrlsKey] = useState(0);
   const prevShowControls = useRef(true);
   const [isPlaying, setIsPlaying] = useState(true);
+  const isPlayingRef = useRef(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
@@ -568,6 +569,10 @@ function LegacyPlayerScreen() {
   const [showNext, setShowNext] = useState(false);
   const [countdown, setCountdown] = useState(10);
   const nextPromptShownRef = useRef(false);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // navigation.replace into PlayerScreen reuses the same instance — reset all
   // per-episode refs/state when the underlying stream changes.
@@ -1055,6 +1060,14 @@ function LegacyPlayerScreen() {
   useEffect(() => {
     const sub = player.addListener("playingChange", (e) => {
       setIsPlaying(e.isPlaying);
+      isPlayingRef.current = e.isPlaying;
+      // A countdown must never survive a pause. It will be shown again if
+      // playback resumes near the end, rather than advancing while unattended.
+      if (!e.isPlaying) {
+        setShowNext(false);
+        setCountdown(10);
+        nextPromptShownRef.current = false;
+      }
       // ── Save-on-pause ───────────────────────────────────────────────────
       // The throttled progress effect above only saves while currentTime
       // ticks (i.e. while playing). If the user pauses mid-stream the last
@@ -1220,6 +1233,7 @@ function LegacyPlayerScreen() {
   useEffect(() => {
     if (isLive || nextPromptShownRef.current || !nextEp) return;
     if (!autoPlayNext) return;
+    if (!isPlaying) return;
     if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
       nextPromptShownRef.current = true;
       setShowNext(true);
@@ -1230,6 +1244,14 @@ function LegacyPlayerScreen() {
   const nextFiredRef = useRef(false);
   const handleNextConfirm = useCallback(() => {
     if (nextFiredRef.current) return;
+    // The countdown may have reached zero just as the user paused. Do not
+    // replace the episode unless playback is still active.
+    if (!isPlayingRef.current) {
+      setShowNext(false);
+      setCountdown(10);
+      nextPromptShownRef.current = false;
+      return;
+    }
     if (!nextEp || !seriesIdParam) { setShowNext(false); return; }
     nextFiredRef.current = true;
     setShowNext(false);
