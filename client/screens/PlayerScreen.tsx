@@ -426,12 +426,7 @@ export default function PlayerScreen() {
   // but skip & scrub silently no-op).
   const routeForce = route.params.forceEngine === "expo" || route.params.forceEngine === "vlc"
     ? route.params.forceEngine : null;
-  // Android SAF downloads are exposed as content:// document URIs. Media3
-  // understands those handles directly, whereas VLC's bridge is designed
-  // around provider network URLs and can fail to open a persisted document.
-  // Keep offline media on the Expo/Media3 path regardless of the profile's
-  // network-player preference.
-  const engine = route.params.offline ? "expo" : (vlcUnsupported ? "expo" : (routeForce ?? profileEngine));
+  const engine = vlcUnsupported ? "expo" : (routeForce ?? profileEngine);
   // Android + VLC + non-live → use the dedicated raw-VLC screen.
   // Live TV, web, iOS, and the expo engine all keep the legacy screen.
   if (Platform.OS === "android" && engine === "vlc" && !isLive && VlcPlayerScreen) {
@@ -447,7 +442,7 @@ function LegacyPlayerScreen() {
   const {
     streamUrl, title, type, thumbnail, streamId,
     seriesId: seriesIdParam, seriesName: seriesNameParam,
-    resumeTime, seasonNum, episodeNum, offline = false,
+    resumeTime, seasonNum, episodeNum,
   } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
@@ -940,7 +935,7 @@ function LegacyPlayerScreen() {
         setReconnecting(false);
         lastLiveTimeRef.current = -1;
         lastLiveTimeAtRef.current = Date.now();
-        if (!offline && activeProfile && !savedRef.current) {
+        if (activeProfile && !savedRef.current) {
           savedRef.current = true;
           const contentType = type === "live" ? "live" : type === "series" ? "series" : "movie";
           // Carry the previously-saved track prefs into this first insert
@@ -1080,7 +1075,7 @@ function LegacyPlayerScreen() {
       // pause that ends in an app close / crash would resume from there.
       // Persist immediately on pause so the resume point is always within
       // ~1s of where the user actually stopped.
-      if (offline || e.isPlaying || isLive || !activeProfile || !streamId) return;
+      if (e.isPlaying || isLive || !activeProfile || !streamId) return;
       const cur = currentTimeRef.current;
       const dur = tvDurationRef.current;
       if (cur <= 5 || dur <= 0) return;
@@ -1103,7 +1098,7 @@ function LegacyPlayerScreen() {
       }).then((entry) => { if (entry) upsertLocal(entry); });
     });
     return () => sub.remove();
-  }, [player, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal, offline]);
+  }, [player, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
 
   useEffect(() => {
     if (isLive) return;
@@ -1119,7 +1114,7 @@ function LegacyPlayerScreen() {
 
   // ── Progress save (throttled) + auto-mark-completed within 30s of end ─────
   useEffect(() => {
-    if (offline || isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
+    if (isLive || !activeProfile || !streamId || duration <= 0 || currentTime <= 0) return;
     const contentType = type === "series" ? "series" : "movie";
     const remaining = duration - currentTime;
     const audioTrackId = activeAudio ? Number((activeAudio as any).id) : undefined;
@@ -1154,7 +1149,7 @@ function LegacyPlayerScreen() {
         seriesFinalEpisode: seriesSnapshotRef.current.finalEpisode,
       }).then((entry) => { if (entry) upsertLocal(entry); });
     }
-  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal, offline]);
+  }, [currentTime, duration, isLive, activeProfile, streamId, type, title, thumbnail, streamUrl, seriesIdParam, seasonNum, episodeNum, activeAudio, activeSubtitle, upsertLocal]);
 
   // ── Series: pre-fetch next episode ────────────────────────────────────────
   // Same effect also snapshots series-wide info into `seriesSnapshotRef` so
@@ -1162,7 +1157,7 @@ function LegacyPlayerScreen() {
   // and `series_last_modified`. The dashboard uses these to decide whether
   // a series is fully watched and whether new episodes are available.
   useEffect(() => {
-    if (offline || type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
+    if (type !== "series" || !seriesIdParam || seasonNum == null || episodeNum == null) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1232,11 +1227,11 @@ function LegacyPlayerScreen() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal, offline]);
+  }, [type, seriesIdParam, seasonNum, episodeNum, activeProfile, streamId, title, thumbnail, streamUrl, upsertLocal]);
 
   // Trigger next-episode prompt when within 20s of end (only when auto-play is enabled)
   useEffect(() => {
-    if (offline || isLive || nextPromptShownRef.current || !nextEp) return;
+    if (isLive || nextPromptShownRef.current || !nextEp) return;
     if (!autoPlayNext) return;
     if (!isPlaying) return;
     if (duration > 0 && currentTime > 0 && currentTime >= duration - 20) {
@@ -1244,7 +1239,7 @@ function LegacyPlayerScreen() {
       setShowNext(true);
       setCountdown(10);
     }
-  }, [currentTime, duration, isLive, nextEp, autoPlayNext, offline]);
+  }, [currentTime, duration, isLive, nextEp, autoPlayNext]);
 
   const nextFiredRef = useRef(false);
   const handleNextConfirm = useCallback(() => {

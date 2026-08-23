@@ -1384,7 +1384,6 @@ export default function HomeScreen() {
 
                 <View style={styles.sidebarDivider} />
 
-                <SidebarItem label="Downloads" icon="download" onPress={() => navigation.navigate("Downloads")} />
                 {/* Football Centre stays reachable regardless of the kill-switch —
                     the switch only hides the in-player GOAL tracker overlay. */}
                 <SidebarItem label="Football Centre" mciIcon="soccer" isLive={hasLiveGame} onPress={() => navigation.navigate("FootballCentre")} />

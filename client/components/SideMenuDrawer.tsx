@@ -279,12 +279,6 @@ export default function SideMenuDrawer() {
             <View style={styles.divider} />
 
             <MenuItem
-              label="Downloads"
-              icon="download"
-              active={routeName === "Downloads"}
-              onPress={() => navTo(() => navigationRef.navigate("Downloads"))}
-            />
-            <MenuItem
               label="Football Centre"
               mciIcon="soccer"
               active={routeName === "FootballCentre"}
