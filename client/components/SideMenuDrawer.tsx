@@ -19,6 +19,7 @@ import { useData } from "@/contexts/DataContext";
 import { useAccent, useAppTheme, withAlpha } from "@/contexts/ThemeContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
 import { useFootball } from "@/contexts/FootballContext";
+import SeasonalAtmosphere from "@/components/SeasonalAtmosphere";
 
 const DRAWER_WIDTH = 248;
 
@@ -221,6 +222,7 @@ export default function SideMenuDrawer() {
             transparent && { backgroundColor: "rgba(8,8,8,0.82)" },
           ]}
         >
+          {!transparent ? <SeasonalAtmosphere variant="navigation" /> : null}
           <View style={styles.brand}>
             <Image
               source={require("../../assets/images/icon.png")}
@@ -361,11 +363,12 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingHorizontal: Spacing.sm,
     paddingBottom: Spacing.md,
+    zIndex: 1,
   },
   logo: { width: 34, height: 34 },
   appName: { fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
   appVersion: { fontSize: 11, fontWeight: "700" },
-  scroll: { flex: 1 },
+  scroll: { flex: 1, zIndex: 1 },
   scrollContent: { gap: 2, paddingBottom: Spacing.lg },
   item: {
     flexDirection: "row",
