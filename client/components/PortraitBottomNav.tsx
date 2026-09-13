@@ -6,7 +6,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { navigationRef } from "@/lib/navigation-ref";
 import { useData } from "@/contexts/DataContext";
-import { useAccent } from "@/contexts/ThemeContext";
+import { useAccent, useAppTheme } from "@/contexts/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
 
 // Routes where the universal bottom bar must NOT appear (players, auth flow,
 // and multi-screen/landscape-locked experiences).
@@ -73,6 +74,8 @@ export default function PortraitBottomNav() {
   const isPortrait = height >= width;
   const insets = useSafeAreaInsets();
   const { liveCategories } = useData();
+  const accent = useAccent();
+  const { themeKey } = useAppTheme();
 
   const [route, setRoute] = useState<{ name?: string; type?: ContentType }>(() => {
     if (navigationRef.isReady()) {
@@ -117,7 +120,20 @@ export default function PortraitBottomNav() {
   const onContent = route.name === "ContentList";
 
   return (
-    <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, Spacing.xs) }]}>
+    <View
+      style={[
+        styles.bar,
+        { paddingBottom: Math.max(insets.bottom, Spacing.xs) },
+        themeKey !== "default" && { borderTopColor: accent.withAlpha(accent.accent, 0.36) },
+      ]}
+    >
+      {themeKey !== "default" ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[accent.withAlpha(accent.accent, 0.08), "rgba(0,0,0,0)"]}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
       <NavItem label="Home" icon="home" active={route.name === "Home"} onPress={goHome} />
       <NavItem
         label="Live TV"
