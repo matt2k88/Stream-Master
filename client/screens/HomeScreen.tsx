@@ -26,7 +26,6 @@ import AdvertCarousel, { type Advert } from "@/components/AdvertCarousel";
 import AnnouncementTicker from "@/components/AnnouncementTicker";
 import RecentlyWatchedCard, { type WatchSectionConfig } from "@/components/RecentlyWatchedCard";
 import GuestPrompt from "@/components/GuestPrompt";
-import SeasonalAtmosphere from "@/components/SeasonalAtmosphere";
 import RenewalNoticeModal from "@/components/RenewalNoticeModal";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
@@ -1331,7 +1330,6 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <SeasonalAtmosphere />
       {isLandscape ? (
         // ── Landscape / TV layout: persistent sidebar + content column ───────
         <View style={styles.landscapeRoot}>
