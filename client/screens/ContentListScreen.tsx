@@ -820,6 +820,7 @@ interface SidebarCat {
   // Optional inline icon for pinned-group rows.
   iconLib?: "feather" | "mci";
   iconName?: string;
+  iconColor?: string;
 }
 
 const CategorySidebarItem = React.memo(function CategorySidebarItem({
@@ -890,8 +891,8 @@ const CategorySidebarItem = React.memo(function CategorySidebarItem({
       {item.iconLib === "mci" && item.iconName ? (
         <MaterialCommunityIcons
           name={item.iconName as any}
-          size={12}
-          color={highlight ? accent : (item.accent ?? Colors.dark.text)}
+          size={item.iconColor ? 14 : 12}
+          color={item.iconColor ?? (highlight ? accent : (item.accent ?? Colors.dark.text))}
         />
       ) : item.iconLib === "feather" && item.iconName ? (
         <Feather
@@ -1158,10 +1159,16 @@ export default function ContentListScreen() {
     pinned.push({ category_id: "favourites", category_name: "Favourites" });
     if (type === "movies" || type === "series") {
       pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
+      if (type === "movies" && cinemaAvailable) {
+        pinned.push({
+          category_id: CINEMA_CATEGORY_ID,
+          category_name: "Cinema Releases",
+          iconLib: "mci",
+          iconName: "star",
+          iconColor: "#FFD700",
+        });
+      }
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
-    }
-    if (type === "movies" && cinemaAvailable) {
-      pinned.push({ category_id: CINEMA_CATEGORY_ID, category_name: "Cinema Releases" });
     }
     const userPinned: SidebarCat[] = pinnedGroups.map((g) => {
       const def = getGroupIconDef(g.icon_key);
@@ -1813,7 +1820,7 @@ export default function ContentListScreen() {
     ({ item }: { item: SidebarCat }) => {
       const id = item.category_id;
       const isPinned =
-        id === "recently" || id === "favourites" || id === "suggested" || id === "recent";
+        id === "recently" || id === "favourites" || id === "suggested" || id === "recent" || id === CINEMA_CATEGORY_ID;
       return (
         <CategorySidebarItem
           item={item}
