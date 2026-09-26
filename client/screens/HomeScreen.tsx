@@ -31,6 +31,7 @@ import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { formatExpiryNotice } from "@/lib/expiry";
 import { hasSeenRenewalNotice, markRenewalNoticeSeen } from "@/lib/renewal-notice";
 import { xtreamApi } from "@/lib/xtream-api";
+import { cinemaIdFromHistory } from "@/lib/cinema";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -914,7 +915,8 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
-  const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, seriesList, streamRatings } = useData();
+  const { refresh, liveCategories, vodCategories, seriesCategories, liveStreams, vodStreams, cinemaMovies, seriesList, streamRatings } = useData();
+  const cinemaById = useMemo(() => new Map(cinemaMovies.map((movie) => [movie.cinemaId, movie])), [cinemaMovies]);
   const { refreshActiveProfile, isGuest, activeProfile } = useProfile();
   const themeAccent = useAccent();
   const { refetch: refetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge, showMusicBadge } = useAppTheme();
@@ -1117,6 +1119,8 @@ export default function HomeScreen() {
           (e.content_type === "movie" && !e.is_completed && (e.current_time ?? 0) > 0) ||
           (e.content_type === "series" && e.series_id != null);
         if (!typeOk) return false;
+        const cinemaId = cinemaIdFromHistory(e.stream_id);
+        if (cinemaId && !cinemaById.has(cinemaId)) return false;
         if (parentalFilter && (e.content_type === "movie" || e.content_type === "series")) {
           const id = e.content_type === "series" ? e.series_id : e.stream_id;
           return parentalFilter(id, e.name ?? "");
@@ -1134,7 +1138,7 @@ export default function HomeScreen() {
       emptyText: "No live channels watched yet",
       maxItems: 12,
     },
-  ], [parentalFilter]);
+  ], [parentalFilter, cinemaById]);
 
   // Continue Watching click handler. For series rows where the LAST watched
   // episode is already completed, asynchronously resolve the next episode
@@ -1155,10 +1159,14 @@ export default function HomeScreen() {
       return;
     }
     if (item.content_type === "movie" && item.stream_id) {
+      const cinemaId = cinemaIdFromHistory(item.stream_id);
+      const cinema = cinemaId ? cinemaById.get(cinemaId) : undefined;
+      if (cinemaId && !cinema) return;
       navigation.navigate("MovieInfo", {
-        streamId: Number(item.stream_id),
-        name: item.name,
-        streamIcon: item.thumbnail_url ?? undefined,
+        streamId: cinema?.stream_id ?? Number(item.stream_id),
+        name: cinema?.name ?? item.name,
+        streamIcon: cinema?.stream_icon ?? item.thumbnail_url ?? undefined,
+        cinemaId: cinemaId ?? undefined,
       });
       return;
     }
@@ -1223,7 +1231,7 @@ export default function HomeScreen() {
         episodeNum: item.episode_num ?? undefined,
       });
     }
-  }, [navigation]);
+  }, [navigation, cinemaById]);
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -1235,6 +1243,21 @@ export default function HomeScreen() {
   };
 
   const handleResumePress = useCallback((item: RecentlyWatched) => {
+    const cinemaId = cinemaIdFromHistory(item.stream_id);
+    if (cinemaId) {
+      const cinema = cinemaById.get(cinemaId);
+      if (!cinema) return;
+      navigation.navigate("Player", {
+        streamUrl: cinema.videoUrl,
+        title: cinema.name,
+        type: "vod",
+        thumbnail: cinema.stream_icon,
+        streamId: item.stream_id ?? undefined,
+        resumeTime: item.is_completed ? 0 : (item.current_time ?? 0),
+        cinemaRelease: true,
+      });
+      return;
+    }
     if (item.content_type === "live") {
       if (!item.stream_url) return;
       navigation.navigate("LivePreview", {
@@ -1260,14 +1283,18 @@ export default function HomeScreen() {
     }
     // Series — same as card press (already goes to Player directly)
     handleRecentPress(item);
-  }, [navigation, handleRecentPress]);
+  }, [navigation, handleRecentPress, cinemaById]);
 
   const handleInfoPress = useCallback((item: RecentlyWatched) => {
     if (item.content_type === "movie" && item.stream_id) {
+      const cinemaId = cinemaIdFromHistory(item.stream_id);
+      const cinema = cinemaId ? cinemaById.get(cinemaId) : undefined;
+      if (cinemaId && !cinema) return;
       navigation.navigate("MovieInfo", {
-        streamId: Number(item.stream_id),
-        name: item.name,
-        streamIcon: item.thumbnail_url ?? undefined,
+        streamId: cinema?.stream_id ?? Number(item.stream_id),
+        name: cinema?.name ?? item.name,
+        streamIcon: cinema?.stream_icon ?? item.thumbnail_url ?? undefined,
+        cinemaId: cinemaId ?? undefined,
       });
       return;
     }
@@ -1278,7 +1305,7 @@ export default function HomeScreen() {
         cover: item.thumbnail_url ?? "",
       });
     }
-  }, [navigation]);
+  }, [navigation, cinemaById]);
 
   const isAdvertContentRestricted = useCallback((advert: Advert): boolean => {
     if (!parentalFilter) return false;

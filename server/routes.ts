@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import * as https from "node:https";
 import { supabase, lifetimeDb } from "./supabase";
+import { registerCinemaRoutes } from "./cinema";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
 import {
   getOrFetchRating,
@@ -805,6 +806,7 @@ function ultraMusicProxy(req: import("express").Request, res: import("express").
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  registerCinemaRoutes(app);
 
   // ── Ultra Music subdomain proxy ───────────────────────────────────────────
   // Any request to music.ultracast.co.uk is proxied to appsnbits.com/UltraMusic/

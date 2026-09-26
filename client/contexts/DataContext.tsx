@@ -10,6 +10,7 @@ import React, {
 import { xtreamApi, Category, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
+import { toCinemaMovie, type CinemaMovie } from "@/lib/cinema";
 export interface StreamRating {
   certification: string;
   age_int: number;
@@ -31,6 +32,9 @@ interface DataContextType {
   liveStreams: LiveStream[];
   vodCategories: Category[];
   vodStreams: VodStream[];
+  cinemaMovies: CinemaMovie[];
+  cinemaAvailable: boolean;
+  cinemaError: string | null;
   seriesCategories: Category[];
   seriesList: Series[];
   // Pre-computed during sync so the "Recently Added" view opens instantly
@@ -88,7 +92,7 @@ function computeRecent<T>(pool: T[], kind: "movies" | "series"): T[] {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, userInfo } = useAuth();
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasData, setHasData] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
@@ -101,6 +105,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [liveStreams, setLiveStreams] = useState<LiveStream[]>([]);
   const [vodCategories, setVodCategories] = useState<Category[]>([]);
   const [vodStreams, setVodStreams] = useState<VodStream[]>([]);
+  const [cinemaMovies, setCinemaMovies] = useState<CinemaMovie[]>([]);
+  const [cinemaAvailable, setCinemaAvailable] = useState(false);
+  const [cinemaError, setCinemaError] = useState<string | null>(null);
   const [seriesCategories, setSeriesCategories] = useState<Category[]>([]);
   const [seriesList, setSeriesList] = useState<Series[]>([]);
   const [recentMovies, setRecentMovies] = useState<VodStream[]>([]);
@@ -108,6 +115,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const syncRunning = useRef(false);
   const [streamRatings, setStreamRatings] = useState<Map<number, StreamRating>>(new Map());
+  const cinemaRequest = useRef(0);
+  const loadCinema = useCallback(async () => {
+    const request = ++cinemaRequest.current;
+    setCinemaAvailable(false);
+    setCinemaMovies([]);
+    setCinemaError(null);
+    const credentials = await xtreamApi.loadCredentials();
+    if (!credentials || !isAuthenticated || credentials.username !== userInfo?.user_info?.username) return;
+    try {
+      const response = await fetch(new URL("/api/cinema-releases", getApiUrl()).toString(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...credentials,
+          serverUrl: /^https?:\/\//i.test(credentials.serverUrl)
+            ? credentials.serverUrl
+            : `http://${credentials.serverUrl}`,
+        }),
+      });
+      if (request !== cinemaRequest.current) return;
+      if (response.status === 403) return;
+      if (!response.ok) throw new Error(`Cinema Releases unavailable (${response.status})`);
+      const releases = await response.json();
+      setCinemaMovies(releases.map(toCinemaMovie));
+      setCinemaAvailable(true);
+    } catch (error) {
+      if (request === cinemaRequest.current) setCinemaError(error instanceof Error ? error.message : "Cinema Releases unavailable");
+    }
+  }, [isAuthenticated, userInfo?.user_info?.username]);
 
   const sync = useCallback(async () => {
     if (syncRunning.current) return;
@@ -222,6 +258,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (isAuthenticated && userInfo?.user_info?.username) void loadCinema();
+    return () => {
+      cinemaRequest.current++;
+      setCinemaAvailable(false);
+      setCinemaMovies([]);
+    };
+  }, [isAuthenticated, userInfo?.user_info?.username, loadCinema]);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([sync(), loadCinema()]);
+  }, [sync, loadCinema]);
+
   return (
     <DataContext.Provider
       value={{
@@ -232,11 +281,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         liveStreams,
         vodCategories,
         vodStreams,
+        cinemaMovies,
+        cinemaAvailable,
+        cinemaError,
         seriesCategories,
         seriesList,
         recentMovies,
         recentSeries,
-        refresh: sync,
+        refresh: refreshAll,
         streamRatings,
       }}
     >

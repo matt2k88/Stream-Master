@@ -442,7 +442,7 @@ function LegacyPlayerScreen() {
   const {
     streamUrl, title, type, thumbnail, streamId,
     seriesId: seriesIdParam, seriesName: seriesNameParam,
-    resumeTime, seasonNum, episodeNum,
+    resumeTime, seasonNum, episodeNum, cinemaRelease,
   } = route.params;
   const isLive = type === "live";
   const { activeProfile } = useProfile();
@@ -950,7 +950,7 @@ function LegacyPlayerScreen() {
             streamId: streamId,
             name: title,
             thumbnailUrl: thumbnail,
-            streamUrl: streamUrl,
+            streamUrl: cinemaRelease ? undefined : streamUrl,
             seriesId: seriesIdParam,
             seasonNum,
             episodeNum,
@@ -1087,7 +1087,7 @@ function LegacyPlayerScreen() {
       lastSavedRef.current = Date.now();
       saveRecentlyWatched({
         profileId: activeProfile.id, contentType, streamId, name: title,
-        thumbnailUrl: thumbnail, streamUrl,
+        thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
         currentTime: cur, duration: dur, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: audioTrackId, textTrack: textTrackId,
@@ -1123,7 +1123,7 @@ function LegacyPlayerScreen() {
       completionPostedRef.current = true;
       saveRecentlyWatched({
         profileId: activeProfile.id, contentType, streamId, name: title,
-        thumbnailUrl: thumbnail, streamUrl,
+        thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
         currentTime, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: audioTrackId, textTrack: textTrackId,
@@ -1139,7 +1139,7 @@ function LegacyPlayerScreen() {
       lastSavedRef.current = now;
       saveRecentlyWatched({
         profileId: activeProfile.id, contentType, streamId, name: title,
-        thumbnailUrl: thumbnail, streamUrl,
+        thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
         currentTime, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: audioTrackId, textTrack: textTrackId,

@@ -20,6 +20,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, VodInfo } from "@/lib/xtream-api";
+import { cinemaHistoryId } from "@/lib/cinema";
 import { useFavourites } from "@/contexts/FavouritesContext";
 import { useWatchlist } from "@/contexts/WatchlistContext";
 import { useWatchHistory, getWatchState } from "@/contexts/WatchHistoryContext";
@@ -180,11 +181,12 @@ export default function MovieInfoScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<MovieInfoRouteProp>();
-  const { streamId, name, streamIcon, containerExtension, categoryId } = route.params;
+  const { streamId, name, streamIcon, containerExtension, categoryId, cinemaId } = route.params;
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
-  const { vodStreams } = useData();
+  const { vodStreams, cinemaMovies, cinemaAvailable } = useData();
+  const cinemaMovie = cinemaId && cinemaAvailable ? cinemaMovies.find((v) => v.cinemaId === cinemaId) : undefined;
   const cachedVod = useMemo(
     () => vodStreams.find((v) => v.stream_id === streamId),
     [vodStreams, streamId]
@@ -194,7 +196,7 @@ export default function MovieInfoScreen() {
   const { isInWatchlist, toggleByStream: toggleWatchlistByStream } = useWatchlist();
   const { getByStreamId, refetch: refetchHistory } = useWatchHistory();
   const isFav = isFavourite(streamId, "movies");
-  const watch = getByStreamId(streamId);
+  const watch = getByStreamId(cinemaId ? cinemaHistoryId(cinemaId) : streamId);
   const ws = getWatchState(watch);
   const resumeSecs = watch && !watch.is_completed ? (watch.current_time ?? 0) : 0;
 
@@ -210,6 +212,11 @@ export default function MovieInfoScreen() {
   const [vodError, setVodError] = useState<string>("");
 
   useEffect(() => {
+    if (cinemaId) {
+      setLoadingVod(false);
+      setVodInfo(null);
+      return;
+    }
     let cancelled = false;
     setLoadingVod(true);
     setVodError("");
@@ -229,7 +236,7 @@ export default function MovieInfoScreen() {
     return () => {
       cancelled = true;
     };
-  }, [streamId]);
+  }, [streamId, cinemaId]);
 
   // ── TMDB enrichment ──────────────────────────────────────────────────────
   const tmdbId = vodInfo?.info?.tmdb_id ? String(vodInfo.info.tmdb_id) : null;
@@ -250,7 +257,7 @@ export default function MovieInfoScreen() {
   // Age cert from the pre-loaded stream ratings map (no per-title fetch needed)
   const { streamRatings } = useData();
   const ageRating = streamRatings.get(streamId);
-  const title = (tmdb as any)?.title ?? xt.name ?? name;
+  const title = cinemaMovie?.name ?? (tmdb as any)?.title ?? xt.name ?? name;
   const tagline = (tmdb as any)?.tagline as string | undefined;
   const overview =
     (tmdb?.overview && tmdb.overview.length > 20 ? tmdb.overview : null) ??
@@ -280,6 +287,7 @@ export default function MovieInfoScreen() {
   const country = xt.country || (tmdb?.production_countries?.map((c) => c.name).join(", ")) || null;
 
   const posterUrl =
+    cinemaMovie?.stream_icon ||
     xt.cover_big ||
     xt.movie_image ||
     streamIcon ||
@@ -328,6 +336,19 @@ export default function MovieInfoScreen() {
   };
 
   const handlePlay = (fromStart: boolean) => {
+    if (cinemaId) {
+      if (!cinemaMovie) return;
+      navigation.navigate("Player", {
+        streamUrl: cinemaMovie.videoUrl,
+        title: cinemaMovie.name,
+        type: "vod",
+        thumbnail: cinemaMovie.stream_icon ?? undefined,
+        streamId: cinemaHistoryId(cinemaId),
+        resumeTime: fromStart ? 0 : resumeSecs,
+        cinemaRelease: true,
+      });
+      return;
+    }
     const ext = containerExtension ?? cachedVod?.container_extension ?? vodInfo?.movie_data?.container_extension ?? "mp4";
     const url = xtreamApi.getVodStreamUrl(streamId, ext);
     navigation.navigate("Player", {
@@ -344,7 +365,7 @@ export default function MovieInfoScreen() {
   const padT = Math.max(insets.top + Spacing.xs, Spacing.md);
   const padB = Math.max(insets.bottom + Spacing.lg, Spacing.xl);
 
-  const initialLoading = loadingVod && !vodInfo;
+  const initialLoading = !cinemaId && loadingVod && !vodInfo;
 
   // ── Render ───────────────────────────────────────────────────────────────
   const Header = (
@@ -376,6 +397,16 @@ export default function MovieInfoScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.dark.accent} />
           <ThemedText style={styles.loadingText}>Loading movie info...</ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+  if (cinemaId && !cinemaMovie) {
+    return (
+      <ThemedView style={styles.container}>
+        {Header}
+        <View style={styles.centered}>
+          <ThemedText style={styles.loadingText}>Cinema Releases is unavailable for this account.</ThemedText>
         </View>
       </ThemedView>
     );

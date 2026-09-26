@@ -98,7 +98,7 @@ export default function VlcPlayerScreen() {
   const {
     streamUrl, title, type, thumbnail, streamId,
     seriesId: seriesIdParam, seriesName: seriesNameParam,
-    resumeTime, seasonNum, episodeNum,
+    resumeTime, seasonNum, episodeNum, cinemaRelease,
   } = route.params;
 
   const { activeProfile } = useProfile();
@@ -521,7 +521,7 @@ export default function VlcPlayerScreen() {
         streamId,
         name: title,
         thumbnailUrl: thumbnail,
-        streamUrl,
+        streamUrl: cinemaRelease ? undefined : streamUrl,
         seriesId: seriesIdParam,
         seasonNum,
         episodeNum,
@@ -612,7 +612,7 @@ export default function VlcPlayerScreen() {
     lastSavedRef.current = Date.now();
     saveRecentlyWatched({
       profileId: activeProfile.id, contentType, streamId, name: title,
-      thumbnailUrl: thumbnail, streamUrl,
+      thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
       currentTime: cur, duration: dur, isCompleted: false,
       seriesId: seriesIdParam, seasonNum, episodeNum,
       audioTrack: activeAudio, textTrack: activeText,
@@ -703,7 +703,7 @@ export default function VlcPlayerScreen() {
       completionPostedRef.current = true;
       saveRecentlyWatched({
         profileId: activeProfile.id, contentType, streamId, name: title,
-        thumbnailUrl: thumbnail, streamUrl,
+        thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
         currentTime: settled, duration, isCompleted: true,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: activeAudio, textTrack: activeText,
@@ -719,7 +719,7 @@ export default function VlcPlayerScreen() {
       lastSavedRef.current = now;
       saveRecentlyWatched({
         profileId: activeProfile.id, contentType, streamId, name: title,
-        thumbnailUrl: thumbnail, streamUrl,
+        thumbnailUrl: thumbnail, streamUrl: cinemaRelease ? undefined : streamUrl,
         currentTime: settled, duration, isCompleted: false,
         seriesId: seriesIdParam, seasonNum, episodeNum,
         audioTrack: activeAudio, textTrack: activeText,

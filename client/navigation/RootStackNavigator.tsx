@@ -62,8 +62,9 @@ export type RootStackParamList = {
     streamIcon?: string;
     containerExtension?: string;
     categoryId?: string;
+    cinemaId?: string;
   };
-  Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number; forceEngine?: "expo" | "vlc" };
+  Player: { streamUrl: string; title: string; type: "live" | "vod" | "series"; thumbnail?: string; streamId?: string; seriesId?: string; seriesName?: string; resumeTime?: number; seasonNum?: number; episodeNum?: number; forceEngine?: "expo" | "vlc"; cinemaRelease?: boolean };
   LivePreview: { streamId: number; name: string; streamUrl: string; thumbnail?: string; streamIcon?: string; categoryId?: string; initialFullscreen?: boolean };
   AccountInfo: undefined;
   OrganiseTypePicker: undefined;

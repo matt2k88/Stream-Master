@@ -40,6 +40,7 @@ import GuestPrompt from "@/components/GuestPrompt";
 import { normaliseSearch } from "@/lib/search";
 import { computeSuggestions } from "@/lib/suggestions";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
+import { CINEMA_CATEGORY_ID, cinemaHistoryId } from "@/lib/cinema";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ContentListRouteProp = RouteProp<RootStackParamList, "ContentList">;
@@ -971,7 +972,7 @@ export default function ContentListScreen() {
   // Requests / Multi Screen / Manage) into circular icon-only buttons so
   // the header doesn't blow out horizontally.
   const isLandscapeHeader = width > height;
-  const { liveStreams, vodStreams, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh, streamRatings } = useData();
+  const { liveStreams, vodStreams, cinemaMovies, cinemaAvailable, seriesList, liveCategories, vodCategories, seriesCategories, recentMovies, recentSeries, isSyncing, refresh, streamRatings } = useData();
   const { activeProfile } = useProfile();
   const handleRefresh = useCallback(() => {
     if (isSyncing) return;
@@ -1125,7 +1126,7 @@ export default function ContentListScreen() {
     if (redirectedFromHiddenRef.current) return;
     if (filteredCategories.length === 0) return; // wait until prefs/data load
     const pinnedIds = new Set([
-      "favourites", "recently", "suggested", "recent", "watchlist",
+      "favourites", "recently", "suggested", "recent", "watchlist", CINEMA_CATEGORY_ID,
     ]);
     if (pinnedIds.has(selectedCategoryId)) return;
     // User-pinned groups use a "group:<id>" id — never redirect off them.
@@ -1159,6 +1160,9 @@ export default function ContentListScreen() {
       pinned.push({ category_id: "suggested", category_name: "Suggested for You" });
       pinned.push({ category_id: "recent", category_name: "Recently Added" });
     }
+    if (type === "movies" && cinemaAvailable) {
+      pinned.push({ category_id: CINEMA_CATEGORY_ID, category_name: "Cinema Releases" });
+    }
     const userPinned: SidebarCat[] = pinnedGroups.map((g) => {
       const def = getGroupIconDef(g.icon_key);
       return {
@@ -1170,17 +1174,17 @@ export default function ContentListScreen() {
       };
     });
     return [...pinned, ...userPinned, ...filteredCategories];
-  }, [type, filteredCategories, pinnedGroups]);
+  }, [type, filteredCategories, pinnedGroups, cinemaAvailable]);
 
   // All streams for this section type (used for section-wide search)
   const allSectionStreams: ContentItem[] = useMemo(() => {
     switch (type) {
       case "live": return liveStreams;
-      case "movies": return vodStreams;
+      case "movies": return [...vodStreams, ...cinemaMovies];
       case "series": return seriesList;
       default: return [];
     }
-  }, [type, liveStreams, vodStreams, seriesList]);
+  }, [type, liveStreams, vodStreams, cinemaMovies, seriesList]);
 
   // Pre-build a category_id → items[] index once per stream list change.
   // Category switches become an O(1) Map lookup instead of an O(n) filter.
@@ -1274,7 +1278,7 @@ export default function ContentListScreen() {
       // Build lookup indices once.
       const idIdx = new Map<string, ContentItem>();
       const nameIdx = new Map<string, ContentItem>();
-      const source: ContentItem[] = type === "series" ? seriesList : vodStreams;
+      const source: ContentItem[] = type === "series" ? seriesList : allSectionStreams;
       for (const it of source) {
         const idKey = type === "series"
           ? String((it as Series).series_id)
@@ -1301,7 +1305,7 @@ export default function ContentListScreen() {
       );
       switch (type) {
         case "live": return liveStreams.filter((s) => favIds.has(s.stream_id));
-        case "movies": return vodStreams.filter((s) => favIds.has(s.stream_id));
+        case "movies": return allSectionStreams.filter((s) => favIds.has((s as VodStream).stream_id));
         case "series": return seriesList.filter((s) => favIds.has(s.series_id));
         default: return [];
       }
@@ -1330,6 +1334,7 @@ export default function ContentListScreen() {
       const seen = new Set<string>();
       const idx = new Map<string, VodStream>();
       for (const v of vodStreams) idx.set(String(v.stream_id), v);
+      for (const v of cinemaMovies) idx.set(cinemaHistoryId(v.cinemaId), v);
       for (const e of watchEntries) {
         if (e.content_type !== "movie" || !e.stream_id) continue;
         if (!inProgress(e)) continue;
@@ -1358,7 +1363,7 @@ export default function ContentListScreen() {
       return out;
     }
     return [];
-  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, isWatchlistView, type, liveStreams, vodStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries, watchlistItems]);
+  }, [isSpecialView, isFavouritesView, isRecentlyView, isRecentlyAddedView, isSuggestedView, isWatchlistView, type, liveStreams, vodStreams, cinemaMovies, allSectionStreams, seriesList, recentMovies, recentSeries, vodCategories, seriesCategories, getFavouritesByType, watchEntries, watchlistItems]);
 
   const categoryContent: ContentItem[] = isSpecialView ? specialContent : normalContent;
 
@@ -1487,6 +1492,7 @@ export default function ContentListScreen() {
         streamIcon: s.stream_icon ?? undefined,
         containerExtension: s.container_extension,
         categoryId: s.category_id,
+        cinemaId: "cinemaId" in s ? String(s.cinemaId) : undefined,
       });
     } else {
       const s = item as Series;
@@ -1560,7 +1566,7 @@ export default function ContentListScreen() {
         const entry =
           type === "series"
             ? getBySeriesId((item as Series).series_id)
-            : getByStreamId(streamId);
+            : getByStreamId("cinemaId" in item ? cinemaHistoryId(String(item.cinemaId)) : streamId);
         if (entry) removeWatchEntry(entry.id);
         return;
       }
@@ -1734,7 +1740,7 @@ export default function ContentListScreen() {
         type === "series"
           ? getBySeriesId((item as Series).series_id)
           : type !== "live"
-            ? getByStreamId(sid)
+            ? getByStreamId("cinemaId" in item ? cinemaHistoryId(String(item.cinemaId)) : sid)
             : undefined;
       // Series-wide aggregate uses the current Series.last_modified to
       // detect "new episodes since I last watched" (snapshot stored on

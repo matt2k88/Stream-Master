@@ -79,7 +79,9 @@ function setupRequestLogging(app: express.Application) {
       const duration = Date.now() - start;
 
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      // Cinema catalogue responses include private MP4 URLs. Never put them
+      // (or even their titles) in workflow/deployment logs.
+      if (capturedJsonResponse && path !== "/api/cinema-releases") {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
