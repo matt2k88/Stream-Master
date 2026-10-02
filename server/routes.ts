@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import * as https from "node:https";
-import { supabase, lifetimeDb } from "./supabase";
+import { supabase } from "./supabase";
+import { getLifetimeContext, registerLifetimeAuth, type LifetimeContext } from "./lifetime-auth";
 import { registerCinemaRoutes } from "./cinema";
 import { CURATED_LEAGUE_IDS, fetchFixtureDetail, fetchTeamUpcomingFixtures, refreshUpcomingFixtures, searchTeams } from "./football";
 import {
@@ -806,6 +807,7 @@ function ultraMusicProxy(req: import("express").Request, res: import("express").
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  registerLifetimeAuth(app);
   registerCinemaRoutes(app);
 
   // ── Ultra Music subdomain proxy ───────────────────────────────────────────
@@ -1725,8 +1727,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Lifetime access check ─────────────────────────────────────────────────
   // Checks the separate lifetime_users DB — returns { isLifetime: bool }
   app.get("/api/lifetime-check", async (req, res) => {
-    const { username } = req.query;
-    if (!username) return res.status(400).json({ error: "username required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     try {
       const { data, error } = await lifetimeDb
         .from("lifetime_users")
@@ -1736,12 +1737,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .maybeSingle();
       if (error) {
         console.error("[lifetime-check] error:", error.message);
-        return res.json({ isLifetime: false });
+        return res.status(503).json({ error: "Lifetime status is temporarily unavailable" });
       }
       res.json({ isLifetime: !!data });
     } catch (e: any) {
       console.error("[lifetime-check] exception:", e?.message);
-      res.json({ isLifetime: false });
+      res.status(503).json({ error: "Lifetime status is temporarily unavailable" });
     }
   });
 
@@ -1749,9 +1750,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Reads/writes the `vpn_subscriptions` table on the lifetime DB.
   // Status: { subscribed: bool, isEnabled: bool, planType?: string, expiryDate?: string }
   app.get("/api/vpn/status", async (req, res) => {
-    const { username } = req.query;
-    if (!username) return res.status(400).json({ error: "username required" });
-    const cacheKey = `vpn:${username}`;
+    const { username, userId, db: lifetimeDb } = getLifetimeContext(res);
+    const cacheKey = `vpn:${userId}:${username}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null) return res.json(cached);
     try {
@@ -1763,7 +1763,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .maybeSingle();
       if (error) {
         console.error("[vpn/status] error:", error.message);
-        return res.json({ subscribed: false, isEnabled: false });
+        return res.status(503).json({ error: "VPN status is temporarily unavailable" });
       }
       const payload = !data
         ? { subscribed: false, isEnabled: false }
@@ -1777,14 +1777,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(payload);
     } catch (e: any) {
       console.error("[vpn/status] exception:", e?.message);
-      res.json({ subscribed: false, isEnabled: false });
+      res.status(503).json({ error: "VPN status is temporarily unavailable" });
     }
   });
 
   app.post("/api/vpn/toggle", async (req, res) => {
-    const { username, isEnabled } = req.body ?? {};
-    if (!username || typeof isEnabled !== "boolean") {
-      return res.status(400).json({ error: "username and isEnabled required" });
+    const { username, userId, db: lifetimeDb } = getLifetimeContext(res);
+    const { isEnabled } = req.body ?? {};
+    if (typeof isEnabled !== "boolean") {
+      return res.status(400).json({ error: "isEnabled required" });
     }
     try {
       const { data, error } = await lifetimeDb
@@ -1798,7 +1799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: error.message });
       }
       if (!data) return res.status(404).json({ error: "No VPN subscription for that username" });
-      cacheDel(`vpn:${username}`);
+      cacheDel(`vpn:${userId}:${username}`);
       res.json({ success: true, isEnabled: !!data.is_enabled });
     } catch (e: any) {
       console.error("[vpn/toggle] exception:", e?.message);
@@ -1812,8 +1813,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // submission time, so it usually already contains poster_path, title/name,
   // overview, release_date/first_air_date, etc.
   app.get("/api/content-requests", async (req, res) => {
-    const { username } = req.query;
-    if (!username) return res.status(400).json({ error: "username required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     try {
       const { data, error } = await lifetimeDb
         .from("content_requests")
@@ -1840,8 +1840,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // migrations/009_watchlist.sql for the table contract.
 
   app.get("/api/watchlist", async (req, res) => {
-    const { username, content_type } = req.query;
-    if (!username) return res.status(400).json({ error: "username required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
+    const { content_type } = req.query;
     try {
       let q = lifetimeDb
         .from("watchlist")
@@ -1865,16 +1865,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/watchlist", async (req, res) => {
-    const { user_username, content_id, content_type, content_data, status } = req.body;
-    if (!user_username || !content_id || !content_type) {
-      return res.status(400).json({ error: "user_username, content_id, content_type required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
+    const { content_id, content_type, content_data, status } = req.body;
+    if (!content_id || !content_type) {
+      return res.status(400).json({ error: "content_id and content_type required" });
     }
     if (content_type !== "movie" && content_type !== "series") {
       return res.status(400).json({ error: "content_type must be 'movie' or 'series'" });
     }
     try {
       const row = {
-        user_username: String(user_username),
+        user_username: username,
         content_id: String(content_id),
         content_type,
         content_data: content_data ?? null,
@@ -1900,6 +1901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .from("watchlist")
           .update({ content_data: row.content_data, status: row.status })
           .eq("id", existing.id)
+          .eq("user_username", username)
           .select()
           .single();
         if (updErr) {
@@ -1925,6 +1927,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/watchlist/:id", async (req, res) => {
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     const { id } = req.params;
     const { status } = req.body;
     if (status !== "watched" && status !== "unwatched") {
@@ -1935,6 +1938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from("watchlist")
         .update({ status })
         .eq("id", id)
+        .eq("user_username", username)
         .select()
         .single();
       if (error) {
@@ -1949,9 +1953,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete("/api/watchlist/:id", async (req, res) => {
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     const { id } = req.params;
     try {
-      const { error } = await lifetimeDb.from("watchlist").delete().eq("id", id);
+      const { error } = await lifetimeDb.from("watchlist").delete().eq("id", id).eq("user_username", username);
       if (error) {
         console.error("[watchlist] DELETE error:", error.message);
         return res.status(500).json({ error: error.message });
@@ -1965,15 +1970,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Profile reset — clears history, favourites, watchlist, resets settings ─
   app.post("/api/profiles/:id/reset", async (req, res) => {
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     const { id } = req.params;
-    const { username } = req.body as { username?: string };
     if (!id) return res.status(400).json({ error: "id required" });
     try {
-      await Promise.all([
+      const { data: ownedProfile, error: ownershipError } = await supabase
+        .from("profiles").select("id").eq("id", id).eq("account_username", username).maybeSingle();
+      if (ownershipError) return res.status(503).json({ error: "Unable to verify profile ownership" });
+      if (!ownedProfile) return res.status(404).json({ error: "Profile not found" });
+      const cleared = await Promise.all([
         supabase.from("recently_watched").delete().eq("profile_id", id),
         supabase.from("favourites").delete().eq("profile_id", id),
-        username ? lifetimeDb.from("watchlist").delete().eq("user_username", username) : Promise.resolve(),
+        lifetimeDb.from("watchlist").delete().eq("user_username", username),
       ]);
+      if (cleared.some(result => result.error)) {
+        return res.status(503).json({ error: "Profile reset could not clear all data. Please retry." });
+      }
       const { error } = await supabase
         .from("profiles")
         .update({
@@ -2419,15 +2431,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // under that account_username in the MAIN db. Idempotent — profiles that
   // already have a favourite are left untouched, so it is safe to re-run.
   app.post("/api/football/favourite-team/import", async (req, res) => {
-    // Privileged one-off admin op (cross-db bulk write). Require the import
-    // secret unless triggered locally from the server host (dev convenience).
-    const secret = process.env.SESSION_SECRET;
-    const provided = req.get("x-import-secret");
-    const host = req.hostname || "";
-    const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
-    if (!isLocal && (!secret || provided !== secret)) {
-      return res.status(403).json({ error: "forbidden" });
-    }
+    // Lifetime middleware requires a verified admin JWT for this bulk read.
+    const { db: lifetimeDb } = getLifetimeContext(res);
     const PAGE = 1000;
     try {
       // 1. Latest favourite per account from the lifetime db.
@@ -3159,6 +3164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // List competitions by status (active | finished)
   app.get("/api/ultra-four/competitions", async (req, res) => {
+    const { db: lifetimeDb } = getLifetimeContext(res);
     const status = req.query.status === "finished" ? "finished" : "active";
     try {
       const { data, error } = await lifetimeDb
@@ -3175,9 +3181,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Get the requesting user's prediction for one competition
   app.get("/api/ultra-four/predictions", async (req, res) => {
-    const { competition_id, username } = req.query;
-    if (!competition_id || !username) {
-      return res.status(400).json({ error: "competition_id and username required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
+    const { competition_id } = req.query;
+    if (!competition_id) {
+      return res.status(400).json({ error: "competition_id required" });
     }
     try {
       const { data, error } = await lifetimeDb
@@ -3195,9 +3202,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Upsert a prediction — only allowed while competition is still open
   app.post("/api/ultra-four/predictions", async (req, res) => {
-    const { id, competition_id, user_username, predictions } = req.body ?? {};
-    if (!competition_id || !user_username || !Array.isArray(predictions)) {
-      return res.status(400).json({ error: "competition_id, user_username and predictions required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
+    const { id, competition_id, predictions } = req.body ?? {};
+    if (!competition_id || !Array.isArray(predictions)) {
+      return res.status(400).json({ error: "competition_id and predictions required" });
     }
     try {
       // Guard: reject if competition is already closed
@@ -3214,9 +3222,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Competition is closed" });
       }
 
+      if (id) {
+        const { data: ownPrediction, error: ownError } = await lifetimeDb
+          .from("ultra_four_predictions").select("id")
+          .eq("id", id).eq("user_username", username).eq("competition_id", competition_id).maybeSingle();
+        if (ownError) return res.status(503).json({ error: "Unable to verify prediction ownership" });
+        if (!ownPrediction) return res.status(404).json({ error: "Prediction not found" });
+      }
       const { data, error } = await lifetimeDb
         .from("ultra_four_predictions")
-        .upsert({ id, competition_id, user_username, predictions })
+        .upsert({ ...(id ? { id } : {}), competition_id, user_username: username, predictions })
         .select()
         .single();
       if (error) return res.status(500).json({ error: error.message });
@@ -3280,14 +3295,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Returns a 5-digit iptv_user_id string (10000–99999) not already present
   // in the lifetime DB profiles table (max 10 attempts before throwing).
-  async function makeUniqueIptvUserId(): Promise<string> {
+  async function makeUniqueIptvUserId(lifetimeDb: LifetimeContext["db"]): Promise<string> {
     for (let attempt = 0; attempt < 10; attempt++) {
       const id = String(Math.floor(10000 + Math.random() * 90000));
-      const { data } = await lifetimeDb
+      const { data, error } = await lifetimeDb
         .from("profiles")
         .select("iptv_user_id")
         .eq("iptv_user_id", id)
         .maybeSingle();
+      if (error) throw error;
       if (!data) return id;
     }
     throw new Error("Could not generate a unique iptv_user_id after 10 attempts");
@@ -3298,10 +3314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Returns referral_code (null if not yet generated), referral_count,
   // referral_tokens. Gracefully returns nulls when the row isn't found.
   app.get("/api/referrals", async (req, res) => {
-    const { username } = req.query;
-    if (!username || typeof username !== "string") {
-      return res.status(400).json({ error: "username required" });
-    }
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     try {
       const { data, error } = await lifetimeDb
         .from("profiles")
@@ -3326,8 +3339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // row in exactly the format the companion app would, then save the code there.
   // This prevents codes from being generated but lost due to a missing DB row.
   app.post("/api/referrals/generate", async (req, res) => {
-    const { username } = req.body;
-    if (!username) return res.status(400).json({ error: "username required" });
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     try {
       // Check whether a profile row exists in the lifetime DB
       const { data: existing, error: checkErr } = await lifetimeDb
@@ -3355,7 +3367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // No profile row yet — create one matching the companion app's format exactly
       const referralCode = makeReferralCode();
-      const iptvUserId = await makeUniqueIptvUserId();
+      const iptvUserId = await makeUniqueIptvUserId(lifetimeDb);
 
       const { error: insertError } = await lifetimeDb
         .from("profiles")
@@ -3388,10 +3400,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // `referrer_username` matches the logged-in user. Each row = one referral
   // received. Returns newest first. Gracefully returns [] when none/not found.
   app.get("/api/referrals/history", async (req, res) => {
-    const { username } = req.query;
-    if (!username || typeof username !== "string") {
-      return res.status(400).json({ error: "username required" });
-    }
+    const { username, db: lifetimeDb } = getLifetimeContext(res);
     try {
       const { data, error } = await lifetimeDb
         .from("referral_logs")
@@ -3415,7 +3424,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // popularity descending. Poster path is stored as the TMDB relative path;
   // the client builds the full URL.
   app.get("/api/top-picks", async (req, res) => {
-    const cacheKey = "top_picks";
+    const { userId, db: lifetimeDb } = getLifetimeContext(res);
+    const cacheKey = `top_picks:${userId}`;
     const cached = cacheGet(cacheKey);
     if (cached !== null) return res.json(cached);
     try {

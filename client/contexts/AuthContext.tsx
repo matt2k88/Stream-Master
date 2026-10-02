@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { xtreamApi, XtreamCredentials, AuthResponse } from "@/lib/xtream-api";
+import { loginLifetime, logoutLifetime, onLifetimeSessionInvalidated, restoreLifetime } from "@/lib/lifetime-session";
+import { queryClient } from "@/lib/query-client";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -23,6 +25,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     checkAuth();
+    return onLifetimeSessionInvalidated(() => {
+      setUserInfo(null);
+      setIsAuthenticated(false);
+      queryClient.clear();
+      void xtreamApi.clearCredentials();
+    });
   }, []);
 
   const checkAuth = async () => {
@@ -30,11 +38,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const credentials = await xtreamApi.loadCredentials();
       if (credentials) {
         const info = await xtreamApi.getAccountInfo();
+        await restoreLifetime(credentials.username, credentials.password);
         setUserInfo(info);
         setIsAuthenticated(true);
       }
     } catch (error) {
-      console.error("Auth check failed:", error);
+      console.error("Saved account sign-in failed");
+      await logoutLifetime().catch(() => {});
       await xtreamApi.clearCredentials();
     } finally {
       setIsLoading(false);
@@ -42,15 +52,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const login = async (credentials: XtreamCredentials) => {
-    const info = await xtreamApi.authenticate(credentials);
-    setUserInfo(info);
-    setIsAuthenticated(true);
+    try {
+      const info = await xtreamApi.authenticate(credentials);
+      await loginLifetime(credentials.username, credentials.password);
+      queryClient.clear();
+      setUserInfo(info);
+      setIsAuthenticated(true);
+    } catch (error) {
+      await logoutLifetime().catch(() => {});
+      await xtreamApi.clearCredentials();
+      throw error;
+    }
   };
 
   const logout = async () => {
-    await xtreamApi.clearCredentials();
     setUserInfo(null);
     setIsAuthenticated(false);
+    queryClient.clear();
+    await xtreamApi.clearCredentials();
+    await logoutLifetime().catch(() => { console.warn("Server session revocation was unavailable; local session removed"); });
   };
 
   const refreshUserInfo = async () => {

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWatchHistory } from "@/contexts/WatchHistoryContext";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
+import { getLifetimeSessionGeneration } from "@/lib/lifetime-session";
 
 export type WatchlistType = "movie" | "series";
 export type WatchlistStatus = "watched" | "unwatched";
@@ -85,8 +86,7 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const url = new URL("/api/watchlist", getApiUrl());
-      url.searchParams.set("username", user);
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (res.ok) {
         const data = await res.json();
         setItems(Array.isArray(data?.items) ? data.items : []);
@@ -136,11 +136,10 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
       if (!username) return;
       try {
         const url = new URL("/api/watchlist", getApiUrl());
-        const res = await fetch(url.toString(), {
+        const res = await apiFetch(url.toString(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user_username: username,
             content_id: String(contentId),
             content_type: contentType,
             content_data: contentData,
@@ -162,28 +161,38 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
   );
 
   const remove = useCallback(async (id: string) => {
+    const previous = items.find(item => item.id === id);
+    const generation = getLifetimeSessionGeneration();
     setItems((prev) => prev.filter((i) => i.id !== id));
     try {
       const url = new URL(`/api/watchlist/${id}`, getApiUrl());
-      await fetch(url.toString(), { method: "DELETE" });
+      const res = await apiFetch(url.toString(), { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to remove watchlist item");
     } catch {
-      // best-effort — re-load on next mount if it failed
+      if (previous && generation === getLifetimeSessionGeneration()) {
+        setItems(prev => prev.some(item => item.id === id) ? prev : [previous, ...prev]);
+      }
     }
-  }, []);
+  }, [items]);
 
   const setStatus = useCallback(async (id: string, status: WatchlistStatus) => {
+    const previous = items.find(item => item.id === id)?.status;
+    const generation = getLifetimeSessionGeneration();
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)));
     try {
       const url = new URL(`/api/watchlist/${id}`, getApiUrl());
-      await fetch(url.toString(), {
+      const res = await apiFetch(url.toString(), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });
+      if (!res.ok) throw new Error("Failed to update watchlist item");
     } catch {
-      // silent
+      if (previous && generation === getLifetimeSessionGeneration()) {
+        setItems(prev => prev.map(item => item.id === id ? { ...item, status: previous } : item));
+      }
     }
-  }, []);
+  }, [items]);
 
   const toggleByStream = useCallback(
     async (params: AddParams) => {

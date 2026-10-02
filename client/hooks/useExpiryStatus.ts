@@ -1,38 +1,39 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 import { computeExpiryStatus, ExpiryStatus } from "@/lib/expiry";
+import { getLifetimeSessionGeneration } from "@/lib/lifetime-session";
 
 const lifetimeCache = new Map<string, boolean>();
-const inFlight = new Map<string, Promise<boolean>>();
+const inFlight = new Map<string, Promise<boolean | null>>();
 
 // Returns null if the lifetime check failed/was unreachable. Callers must
 // treat null as "unknown" — never show expiry warnings while we can't
 // definitively confirm a user is NOT on lifetime, otherwise true-lifetime
 // users would briefly see warnings whenever the lookup endpoint is flaky.
 async function checkLifetime(username: string): Promise<boolean | null> {
-  if (lifetimeCache.has(username)) return lifetimeCache.get(username)!;
-  const existing = inFlight.get(username);
+  const key = `${getLifetimeSessionGeneration()}:${username}`;
+  if (lifetimeCache.has(key)) return lifetimeCache.get(key)!;
+  const existing = inFlight.get(key);
   if (existing) return existing;
 
   const promise = (async (): Promise<boolean | null> => {
     try {
       const url = new URL("/api/lifetime-check", getApiUrl());
-      url.searchParams.set("username", username);
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (!res.ok) return null;
       const data = await res.json();
       const isLifetime = !!data?.isLifetime;
-      lifetimeCache.set(username, isLifetime);
+      lifetimeCache.set(key, isLifetime);
       return isLifetime;
     } catch {
       return null;
     } finally {
-      inFlight.delete(username);
+      inFlight.delete(key);
     }
   })();
 
-  inFlight.set(username, promise);
+  inFlight.set(key, promise);
   return promise;
 }
 
@@ -48,13 +49,14 @@ export interface UseExpiryStatusResult extends ExpiryStatus {
 export function useExpiryStatus(): UseExpiryStatusResult {
   const { userInfo } = useAuth();
   const username = userInfo?.user_info?.username ?? "";
+  const cacheKey = `${getLifetimeSessionGeneration()}:${username}`;
   const expDate = userInfo?.user_info?.exp_date ?? null;
 
   const [isLifetime, setIsLifetime] = useState<boolean>(
-    () => (username ? lifetimeCache.get(username) ?? false : false),
+    () => (username ? lifetimeCache.get(cacheKey) ?? false : false),
   );
   const [loading, setLoading] = useState<boolean>(
-    () => !!username && !lifetimeCache.has(username),
+    () => !!username && !lifetimeCache.has(cacheKey),
   );
 
   useEffect(() => {
@@ -64,8 +66,8 @@ export function useExpiryStatus(): UseExpiryStatusResult {
       setLoading(false);
       return;
     }
-    if (lifetimeCache.has(username)) {
-      setIsLifetime(lifetimeCache.get(username)!);
+    if (lifetimeCache.has(cacheKey)) {
+      setIsLifetime(lifetimeCache.get(cacheKey)!);
       setLoading(false);
       return;
     }
@@ -85,7 +87,7 @@ export function useExpiryStatus(): UseExpiryStatusResult {
     return () => {
       cancelled = true;
     };
-  }, [username]);
+  }, [username, cacheKey]);
 
   const status = computeExpiryStatus(expDate, isLifetime);
   return { ...status, loading };

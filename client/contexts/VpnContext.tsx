@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { AppState } from "react-native";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 
 export type VpnStatus = "loading" | "none" | "enabled" | "disabled";
 
@@ -32,8 +32,8 @@ export function VpnProvider({ children }: { children: ReactNode }) {
     if (Date.now() < optimisticUntilRef.current) return;
     isFetchingRef.current = true;
     try {
-      const url = new URL(`/api/vpn/status?username=${encodeURIComponent(uname)}`, getApiUrl()).toString();
-      const res = await fetch(url);
+      const url = new URL("/api/vpn/status", getApiUrl()).toString();
+      const res = await apiFetch(url);
       if (!res.ok) return;
       const data = await res.json();
       if (!data?.subscribed) {
@@ -91,10 +91,10 @@ export function VpnProvider({ children }: { children: ReactNode }) {
     setStatus(next ? "enabled" : "disabled"); // optimistic
     optimisticUntilRef.current = Date.now() + 2000;
     try {
-      const res = await fetch(new URL("/api/vpn/toggle", getApiUrl()).toString(), {
+      const res = await apiFetch(new URL("/api/vpn/toggle", getApiUrl()).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, isEnabled: next }),
+        body: JSON.stringify({ isEnabled: next }),
       });
       if (!res.ok) {
         // Revert on failure

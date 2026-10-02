@@ -17,7 +17,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 
 // ─── Hover-aware Pressable ────────────────────────────────────────────────────
 function HoverBtn({
@@ -207,16 +207,14 @@ interface ReferralLog {
 
 async function fetchReferrals(username: string): Promise<ReferralData> {
   const url = new URL("/api/referrals", getApiUrl());
-  url.searchParams.set("username", username);
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error("Failed to load referral data");
   return res.json();
 }
 
 async function fetchHistory(username: string): Promise<ReferralLog[]> {
   const url = new URL("/api/referrals/history", getApiUrl());
-  url.searchParams.set("username", username);
-  const res = await fetch(url.toString());
+  const res = await apiFetch(url.toString());
   if (!res.ok) throw new Error("Failed to load referral history");
   const json = await res.json();
   return Array.isArray(json.history) ? json.history : [];
@@ -234,10 +232,10 @@ function formatLogDate(iso: string): string {
 }
 
 async function generateCode(username: string): Promise<string> {
-  const res = await fetch(new URL("/api/referrals/generate", getApiUrl()).toString(), {
+  const res = await apiFetch(new URL("/api/referrals/generate", getApiUrl()).toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username }),
+    body: JSON.stringify({}),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

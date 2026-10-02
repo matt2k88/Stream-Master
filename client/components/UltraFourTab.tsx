@@ -20,7 +20,7 @@ import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 
 // ─── Touchable — fire-TV / D-pad aware pressable ──────────────────────────────
 function Touchable({
@@ -243,7 +243,7 @@ function CompetitionCard({
     try {
       const url = new URL(`/api/ultra-four/fixture-scores`, getApiUrl());
       url.searchParams.set("ids", ids);
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (res.ok) setLiveMap(await res.json());
     } catch { /* silent */ } finally {
       setLoadingLive(false);
@@ -257,8 +257,7 @@ function CompetitionCard({
     try {
       const url = new URL("/api/ultra-four/predictions", getApiUrl());
       url.searchParams.set("competition_id", String(comp.id));
-      url.searchParams.set("username", username);
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (res.ok) {
         const data: UF_Prediction | null = await res.json();
         if (data) {
@@ -307,13 +306,12 @@ function CompetitionCard({
         home_score: scores[f.id]?.home ?? 0,
         away_score: scores[f.id]?.away ?? 0,
       }));
-      const res = await fetch(new URL("/api/ultra-four/predictions", getApiUrl()).toString(), {
+      const res = await apiFetch(new URL("/api/ultra-four/predictions", getApiUrl()).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: savedPred?.id,
           competition_id: comp.id,
-          user_username: username,
           predictions: payload,
         }),
       });
@@ -580,7 +578,7 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
     try {
       const url = new URL("/api/ultra-four/competitions", getApiUrl());
       url.searchParams.set("status", "finished");
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (!res.ok) throw new Error("Failed to load history");
       const comps: UF_Competition[] = await res.json();
       setCompetitions(comps);
@@ -591,8 +589,7 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
           comps.map(async (c) => {
             const u = new URL("/api/ultra-four/predictions", getApiUrl());
             u.searchParams.set("competition_id", String(c.id));
-            u.searchParams.set("username", username);
-            const r = await fetch(u.toString());
+            const r = await apiFetch(u.toString());
             return [c.id, r.ok ? await r.json() : null] as const;
           }),
         );
@@ -606,7 +603,7 @@ function HistoryView({ username, onBack }: { username: string; onBack: () => voi
           if (!ids) return [c.id, {}] as const;
           const u = new URL("/api/ultra-four/fixture-scores", getApiUrl());
           u.searchParams.set("ids", ids);
-          const r = await fetch(u.toString());
+          const r = await apiFetch(u.toString());
           return [c.id, r.ok ? await r.json() : {}] as const;
         }),
       );
@@ -747,7 +744,7 @@ export default function UltraFourTab({ username }: { username?: string }) {
     try {
       const url = new URL("/api/ultra-four/competitions", getApiUrl());
       url.searchParams.set("status", "active");
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (res.ok) setCompetitions(await res.json());
     } catch { /* silent */ } finally {
       setLoading(false);

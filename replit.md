@@ -86,6 +86,7 @@ server/
 - Server table: `server` (id, name, url, created_at)
 - Express route `/api/servers` queries Supabase server-side (secrets never exposed to client)
 - LoginScreen fetches server list via Express proxy
+- Lifetime database connections and shipping requirements: [docs/LIFETIME_SECURITY.md](docs/LIFETIME_SECURITY.md).
 
 ## Running the App
 

@@ -5,11 +5,9 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Second database — lifetime users registry
-const lifetimeUrl = process.env.LIFETIME_SUPABASE_URL!;
-const lifetimeAnonKey = process.env.LIFETIME_SUPABASE_ANON_KEY!;
-
-export const lifetimeDb = createClient(lifetimeUrl, lifetimeAnonKey);
+// Lifetime clients are request-scoped in lifetime-auth.ts. A shared anonymous
+// client cannot access protected tables, and a shared signed-in client would
+// risk mixing customer sessions.
 
 export interface IptvServer {
   id: string;

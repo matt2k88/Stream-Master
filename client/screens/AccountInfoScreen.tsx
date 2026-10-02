@@ -30,7 +30,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { useFootball } from "@/contexts/FootballContext";
 import { LinearGradient } from "expo-linear-gradient";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 import { useExpiryStatus } from "@/hooks/useExpiryStatus";
 import { useApkInstaller, clearDownloadedUpdates } from "@/hooks/useApkInstaller";
 
@@ -571,10 +571,10 @@ export default function AccountInfoScreen() {
     setResetProfileBusy(true);
     try {
       const url = new URL(`/api/profiles/${activeProfile.id}/reset`, getApiUrl());
-      const res = await fetch(url.toString(), {
+      const res = await apiFetch(url.toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: activeProfile.account_username }),
+        body: JSON.stringify({}),
       });
       if (!res.ok) throw new Error("Failed");
       setResetProfileVisible(false);

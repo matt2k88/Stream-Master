@@ -34,9 +34,9 @@ function setupCors(app: express.Application) {
       res.header("Access-Control-Allow-Origin", origin);
       res.header(
         "Access-Control-Allow-Methods",
-        "GET, POST, PUT, DELETE, OPTIONS",
+        "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       );
-      res.header("Access-Control-Allow-Headers", "Content-Type");
+      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
       res.header("Access-Control-Allow-Credentials", "true");
     }
 
@@ -81,7 +81,7 @@ function setupRequestLogging(app: express.Application) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       // Cinema catalogue responses include private MP4 URLs. Never put them
       // (or even their titles) in workflow/deployment logs.
-      if (capturedJsonResponse && path !== "/api/cinema-releases") {
+      if (capturedJsonResponse && path !== "/api/cinema-releases" && !path.startsWith("/api/lifetime-auth")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 

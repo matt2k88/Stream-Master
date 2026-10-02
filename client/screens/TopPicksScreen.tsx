@@ -18,7 +18,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { getApiUrl } from "@/lib/query-client";
+import { apiFetch, getApiUrl } from "@/lib/query-client";
 import { useData } from "@/contexts/DataContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import SideMenuButton from "@/components/SideMenuButton";
@@ -223,7 +223,7 @@ export default function TopPicksScreen() {
       (async () => {
         try {
           const url = new URL("/api/top-picks", getApiUrl());
-          const res = await fetch(url.toString());
+          const res = await apiFetch(url.toString());
           if (res.ok && !cancelled) setPicks(await res.json());
         } catch {}
         finally { if (!cancelled) setLoading(false); }
