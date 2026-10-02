@@ -16,3 +16,4 @@
 - [Cinema account gate](cinema-account-gate.md) — verify IPTV credentials on a configured server; never persist uploaded MP4 links in legacy profile-only watch history.
 - [Lifetime security contract](lifetime-security-contract.md) — use verified companion-auth customer sessions, never service-role bypasses or app-supplied usernames; preserve external RLS guards.
 - [TV intro interaction](tv-intro-performance.md) — covered screens can still receive D-pad focus; catalogue parsing during the intro can stall Skip on Fire TV.
+- [Football credential boundary](football-credential-boundary.md) — database lockdown must preserve existing APKs; confirm the published server before giving the go-ahead.
