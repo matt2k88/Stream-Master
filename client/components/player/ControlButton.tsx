@@ -22,6 +22,9 @@ export type ControlButtonProps = {
   hasTVPreferredFocus?: boolean;
   accessibilityLabel?: string;
   style?: ViewStyle;
+  /** Lets a screen grab this button's node so it can hand focus back to it
+   *  (see requestTvFocus — needed when a panel closes and takes focus with it). */
+  viewRef?: React.Ref<View>;
 };
 
 /**
@@ -45,6 +48,7 @@ export function ControlButton({
   hasTVPreferredFocus,
   accessibilityLabel,
   style,
+  viewRef,
 }: ControlButtonProps) {
   const [focused, setFocused] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -69,6 +73,7 @@ export function ControlButton({
 
   return (
     <Pressable
+      ref={viewRef as never}
       onPress={() => {
         onActivity?.();
         onPress();

@@ -921,6 +921,15 @@ export default function LivePreviewScreen() {
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      // Close an open panel first, the way both VOD players do. Without this,
+      // Back with the Guide open skipped straight past it and dropped out of
+      // fullscreen altogether.
+      if (isFullscreen && showGuide) {
+        setShowGuide(false);
+        panelOpenRef.current = false;
+        resetFsHideTimer();
+        return true;
+      }
       if (isFullscreen && !cameInFullscreenRef.current) {
         setIsFullscreen(false);
         if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
@@ -929,7 +938,7 @@ export default function LivePreviewScreen() {
       return false;
     });
     return () => sub.remove();
-  }, [isFullscreen]);
+  }, [isFullscreen, showGuide, resetFsHideTimer]);
 
   // Reset auto-hide whenever fullscreen turns on / overlay is re-shown
   useEffect(() => {

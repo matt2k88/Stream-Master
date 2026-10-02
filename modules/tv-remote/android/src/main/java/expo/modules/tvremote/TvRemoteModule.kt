@@ -2,6 +2,7 @@ package expo.modules.tvremote
 
 import android.util.Log
 import android.view.KeyEvent
+import android.view.View
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
@@ -64,6 +65,8 @@ object TvRemoteKeyBus {
   }
 }
 
+private const val TAG_MODULE = "TvRemote"
+
 class TvRemoteModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("TvRemote")
@@ -78,6 +81,39 @@ class TvRemoteModule : Module() {
 
     OnDestroy {
       TvRemoteKeyBus.listener = null
+    }
+
+    // Move TV focus to a specific view.
+    //
+    // React Native's own `hasTVPreferredFocus` calls requestFocus() the moment
+    // the prop is set, which is BEFORE the view has been laid out — Android
+    // refuses focus on a view with no position yet, silently. That is fine for
+    // something present when a screen opens, but useless for a control that
+    // appears mid-session (closing a panel, for instance), which is why focus
+    // was simply lost there.
+    //
+    // Posting to the view's own handler runs the request after the next layout
+    // pass, when the view can actually take focus.
+    AsyncFunction("requestFocus") { tag: Int, promise: expo.modules.kotlin.Promise ->
+      // appContext.findView resolves the tag through whichever UIManager owns
+      // it (Fabric or legacy) without this module needing React Native's
+      // UIManager classes on its own compile classpath.
+      val view: View? = try {
+        appContext.findView<View>(tag)
+      } catch (e: Exception) {
+        null
+      }
+      if (view == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      view.post {
+        view.isFocusable = true
+        view.isFocusableInTouchMode = true
+        val ok = view.requestFocus()
+        Log.d(TAG_MODULE, "requestFocus tag=" + tag + " ok=" + ok)
+        promise.resolve(ok)
+      }
     }
   }
 }

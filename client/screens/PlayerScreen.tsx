@@ -1,4 +1,4 @@
-import { TVEventHandler } from "@/lib/tv-event-handler";
+import { TVEventHandler, requestTvFocus } from "@/lib/tv-event-handler";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
@@ -216,6 +216,7 @@ function CtrlBtn({
   active = false,
   primary = false,
   preferFocus = false,
+  btnRef,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label?: string;
@@ -224,6 +225,7 @@ function CtrlBtn({
   active?: boolean;
   primary?: boolean;
   preferFocus?: boolean;
+  btnRef?: React.Ref<View>;
 }) {
   return (
     <ControlButton
@@ -234,6 +236,7 @@ function CtrlBtn({
       tone={primary ? "primary" : "default"}
       active={active}
       hasTVPreferredFocus={preferFocus}
+      viewRef={btnRef}
     />
   );
 }
@@ -432,6 +435,20 @@ function LegacyPlayerScreen() {
 
   const [showControls, setShowControls] = useState(true);
   const [ctrlsKey, setCtrlsKey] = useState(0);
+  // The play button's view, so focus can be handed back to it explicitly when a
+  // panel closes (hasTVPreferredFocus cannot do it — it fires before layout).
+  const playBtnRef = useRef<View>(null);
+
+  // Closing a panel unmounts whatever had focus. Re-mounting the play button
+  // (ctrlsKey) is not enough on its own, because hasTVPreferredFocus requests
+  // focus before the view is laid out and Android quietly refuses. Ask for it
+  // again on the next frame, via the native module.
+  const restoreFocusToControls = useCallback(() => {
+    setCtrlsKey((k) => k + 1);
+    requestAnimationFrame(() => {
+      requestTvFocus(findNodeHandle(playBtnRef.current));
+    });
+  }, []);
   // Target position while a seek run is in progress, and the timer that commits
   // it once the user stops pressing.
   const pendingSeekRef = useRef<number | null>(null);
@@ -1316,7 +1333,7 @@ function LegacyPlayerScreen() {
         // Hand focus back to the play button. Without this the focused view has
         // just been unmounted, so the remote does nothing at all until the
         // controls time out and come back.
-        setCtrlsKey((k) => k + 1);
+        restoreFocusToControls();
         showAndReset();
         return true; // consumed
       }
@@ -1740,7 +1757,7 @@ function LegacyPlayerScreen() {
             <AspectPanel
               mode={aspectMode}
               onSelect={(m) => { setAspectMode(m); showAndReset(); }}
-              onClose={() => { activePanelRef.current = null; setActivePanel(null); setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { activePanelRef.current = null; setActivePanel(null); restoreFocusToControls(); showAndReset(); }}
               onFocus={showAndReset}
             />
           ) : null}
@@ -1752,7 +1769,7 @@ function LegacyPlayerScreen() {
               tracks={subtitleTracks}
               selected={activeSubtitle}
               onSelect={handleSubtitleSelect}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; restoreFocusToControls(); showAndReset(); }}
               showOff
               onFocus={showAndReset}
             />
@@ -1765,7 +1782,7 @@ function LegacyPlayerScreen() {
               tracks={audioTracks}
               selected={activeAudio}
               onSelect={handleAudioSelect}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; restoreFocusToControls(); showAndReset(); }}
               onFocus={showAndReset}
             />
           ) : null}
@@ -1808,6 +1825,7 @@ function LegacyPlayerScreen() {
 
             <CtrlBtn
               key={`play-${ctrlsKey}`}
+              btnRef={playBtnRef}
               icon={isPlaying ? "pause" : "play"}
               onPress={handlePlayPause}
               onFocus={showAndReset}

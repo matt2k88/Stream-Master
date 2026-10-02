@@ -16,7 +16,7 @@
 //       * Override the wrapper's auto-pause-on-stopped so we never get
 //         stuck on a frozen frame.
 
-import { TVEventHandler } from "@/lib/tv-event-handler";
+import { TVEventHandler, requestTvFocus } from "@/lib/tv-event-handler";
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   View,
@@ -190,6 +190,20 @@ export default function VlcPlayerScreen() {
   // transition and use it as a `key` on the centre play button so it
   // remounts and `hasTVPreferredFocus` re-fires, restoring D-pad focus.
   const [ctrlsKey, setCtrlsKey] = useState(0);
+  // The play button's view, so focus can be handed back to it explicitly when a
+  // panel closes (hasTVPreferredFocus cannot do it — it fires before layout).
+  const playBtnRef = useRef<View>(null);
+
+  // Closing a panel unmounts whatever had focus. Re-mounting the play button
+  // (ctrlsKey) is not enough on its own, because hasTVPreferredFocus requests
+  // focus before the view is laid out and Android quietly refuses. Ask for it
+  // again on the next frame, via the native module.
+  const restoreFocusToControls = useCallback(() => {
+    setCtrlsKey((k) => k + 1);
+    requestAnimationFrame(() => {
+      requestTvFocus(findNodeHandle(playBtnRef.current));
+    });
+  }, []);
   const prevShowControlsRef = useRef(true);
   useEffect(() => { activePanelRef.current = activePanel; }, [activePanel]);
   useEffect(() => {
@@ -1071,7 +1085,7 @@ export default function VlcPlayerScreen() {
             <AspectPanel
               mode={aspectMode}
               onSelect={(m) => { setAspectMode(m); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; restoreFocusToControls(); showAndReset(); }}
               onFocus={showAndReset}
             />
           )}
@@ -1082,7 +1096,7 @@ export default function VlcPlayerScreen() {
               selectedId={activeText}
               showOff
               onSelect={(id) => { setActiveText(id); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; restoreFocusToControls(); showAndReset(); }}
               onFocus={showAndReset}
             />
           )}
@@ -1092,7 +1106,7 @@ export default function VlcPlayerScreen() {
               tracks={audioTracks}
               selectedId={activeAudio}
               onSelect={(id) => { setActiveAudio(id); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; restoreFocusToControls(); showAndReset(); }}
               onFocus={showAndReset}
             />
           )}
@@ -1119,6 +1133,7 @@ export default function VlcPlayerScreen() {
             <CtrlBtn icon="rotate-ccw" label="-10s" onPress={() => skip(-10)} onFocus={showAndReset} />
             <CtrlBtn
               key={`play-${ctrlsKey}`}
+              btnRef={playBtnRef}
               icon={paused ? "play" : "pause"}
               primary
               preferFocus
@@ -1282,7 +1297,7 @@ export default function VlcPlayerScreen() {
 // Adapter over the shared player ControlButton, so this screen matches the
 // expo-engine player and the live player exactly. Props unchanged.
 function CtrlBtn({
-  icon, label, onPress, onFocus, active, primary, preferFocus,
+  icon, label, onPress, onFocus, active, primary, preferFocus, btnRef,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label?: string;
@@ -1291,6 +1306,7 @@ function CtrlBtn({
   active?: boolean;
   primary?: boolean;
   preferFocus?: boolean;
+  btnRef?: React.Ref<View>;
 }) {
   return (
     <ControlButton
@@ -1301,6 +1317,7 @@ function CtrlBtn({
       tone={primary ? "primary" : "default"}
       active={active}
       hasTVPreferredFocus={preferFocus}
+      viewRef={btnRef}
     />
   );
 }

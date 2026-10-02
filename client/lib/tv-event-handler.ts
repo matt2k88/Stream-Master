@@ -45,3 +45,25 @@ export class TVEventHandler {
 }
 
 export const isTvRemoteAvailable = TvRemote != null;
+
+/**
+ * Move TV focus to a view, after layout.
+ *
+ * React Native's `hasTVPreferredFocus` requests focus the instant the prop is
+ * set, which on a control that appears mid-session is before it has been laid
+ * out — Android refuses, quietly, and focus is left nowhere. That is why focus
+ * vanished when a subtitles or aspect panel was closed. This asks the native
+ * side to request focus on the next layout pass instead.
+ *
+ * Safe to call with a null tag or on a build without the native module.
+ */
+export async function requestTvFocus(tag: number | null | undefined): Promise<boolean> {
+  if (!TvRemote || tag == null) return false;
+  try {
+    return await (TvRemote as unknown as {
+      requestFocus: (tag: number) => Promise<boolean>;
+    }).requestFocus(tag);
+  } catch {
+    return false;
+  }
+}
