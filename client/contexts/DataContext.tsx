@@ -11,6 +11,8 @@ import { xtreamApi, Category, LiveStream, VodStream, Series } from "@/lib/xtream
 import { useAuth } from "@/contexts/AuthContext";
 import { getApiUrl } from "@/lib/query-client";
 import { toCinemaMovie, type CinemaMovie } from "@/lib/cinema";
+import { useIntroDone } from "@/lib/intro-gate";
+import { warmSearchIndex } from "@/lib/search";
 export interface StreamRating {
   certification: string;
   age_int: number;
@@ -93,6 +95,7 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, userInfo } = useAuth();
+  const introDone = useIntroDone();
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasData, setHasData] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
@@ -151,6 +154,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setIsSyncing(true);
     setSyncProgress({ live: "waiting", movies: "waiting", series: "waiting" });
 
+    let _liveStreams: LiveStream[] = [];
     let _vodStreams: VodStream[] = [];
     let _series: Series[] = [];
 
@@ -164,6 +168,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ]);
         setLiveCategories(cats);
         setLiveStreams(streams);
+        _liveStreams = streams;
         setSyncProgress((p) => ({ ...p, live: "done" }));
       } catch {
         setSyncProgress((p) => ({ ...p, live: "error" }));
@@ -202,6 +207,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
 
       setHasData(true);
+      warmSearchIndex([_liveStreams, _vodStreams, _series]);
 
       // Load any ratings already stored from previous sessions.
       Promise.all([
@@ -241,7 +247,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && !hasData && !syncRunning.current) {
+    if (isAuthenticated && introDone && !hasData && !syncRunning.current) {
       sync();
     }
     if (!isAuthenticated) {
@@ -256,16 +262,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setRecentMovies([]);
       setRecentSeries([]);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, introDone]);
 
   useEffect(() => {
-    if (isAuthenticated && userInfo?.user_info?.username) void loadCinema();
+    if (isAuthenticated && introDone && userInfo?.user_info?.username) void loadCinema();
     return () => {
       cinemaRequest.current++;
       setCinemaAvailable(false);
       setCinemaMovies([]);
     };
-  }, [isAuthenticated, userInfo?.user_info?.username, loadCinema]);
+  }, [isAuthenticated, introDone, userInfo?.user_info?.username, loadCinema]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([sync(), loadCinema()]);

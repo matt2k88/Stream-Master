@@ -37,7 +37,7 @@ import { useCategoryOrder } from "@/contexts/CategoryOrderContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import GuestPrompt from "@/components/GuestPrompt";
-import { normaliseSearch } from "@/lib/search";
+import { normaliseSearch, normalisedName } from "@/lib/search";
 import { computeSuggestions } from "@/lib/suggestions";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { CINEMA_CATEGORY_ID, cinemaHistoryId } from "@/lib/cinema";
@@ -1399,29 +1399,20 @@ export default function ContentListScreen() {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [selectedCategoryId]);
 
-  // Pre-build a normalised-name index once per stream list. Doing the
-  // normalisation per-keystroke across thousands of titles would block the
-  // JS thread; this caches the costly NFD/regex work and lets each search
-  // be a cheap String.includes() over already-normalised values.
-  const normalisedSection = useMemo(
-    () => allSectionStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
-    [allSectionStreams],
-  );
-
   // Search results — searches entire section, not just current category.
   // Punctuation/accents/case are ignored so e.g. "ru pauls drag race"
   // matches "RuPaul's Drag Race".
   const searchResults: ContentItem[] = useMemo(() => {
     if (!trimmedQuery) return [];
     const out: ContentItem[] = [];
-    for (const { s, n } of normalisedSection) {
-      if (n.includes(trimmedQuery)) {
+    for (const s of allSectionStreams) {
+      if (normalisedName(s).includes(trimmedQuery)) {
         out.push(s);
         if (out.length >= SEARCH_LIMIT) break;
       }
     }
     return out;
-  }, [trimmedQuery, normalisedSection]);
+  }, [trimmedQuery, allSectionStreams]);
 
   // Parental-filter search results the same way as category content.
   // For live TV we additionally block any channel whose category is restricted

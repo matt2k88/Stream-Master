@@ -22,7 +22,7 @@ import { Colors, Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { xtreamApi, LiveStream, VodStream, Series } from "@/lib/xtream-api";
 import { useData } from "@/contexts/DataContext";
-import { normaliseSearch } from "@/lib/search";
+import { normaliseSearch, normalisedName } from "@/lib/search";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type SearchRouteProp = RouteProp<RootStackParamList, "Search">;
@@ -228,27 +228,14 @@ export default function SearchScreen() {
 
   const trimmed = normaliseSearch(submittedQuery);
 
-  // Pre-normalise once per stream list — avoids re-running NFD/regex on
-  // thousands of titles for every keystroke.
-  const normLive = useMemo(
-    () => liveStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
-    [liveStreams],
-  );
-  const normMovies = useMemo(
-    () => vodStreams.map((s) => ({ s, n: normaliseSearch(s.name) })),
-    [vodStreams],
-  );
-  const normSeries = useMemo(
-    () => seriesList.map((s) => ({ s, n: normaliseSearch(s.name) })),
-    [seriesList],
-  );
-
+  // No catalogue-wide title normalization on first render. Titles are shared
+  // and warmed after sync, with on-demand lookup for any unwarmed entries.
   const results = useMemo(() => {
     if (!trimmed) return { live: [], movies: [], series: [] };
-    const pick = <T,>(arr: { s: T; n: string }[]) => {
+    const pick = <T extends { name: string },>(arr: T[]) => {
       const out: T[] = [];
-      for (const { s, n } of arr) {
-        if (n.includes(trimmed)) {
+      for (const s of arr) {
+        if (normalisedName(s).includes(trimmed)) {
           out.push(s);
           if (out.length >= RESULT_LIMIT) break;
         }
@@ -256,11 +243,11 @@ export default function SearchScreen() {
       return out;
     };
     return {
-      live: pick(normLive),
-      movies: pick(normMovies),
-      series: pick(normSeries),
+      live: pick(liveStreams),
+      movies: pick(vodStreams),
+      series: pick(seriesList),
     };
-  }, [trimmed, normLive, normMovies, normSeries]);
+  }, [trimmed, liveStreams, vodStreams, seriesList]);
 
   const hasResults = results.live.length + results.movies.length + results.series.length > 0;
 

@@ -3,6 +3,7 @@ modules = ["nodejs-22", "python-3.11", "deno-2", "javascript", "postgresql-16"]
 
 [nix]
 channel = "stable-24_05"
+packages = ["freetype", "lcms2", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "tcl", "tk", "zlib"]
 
 [deployment]
 deploymentTarget = "autoscale"

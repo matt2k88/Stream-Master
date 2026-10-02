@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { StyleSheet, AppState, AppStateStatus } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
+import { markIntroDone, resetIntroGate } from "@/lib/intro-gate";
 import { NavigationContainer } from "@react-navigation/native";
 import { navigationRef } from "@/lib/navigation-ref";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -28,7 +29,7 @@ import { MessageProvider } from "@/contexts/MessageContext";
 import { VpnProvider } from "@/contexts/VpnContext";
 import { CategoryOrderProvider } from "@/contexts/CategoryOrderContext";
 import { UISettingsProvider } from "@/contexts/UISettingsContext";
-import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ThemeProvider, useAppTheme } from "@/contexts/ThemeContext";
 import MessagePopup from "@/components/MessagePopup";
 import MatchReminderOverlay from "@/components/MatchReminderOverlay";
 import IntroOverlay from "@/components/IntroOverlay";
@@ -36,6 +37,12 @@ import SideMenuDrawer from "@/components/SideMenuDrawer";
 import { SideMenuProvider } from "@/contexts/SideMenuContext";
 import { PortalProvider } from "@/contexts/PortalContext";
 import { Colors } from "@/constants/theme";
+
+// Refresh screen-level theme styling without discarding auth/catalogue state.
+function ThemedRootNavigator() {
+  const { themeKey } = useAppTheme();
+  return <RootStackNavigator key={themeKey} />;
+}
 
 export default function App() {
   // Keep the device awake the whole time the app is in the foreground.
@@ -50,6 +57,8 @@ export default function App() {
 
   const handleIntroDone = useCallback(() => {
     setIntroComplete(true);
+    // Catalogue parsing waits so it cannot stall the intro's Skip controls.
+    markIntroDone();
   }, []);
 
   // Cold-start check: if the user pressed "Exit App" last session, force
@@ -58,7 +67,10 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const replay = await consumeReplayIntroFlag();
-      if (replay) setIntroComplete(false);
+      if (replay) {
+        resetIntroGate();
+        setIntroComplete(false);
+      }
     })();
   }, []);
 
@@ -73,7 +85,10 @@ export default function App() {
       appState.current = next;
       if (prev !== "active" && next === "active") {
         const replay = await consumeReplayIntroFlag();
-        if (replay) setIntroComplete(false);
+        if (replay) {
+          resetIntroGate();
+          setIntroComplete(false);
+        }
       }
     });
     return () => sub.remove();
@@ -84,9 +99,6 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <GestureHandlerRootView style={styles.root}>
-            {!introComplete ? (
-              <IntroOverlay onDone={handleIntroDone} />
-            ) : (
               <ThemeProvider>
               <AuthProvider>
                 <DataProvider>
@@ -104,13 +116,19 @@ export default function App() {
                           <KeyboardProvider>
                             <PortalProvider>
                             <SideMenuProvider>
-                              <NavigationContainer ref={navigationRef}>
-                                <RootStackNavigator />
-                              </NavigationContainer>
-                              <StatusBar style="light" hidden={false} />
-                              <MessagePopup />
-                              <MatchReminderOverlay />
-                              <SideMenuDrawer />
+                               {/* Providers can restore auth during the intro, but no
+                                   focusable screens may exist underneath it on TV. */}
+                               {introComplete ? (
+                                 <>
+                                   <NavigationContainer ref={navigationRef}>
+                                     <ThemedRootNavigator />
+                                   </NavigationContainer>
+                                   <StatusBar style="light" hidden={false} />
+                                   <MessagePopup />
+                                   <MatchReminderOverlay />
+                                   <SideMenuDrawer />
+                                 </>
+                               ) : null}
                             </SideMenuProvider>
                             </PortalProvider>
                           </KeyboardProvider>
@@ -128,7 +146,7 @@ export default function App() {
                 </DataProvider>
               </AuthProvider>
               </ThemeProvider>
-            )}
+            {!introComplete && <IntroOverlay onDone={handleIntroDone} />}
           </GestureHandlerRootView>
         </SafeAreaProvider>
       </QueryClientProvider>

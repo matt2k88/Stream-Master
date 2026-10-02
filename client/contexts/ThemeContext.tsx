@@ -51,9 +51,8 @@ export function withAlpha(hex: string, alpha: number): string {
 
 // Mutates the shared Colors / Shadows objects so the inline
 // `Colors.dark.accent` references that are read at render time pick up
-// the new palette. Components re-render via the `key` we pass to
-// ThemeProvider's child tree, which triggers a clean remount once the
-// theme is fetched.
+// the new palette. The navigator is re-keyed below the stateful providers
+// when the theme changes, so authentication and catalogue state survive.
 //
 // LIMITATION: Module-scope `StyleSheet.create({ ... Colors.dark.accent })`
 // captures the colour string at import time, so those frozen styles will
@@ -163,11 +162,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [themeKey, loaded, fetchTheme, showTopPicksBadge, showUltraTubeBadge, showSportsTvBadge, showMusicBadge]);
 
-  return (
-    <ThemeContext.Provider value={value}>
-      <React.Fragment key={themeKey}>{children}</React.Fragment>
-    </ThemeContext.Provider>
-  );
+  // Theme changes must not remount authentication or catalogue providers.
+  // The screen remount boundary lives in ThemedRootNavigator instead.
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useAppTheme() {
