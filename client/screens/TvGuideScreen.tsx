@@ -1,3 +1,4 @@
+import { TVEventHandler } from "@/lib/tv-event-handler";
 import React, {
   useState, useRef, useCallback, useEffect, useMemo,
 } from "react";
@@ -372,7 +373,6 @@ export default function TvGuideScreen() {
     if (!Platform.isTV) return;
     let tvHandler: any = null;
     try {
-      const TVEventHandler = (require as any)("react-native").TVEventHandler;
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {

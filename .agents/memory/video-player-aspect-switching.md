@@ -1,31 +1,25 @@
 ---
 name: Video player aspect-ratio live switching
-description: Why native video surfaces (expo-video & VLC) need a keyed remount to apply aspect/contentFit changes live.
+description: Device-tested player handoff supersedes earlier advice to remount video surfaces for aspect changes.
 ---
 
 # Live aspect-ratio switching on native video players
 
-Changing `contentFit` (expo-video) / `resizeMode`+aspect (react-native-vlc-media-player)
-on an already-playing surface does NOT reliably re-apply on native — the picture
-only changes after the surface is torn down and recreated (e.g. backing out of the
-content and resuming). Android VLC additionally has effectively no `resizeMode`
-support and its native prop names collide.
+Do not reintroduce aspect-keyed remounts of the Expo video surface.
 
-**Rule:** to switch aspect mode live, force a surface remount with `key={`asp-${mode}`}`
-on the `VideoView` / `VLCPlayer`.
+**Why:** The supplied externally tested player handoff reports that these remounts
+crashed on Fire TV; its tests cover Fire TV, phone and BlueStacks. This supersedes
+the previous assumption that a remount was necessary.
 
-**Why:** prop-only updates are ignored by the native layer mid-playback.
+**How to apply:** Preserve the supplied live aspect-switching implementation.
+VLC Android does not implement the library's JavaScript `resizeMode` prop;
+its native aspect controls must not be replaced with that prop.
 
-**How to apply:**
-- expo-video: remount only the `VideoView`. The player from `useVideoPlayer` is a
-  separate object, so playback continues seamlessly across the remount.
-- VLC: a remount reloads the stream, so stash the current position
-  (`pendingSeekSecondsRef = currentTimeRef`, set `resumeAppliedRef = true`) on mode
-  change; the `onLoad`/`onPlaying` handler re-seeks to resume.
+For this externally tested player handoff, the user's instruction is:
+"Copy these files in, overwriting. Do not rewrite, re-implement or improve anything."
 
-**Forced ratios (16:9 / 4:3):** do NOT size the box with
-`height:'100%' + aspectRatio + maxWidth:'100%'` — RN sizes this unreliably and the
-letterboxing looks "off". Compute an explicit numeric `{width,height}` box fitted to
-the window dimensions (centred parent gives correct letter/pillarbox), with
-`contentFit:'fill'` so the decoded frame is forced to that exact ratio. Shared helper:
-`aspectInnerStyle(mode, w, h)` in `client/lib/aspect-ratio.ts`.
+**Why:** The user explicitly required exact copies, and the handoff notes describe
+subtle device regressions caused by seemingly equivalent rewrites.
+
+**How to apply:** Treat these supplied player files as authoritative. Do not
+recreate them from prose or use old memory to override their tested behaviour.

@@ -3,7 +3,7 @@
     "name": "Ultra Cast v3",
     "slug": "stream-master",
     "owner": "mgcultra",
-    "version": "3.0.2",
+    "version": "3.0.3",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "iptvplayer",
@@ -13,7 +13,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.iptv.player",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -77,6 +79,7 @@
       ],
       "./plugins/withCleartextTraffic",
       "./plugins/withVlcMinSdkOverride",
+      "./plugins/withTvRemoteKeys",
       [
         "./plugins/withTvBanner",
         {
@@ -91,7 +94,8 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-font"
     ],
     "experiments": {
       "reactCompiler": false

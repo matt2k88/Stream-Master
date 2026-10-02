@@ -1,3 +1,4 @@
+import { TVEventHandler } from "@/lib/tv-event-handler";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
@@ -39,6 +40,9 @@ import { useWatchHistory } from "@/contexts/WatchHistoryContext";
 import { useSideMenu } from "@/contexts/SideMenuContext";
 import { useUISettings } from "@/contexts/UISettingsContext";
 import { xtreamApi, Episode } from "@/lib/xtream-api";
+import { ControlButton, ControlRow } from "@/components/player/ControlButton";
+import { PlayerLabels } from "@/components/player/playerLabels";
+import { TrackPanel as SharedTrackPanel } from "@/components/player/TrackPanel";
 
 // Lazy-require VlcPlayerScreen ONLY on Android — react-native-vlc-media-player
 // has no web shim and crashes at module-load time on web/iOS Expo Go.
@@ -77,6 +81,7 @@ function SeekBar({
   onCapturedChange?: (captured: boolean) => void;
 }) {
   const [barWidth, setBarWidth] = useState(1);
+  const [barFocused, setBarFocused] = useState(false);
   const [localFrac, setLocalFrac] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   // When the bar is focused, arrows seek by default. Pressing OK toggles
@@ -137,17 +142,37 @@ function SeekBar({
     })
   ).current;
 
-  // On native we render a plain View so the TV remote / D-pad has NO target to
-  // focus. Pressable with focusable={false} still gets picked up by Android
-  // TV's focus engine when it has onPress/onFocus/onKeyDown — replacing it
-  // with View removes the bar from focus traversal entirely. Touch dragging
-  // still works via the inner View's pan handlers; web keyboard seeking
-  // (ArrowLeft/Right) is handled at PlayerScreen level via window.keydown.
+  // The bar IS focusable on TV, but traps left/right on itself via
+  // nextFocusLeft/nextFocusRight pointing at its own node. That is what makes
+  // remote seeking possible: with focus trapped horizontally the D-pad cannot
+  // wander off to the next button, so left/right are free to scrub (handled in
+  // PlayerScreen's media-key subscription, gated on the focus we report here).
+  // Up/down still leave the bar as normal.
+  //
+  // It was previously a plain View precisely so the D-pad would skip it —
+  // which is why seeking by remote never worked at all. Touch dragging is
+  // unaffected; it still runs through the inner View's pan handlers.
   return (
-    <View
+    <Pressable
       ref={pressableRef as any}
       style={styles.seekBarWrapper}
       collapsable={false}
+      focusable={Platform.OS !== "web"}
+      // Left/right ALWAYS point back at this bar, so the only way off it is up
+      // or down. Doing this conditionally (on focus) left a frame where the
+      // prop had not been applied yet and a quick press escaped. Focus still
+      // arrives vertically, which is how the control row below reaches it.
+      nextFocusLeft={selfTag ?? undefined}
+      nextFocusRight={selfTag ?? undefined}
+      onFocus={() => {
+        setBarFocused(true);
+        onFocusChange?.(true);
+        onFocus?.();
+      }}
+      onBlur={() => {
+        setBarFocused(false);
+        onFocusChange?.(false);
+      }}
     >
       <Feather
         name="skip-forward"
@@ -163,19 +188,26 @@ function SeekBar({
           setBarWidth(w);
         }}
       >
-        <View style={styles.seekBarTrack}>
+        <View style={[styles.seekBarTrack, barFocused && styles.seekBarTrackFocused]}>
           <View style={[styles.seekBarFill, { width: frac * barWidth }]} />
         </View>
         <View
-          style={[styles.seekBarThumb, { left: thumbLeft }]}
+          style={[
+            styles.seekBarThumb,
+            barFocused && styles.seekBarThumbFocused,
+            { left: thumbLeft },
+          ]}
           pointerEvents="none"
         />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 // ─── Control button ───────────────────────────────────────────────────────────
+// Thin adapter over the shared player ControlButton so this screen, the VLC
+// screen and the live player all look and focus identically. The props are the
+// ones this screen already passed; only the rendering moved.
 function CtrlBtn({
   icon,
   label,
@@ -193,92 +225,24 @@ function CtrlBtn({
   primary?: boolean;
   preferFocus?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const isInteracting = focused || pressed;
-  const isHighlighted = isInteracting || active;
-
-  if (primary) {
-    return (
-      <Pressable
-        style={[styles.playBtn, isHighlighted && styles.playBtnActive]}
-        onPress={onPress}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        onFocus={() => { setFocused(true); onFocus?.(); }}
-        onBlur={() => setFocused(false)}
-        hasTVPreferredFocus={preferFocus}
-      >
-        <LinearGradient
-          colors={isHighlighted ? ["rgba(255,140,26,0.55)", "rgba(255,85,0,0.55)"] : ["rgba(255,140,26,0.25)", "rgba(255,85,0,0.25)"]}
-          style={StyleSheet.absoluteFill}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        />
-        <Feather name={icon} size={36} color="#fff" />
-      </Pressable>
-    );
-  }
-
   return (
-    <Pressable
-      style={[styles.ctrlBtn, isHighlighted && styles.ctrlBtnActive]}
+    <ControlButton
+      icon={icon}
+      label={label}
       onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => { setFocused(true); onFocus?.(); }}
-      onBlur={() => setFocused(false)}
+      onActivity={onFocus}
+      tone={primary ? "primary" : "default"}
+      active={active}
       hasTVPreferredFocus={preferFocus}
-    >
-      <Feather name={icon} size={label ? 14 : 20} color={active ? Colors.dark.accent : "#fff"} />
-      {label ? (
-        <ThemedText style={[styles.ctrlLabel, active && styles.ctrlLabelActive]}>
-          {label}
-        </ThemedText>
-      ) : null}
-    </Pressable>
-  );
-}
-
-// ─── Track chip (individual selectable item inside TrackPanel) ────────────────
-function TrackChip({
-  label,
-  isSelected,
-  onPress,
-  onFocus,
-  hasTVPreferredFocus,
-}: {
-  label: string;
-  isSelected: boolean;
-  onPress: () => void;
-  onFocus?: () => void;
-  hasTVPreferredFocus?: boolean;
-}) {
-  const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const isActive = pressed || focused;
-  return (
-    <Pressable
-      style={[
-        styles.trackChip,
-        isSelected && styles.trackChipActive,
-        isActive && styles.trackChipFocused,
-      ]}
-      onPress={onPress}
-      onFocus={() => { setFocused(true); onFocus?.(); }}
-      onBlur={() => setFocused(false)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      hasTVPreferredFocus={hasTVPreferredFocus}
-    >
-      <ThemedText style={[styles.trackChipText, isSelected && styles.trackChipTextActive]}>
-        {label}
-      </ThemedText>
-    </Pressable>
+    />
   );
 }
 
 // ─── Track panel (CC / Audio) ─────────────────────────────────────────────────
+// Adapter over the shared TrackPanel. The shared one lists tracks vertically
+// with a tick on the active row and states the current selection in its header,
+// instead of a horizontal chip strip — easier to walk with a D-pad, and a wrong
+// selection is obvious at a glance.
 function TrackPanel({
   title,
   icon,
@@ -299,67 +263,23 @@ function TrackPanel({
   onFocus?: () => void;
 }) {
   return (
-    <View style={styles.panel}>
-      <LinearGradient
-        colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      />
-      <View style={styles.panelHeader}>
-        <Feather name={icon} size={14} color={Colors.dark.accent} />
-        <ThemedText style={styles.panelTitle}>{title}</ThemedText>
-        <Pressable
-          style={({ pressed, focused }) => [styles.panelClose, (pressed || focused) && styles.panelCloseActive]}
-          onPress={onClose}
-          onFocus={onFocus}
-        >
-          <Feather name="x" size={14} color="#fff" />
-        </Pressable>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.panelTracks}
-        keyboardShouldPersistTaps="always"
-      >
-        {showOff && (
-          <TrackChip
-            label="Off"
-            isSelected={!selected}
-            onPress={() => onSelect(null)}
-            onFocus={onFocus}
-            hasTVPreferredFocus={!selected}
-          />
-        )}
-
-        {tracks.length === 0 && (
-          <View style={styles.trackChip}>
-            <ThemedText style={styles.trackChipText}>No tracks available</ThemedText>
-          </View>
-        )}
-
-        {tracks.map((track, idx) => {
-          const isSelected = selected?.id === track.id;
-          const display = track.label || track.language || track.id || "Unknown";
-          return (
-            <TrackChip
-              key={track.id}
-              label={display}
-              isSelected={isSelected}
-              onPress={() => onSelect(track)}
-              onFocus={onFocus}
-              hasTVPreferredFocus={!showOff && idx === 0}
-            />
-          );
-        })}
-      </ScrollView>
-    </View>
+    <SharedTrackPanel
+      title={title}
+      icon={icon}
+      tracks={tracks}
+      selected={selected}
+      onSelect={onSelect}
+      onClose={onClose}
+      onActivity={onFocus}
+      showOff={showOff}
+    />
   );
 }
 
 // ─── Aspect ratio panel ──────────────────────────────────────────────────────
+// Aspect modes are a short, fixed set, so they read better as a row of labelled
+// buttons than as a chip strip — same control styling and focus behaviour as
+// every other button in the player.
 function AspectPanel({
   mode, onSelect, onClose, onFocus,
 }: {
@@ -369,41 +289,29 @@ function AspectPanel({
   onFocus?: () => void;
 }) {
   return (
-    <View style={styles.panel}>
-      <LinearGradient
-        colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      />
-      <View style={styles.panelHeader}>
-        <Feather name="maximize" size={14} color={Colors.dark.accent} />
-        <ThemedText style={styles.panelTitle}>Aspect Ratio</ThemedText>
-        <Pressable
-          style={({ pressed, focused }) => [styles.panelClose, (pressed || focused) && styles.panelCloseActive]}
+    <View style={styles.aspectPanel}>
+      <View style={styles.aspectHead}>
+        <Feather name="maximize" size={15} color={Colors.dark.accent} />
+        <ThemedText style={styles.aspectTitle}>{PlayerLabels.aspect}</ThemedText>
+        <ControlButton
+          icon="x"
           onPress={onClose}
-          onFocus={onFocus}
-        >
-          <Feather name="x" size={14} color="#fff" />
-        </Pressable>
+          onActivity={onFocus}
+          accessibilityLabel="Close"
+        />
       </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.panelTracks}
-        keyboardShouldPersistTaps="always"
-      >
+      <ControlRow>
         {ASPECT_MODES.map((m, idx) => (
-          <TrackChip
+          <ControlButton
             key={m}
-            label={ASPECT_LABELS[m]}
-            isSelected={mode === m}
+            text={ASPECT_LABELS[m]}
             onPress={() => onSelect(m)}
-            onFocus={onFocus}
+            onActivity={onFocus}
+            active={mode === m}
             hasTVPreferredFocus={mode === m || (mode == null && idx === 0)}
           />
         ))}
-      </ScrollView>
+      </ControlRow>
     </View>
   );
 }
@@ -524,6 +432,15 @@ function LegacyPlayerScreen() {
 
   const [showControls, setShowControls] = useState(true);
   const [ctrlsKey, setCtrlsKey] = useState(0);
+  // Target position while a seek run is in progress, and the timer that commits
+  // it once the user stops pressing.
+  const pendingSeekRef = useRef<number | null>(null);
+  const seekCommitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When the last step was actually applied, so key-repeat cannot outrun us.
+  const seekStepAtRef = useRef<number>(0);
+  // Whether the controls overlay is on screen — left/right seek directly when
+  // it is not.
+  const ctrlVisibleRef = useRef(false);
   const prevShowControls = useRef(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const isPlayingRef = useRef(true);
@@ -695,7 +612,6 @@ function LegacyPlayerScreen() {
     if (Platform.OS !== "android" && Platform.OS !== "ios") return;
     let tvHandler: any = null;
     try {
-      const TVEventHandler = (require as any)("react-native").TVEventHandler;
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
@@ -719,34 +635,82 @@ function LegacyPlayerScreen() {
           handleSkipForwardLargeRef.current();
           return;
         }
-        if (!seekBarFocusedRef.current || isLiveRef.current) return;
+        // Seek by remote. Two things make this feel fast rather than stuttery:
+        //
+        // 1. The seek is NOT committed on every press. Each press only moves a
+        //    target position (and the bar), and the real seek fires once you
+        //    stop pressing. Committing per press made the player re-buffer
+        //    between presses — the stop-start you get today.
+        // 2. The step ramps the longer you hold, so a whole film is crossable
+        //    in a couple of seconds.
+        //
+        // It also works with no controls on screen: if the overlay is hidden,
+        // left/right seek straight away without having to focus the bar first.
+        if (isLiveRef.current) return;
         if (et !== "left" && et !== "right") return;
+        if (!seekBarFocusedRef.current && ctrlVisibleRef.current) return;
+
         const now = Date.now();
         const isSameDir = et === seekHoldRef.current.dir;
-        if (!isSameDir || now - seekHoldRef.current.lastFire > 400) {
+        // 900ms of no presses ends a run. Deliberately generous: a TV remote
+        // driving the stick over HDMI-CEC delivers repeats slowly and
+        // irregularly, and a tighter window would treat one long hold as
+        // several separate runs — resetting the ramp each time. The commit
+        // debounce (600ms) is shorter than this window, so a run always
+        // commits before the next one starts.
+        if (!isSameDir || now - seekHoldRef.current.lastFire > 900) {
           seekHoldRef.current.start = now;
           seekHoldRef.current.dir = et;
+          pendingSeekRef.current = null;
         }
         seekHoldRef.current.lastFire = now;
+
+        // Android repeats key-downs while a button is held, and Fire TV repeats
+        // fast. Without a floor between applied steps, a long hold with a 5
+        // minute step would jump hours in a second. One step per 110ms gives a
+        // smooth, predictable ramp regardless of the device's repeat rate.
+        if (now - (seekStepAtRef.current ?? 0) < 110) return;
+        seekStepAtRef.current = now;
+
         const held = now - seekHoldRef.current.start;
         let step: number;
-        if (held > 4000) step = 60;
-        else if (held > 2000) step = 40;
-        else if (held > 1000) step = 20;
-        else if (held > 500) step = 10;
-        else step = 5;
-        const delta = et === "left" ? -step : step;
-        const newTime = Math.max(0, Math.min(tvDurationRef.current, currentTimeRef.current + delta));
-        armSeekGuardRef.current();
-        playerRef.current.currentTime = newTime;
-        setCurrentTime(newTime);
-        currentTimeRef.current = newTime;
+        if (held > 6000) step = 300;
+        else if (held > 4000) step = 120;
+        else if (held > 2500) step = 60;
+        else if (held > 1200) step = 30;
+        else if (held > 500) step = 15;
+        else step = 10;
+
+        const from = pendingSeekRef.current ?? currentTimeRef.current;
+        const target = Math.max(0, Math.min(tvDurationRef.current, from + (et === "left" ? -step : step)));
+        pendingSeekRef.current = target;
+
+        // Move the bar immediately so scrubbing feels direct, even though the
+        // player has not been told yet.
+        setCurrentTime(target);
+        currentTimeRef.current = target;
+        showAndResetRef.current();
+
+        if (seekCommitRef.current) clearTimeout(seekCommitRef.current);
+        seekCommitRef.current = setTimeout(() => {
+          const commitTo = pendingSeekRef.current;
+          pendingSeekRef.current = null;
+          seekCommitRef.current = null;
+          if (commitTo == null) return;
+          try {
+            armSeekGuardRef.current();
+            playerRef.current.currentTime = commitTo;
+          } catch {}
+        }, 600);  // see note on the run window below
         showAndResetRef.current();
       });
     } catch {
       // TVEventHandler not available on this platform/build
     }
-    return () => { try { tvHandler?.disable(); } catch {} };
+    return () => {
+      try { tvHandler?.disable(); } catch {}
+      if (seekCommitRef.current) clearTimeout(seekCommitRef.current);
+    };
   }, []); // empty deps — all values accessed via stable refs
 
   // ── Web/desktop: keyboard arrow keys always seek (player is fullscreen) ──
@@ -1103,6 +1067,11 @@ function LegacyPlayerScreen() {
   useEffect(() => {
     if (isLive) return;
     const sub = player.addListener("timeUpdate", (e) => {
+      // While a remote seek run is in flight the player is still sitting at the
+      // OLD position and keeps reporting it, which fought the scrub target and
+      // made the bar flick back and forth. Ignore its updates until the seek is
+      // committed and settled.
+      if (pendingSeekRef.current != null) return;
       if (!isSeekingRef.current) {
         setCurrentTime(e.currentTime);
         const dur = player.duration;
@@ -1300,6 +1269,15 @@ function LegacyPlayerScreen() {
           }
         }
         textRestoredRef.current = true;
+      } else {
+        // Nothing saved for this stream: ask the ENGINE what it is playing
+        // rather than assuming nothing. expo-video reports its selected track,
+        // and the VLC shim resolves one from the id it was last given — which
+        // is what stops the panel claiming "Off" while subtitles are on screen.
+        try {
+          const current = player.subtitleTrack ?? null;
+          if (current) setActiveSubtitle(current);
+        } catch {}
       }
     });
     const sub2 = player.addListener("availableAudioTracksChange", (e) => {
@@ -1313,6 +1291,11 @@ function LegacyPlayerScreen() {
           }
         }
         audioRestoredRef.current = true;
+      } else {
+        try {
+          const current = player.audioTrack ?? null;
+          if (current) setActiveAudio(current);
+        } catch {}
       }
     });
     return () => { sub1.remove(); sub2.remove(); };
@@ -1330,6 +1313,10 @@ function LegacyPlayerScreen() {
       if (activePanelRef.current) {
         activePanelRef.current = null;
         setActivePanel(null);
+        // Hand focus back to the play button. Without this the focused view has
+        // just been unmounted, so the remote does nothing at all until the
+        // controls time out and come back.
+        setCtrlsKey((k) => k + 1);
         showAndReset();
         return true; // consumed
       }
@@ -1605,6 +1592,9 @@ function LegacyPlayerScreen() {
 
   // Controls visible when showControls=true, or when a panel is open (so panel stays visible during auto-hide)
   const ctrlVisible = showControls || !!activePanel;
+  // Mirrored into a ref so the media-key handler (which has empty deps) can read
+  // it without re-subscribing on every visibility change.
+  useEffect(() => { ctrlVisibleRef.current = ctrlVisible; }, [ctrlVisible]);
 
   return (
     <View style={styles.container}>
@@ -1617,15 +1607,18 @@ function LegacyPlayerScreen() {
       <View style={styles.videoStage}>
         {(() => {
           const fit = aspectModeToContentFit(aspectMode);
+          // expo-video's own contentFit handles fit/fill/cover correctly, so zoom
+          // only needs the natural size when the engine can report it.
           const innerStyle = aspectInnerStyle(aspectMode, winW, winH);
-          // Remount the surface when the mode changes so the new contentFit /
-          // size is always applied live. The player object persists (it's
-          // created by useVideoPlayer, not the view) so playback continues —
-          // this fixes ratios that previously only took effect after backing
-          // out of the content and resuming.
+          // NOTE: deliberately NOT keyed on aspectMode any more. Re-keying
+          // tore down and rebuilt the native surface mid-playback, which is a
+          // plausible cause of the Fire TV crash when changing aspect (it does
+          // not reproduce on BlueStacks, and Fire TV is the device where
+          // SurfaceView recreation during hardware-decoded playback is most
+          // fragile). It is also unnecessary: contentFit is a live prop and the
+          // forced-ratio box is plain style — both apply without a remount.
           return (
             <VideoView
-              key={`asp-${aspectMode}`}
               style={innerStyle}
               player={player}
               contentFit={fit}
@@ -1729,136 +1722,143 @@ function LegacyPlayerScreen() {
               active={isFavourited}
             />
           ) : null}
-          {/* Aspect ratio picker — works for live + VOD */}
-          <CtrlBtn
-            icon="maximize"
-            onPress={() => togglePanel("aspect")}
-            onFocus={showAndReset}
-            active={activePanel === "aspect" || aspectMode !== "fit"}
-          />
           {isLive ? (
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
-              <ThemedText style={styles.liveText}>LIVE</ThemedText>
+              <ThemedText style={styles.liveText}>{PlayerLabels.live}</ThemedText>
             </View>
           ) : <View style={{ width: 48 }} />}
         </View>
 
-        {/* Centre controls */}
-        <View style={styles.centerRow}>
-          {!isLive ? (
-            <CtrlBtn
-              icon="rewind"
-              label={`-${largeStepBack >= 300 ? "5m" : largeStepBack >= 120 ? "2m" : "1m"}`}
-              onPress={handleSkipBackLarge}
+        {/* One bottom bar. The old layout floated play/skip in the middle of
+            the picture with the big skips pinned to the screen edges, which is
+            why the two players never looked alike — each had drifted its own
+            way. Everything now sits in a single bar: panels, then the seek
+            row, then one row of actions. */}
+        <View style={styles.bottomSection}>
+          {activePanel === "aspect" ? (
+            <AspectPanel
+              mode={aspectMode}
+              onSelect={(m) => { setAspectMode(m); showAndReset(); }}
+              onClose={() => { activePanelRef.current = null; setActivePanel(null); setCtrlsKey((k) => k + 1); showAndReset(); }}
               onFocus={showAndReset}
             />
           ) : null}
-          {!isLive ? (
-            <CtrlBtn icon="rotate-ccw" label="-10s" onPress={handleSkipBack} onFocus={showAndReset} />
-          ) : null}
 
-          <CtrlBtn
-            key={`play-${ctrlsKey}`}
-            icon={isPlaying ? "pause" : "play"}
-            onPress={handlePlayPause}
-            onFocus={showAndReset}
-            primary
-            preferFocus
-          />
-
-          {!isLive ? (
-            <CtrlBtn icon="rotate-cw" label="+10s" onPress={handleSkipForward} onFocus={showAndReset} />
-          ) : null}
-          {!isLive ? (
-            <CtrlBtn
-              icon="fast-forward"
-              label={`+${largeStepFwd >= 300 ? "5m" : largeStepFwd >= 120 ? "2m" : "1m"}`}
-              onPress={handleSkipForwardLarge}
+          {!isLive && activePanel === "cc" ? (
+            <TrackPanel
+              title="Subtitles"
+              icon="message-square"
+              tracks={subtitleTracks}
+              selected={activeSubtitle}
+              onSelect={handleSubtitleSelect}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              showOff
               onFocus={showAndReset}
             />
           ) : null}
-        </View>
 
-        {/* Bottom section: panels + progress row. Always rendered when
-            the aspect panel is open (live too) so the picker appears
-            somewhere visible even on Live TV which has no progress row. */}
-        {(!isLive || activePanel === "aspect") ? (
-          <View style={styles.bottomSection}>
-            {/* Aspect ratio panel — visible for both live and VOD */}
-            {activePanel === "aspect" ? (
-              <AspectPanel
-                mode={aspectMode}
-                onSelect={(m) => { setAspectMode(m); showAndReset(); }}
-                onClose={() => { activePanelRef.current = null; setActivePanel(null); showAndReset(); }}
-                onFocus={showAndReset}
-              />
-            ) : null}
+          {!isLive && activePanel === "audio" ? (
+            <TrackPanel
+              title={PlayerLabels.audio}
+              icon="music"
+              tracks={audioTracks}
+              selected={activeAudio}
+              onSelect={handleAudioSelect}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onFocus={showAndReset}
+            />
+          ) : null}
 
-            {/* The CC/Audio panels + progress row + CC/Audio buttons are
-                VOD-only. For live TV the bottomSection only ever contains
-                the aspect panel above. */}
-            {!isLive ? (
-              <>
-            {/* CC panel */}
-            {activePanel === "cc" ? (
-              <TrackPanel
-                title="Subtitles"
-                icon="message-square"
-                tracks={subtitleTracks}
-                selected={activeSubtitle}
-                onSelect={handleSubtitleSelect}
-                onClose={() => setActivePanel(null)}
-                showOff
-                onFocus={showAndReset}
-              />
-            ) : null}
-
-            {/* Audio panel */}
-            {activePanel === "audio" ? (
-              <TrackPanel
-                title="Audio Track"
-                icon="music"
-                tracks={audioTracks}
-                selected={activeAudio}
-                onSelect={handleAudioSelect}
-                onClose={() => setActivePanel(null)}
-                onFocus={showAndReset}
-              />
-            ) : null}
-
-            {/* Progress bar row */}
+          {!isLive ? (
             <View style={styles.progressRow}>
               <ThemedText style={styles.timeText}>{formatTime(currentTime)}</ThemedText>
-
               <SeekBar
                 currentTime={currentTime}
                 duration={duration}
                 onSeek={handleSeek}
                 onFocus={showAndReset}
+                // Without this the media-key handler's left/right branch is
+                // unreachable (it checks seekBarFocusedRef), which is why
+                // seeking by remote never worked on this screen.
+                onFocusChange={(focused) => {
+                  // Write the ref synchronously, not via an effect: the
+                  // media-key handler reads it on the very next key press, and
+                  // a render's delay was long enough to miss one.
+                  seekBarFocusedRef.current = focused;
+                  setSeekBarFocused(focused);
+                }}
               />
-
               <ThemedText style={styles.timeText}>{formatTime(duration)}</ThemedText>
+            </View>
+          ) : null}
 
+          <View style={styles.actionRow}>
+            {!isLive ? (
+              <CtrlBtn
+                icon="rewind"
+                label={`-${largeStepBack >= 300 ? "5m" : largeStepBack >= 120 ? "2m" : "1m"}`}
+                onPress={handleSkipBackLarge}
+                onFocus={showAndReset}
+              />
+            ) : null}
+            {!isLive ? (
+              <CtrlBtn icon="rotate-ccw" label="-10s" onPress={handleSkipBack} onFocus={showAndReset} />
+            ) : null}
+
+            <CtrlBtn
+              key={`play-${ctrlsKey}`}
+              icon={isPlaying ? "pause" : "play"}
+              onPress={handlePlayPause}
+              onFocus={showAndReset}
+              primary
+              preferFocus
+            />
+
+            {!isLive ? (
+              <CtrlBtn icon="rotate-cw" label="+10s" onPress={handleSkipForward} onFocus={showAndReset} />
+            ) : null}
+            {!isLive ? (
+              <CtrlBtn
+                icon="fast-forward"
+                label={`+${largeStepFwd >= 300 ? "5m" : largeStepFwd >= 120 ? "2m" : "1m"}`}
+                onPress={handleSkipForwardLarge}
+                onFocus={showAndReset}
+              />
+            ) : null}
+
+            <View style={styles.actionSpacer} />
+
+            {!isLive ? (
               <CtrlBtn
                 icon="message-square"
-                label="CC"
+                label={PlayerLabels.subtitles}
                 onPress={() => togglePanel("cc")}
                 onFocus={showAndReset}
                 active={activePanel === "cc" || !!activeSubtitle}
               />
+            ) : null}
+            {!isLive ? (
               <CtrlBtn
                 icon="music"
-                label="Audio"
+                label={PlayerLabels.audio}
                 onPress={() => togglePanel("audio")}
                 onFocus={showAndReset}
                 active={activePanel === "audio"}
               />
-            </View>
-              </>
             ) : null}
+            {/* Sits with the other panel buttons, next to the panel it opens —
+                it used to be in the top bar while its menu appeared at the
+                bottom, which made the two feel unrelated. */}
+            <CtrlBtn
+              icon="maximize"
+              label={ASPECT_LABELS[aspectMode]}
+              onPress={() => togglePanel("aspect")}
+              onFocus={showAndReset}
+              active={activePanel === "aspect" || aspectMode !== "fit"}
+            />
           </View>
-        ) : null}
+        </View>
       </View>
 
       {/* Next-episode prompt — wrapped in Modal so it renders above the native video surface on Fire TV/Android */}
@@ -2075,6 +2075,25 @@ function ReportSubmitBtn({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    flexWrap: "wrap",
+  },
+  actionSpacer: { flex: 1, minWidth: Spacing.md },
+  aspectPanel: {
+    backgroundColor: "rgba(12,12,19,0.96)",
+    borderColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.md,
+    maxWidth: 520,
+    width: "100%",
+  },
+  aspectHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  aspectTitle: { flex: 1, color: "#fff", fontSize: 14, fontWeight: "700" },
   container: { flex: 1, backgroundColor: "#000" },
 
   nextModalBackdrop: {
@@ -2196,6 +2215,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
   },
   topBar: {
     flexDirection: "row",
@@ -2347,9 +2367,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.22)",
     overflow: "hidden",
   },
+  // Focus must be unmistakable from across a room: the bar thickens and
+  // brightens. At 4px it was indistinguishable from the resting state.
   seekBarTrackFocused: {
-    height: 4,
-    backgroundColor: "rgba(255,255,255,0.32)",
+    height: 8,
+    backgroundColor: "rgba(255,255,255,0.38)",
   },
   seekBarFill: {
     height: "100%",
@@ -2370,9 +2392,11 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   seekBarThumbFocused: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 3,
+    borderColor: Colors.dark.accent,
     top: 6,
     shadowRadius: 9,
     elevation: 8,

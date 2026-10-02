@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { TVEventHandler } from "@/lib/tv-event-handler";
+import { ControlButton } from "@/components/player/ControlButton";
+import { EpgPanel } from "@/components/player/EpgPanel";
+import { PlayerUI } from "@/components/player/playerTheme";
+import { PlayerLabels } from "@/components/player/playerLabels";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -314,6 +319,11 @@ export default function LivePreviewScreen() {
   const { prefs: footballPrefs, globalEnabled: footballGlobalEnabled } = useFootball();
   const footballEnabled = footballPrefs.enabled && footballGlobalEnabled;
   const [showFootball, setShowFootball] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  // Separate from playStatus: that tracks the stream (loading / playing /
+  // reconnecting) and stays "playing" when the user pauses, so the button icon
+  // never flipped.
+  const [paused, setPaused] = useState(false);
   const [footballFocused, setFootballFocused] = useState(false);
   const [footballPressed, setFootballPressed] = useState(false);
   const footballActive = footballFocused || footballPressed;
@@ -484,7 +494,9 @@ export default function LivePreviewScreen() {
     let cancelled = false;
     setEpgLoading(true);
     setEpgListings([]);
-    xtreamApi.getShortEpg(previewedId, 4).then((listings) => {
+    // 8 rather than 4: the Guide panel wants a real "coming up" list, and the
+    // bottom info bar still only reads the first two.
+    xtreamApi.getShortEpg(previewedId, 8).then((listings) => {
       if (!cancelled) { setEpgListings(listings); setEpgLoading(false); }
     }).catch(() => {
       if (!cancelled) setEpgLoading(false);
@@ -631,11 +643,11 @@ export default function LivePreviewScreen() {
   // handler (attached once to a Pressable) and the web keydown listener
   // never read stale state.
   const stepRef = useRef<(dir: -1 | 1) => void>(() => {});
-  const fsStateRef = useRef({ isFullscreen: false, showReport: false });
+  const fsStateRef = useRef({ isFullscreen: false, showReport: false, showFsOverlay: false });
   useEffect(() => {
     stepRef.current = stepChannelInFullscreen;
-    fsStateRef.current = { isFullscreen, showReport };
-  }, [stepChannelInFullscreen, isFullscreen, showReport]);
+    fsStateRef.current = { isFullscreen, showReport, showFsOverlay };
+  }, [stepChannelInFullscreen, isFullscreen, showReport, showFsOverlay]);
 
   // Web: listen for ArrowUp / ArrowDown while in fullscreen.
   useEffect(() => {
@@ -662,6 +674,97 @@ export default function LivePreviewScreen() {
     else if (keyCode === 20 || keyCode === 167) stepRef.current(1);
   }, []);
 
+  // ── Fire TV remote media keys ─────────────────────────────────────────────
+  // This screen had no media-key handling at all, so play/pause and the skip
+  // buttons were dead here even once the native key bridge existed.
+  //
+  // Live TV has no timeline, so rewind/fast-forward are meaningless — the skip
+  // buttons map to channel up/down instead, which is what they mean on live
+  // television and matches the up/down behaviour already wired above.
+  const mediaPlayerRef = useRef(player);
+  useEffect(() => { mediaPlayerRef.current = player; }, [player]);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const handler = new TVEventHandler();
+    handler.enable(null, (_component, evt) => {
+      // Fullscreen only. This same screen doubles as the small preview inside
+      // the channel list, and hijacking the remote's media keys while someone
+      // is just browsing channels would be surprising.
+      if (!fsStateRef.current.isFullscreen) return;
+      const p = mediaPlayerRef.current;
+      try {
+        switch (evt.eventType) {
+          case "playPause":
+            if (p.playing) p.pause();
+            else p.play();
+            break;
+          case "play":
+            p.play();
+            break;
+          case "pause":
+          case "stop":
+            p.pause();
+            break;
+          case "next":
+          case "channelDown":
+            stepRef.current(1);
+            break;
+          case "previous":
+          case "channelUp":
+            stepRef.current(-1);
+            break;
+          case "up":
+          case "down":
+            // Up/down change channel ONLY while nothing is on screen — the way
+            // a TV behaves when you are just watching. As soon as the controls
+            // or the Guide are up, these have to move focus instead, or the
+            // overlay becomes impossible to navigate.
+            if (!fsStateRef.current.showFsOverlay && !panelOpenRef.current) {
+              stepRef.current(evt.eventType === "down" ? 1 : -1);
+            }
+            break;
+        }
+      } catch {
+        // player released mid-press — nothing useful to do
+      }
+    });
+    return () => handler.disable();
+  }, []); // empty deps — player reached through a stable ref
+
+  // Live had no on-screen play/pause at all — only the hardware media key.
+  // How far through the current programme we are. Recomputed each minute —
+  // any faster is wasted on a bar this size.
+  const [progressTick, setProgressTick] = useState(0);
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const id = setInterval(() => setProgressTick((n) => n + 1), 60000);
+    return () => clearInterval(id);
+  }, [isFullscreen]);
+
+  const progressPct = useMemo(() => {
+    void progressTick;
+    const start = Number(nowProg?.start_timestamp) || 0;
+    const stop = Number(nowProg?.stop_timestamp) || 0;
+    if (!start || !stop || stop <= start) return 0;
+    const now = Date.now() / 1000;
+    return Math.max(0, Math.min(100, ((now - start) / (stop - start)) * 100));
+  }, [nowProg, progressTick]);
+
+  const togglePlayPause = useCallback(() => {
+    try {
+      if (player.playing) {
+        player.pause();
+        setPaused(true);
+      } else {
+        player.play();
+        setPaused(false);
+      }
+    } catch {
+      // player released mid-press
+    }
+  }, [player]);
+
   const handleRetry = useCallback(() => {
     resetRetryState();
     setPlayStatus("loading");
@@ -674,6 +777,7 @@ export default function LivePreviewScreen() {
     const sub = player.addListener("statusChange", (e) => {
       if (e.status === "readyToPlay") {
         setPlayStatus("playing");
+        setPaused(false);
         resetRetryState();
         clearLoadingTimeout();
         // Reset stall tracker — playback is healthy.
@@ -765,8 +869,14 @@ export default function LivePreviewScreen() {
     return clearStallTimer;
   }, [playStatus, player, scheduleAutoRetry, clearStallTimer]);
 
+  // Panels keep the overlay up. Hiding the controls out from under an open
+  // Guide (or any future panel) made it impossible to read.
+  const panelOpenRef = useRef(false);
+  useEffect(() => { panelOpenRef.current = showGuide; }, [showGuide]);
+
   const resetFsHideTimer = useCallback(() => {
     if (fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+    if (panelOpenRef.current) return;
     fsHideTimerRef.current = setTimeout(() => setShowFsOverlay(false), 4000);
   }, []);
 
@@ -871,7 +981,7 @@ export default function LivePreviewScreen() {
 
         <View style={styles.liveBadge}>
           <View style={styles.liveDot} />
-          <ThemedText style={styles.liveText}>LIVE</ThemedText>
+          <ThemedText style={styles.liveText}>{PlayerLabels.live}</ThemedText>
         </View>
 
         <ThemedText style={styles.channelNameHeader} numberOfLines={1}>
@@ -1105,49 +1215,36 @@ export default function LivePreviewScreen() {
               />
               <View style={[styles.fsTopBar, { paddingTop: padT, paddingLeft: padL + Spacing.sm, paddingRight: Spacing.lg }]}>
                 <SideMenuButton transparent />
-                <Pressable
-                  style={[styles.headerBtn, backActive && styles.headerBtnActive]}
+                <ControlButton
+                  icon="arrow-left"
                   onPress={exitFullscreen}
-                  onFocus={() => setBackFocused(true)}
-                  onBlur={() => setBackFocused(false)}
-                  onPressIn={() => setBackPressed(true)}
-                  onPressOut={() => setBackPressed(false)}
-                  onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
-                >
-                  <Feather name="arrow-left" size={20} color={backActive ? Colors.dark.accent : Colors.dark.text} />
-                </Pressable>
-                <View style={styles.liveBadge}>
-                  <View style={styles.liveDot} />
-                  <ThemedText style={styles.liveText}>LIVE</ThemedText>
-                </View>
-                <ThemedText style={styles.fsTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                  onActivity={resetFsHideTimer}
+                  accessibilityLabel="Exit full screen"
+                />
+                <View style={styles.fsTopSpacer} />
                 {footballEnabled ? (
-                  <Pressable
-                    style={[styles.headerBtn, footballActive && styles.headerBtnActive, showFootball && styles.headerBtnActive]}
+                  <ControlButton
+                    icon="soccer"
+                    iconSet="material"
                     onPress={() => { setShowFootball((v) => !v); resetFsHideTimer(); }}
-                    onFocus={() => { setFootballFocused(true); resetFsHideTimer(); }}
-                    onBlur={() => setFootballFocused(false)}
-                    onPressIn={() => setFootballPressed(true)}
-                    onPressOut={() => setFootballPressed(false)}
-                  >
-                    <MaterialCommunityIcons
-                      name="soccer"
-                      size={19}
-                      color={footballActive || showFootball ? Colors.dark.accent : Colors.dark.text}
-                    />
-                  </Pressable>
+                    onActivity={resetFsHideTimer}
+                    active={showFootball}
+                    accessibilityLabel="Football scores"
+                  />
                 ) : null}
-                <Pressable
-                  style={[styles.headerBtn, reportActive && styles.headerBtnActive]}
+                <ControlButton
+                  icon="flag"
                   onPress={() => { setShowReport(true); resetFsHideTimer(); }}
-                  onFocus={() => { setReportFocused(true); resetFsHideTimer(); }}
-                  onBlur={() => setReportFocused(false)}
-                  onPressIn={() => setReportPressed(true)}
-                  onPressOut={() => setReportPressed(false)}
-                >
-                  <Feather name="flag" size={18} color={reportActive ? Colors.dark.accent : Colors.dark.text} />
-                </Pressable>
-                <FavBtnHeader isFavourited={isFavourited} onPress={handleToggleFavourite} />
+                  onActivity={resetFsHideTimer}
+                  accessibilityLabel="Report a problem"
+                />
+                <ControlButton
+                  icon="star"
+                  onPress={handleToggleFavourite}
+                  onActivity={resetFsHideTimer}
+                  active={isFavourited}
+                  accessibilityLabel="Favourite"
+                />
               </View>
 
               {/* Bottom info bar — channel + NOW/NEXT programmes + channel up/down */}
@@ -1163,65 +1260,107 @@ export default function LivePreviewScreen() {
                   { paddingLeft: padL + Spacing.md, paddingRight: padL + Spacing.md, paddingBottom: insets.bottom + Spacing.md },
                 ]}
               >
-                <View pointerEvents="box-none" style={styles.fsBottomCard}>
-                {selectedIcon ? (
-                  <View style={styles.fsBottomLogoWrap}>
-                    <Image source={{ uri: selectedIcon }} style={styles.fsBottomLogo} contentFit="contain" />
+                {showGuide ? (
+                  <View style={styles.fsGuideWrap}>
+                    <EpgPanel
+                      channelName={selectedName}
+                      listings={epgListings}
+                      loading={epgLoading}
+                      onClose={() => { setShowGuide(false); resetFsHideTimer(); }}
+                      onActivity={resetFsHideTimer}
+                    />
                   </View>
                 ) : null}
-                <View style={styles.fsBottomInfo}>
-                  <ThemedText style={styles.fsBottomChannel} numberOfLines={1}>{selectedName}</ThemedText>
-                  <View style={styles.fsBottomEpgRow}>
-                    {nowProg ? (
-                      <View style={styles.fsBottomNow}>
-                        <ThemedText style={styles.fsBottomNowTitle} numberOfLines={1}>
-                          {decodeEpgString(nowProg.title) || "No programme info"}
-                        </ThemedText>
-                        {nowProg.start_timestamp ? (
-                          <ThemedText style={styles.fsBottomTime}>
-                            {formatEpgTime(nowProg.start_timestamp)} - {formatEpgTime(nowProg.stop_timestamp)}
-                          </ThemedText>
-                        ) : null}
-                      </View>
-                    ) : (
-                      <ThemedText style={styles.fsBottomNowTitle} numberOfLines={1}>
-                        {epgLoading ? "Loading guide…" : "No programme info"}
-                      </ThemedText>
-                    )}
-                    {nextProg ? (
-                      <View style={styles.fsBottomNext}>
-                        <ThemedText style={styles.fsBottomNextLabel}>NEXT:</ThemedText>
-                        <ThemedText style={styles.fsBottomNextTitle} numberOfLines={1}>
-                          {decodeEpgString(nextProg.title)}
-                        </ThemedText>
-                        {nextProg.start_timestamp ? (
-                          <ThemedText style={styles.fsBottomTime}>
-                            {formatEpgTime(nextProg.start_timestamp)} - {formatEpgTime(nextProg.stop_timestamp)}
-                          </ThemedText>
-                        ) : null}
+
+                {/* One bar: identity, what is on, how far through it is, and
+                    the controls — in a single container with one padding, the
+                    way the design has it. Previously these were three separate
+                    floating pieces (top bar, rounded card, corner buttons). */}
+                <View pointerEvents="box-none" style={styles.fsBar}>
+                  <View style={styles.fsBarHead}>
+                    {selectedIcon ? (
+                      <View style={styles.fsBarLogoWrap}>
+                        <Image source={{ uri: selectedIcon }} style={styles.fsBarLogo} contentFit="contain" />
                       </View>
                     ) : null}
+                    <View style={styles.fsBarIdentity}>
+                      <ThemedText style={styles.fsBarTitle} numberOfLines={1}>{selectedName}</ThemedText>
+                      <ThemedText style={styles.fsBarSub} numberOfLines={1}>
+                        {nowProg
+                          ? `${decodeEpgString(nowProg.title) || "No programme info"}${
+                              nowProg.start_timestamp
+                                ? `  ·  ${formatEpgTime(nowProg.start_timestamp)} - ${formatEpgTime(nowProg.stop_timestamp)}`
+                                : ""
+                            }`
+                          : epgLoading ? "Loading guide…" : "No programme info"}
+                      </ThemedText>
+                      {nextProg ? (
+                        <ThemedText style={styles.fsBarNext} numberOfLines={1}>
+                          {`NEXT  ${decodeEpgString(nextProg.title)}${
+                            nextProg.start_timestamp ? `  ·  ${formatEpgTime(nextProg.start_timestamp)}` : ""
+                          }`}
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                    <View style={styles.fsLivePill}>
+                      <View style={styles.fsLiveDot} />
+                      <ThemedText style={styles.fsLivePillText}>{PlayerLabels.live}</ThemedText>
+                    </View>
                   </View>
-                </View>
-                {hasChannelList ? (
-                  <View style={styles.fsArrowCol}>
-                    <FsArrowButton
-                      direction="up"
-                      disabled={atFirstChannel}
-                      onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
+
+                  {/* How far through the current programme we are — the live
+                      equivalent of the VOD seek bar, and the only honest thing
+                      a progress line can show on a live stream. */}
+                  <View style={styles.fsProgressTrack}>
+                    <View style={[styles.fsProgressFill, { width: `${progressPct}%` }]} />
+                  </View>
+
+                  <View style={styles.fsActionRow}>
+                    <ControlButton
+                      icon={paused ? "play" : "pause"}
+                      tone="primary"
+                      onPress={togglePlayPause}
                       onActivity={resetFsHideTimer}
-                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                      accessibilityLabel="Play or pause"
                     />
-                    <FsArrowButton
-                      direction="down"
-                      disabled={atLastChannel}
-                      autoFocus
-                      onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
+                    {hasChannelList ? (
+                      <>
+                        <ControlButton
+                          icon="chevron-up"
+                          label={PlayerLabels.channelUp}
+                          disabled={atFirstChannel}
+                          onPress={() => { stepChannelInFullscreen(-1); resetFsHideTimer(); }}
+                          onActivity={resetFsHideTimer}
+                        />
+                        <ControlButton
+                          icon="chevron-down"
+                          label={PlayerLabels.channelDown}
+                          disabled={atLastChannel}
+                          hasTVPreferredFocus
+                          onPress={() => { stepChannelInFullscreen(1); resetFsHideTimer(); }}
+                          onActivity={resetFsHideTimer}
+                        />
+                      </>
+                    ) : null}
+
+                    <View style={styles.fsActionSpacer} />
+
+                    <ControlButton
+                      icon="calendar"
+                      label={PlayerLabels.guide}
+                      onPress={() => {
+                        setShowGuide((v) => {
+                          const next = !v;
+                          panelOpenRef.current = next;
+                          if (next && fsHideTimerRef.current) clearTimeout(fsHideTimerRef.current);
+                          return next;
+                        });
+                        resetFsHideTimer();
+                      }}
                       onActivity={resetFsHideTimer}
-                      onKeyDown={Platform.OS === "android" ? handleFsKeyDown : undefined}
+                      active={showGuide}
                     />
                   </View>
-                ) : null}
                 </View>
               </View>
             </View>
@@ -1549,7 +1688,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   liveDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#DC1E1E" },
-  liveText: { color: "#FF5555", fontSize: 10, fontWeight: "700", letterSpacing: 0.8 },
+  liveText: { color: "#FF5555", fontSize: 10, fontFamily: PlayerUI.font.uiBold, letterSpacing: 1 },
   channelNameHeader: {
     flex: 1,
     fontSize: 17,
@@ -1915,8 +2054,9 @@ const styles = StyleSheet.create({
   },
   fsTitle: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 20,
+    fontFamily: PlayerUI.font.display,
+    letterSpacing: -0.2,
     color: "#fff",
   },
 
@@ -1930,15 +2070,58 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0, left: 0, right: 0,
   },
+  fsTopSpacer: { flex: 1 },
+  fsBar: {
+    backgroundColor: "rgba(10,10,14,0.92)",
+    borderRadius: PlayerUI.panel.radius,
+    borderWidth: 1,
+    borderColor: PlayerUI.panel.border,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
+  },
+  fsBarHead: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  fsBarLogoWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.xs,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  fsBarLogo: { width: "100%", height: "100%" },
+  fsBarIdentity: { flex: 1, minWidth: 0, gap: 2 },
+  fsBarTitle: { fontSize: 22, fontFamily: PlayerUI.font.display, letterSpacing: -0.3, color: "#fff" },
+  fsBarSub: { fontSize: 13, fontFamily: PlayerUI.font.uiRegular, color: "rgba(255,255,255,0.72)" },
+  fsBarNext: { fontSize: 12, fontFamily: PlayerUI.font.uiRegular, color: "rgba(255,255,255,0.42)" },
+  fsLivePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: "#D92B2B",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+  },
+  fsLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#fff" },
+  fsLivePillText: { color: "#fff", fontSize: 11, fontFamily: PlayerUI.font.uiBold, letterSpacing: 1 },
+  fsProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    overflow: "hidden",
+  },
+  fsProgressFill: { height: "100%", borderRadius: 2, backgroundColor: Colors.dark.accent },
   fsBottomCard: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
-    backgroundColor: "rgba(10,10,10,0.94)",
-    borderRadius: BorderRadius.lg,
+    backgroundColor: PlayerUI.panel.bg,
+    borderRadius: PlayerUI.panel.radius,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    paddingVertical: Spacing.sm,
+    borderColor: PlayerUI.panel.border,
+    paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.md,
   },
   fsBottomLogoWrap: {
@@ -1955,18 +2138,27 @@ const styles = StyleSheet.create({
   },
   fsBottomLogo: { width: "100%", height: "100%" },
   fsBottomInfo: { flex: 1, gap: 4 },
-  fsBottomChannel: { fontSize: 18, fontWeight: "800", color: "#fff" },
+  fsBottomChannel: { fontSize: 18, fontFamily: PlayerUI.font.display, letterSpacing: -0.2, color: "#fff" },
   fsBottomEpgRow: {
     flexDirection: "column",
     alignItems: "flex-start",
     gap: 4,
   },
   fsBottomNow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexShrink: 1 },
-  fsBottomNowTitle: { fontSize: 14, fontWeight: "700", color: Colors.dark.accent, flexShrink: 1 },
+  fsBottomNowTitle: { fontSize: 14, fontFamily: PlayerUI.font.ui, color: Colors.dark.accent, flexShrink: 1 },
   fsBottomNext: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
-  fsBottomNextLabel: { fontSize: 11, fontWeight: "800", color: Colors.dark.textSecondary, letterSpacing: 0.5 },
-  fsBottomNextTitle: { fontSize: 13, fontWeight: "600", color: "#fff", flexShrink: 1 },
-  fsBottomTime: { fontSize: 12, fontWeight: "500", color: Colors.dark.textSecondary },
+  fsBottomNextLabel: { fontSize: 10, fontFamily: PlayerUI.font.uiBold, color: Colors.dark.textSecondary, letterSpacing: 1.2 },
+  fsBottomNextTitle: { fontSize: 13, fontFamily: PlayerUI.font.uiRegular, color: "rgba(255,255,255,0.88)", flexShrink: 1 },
+  fsBottomTime: { fontSize: 12, fontFamily: PlayerUI.font.uiRegular, fontVariant: ["tabular-nums"], color: Colors.dark.textSecondary },
+  fsActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    flexWrap: "wrap",
+  },
+  fsActionSpacer: { flex: 1, minWidth: Spacing.md },
+  fsGuideWrap: { marginTop: Spacing.md, alignItems: "flex-end" },
   fsArrowCol: { gap: Spacing.sm, flexShrink: 0 },
   fsArrowBtn: {
     width: 48,

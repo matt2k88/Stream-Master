@@ -5,7 +5,7 @@
 - [Match fixture caching](match-fixture-caching.md) — favourite-team fixtures are team data (cache by team_id, NEVER per-profile/DB); next=10 + local countdown means refresh ~12h not poll; mark fresh only on full success.
 - [Football Centre fixture window](football-centre-fixture-window.md) — Upcoming = rolling N-day scan + full-season tournament pull (World Cup); dedupe by fixture_id, skip undated fixtures, never invent date_key=today.
 - [Cross-DB account/profile join](cross-db-account-join.md) — main `profiles.account_username` == lifetime `*.iptv_username`; account-level lifetime rows fan out to MANY profiles; make imports idempotent.
-- [Video player aspect switching](video-player-aspect-switching.md) — native video surfaces ignore live contentFit/resizeMode changes; remount via key={mode} (expo player persists; VLC needs resume-seek).
+- [Video player aspect switching](video-player-aspect-switching.md) — device-tested handoff supersedes old remount advice; aspect-keyed Expo surface remounts crashed on Fire TV.
 - [Football kill-switch scope](football-killswitch-scope.md) — football_global.enabled is client-side only; never gate the server poller / Football Centre data on it.
 - [VLC live reconnect](vlc-live-reconnect.md) — live freeze is provider-side (no 3h timer in our code); recovery needs --http-reconnect + engine-aware stall gate + playToEnd→reconnect, all three.
 - [VLC hardware-decode preference](vlc-hw-decode.md) — player_hw_decode auto/on/off; "auto" must OMIT --avcodec-hw on bridge path; raw Android VOD keeps mediacodec for auto/on, software only for off.

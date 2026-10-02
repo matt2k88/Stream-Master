@@ -16,6 +16,7 @@
 //       * Override the wrapper's auto-pause-on-stopped so we never get
 //         stuck on a frozen frame.
 
+import { TVEventHandler } from "@/lib/tv-event-handler";
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   View,
@@ -30,8 +31,10 @@ import {
   Animated,
   Modal,
   TextInput,
-  useWindowDimensions,
-} from "react-native";
+  useWindowDimensions, findNodeHandle } from "react-native";
+import { ControlButton, ControlRow } from "@/components/player/ControlButton";
+import { PlayerLabels } from "@/components/player/playerLabels";
+import { TrackPanel as SharedTrackPanel } from "@/components/player/TrackPanel";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
@@ -40,7 +43,7 @@ import {
   useAspectMode,
   ASPECT_MODES,
   ASPECT_LABELS,
-  aspectModeToContentFit,
+  aspectModeToVlcRatio,
   aspectModeRatio,
   aspectInnerStyle,
   type AspectMode,
@@ -111,14 +114,16 @@ export default function VlcPlayerScreen() {
   const vlcRef = useRef<any>(null);
   const [paused, setPaused] = useState(false);
   const [currentTime, setCurrentTime] = useState(0); // seconds
-  const [duration, setDuration] = useState(0); // seconds
+  const [duration, setDuration] = useState(0);
+  const [videoSize, setVideoSize] = useState<{ w: number; h: number } | null>(null); // seconds
   const [isLoading, setIsLoading] = useState(true);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState("");
   const [audioTracks, setAudioTracks] = useState<Track[]>([]);
   const [textTracks, setTextTracks] = useState<Track[]>([]);
   const [activeAudio, setActiveAudio] = useState<number>(-1);
-  const [activeText, setActiveText] = useState<number>(-1);
+  // -2 = untouched (stream default), -1 = explicitly off, >=0 = chosen track
+  const [activeText, setActiveText] = useState<number>(-2);
 
   // Refs that mirror state for use inside stable callbacks/timers
   const currentTimeRef = useRef(0);
@@ -537,6 +542,10 @@ export default function VlcPlayerScreen() {
 
   const onProgress = useCallback((e: any) => {
     if (typeof e?.currentTime !== "number") return;
+    // A remote seek run is in flight: the player is still at the old position
+    // and reporting it, which would fight the scrub target and make the bar
+    // flick between the two. Ignore until the seek is committed.
+    if (pendingSeekRef.current != null) return;
     const cur = e.currentTime / 1000;
     const dur = typeof e.duration === "number" && e.duration > 0 ? e.duration / 1000 : durationRef.current;
     const sinceSeek = Date.now() - lastSeekAtRef.current;
@@ -564,6 +573,10 @@ export default function VlcPlayerScreen() {
   }, []);
 
   const onLoad = useCallback((e: any) => {
+    // Natural picture size — zoom needs it to crop without stretching.
+    const vw = Number(e?.videoSize?.width) || 0;
+    const vh = Number(e?.videoSize?.height) || 0;
+    if (vw > 0 && vh > 0) setVideoSize({ w: vw, h: vh });
     if (typeof e?.duration === "number" && e.duration > 0) {
       setDuration(e.duration / 1000);
       durationRef.current = e.duration / 1000;
@@ -779,11 +792,17 @@ export default function VlcPlayerScreen() {
 
   // ─── TV remote D-pad seek (left/right) + media keys ──────────────────────
   const [seekBarFocused, setSeekBarFocused] = useState(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  const seekCommitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When the last step was actually applied, so key-repeat cannot outrun us.
+  const seekStepAtRef = useRef<number>(0);
+  const ctrlVisibleRef = useRef(false);
   const seekBarFocusedRef = useRef(false);
   const seekHoldRef = useRef<{ dir: string | null; start: number; lastFire: number }>({
     dir: null, start: 0, lastFire: 0,
   });
   useEffect(() => { seekBarFocusedRef.current = seekBarFocused; }, [seekBarFocused]);
+  useEffect(() => { ctrlVisibleRef.current = showControls || !!activePanel; }, [showControls, activePanel]);
 
   // Stable refs for the action handlers used by both the native
   // TVEventHandler subscription and the web keyboard listener — they
@@ -803,7 +822,6 @@ export default function VlcPlayerScreen() {
     if (Platform.OS !== "android" && Platform.OS !== "ios") return;
     let tvHandler: any = null;
     try {
-      const TVEventHandler = (require as any)("react-native").TVEventHandler;
       if (!TVEventHandler) return;
       tvHandler = new TVEventHandler();
       tvHandler.enable(null, (_: any, evt: { eventType: string }) => {
@@ -822,25 +840,53 @@ export default function VlcPlayerScreen() {
           return;
         }
         // D-pad left/right: requires seek bar focus + accelerate on hold.
-        if (!seekBarFocusedRef.current) return;
+        // Identical behaviour to the expo player: the step ramps while you
+        // hold, and the actual seek only fires once you stop, so VLC is not
+        // re-buffering between presses. Works with the overlay hidden too.
         if (et !== "left" && et !== "right") return;
+        if (!seekBarFocusedRef.current && ctrlVisibleRef.current) return;
+
         const now = Date.now();
         const same = et === seekHoldRef.current.dir;
-        if (!same || now - seekHoldRef.current.lastFire > 400) {
+        // 900ms: generous, because a TV remote over HDMI-CEC repeats slowly
+        // and irregularly. See the expo player for the full reasoning.
+        if (!same || now - seekHoldRef.current.lastFire > 900) {
           seekHoldRef.current.start = now;
           seekHoldRef.current.dir = et;
+          pendingSeekRef.current = null;
         }
         seekHoldRef.current.lastFire = now;
+
+        // Android repeats key-downs while a button is held, and Fire TV repeats
+        // fast. Without a floor between applied steps, a long hold with a 5
+        // minute step would jump hours in a second. One step per 110ms gives a
+        // smooth, predictable ramp regardless of the device's repeat rate.
+        if (now - (seekStepAtRef.current ?? 0) < 110) return;
+        seekStepAtRef.current = now;
+
         const held = now - seekHoldRef.current.start;
         let step: number;
-        if (held > 4000) step = 60;
-        else if (held > 2000) step = 40;
-        else if (held > 1000) step = 20;
-        else if (held > 500) step = 10;
-        else step = 5;
-        const delta = et === "left" ? -step : step;
-        seekToRef.current(currentTimeRef.current + delta);
+        if (held > 6000) step = 300;
+        else if (held > 4000) step = 120;
+        else if (held > 2500) step = 60;
+        else if (held > 1200) step = 30;
+        else if (held > 500) step = 15;
+        else step = 10;
+
+        const from = pendingSeekRef.current ?? currentTimeRef.current;
+        const target = Math.max(0, from + (et === "left" ? -step : step));
+        pendingSeekRef.current = target;
+        setCurrentTime(target);
+        currentTimeRef.current = target;
         showAndResetRef.current();
+
+        if (seekCommitRef.current) clearTimeout(seekCommitRef.current);
+        seekCommitRef.current = setTimeout(() => {
+          const commitTo = pendingSeekRef.current;
+          pendingSeekRef.current = null;
+          seekCommitRef.current = null;
+          if (commitTo != null) seekToRef.current(commitTo);
+        }, 600);  // see note on the run window below
       });
     } catch {}
     return () => { try { tvHandler?.disable(); } catch {} };
@@ -958,8 +1004,9 @@ export default function VlcPlayerScreen() {
       <Pressable style={[StyleSheet.absoluteFill, styles.videoStage]} onPress={showAndReset}>
         {(() => {
           const ratio = aspectModeRatio(aspectMode);
-          const fit = aspectModeToContentFit(aspectMode);
-          const innerStyle = aspectInnerStyle(aspectMode, winW, winH);
+          const innerStyle = aspectInnerStyle(aspectMode, winW, winH, videoSize?.w, videoSize?.h);
+          // libVLC only honours a forced ratio while autoAspectRatio is off.
+          const vlcRatio = aspectModeToVlcRatio(aspectMode, winW, winH);
           return (
             <VLCPlayer
               key={`asp-${aspectMode}`}
@@ -968,10 +1015,14 @@ export default function VlcPlayerScreen() {
               source={source}
               paused={paused}
               autoplay
-              autoAspectRatio={ratio == null && aspectMode === "fit"}
-              resizeMode={fit}
+              autoAspectRatio={aspectMode === "fit"}
+              videoAspectRatio={vlcRatio ?? undefined}
               audioTrack={activeAudio >= 0 ? activeAudio : undefined}
-              textTrack={activeText >= 0 ? activeText : -1}
+              // Untouched renders as undefined, NOT -1. Both used to render as
+              // -1, so pressing Off changed nothing React could see, the prop
+              // was never re-sent, and VLC kept its own default subtitles on —
+              // which is why you had to switch a track on and back off again.
+              textTrack={activeText === -2 ? undefined : activeText >= 0 ? activeText : -1}
               onPlaying={onPlaying}
               onProgress={onProgress}
               onPaused={onPaused}
@@ -1010,28 +1061,41 @@ export default function VlcPlayerScreen() {
           {favStreamId > 0 && (
             <CtrlBtn icon="star" onPress={toggleFav} onFocus={showAndReset} active={isFavourited} />
           )}
-          <CtrlBtn
-            icon="maximize"
-            onPress={() => { const v = activePanel === "aspect" ? null : "aspect"; setActivePanel(v); activePanelRef.current = v; showAndReset(); }}
-            onFocus={showAndReset}
-            active={activePanel === "aspect" || aspectMode !== "fit"}
-          />
         </View>
 
-        {/* Centre — play/pause + skip */}
-        <View style={styles.centerRow}>
-          <CtrlBtn icon="rewind" label="10s" onPress={() => skip(-10)} onFocus={showAndReset} />
-          <CtrlBtn key={`play-${ctrlsKey}`} icon={paused ? "play" : "pause"} primary preferFocus onPress={togglePlayPause} onFocus={showAndReset} />
-          <CtrlBtn icon="fast-forward" label="10s" onPress={() => skip(10)} onFocus={showAndReset} />
-        </View>
-
-        {/* Bottom — large skip + seek bar + tracks */}
+        {/* One bottom bar — same structure and order as the expo-engine
+            player, so switching engines does not change where anything is.
+            Panels on top, seek row, then a single row of actions. */}
         <View style={styles.bottomSection}>
-          <View style={styles.largeSkipRow}>
-            <CtrlBtn icon="chevrons-left" label={`${largeStepBack}s`} onPress={handleLargeBack} onFocus={showAndReset} />
-            <View style={{ flex: 1 }} />
-            <CtrlBtn icon="chevrons-right" label={`${largeStepFwd}s`} onPress={handleLargeFwd} onFocus={showAndReset} />
-          </View>
+          {activePanel === "aspect" && (
+            <AspectPanel
+              mode={aspectMode}
+              onSelect={(m) => { setAspectMode(m); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onFocus={showAndReset}
+            />
+          )}
+          {activePanel === "cc" && (
+            <TrackPanel
+              title={PlayerLabels.subtitles}
+              tracks={textTracks}
+              selectedId={activeText}
+              showOff
+              onSelect={(id) => { setActiveText(id); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onFocus={showAndReset}
+            />
+          )}
+          {activePanel === "audio" && (
+            <TrackPanel
+              title={PlayerLabels.audio}
+              tracks={audioTracks}
+              selectedId={activeAudio}
+              onSelect={(id) => { setActiveAudio(id); showAndReset(); }}
+              onClose={() => { setActivePanel(null); activePanelRef.current = null; setCtrlsKey((k) => k + 1); showAndReset(); }}
+              onFocus={showAndReset}
+            />
+          )}
 
           <View style={styles.progressRow}>
             <ThemedText style={styles.timeText}>{formatTime(currentTime)}</ThemedText>
@@ -1045,52 +1109,54 @@ export default function VlcPlayerScreen() {
             <ThemedText style={styles.timeText}>{formatTime(duration)}</ThemedText>
           </View>
 
-          <View style={styles.trackBtnRow}>
+          <View style={styles.actionRow}>
+            <CtrlBtn
+              icon="rewind"
+              label={`-${largeStepBack >= 300 ? "5m" : largeStepBack >= 180 ? "3m" : largeStepBack >= 120 ? "2m" : "1m"}`}
+              onPress={handleLargeBack}
+              onFocus={showAndReset}
+            />
+            <CtrlBtn icon="rotate-ccw" label="-10s" onPress={() => skip(-10)} onFocus={showAndReset} />
+            <CtrlBtn
+              key={`play-${ctrlsKey}`}
+              icon={paused ? "play" : "pause"}
+              primary
+              preferFocus
+              onPress={togglePlayPause}
+              onFocus={showAndReset}
+            />
+            <CtrlBtn icon="rotate-cw" label="+10s" onPress={() => skip(10)} onFocus={showAndReset} />
+            <CtrlBtn
+              icon="fast-forward"
+              label={`+${largeStepFwd >= 300 ? "5m" : largeStepFwd >= 180 ? "3m" : largeStepFwd >= 120 ? "2m" : "1m"}`}
+              onPress={handleLargeFwd}
+              onFocus={showAndReset}
+            />
+
+            <View style={styles.actionSpacer} />
+
             <CtrlBtn
               icon="message-square"
-              label="CC"
+              label={PlayerLabels.subtitles}
               onPress={() => { const v = activePanel === "cc" ? null : "cc"; setActivePanel(v); activePanelRef.current = v; showAndReset(); }}
               onFocus={showAndReset}
-              active={activePanel === "cc"}
+              active={activePanel === "cc" || activeText >= 0}
             />
             <CtrlBtn
-              icon="volume-2"
-              label="Audio"
+              icon="music"
+              label={PlayerLabels.audio}
               onPress={() => { const v = activePanel === "audio" ? null : "audio"; setActivePanel(v); activePanelRef.current = v; showAndReset(); }}
               onFocus={showAndReset}
               active={activePanel === "audio"}
             />
+            <CtrlBtn
+              icon="maximize"
+              label={ASPECT_LABELS[aspectMode]}
+              onPress={() => { const v = activePanel === "aspect" ? null : "aspect"; setActivePanel(v); activePanelRef.current = v; showAndReset(); }}
+              onFocus={showAndReset}
+              active={activePanel === "aspect" || aspectMode !== "fit"}
+            />
           </View>
-
-          {activePanel === "aspect" && (
-            <AspectPanel
-              mode={aspectMode}
-              onSelect={(m) => { setAspectMode(m); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; showAndReset(); }}
-              onFocus={showAndReset}
-            />
-          )}
-          {activePanel === "cc" && (
-            <TrackPanel
-              title="Subtitles"
-              tracks={textTracks}
-              selectedId={activeText}
-              showOff
-              onSelect={(id) => { setActiveText(id); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; showAndReset(); }}
-              onFocus={showAndReset}
-            />
-          )}
-          {activePanel === "audio" && (
-            <TrackPanel
-              title="Audio"
-              tracks={audioTracks}
-              selectedId={activeAudio}
-              onSelect={(id) => { setActiveAudio(id); showAndReset(); }}
-              onClose={() => { setActivePanel(null); activePanelRef.current = null; showAndReset(); }}
-              onFocus={showAndReset}
-            />
-          )}
         </View>
       </View>
 
@@ -1213,35 +1279,8 @@ export default function VlcPlayerScreen() {
 }
 
 // ─── CtrlBtn ──────────────────────────────────────────────────────────────
-function VlcNextEpBtn({
-  label, onPress, variant, autoFocus,
-}: { label: string; onPress: () => void; variant: "cancel" | "confirm"; autoFocus?: boolean }) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const isActive = focused || pressed;
-  return (
-    <Pressable
-      style={[
-        styles.nextBtn,
-        variant === "confirm" ? styles.nextBtnConfirm : styles.nextBtnCancel,
-        isActive && (variant === "confirm" ? styles.nextBtnConfirmActive : styles.nextBtnCancelActive),
-      ]}
-      onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      hasTVPreferredFocus={autoFocus}
-    >
-      {variant === "confirm" && (
-        <LinearGradient colors={["#FF8C1A", "#FF5500"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} />
-      )}
-      {variant === "confirm" && <Feather name="skip-forward" size={13} color="#fff" />}
-      <ThemedText style={[styles.nextBtnText, variant === "confirm" && styles.nextBtnTextConfirm]}>{label}</ThemedText>
-    </Pressable>
-  );
-}
-
+// Adapter over the shared player ControlButton, so this screen matches the
+// expo-engine player and the live player exactly. Props unchanged.
 function CtrlBtn({
   icon, label, onPress, onFocus, active, primary, preferFocus,
 }: {
@@ -1253,41 +1292,32 @@ function CtrlBtn({
   primary?: boolean;
   preferFocus?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const hot = focused || pressed || active;
-  if (primary) {
-    return (
-      <Pressable
-        style={[btnStyles.play, hot && btnStyles.playActive]}
-        onPress={onPress}
-        onPressIn={() => setPressed(true)}
-        onPressOut={() => setPressed(false)}
-        onFocus={() => { setFocused(true); onFocus?.(); }}
-        onBlur={() => setFocused(false)}
-        hasTVPreferredFocus={preferFocus}
-      >
-        <LinearGradient
-          colors={hot ? ["rgba(255,140,26,0.55)", "rgba(255,85,0,0.55)"] : ["rgba(255,140,26,0.25)", "rgba(255,85,0,0.25)"]}
-          style={StyleSheet.absoluteFill}
-        />
-        <Feather name={icon} size={36} color="#fff" />
-      </Pressable>
-    );
-  }
   return (
-    <Pressable
-      style={[btnStyles.ctrl, hot && btnStyles.ctrlActive]}
+    <ControlButton
+      icon={icon}
+      label={label}
       onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => { setFocused(true); onFocus?.(); }}
-      onBlur={() => setFocused(false)}
+      onActivity={onFocus}
+      tone={primary ? "primary" : "default"}
+      active={active}
       hasTVPreferredFocus={preferFocus}
-    >
-      <Feather name={icon} size={label ? 14 : 20} color={active ? Colors.dark.accent : "#fff"} />
-      {label ? <ThemedText style={[btnStyles.label, active && { color: Colors.dark.accent }]}>{label}</ThemedText> : null}
-    </Pressable>
+    />
+  );
+}
+
+// ─── UP NEXT buttons ──────────────────────────────────────────────────────
+// Same shared button, with Play Now carrying the primary colour so the default
+// action is obvious while the countdown runs.
+function VlcNextEpBtn({
+  label, onPress, variant, autoFocus,
+}: { label: string; onPress: () => void; variant: "cancel" | "confirm"; autoFocus?: boolean }) {
+  return (
+    <ControlButton
+      text={label}
+      onPress={onPress}
+      tone={variant === "confirm" ? "primary" : "default"}
+      hasTVPreferredFocus={autoFocus}
+    />
   );
 }
 
@@ -1311,6 +1341,15 @@ function SeekBar({
     ? localFrac
     : duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
   const thumbLeft = frac * (barWidth - 12);
+  const selfRef = useRef<any>(null);
+  const [selfTag, setSelfTag] = useState<number | null>(null);
+  const [barFocused, setBarFocused] = useState(false);
+  useEffect(() => {
+    if (selfRef.current && Platform.OS !== "web") {
+      const tag = findNodeHandle(selfRef.current);
+      if (tag) setSelfTag(tag);
+    }
+  }, []);
 
   const pan = useRef(
     PanResponder.create({
@@ -1336,10 +1375,14 @@ function SeekBar({
 
   return (
     <Pressable
+      ref={selfRef}
       style={btnStyles.seekWrap}
       focusable
-      onFocus={() => onFocusChange?.(true)}
-      onBlur={() => onFocusChange?.(false)}
+      // Left/right stay on the bar so they scrub; up/down are the only way off.
+      nextFocusLeft={selfTag ?? undefined}
+      nextFocusRight={selfTag ?? undefined}
+      onFocus={() => { setBarFocused(true); onFocusChange?.(true); onFocus?.(); }}
+      onBlur={() => { setBarFocused(false); onFocusChange?.(false); }}
     >
       <View
         style={btnStyles.seekHit}
@@ -1350,7 +1393,7 @@ function SeekBar({
           setBarWidth(w);
         }}
       >
-        <View style={btnStyles.seekTrack}>
+        <View style={[btnStyles.seekTrack, barFocused && btnStyles.seekTrackFocused]}>
           <View style={[btnStyles.seekFill, { width: frac * barWidth }]} />
         </View>
         <View style={[btnStyles.seekThumb, { left: thumbLeft }]} pointerEvents="none" />
@@ -1360,6 +1403,9 @@ function SeekBar({
 }
 
 // ─── TrackPanel ───────────────────────────────────────────────────────────
+// Adapter over the shared TrackPanel. This screen addresses tracks by id, so
+// the ids are mapped to/from the shared component's track objects here.
+// `selectedId === -1` means off.
 function TrackPanel({
   title, tracks, selectedId, onSelect, onClose, showOff, onFocus,
 }: {
@@ -1371,55 +1417,23 @@ function TrackPanel({
   showOff?: boolean;
   onFocus?: () => void;
 }) {
+  const mapped = tracks.map((t) => ({ id: t.id, label: t.name ?? `Track ${t.id}` }));
+  const selected = mapped.find((t) => t.id === selectedId) ?? null;
+  // -2 is this screen's "nothing chosen yet" value: VLC is playing whatever the
+  // stream defaults to and will not tell us which that is.
+  const unknown = selectedId === -2;
   return (
-    <View style={btnStyles.panel}>
-      <LinearGradient colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]} style={StyleSheet.absoluteFill} />
-      <View style={btnStyles.panelHeader}>
-        <ThemedText style={btnStyles.panelTitle}>{title}</ThemedText>
-        <Pressable style={({ focused, pressed }) => [btnStyles.panelClose, (focused || pressed) && btnStyles.panelCloseActive]} onPress={onClose} onFocus={onFocus}>
-          <Feather name="x" size={14} color="#fff" />
-        </Pressable>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={btnStyles.panelTracks} keyboardShouldPersistTaps="always">
-        {showOff && (
-          <Chip label="Off" selected={selectedId === -1} onPress={() => onSelect(-1)} onFocus={onFocus} preferFocus={selectedId === -1} />
-        )}
-        {tracks.length === 0 && (
-          <View style={btnStyles.chip}><ThemedText style={btnStyles.chipText}>No tracks available</ThemedText></View>
-        )}
-        {tracks.map((t, idx) => (
-          <Chip
-            key={t.id}
-            label={t.name}
-            selected={selectedId === t.id}
-            onPress={() => onSelect(t.id)}
-            onFocus={onFocus}
-            preferFocus={!showOff && idx === 0}
-          />
-        ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-function Chip({ label, selected, onPress, onFocus, preferFocus }: {
-  label: string; selected: boolean; onPress: () => void; onFocus?: () => void; preferFocus?: boolean;
-}) {
-  const [focused, setFocused] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const hot = focused || pressed;
-  return (
-    <Pressable
-      style={[btnStyles.chip, selected && btnStyles.chipSelected, hot && btnStyles.chipFocused]}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      onFocus={() => { setFocused(true); onFocus?.(); }}
-      onBlur={() => setFocused(false)}
-      hasTVPreferredFocus={preferFocus}
-    >
-      <ThemedText style={[btnStyles.chipText, selected && btnStyles.chipTextSelected]}>{label}</ThemedText>
-    </Pressable>
+    <SharedTrackPanel
+      title={title}
+      icon={showOff ? "message-square" : "volume-2"}
+      tracks={mapped}
+      selected={unknown ? null : selected}
+      unknownSelection={unknown}
+      onSelect={(track) => onSelect(track ? track.id : -1)}
+      onClose={onClose}
+      onActivity={onFocus}
+      showOff={showOff}
+    />
   );
 }
 
@@ -1431,26 +1445,24 @@ function AspectPanel({ mode, onSelect, onClose, onFocus }: {
   onFocus?: () => void;
 }) {
   return (
-    <View style={btnStyles.panel}>
-      <LinearGradient colors={["rgba(8,8,8,0.97)", "rgba(8,8,8,0.92)"]} style={StyleSheet.absoluteFill} />
-      <View style={btnStyles.panelHeader}>
-        <ThemedText style={btnStyles.panelTitle}>Aspect Ratio</ThemedText>
-        <Pressable style={({ focused, pressed }) => [btnStyles.panelClose, (focused || pressed) && btnStyles.panelCloseActive]} onPress={onClose} onFocus={onFocus}>
-          <Feather name="x" size={14} color="#fff" />
-        </Pressable>
+    <View style={btnStyles.aspectPanel}>
+      <View style={btnStyles.aspectHead}>
+        <Feather name="maximize" size={15} color={Colors.dark.accent} />
+        <ThemedText style={btnStyles.aspectTitle}>{PlayerLabels.aspect}</ThemedText>
+        <ControlButton icon="x" onPress={onClose} onActivity={onFocus} accessibilityLabel="Close" />
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={btnStyles.panelTracks} keyboardShouldPersistTaps="always">
+      <ControlRow>
         {ASPECT_MODES.map((m, idx) => (
-          <Chip
+          <ControlButton
             key={m}
-            label={ASPECT_LABELS[m]}
-            selected={mode === m}
+            text={ASPECT_LABELS[m]}
             onPress={() => onSelect(m)}
-            onFocus={onFocus}
-            preferFocus={mode === m || idx === 0}
+            onActivity={onFocus}
+            active={mode === m}
+            hasTVPreferredFocus={mode === m || (mode == null && idx === 0)}
           />
         ))}
-      </ScrollView>
+      </ControlRow>
     </View>
   );
 }
@@ -1458,7 +1470,7 @@ function AspectPanel({ mode, onSelect, onClose, onFocus }: {
 // ─── Styles ───────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  videoStage: { backgroundColor: "#000", justifyContent: "center", alignItems: "center" },
+  videoStage: { backgroundColor: "#000", justifyContent: "center", alignItems: "center", overflow: "hidden" },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.4)" },
   overlay: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between" },
   overlayHidden: { opacity: 0 },
@@ -1470,6 +1482,8 @@ const styles = StyleSheet.create({
   bottomSection: { paddingHorizontal: Spacing["2xl"], paddingBottom: Spacing.xl, gap: Spacing.sm },
   largeSkipRow: { flexDirection: "row", alignItems: "center" },
   progressRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  actionRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, flexWrap: "wrap" },
+  actionSpacer: { flex: 1, minWidth: Spacing.md },
   timeText: { color: "rgba(255,255,255,0.8)", fontSize: 12, minWidth: 44 },
   trackBtnRow: { flexDirection: "row", gap: Spacing.md, justifyContent: "center" },
   toast: {
@@ -1532,6 +1546,19 @@ const styles = StyleSheet.create({
 });
 
 const btnStyles = StyleSheet.create({
+  seekTrackFocused: { height: 8, backgroundColor: "rgba(255,255,255,0.38)" },
+  aspectPanel: {
+    backgroundColor: "rgba(12,12,19,0.96)",
+    borderColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    gap: Spacing.md,
+    maxWidth: 520,
+    width: "100%",
+  },
+  aspectHead: { flexDirection: "row", alignItems: "center", gap: 10 },
+  aspectTitle: { flex: 1, color: "#fff", fontSize: 14, fontWeight: "700" },
   ctrl: { minWidth: 52, height: 52, paddingHorizontal: Spacing.sm, borderRadius: BorderRadius.full, backgroundColor: "rgba(255,255,255,0.1)", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center", gap: 2 },
   ctrlActive: {
     backgroundColor: "rgba(255,102,0,0.45)",

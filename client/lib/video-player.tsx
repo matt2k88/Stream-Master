@@ -194,7 +194,16 @@ export class VideoPlayer {
   /** @internal */ _muted: boolean = false;
   /** @internal */ _loop: boolean = false;
   /** @internal */ _audioTrackId: number | undefined;
-  /** @internal */ _textTrackId: number | undefined;
+  // Starts at -1 (explicitly off) rather than undefined. Left undefined, the
+  // VLCPlayer prop is undefined too and libVLC picks its own default — which
+  // for a lot of files means switching subtitles on. The UI meanwhile had no
+  // way to know, so the subtitle panel opened on "Off" while subtitles were
+  // visibly playing, and only turning them on and off again resynced the two.
+  /** @internal */ _textTrackId: number = -1;
+  // Last track lists reported by the engine, so the getters below can answer
+  // "what is actually selected" instead of returning null.
+  /** @internal */ _availableSubtitles: SubtitleTrack[] = [];
+  /** @internal */ _availableAudio: AudioTrack[] = [];
   /** @internal */ _currentTime: number = 0;
   /** @internal */ _pendingSeekFrac: number | null = null;
   /** @internal — resume-seek queued before VLC is actually seekable (seconds) */
@@ -260,7 +269,8 @@ export class VideoPlayer {
     this.rerender();
   }
   get subtitleTrack(): SubtitleTrack | null {
-    return null; // expo-video also doesn't expose a robust getter; consumer tracks selection in state
+    if (this._textTrackId < 0) return null;
+    return this._availableSubtitles.find((t) => t.id === this._textTrackId) ?? null;
   }
 
   set audioTrack(t: AudioTrack | null) {
@@ -268,7 +278,12 @@ export class VideoPlayer {
     this.rerender();
   }
   get audioTrack(): AudioTrack | null {
-    return null;
+    // Undefined means nothing has been chosen and the engine is playing
+    // whatever the stream defaults to. Report null rather than guessing at a
+    // track: the panel shows that as "Default", which is true, instead of
+    // naming a track that may not be the one you are hearing.
+    if (this._audioTrackId == null) return null;
+    return this._availableAudio.find((t) => t.id === this._audioTrackId) ?? null;
   }
 
   // No-op for compat with PlayerScreen (which sets this on expo-video).
@@ -466,6 +481,10 @@ export class VideoPlayer {
       id: typeof t.id === "number" ? t.id : Number(t.id),
       label: t.name || `Subtitle ${t.id}`,
     }));
+    // Keep the lists so subtitleTrack/audioTrack can resolve an id back to a
+    // track. Without them the getters cannot name what is playing.
+    this._availableAudio = audio;
+    this._availableSubtitles = subs;
     if (audio.length) {
       this._emit("availableAudioTracksChange", { availableAudioTracks: audio });
     }

@@ -36,6 +36,42 @@ export function aspectModeToContentFit(mode: AspectMode): "contain" | "cover" | 
   }
 }
 
+/** The aspect-ratio string to hand libVLC, or null to leave the picture alone.
+ *
+ *  IMPORTANT: the VLC Android view does NOT support `resizeMode` — that prop
+ *  exists only in the library's JS propTypes and is dropped on the way to
+ *  native (ReactVlcPlayerViewManager declares `videoAspectRatio` and
+ *  `autoAspectRatio`, nothing else). Passing contentFit values like "fill" or
+ *  "cover" to VLC therefore did nothing at all, which is why Stretch / Zoom /
+ *  16:9 / 4:3 only ever resized the surface box while the picture kept its own
+ *  shape inside it.
+ *
+ *  libVLC also ignores setAspectRatio entirely while autoAspectRatio is true,
+ *  so every mode other than "fit" must turn that off.
+ *
+ *  - fit    → null  (autoAspectRatio does the letterboxing)
+ *  - fill   → the SCREEN's ratio, so the picture stretches edge to edge
+ *  - 16:9   → "16:9"
+ *  - 4:3    → "4:3"
+ *  - zoom   → null  (handled by over-sizing the surface, see aspectInnerStyle,
+ *                    which crops without distorting)
+ */
+export function aspectModeToVlcRatio(
+  mode: AspectMode,
+  screenW: number,
+  screenH: number,
+): string | null {
+  switch (mode) {
+    case "16:9": return "16:9";
+    case "4:3":  return "4:3";
+    case "fill":
+      if (!screenW || !screenH) return null;
+      return `${Math.round(screenW)}:${Math.round(screenH)}`;
+    default:
+      return null;
+  }
+}
+
 /** If the mode forces a specific picture aspect ratio, return the numeric
  *  ratio (width / height). Otherwise null — the player fills its natural
  *  parent box. */
@@ -55,7 +91,20 @@ export function aspectInnerStyle(
   mode: AspectMode,
   width: number,
   height: number,
+  /** Natural picture size, when the engine has reported it. Only used by zoom. */
+  videoW?: number,
+  videoH?: number,
 ): ViewStyle {
+  // Zoom = fill the screen and crop the overflow, WITHOUT distorting. That
+  // needs the picture's real shape: scale it up until both axes cover the
+  // screen, then let the stage clip what hangs over. Falling back to a plain
+  // fill when the size is not known yet is better than stretching.
+  if (mode === "zoom") {
+    if (!videoW || !videoH || !width || !height) return StyleSheet.absoluteFillObject;
+    const scale = Math.max(width / videoW, height / videoH);
+    return { width: videoW * scale, height: videoH * scale };
+  }
+
   const ratio = aspectModeRatio(mode);
   if (ratio == null || !width || !height) {
     return StyleSheet.absoluteFillObject;

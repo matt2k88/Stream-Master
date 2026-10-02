@@ -3,6 +3,7 @@ import { StyleSheet, AppState, AppStateStatus } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import { consumeReplayIntroFlag } from "@/lib/intro-flag";
 import { markIntroDone, resetIntroGate } from "@/lib/intro-gate";
+import { usePlayerFonts } from "@/lib/player-fonts";
 import { NavigationContainer } from "@react-navigation/native";
 import { navigationRef } from "@/lib/navigation-ref";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -47,6 +48,10 @@ function ThemedRootNavigator() {
 export default function App() {
   // Keep the device awake the whole time the app is in the foreground.
   useKeepAwake();
+
+  // Player typeface. Intentionally not gated on — the app renders immediately
+  // in the system font and re-renders when the faces land.
+  usePlayerFonts();
 
   // Force landscape throughout the entire app.
   useEffect(() => {
