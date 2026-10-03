@@ -13,6 +13,7 @@ import { getApiUrl } from "@/lib/query-client";
 import { toCinemaMovie, type CinemaMovie } from "@/lib/cinema";
 import { useIntroDone } from "@/lib/intro-gate";
 import { warmSearchIndex } from "@/lib/search";
+import { clearEpgCache } from "@/lib/epg-cache";
 export interface StreamRating {
   certification: string;
   age_int: number;
@@ -152,6 +153,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (syncRunning.current) return;
     syncRunning.current = true;
     setIsSyncing(true);
+    // Listings belong to the previous catalogue; drop them with it.
+    clearEpgCache();
     setSyncProgress({ live: "waiting", movies: "waiting", series: "waiting" });
 
     let _liveStreams: LiveStream[] = [];

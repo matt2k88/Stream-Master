@@ -22,6 +22,8 @@ export type ControlButtonProps = {
   hasTVPreferredFocus?: boolean;
   accessibilityLabel?: string;
   style?: ViewStyle;
+  /** "sm" is for secondary rows where full-size buttons dominate the screen. */
+  size?: "md" | "sm";
   /** Lets a screen grab this button's node so it can hand focus back to it
    *  (see requestTvFocus — needed when a panel closes and takes focus with it). */
   viewRef?: React.Ref<View>;
@@ -48,6 +50,7 @@ export function ControlButton({
   hasTVPreferredFocus,
   accessibilityLabel,
   style,
+  size = "md",
   viewRef,
 }: ControlButtonProps) {
   const [focused, setFocused] = useState(false);
@@ -69,7 +72,10 @@ export function ControlButton({
         : PlayerUI.rest;
 
   const Icon = iconSet === "material" ? MaterialCommunityIcons : Feather;
-  const iconSize = tone === "primary" ? PlayerUI.primaryIconSize : PlayerUI.iconSize;
+  const compact = size === "sm";
+  const iconSize = compact
+    ? PlayerUI.iconSize - 3
+    : tone === "primary" ? PlayerUI.primaryIconSize : PlayerUI.iconSize;
 
   return (
     <Pressable
@@ -92,6 +98,7 @@ export function ControlButton({
       accessibilityLabel={accessibilityLabel ?? label ?? text ?? icon}
       style={[
         styles.base,
+        compact && styles.compact,
         {
           backgroundColor: palette.bg,
           borderColor: palette.border,
@@ -99,7 +106,7 @@ export function ControlButton({
           opacity: disabled ? 0.35 : 1,
           transform: [{ scale: lit ? 1.04 : 1 }],
         },
-        tone === "primary" && styles.primary,
+        tone === "primary" && !compact && styles.primary,
         style,
       ]}
     >
@@ -110,7 +117,7 @@ export function ControlButton({
         </Text>
       ) : null}
       {label ? (
-        <Text style={[styles.label, { color: palette.fg }]} numberOfLines={1}>
+        <Text style={[styles.label, compact && styles.labelSm, { color: palette.fg }]} numberOfLines={1}>
           {label}
         </Text>
       ) : null}
@@ -140,10 +147,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+  compact: {
+    height: 38,
+    minWidth: 38,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
   primary: {
     minWidth: 64,
     paddingHorizontal: PlayerUI.btnPadX + 4,
   },
+  labelSm: { fontSize: PlayerUI.label.size - 1 },
   label: {
     fontFamily: PlayerUI.font.ui,
     fontSize: PlayerUI.label.size,

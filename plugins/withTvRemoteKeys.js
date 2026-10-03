@@ -16,10 +16,14 @@
 
 const { withMainActivity } = require("@expo/config-plugins");
 
-const MARKER = "TvRemoteKeyBus";
+const BEGIN = "// @ultracast-tv-remote begin";
+const END = "// @ultracast-tv-remote end";
 
 const OVERRIDE = `
   override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+    if (expo.modules.tvremote.TvRemoteKeyBus.dispatchSelect(event)) {
+      return true
+    }
     if (event.action == android.view.KeyEvent.ACTION_DOWN &&
         expo.modules.tvremote.TvRemoteKeyBus.dispatch(event.keyCode)) {
       return true
@@ -33,10 +37,23 @@ const withTvRemoteKeys = (config) =>
     if (cfg.modResults.language !== "kt") {
       throw new Error("withTvRemoteKeys expects a Kotlin MainActivity");
     }
-    if (cfg.modResults.contents.includes(MARKER)) return cfg;
-
-    // Insert before the final closing brace of the class.
-    const src = cfg.modResults.contents;
+    // Always REPLACE any previously injected block rather than skipping when
+    // one exists. The old guard ("if TvRemoteKeyBus is already present, do
+    // nothing") meant every later change to this plugin was silently ignored —
+    // the generated MainActivity kept the first version forever, so new key
+    // handling compiled into the app but was never called.
+    let src = cfg.modResults.contents;
+    const begin = src.indexOf(BEGIN);
+    const end = src.indexOf(END);
+    if (begin !== -1 && end !== -1) {
+      src = src.slice(0, begin) + src.slice(end + END.length);
+    } else {
+      // Remove a legacy, unmarked block from before sentinels existed.
+      src = src.replace(
+        /\n *override fun dispatchKeyEvent\(event: android\.view\.KeyEvent\): Boolean \{[\s\S]*?\n *\}\n/,
+        "\n",
+      );
+    }
     const lastBrace = src.lastIndexOf("}");
     if (lastBrace === -1) {
       throw new Error("withTvRemoteKeys could not find the end of MainActivity");

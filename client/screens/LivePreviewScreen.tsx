@@ -3,6 +3,9 @@ import { ControlButton } from "@/components/player/ControlButton";
 import { EpgPanel } from "@/components/player/EpgPanel";
 import { PlayerUI } from "@/components/player/playerTheme";
 import { PlayerLabels } from "@/components/player/playerLabels";
+import { parseChannelName } from "@/lib/channel-name";
+import { requestEpg, getNowPlaying, getProgress, useEpgCacheVersion } from "@/lib/epg-cache";
+import { useTvLongPress, setLongPressAction, clearLongPressAction } from "@/lib/tv-long-press";
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
@@ -61,7 +64,7 @@ function formatEpgTime(timestamp: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-function EpgRow({ listing, isNow }: { listing: EpgListing; isNow: boolean }) {
+function EpgRow({ listing, isNow, isNext }: { listing: EpgListing; isNow: boolean; isNext?: boolean }) {
   const title = decodeEpgString(listing.title);
   const desc = decodeEpgString(listing.description);
   const startTime = formatEpgTime(listing.start_timestamp);
@@ -93,9 +96,9 @@ function EpgRow({ listing, isNow }: { listing: EpgListing; isNow: boolean }) {
             <View style={styles.nowBadge}>
               <ThemedText style={styles.nowBadgeText}>NOW</ThemedText>
             </View>
-          ) : (
+          ) : isNext ? (
             <ThemedText style={styles.upNextLabel}>UP NEXT</ThemedText>
-          )}
+          ) : null}
           {startTime && endTime ? (
             <ThemedText style={styles.epgTime}>{startTime} — {endTime}</ThemedText>
           ) : null}
@@ -116,14 +119,19 @@ function ChannelRow({
   isSelected,
   onPress,
   onFocusItem,
+  onLongPress,
   hasTVPreferredFocus,
 }: {
   item: LiveStream;
   isSelected: boolean;
   onPress: () => void;
   onFocusItem?: (item: LiveStream) => void;
+  onLongPress?: (item: LiveStream) => void;
   hasTVPreferredFocus?: boolean;
 }) {
+  // Stable identity so blur clears exactly what focus registered.
+  const longPressRef = useRef(() => {});
+  longPressRef.current = () => onLongPress?.(item);
   const [focused, setFocused] = useState(false);
   const isActive = focused || isSelected;
 
@@ -131,8 +139,15 @@ function ChannelRow({
     <Pressable
       style={[styles.channelRow, isActive && styles.channelRowActive]}
       onPress={onPress}
-      onFocus={() => { setFocused(true); onFocusItem?.(item); }}
-      onBlur={() => setFocused(false)}
+      onFocus={() => {
+        setFocused(true);
+        onFocusItem?.(item);
+        setLongPressAction(longPressRef.current);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        clearLongPressAction(longPressRef.current);
+      }}
       onHoverIn={() => onFocusItem?.(item)}
       hasTVPreferredFocus={hasTVPreferredFocus}
     >
@@ -570,6 +585,23 @@ export default function LivePreviewScreen() {
     showToast(wasAdded ? "Added to Favourites" : "Removed from Favourites");
   }, [isFavourited, toggleFavourite, selectedId, selectedName, selectedIcon, showToast]);
 
+  // Hold OK on a channel in the list to favourite it, same as on the content
+  // grids. A remote cannot produce a long PRESS, so the native bridge reports a
+  // held OK and whichever row has focus handles it.
+  useTvLongPress();
+  const toggleFavouriteFor = useCallback(async (channel: LiveStream) => {
+    const wasAdded = !isFavourite(channel.stream_id, "live");
+    await toggleFavourite({
+      streamId: channel.stream_id,
+      streamType: "live",
+      streamName: channel.name,
+      streamIcon: channel.stream_icon ?? null,
+    });
+    showToast(wasAdded ? "Added to Favourites" : "Removed from Favourites");
+  }, [isFavourite, toggleFavourite, showToast]);
+  const toggleFavouriteForRef = useRef(toggleFavouriteFor);
+  useEffect(() => { toggleFavouriteForRef.current = toggleFavouriteFor; }, [toggleFavouriteFor]);
+
   // (PlayStatus / retry state declared above useFocusEffect.)
   useEffect(() => {
     armLoadingTimeout();
@@ -626,8 +658,18 @@ export default function LivePreviewScreen() {
   const atFirstChannel = !hasChannelList || channelIdx <= 0;
   const atLastChannel = !hasChannelList || channelIdx >= categoryChannels.length - 1;
 
-  // NOW / NEXT programmes for the fullscreen info bar, derived from the
-  // already-fetched short EPG for the playing channel.
+  // What is on the channel that is actually PLAYING. Separate from epgListings,
+  // which follows previewedId as the user moves through the channel list — so
+  // the panel beside the picture used to change while hovering, describing a
+  // channel that was not on screen.
+  const epgVersion = useEpgCacheVersion();
+  useEffect(() => { requestEpg(selectedId); }, [selectedId]);
+  void epgVersion;
+  const playingNow = getNowPlaying(selectedId);
+  const playingProgress = getProgress(selectedId);
+
+  // NOW / NEXT for the fullscreen info bar, from the previewed channel's EPG
+  // (in fullscreen the preview is pinned to the playing channel, so they agree).
   const nowProg = React.useMemo<EpgListing | null>(() => {
     if (epgListings.length === 0) return null;
     const i = epgListings.findIndex((l) => l.now_playing === 1);
@@ -741,6 +783,12 @@ export default function LivePreviewScreen() {
     const id = setInterval(() => setProgressTick((n) => n + 1), 60000);
     return () => clearInterval(id);
   }, [isFullscreen]);
+
+  // Which listing is actually on now, so exactly one row can be "up next".
+  const nowIndex = useMemo(() => {
+    const flagged = epgListings.findIndex((l) => l.now_playing === 1);
+    return flagged >= 0 ? flagged : 0;
+  }, [epgListings]);
 
   const progressPct = useMemo(() => {
     void progressTick;
@@ -1053,6 +1101,7 @@ export default function LivePreviewScreen() {
                   isSelected={item.stream_id === selectedId}
                   onPress={() => handleChannelRowPress(item)}
                   onFocusItem={handleChannelFocus}
+              onLongPress={(ch) => { void toggleFavouriteForRef.current(ch); }}
                   hasTVPreferredFocus={item.stream_id === initialFocusStreamRef.current}
                 />
               )}
@@ -1160,14 +1209,77 @@ export default function LivePreviewScreen() {
 
           {!isFullscreen && (
             <>
-              <FullScreenButton onPress={handleFullScreen} autoFocus />
+              <View style={styles.pvMeta}>
+                <View style={styles.pvMetaRow}>
+                  {selectedIcon ? (
+                    <View style={styles.pvLogoWrap}>
+                      <Image source={{ uri: selectedIcon }} style={styles.pvLogo} contentFit="contain" />
+                    </View>
+                  ) : null}
+                  <View style={styles.pvIdentity}>
+                    <View style={styles.pvTitleRow}>
+                      <ThemedText style={styles.pvTitle} numberOfLines={1}>
+                        {parseChannelName(selectedName).title}
+                      </ThemedText>
+                      {parseChannelName(selectedName).badges.map((b) => (
+                        <View key={b} style={styles.pvBadge}>
+                          <ThemedText style={styles.pvBadgeText}>{b}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                    <ThemedText style={styles.pvSub} numberOfLines={1}>
+                      {playingNow
+                        ? `${decodeEpgString(playingNow.title) || "No programme info"}${
+                            playingNow.start_timestamp
+                              ? `  ·  ${formatEpgTime(playingNow.start_timestamp)} - ${formatEpgTime(playingNow.stop_timestamp)}`
+                              : ""
+                          }`
+                        : "No programme info"}
+                    </ThemedText>
+                  </View>
+                </View>
+
+                <View style={styles.pvProgressTrack}>
+                  <View style={[styles.pvProgressFill, { width: `${playingProgress ?? 0}%` }]} />
+                </View>
+
+                <View style={styles.pvBtnRow}>
+                  <ControlButton
+                    icon="maximize-2"
+                    label="Full Screen"
+                    size="sm"
+                    tone="primary"
+                    hasTVPreferredFocus
+                    onPress={handleFullScreen}
+                  />
+                  <ControlButton
+                    icon="star"
+                    size="sm"
+                    active={isFavourited}
+                    onPress={handleToggleFavourite}
+                    accessibilityLabel="Favourite"
+                  />
+                  <ControlButton
+                    icon="flag"
+                    size="sm"
+                    onPress={() => setShowReport(true)}
+                    accessibilityLabel="Report"
+                  />
+                </View>
+              </View>
+
+            {/* Guide — last child of the wrapping row, with width 100%, so it
+                breaks onto its own line and spans the full width beneath the
+                picture and the channel info. It sits AFTER playerWrap rather than
+                around it: changing the VideoView's position in the tree remounts
+                the surface and reloads the stream. */}
+          {!isFullscreen ? (
+            <View style={[styles.guideCol, isPortrait && styles.guideColPortrait]}>
               <View style={styles.epgDivider}>
                 <Feather name="calendar" size={11} color={Colors.dark.accent} />
                 <ThemedText style={styles.epgHeaderText} numberOfLines={1}>
                   Programme Guide for{" "}
-                  <ThemedText style={styles.epgHeaderChannel}>
-                    {previewedName}
-                  </ThemedText>
+                  <ThemedText style={styles.epgHeaderChannel}>{previewedName}</ThemedText>
                 </ThemedText>
               </View>
               <View style={styles.epgPanel}>
@@ -1188,14 +1300,20 @@ export default function LivePreviewScreen() {
                         key={listing.id || String(idx)}
                         listing={listing}
                         isNow={listing.now_playing === 1 || idx === 0}
+                        // Only the programme immediately after the current one is
+                        // "up next"; everything later is simply a later listing.
+                        isNext={idx === nowIndex + 1}
                       />
                     ))}
                   </ScrollView>
                 )}
               </View>
+            </View>
+          ) : null}
             </>
           )}
         </View>
+
       </View>
 
       {/* Fullscreen tap target + controls — siblings on top of the
@@ -1786,15 +1904,28 @@ const styles = StyleSheet.create({
   // ── Right panel ───────────────────────────────────────────────────────────
   rightPanel: {
     flex: 1,
-    flexDirection: "column",
-    gap: Spacing.sm,
+    // Deliberately a WRAPPING ROW, not a column. The picture and the channel
+    // info sit side by side; the guide is given width 100% so it wraps onto the
+    // next line and spans the full width underneath.
+    //
+    // It is done this way because the VideoView must keep its exact position in
+    // the tree — wrapping it in a row container to lay it out would tear down
+    // the SurfaceView and reload the stream. Siblings and styles only.
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "flex-start",
+    // Pack the two lines to the top. "stretch" shared the leftover height
+    // between them, which opened a band of empty space under the picture before
+    // the guide started.
+    alignContent: "flex-start",
+    gap: Spacing.md,
     paddingRight: Spacing.md,
   },
 
   playerWrap: {
+    width: "58%",
     aspectRatio: 16 / 9,
-    maxHeight: "45%",
-    alignSelf: "center",
+    alignSelf: "flex-start",
     borderRadius: BorderRadius.md,
     overflow: "hidden",
     backgroundColor: "#000",
@@ -2079,6 +2210,46 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0, left: 0, right: 0,
   },
+  pvMeta: { flex: 1, minWidth: 0, gap: Spacing.md, alignSelf: "stretch", justifyContent: "center" },
+  // Logo above the name, both centred in the column beside the picture — the
+  // block then reads as one unit and fills the width it has.
+  pvMetaRow: { flexDirection: "column", alignItems: "center", gap: Spacing.md },
+  pvLogoWrap: {
+    width: 88, height: 88, borderRadius: BorderRadius.md,
+    backgroundColor: "rgba(255,255,255,0.06)", alignItems: "center", justifyContent: "center", overflow: "hidden",
+  },
+  pvLogo: { width: "100%", height: "100%" },
+  pvIdentity: { alignSelf: "stretch", minWidth: 0, gap: 4, alignItems: "center" },
+  pvTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.sm, maxWidth: "100%" },
+  // Single line, always. A long channel name that wrapped pushed the whole
+  // column — programme, progress, buttons — down the screen.
+  pvTitle: { fontSize: 18, fontFamily: PlayerUI.font.display, letterSpacing: -0.2, color: "#fff", flexShrink: 1, textAlign: "center" },
+  pvBadge: {
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  pvBadgeText: { fontSize: 10, fontFamily: PlayerUI.font.uiBold, color: "rgba(255,255,255,0.7)", letterSpacing: 0.4 },
+  pvSub: { fontSize: 12, fontFamily: PlayerUI.font.uiRegular, color: "rgba(255,255,255,0.72)", textAlign: "center" },
+  pvProgressTrack: { height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.18)", overflow: "hidden" },
+  pvProgressFill: { height: "100%", borderRadius: 2, backgroundColor: Colors.dark.accent },
+  // No wrap: if it does not fit it should compress, not stack. Stacking pushed
+  // everything below it down the screen.
+  pvBtnRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Spacing.xs, flexWrap: "nowrap" },
+  pvBtnSpacer: { flex: 1, minWidth: Spacing.sm },
+  guideCol: {
+    // flexBasis — NOT flex/width — is what decides line placement in a wrapping
+    // row. `flex: 1` sets basis 0%, which told the layout "I fit on the current
+    // line", so the guide sat to the RIGHT of the picture instead of wrapping
+    // underneath it. A 100% basis cannot share a line with anything, so it
+    // always breaks onto its own full-width row.
+    flexBasis: "100%",
+    flexGrow: 1,
+    flexShrink: 0,
+    alignSelf: "stretch",
+    minHeight: 240,
+    gap: Spacing.sm,
+  },
+  guideColPortrait: { paddingLeft: 0, paddingTop: Spacing.md },
   fsTopSpacer: { flex: 1 },
   fsBar: {
     backgroundColor: "rgba(10,10,14,0.92)",

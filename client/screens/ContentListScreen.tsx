@@ -38,6 +38,8 @@ import { useUISettings } from "@/contexts/UISettingsContext";
 import { useProfile } from "@/contexts/ProfileContext";
 import GuestPrompt from "@/components/GuestPrompt";
 import { normaliseSearch, normalisedName } from "@/lib/search";
+import { useTvLongPress, setLongPressAction, clearLongPressAction } from "@/lib/tv-long-press";
+import { LiveChannelRow, LIVE_ROW_HEIGHT } from "@/components/LiveChannelRow";
 import { computeSuggestions } from "@/lib/suggestions";
 import type { RecentlyWatched } from "@/components/RecentlyWatchedCard";
 import { CINEMA_CATEGORY_ID, cinemaHistoryId } from "@/lib/cinema";
@@ -608,6 +610,13 @@ const ContentCard = React.memo(function ContentCard({
   const [pressed, setPressed] = useState(false);
   const isActive = focused || pressed;
   const longFiredRef = useRef(false);
+  // Stable identity for the focused-item registry: blur must clear exactly what
+  // focus registered, never a newer item's action.
+  const longPressActionRef = useRef(() => {});
+  longPressActionRef.current = () => {
+    if (editMode) return;
+    onLongPress(item);
+  };
   const pressInTimeRef = useRef(0);
   const { scaleFont } = useUISettings();
 
@@ -666,8 +675,16 @@ const ContentCard = React.memo(function ContentCard({
           onLongPress(item);
         }
       }}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      onFocus={() => {
+        setFocused(true);
+        // A remote cannot produce a long PRESS, so the native bridge reports a
+        // held OK instead and whichever item is focused handles it.
+        setLongPressAction(longPressActionRef.current);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        clearLongPressAction(longPressActionRef.current);
+      }}
     >
       <View style={[styles.cardThumb, { width: cardWidth, height: imgH }]}>
         {imageUrl ? (
@@ -1034,12 +1051,21 @@ export default function ContentListScreen() {
   const trimmedQuery = normaliseSearch(submittedQuery);
   const isSearching = trimmedQuery.length > 0;
 
-  const numColumns = type === "live"
-    ? Math.max(2, Math.floor(contentWidth / 150))
-    : Math.max(2, Math.floor(contentWidth / 140));
+  // Live channels browse as rows (logo + name + what's on), which want far
+  // fewer, much wider columns than the poster grids used for movies and series.
+  //
+  // Manage mode is the exception: it keeps the old cards, because they carry the
+  // add-to-favourites / add-to-group picker. Those cards need the GRID geometry —
+  // handing them row dimensions squashed them to 78px tall and lost the buttons.
+  const liveAsRows = type === "live" && !(editMode && !isSearching);
+  const numColumns = liveAsRows
+    ? Math.max(1, Math.min(2, Math.floor(contentWidth / 360)))
+    : type === "live"
+      ? Math.max(2, Math.floor(contentWidth / 150))
+      : Math.max(2, Math.floor(contentWidth / 140));
   const cardWidth = Math.floor((contentWidth - CONTENT_PAD * 2 - gap * (numColumns - 1)) / numColumns);
   const cardImgH = Math.round(cardWidth * getImageRatio(type));
-  const cardTotalH = cardImgH + 52;
+  const cardTotalH = liveAsRows ? LIVE_ROW_HEIGHT : cardImgH + 52;
 
   // Categories for the sidebar
   const categories: SidebarCat[] = useMemo(() => {
@@ -1393,6 +1419,9 @@ export default function ContentListScreen() {
   // remainder fills in before they can scroll past it.
   const PROGRESSIVE_STEPS = [16, 60, 200, 600, 2000];
   const [renderLimit, setRenderLimit] = useState(PROGRESSIVE_STEPS[0]);
+
+  // One subscription for the whole screen; the focused card supplies the action.
+  useTvLongPress();
 
   // Scroll to top whenever the selected category changes (without remounting FlatList)
   useEffect(() => {
@@ -1753,6 +1782,21 @@ export default function ContentListScreen() {
           : String(item.num);
       const showPicker =
         editMode && !isSearching && editAction === "favourite" && pickerOpenId === itemId;
+      // Edit mode keeps the card, which owns the Manage picker UI — rows do not
+      // reimplement it. Uses the same `liveAsRows` decision as the geometry
+      // above, so the item and the box it is given always agree.
+      if (liveAsRows) {
+        return (
+          <LiveChannelRow
+            item={item as LiveStream}
+            width={cardWidth}
+            isFavourited={!isSearching && favIdSet.has(sid)}
+            onPress={onCardPress as (i: LiveStream) => void}
+            onLongPress={handleLongPress as (i: LiveStream) => void}
+          />
+        );
+      }
+
       return (
         <ContentCard
           item={item}
@@ -1774,6 +1818,7 @@ export default function ContentListScreen() {
     },
     [
       type, onCardPress, handleLongPress, isSearching, favIdSet,
+      liveAsRows,
       cardWidth, cardTotalH, editMode, editAction, getByStreamId, getBySeriesId, getSeriesProgress,
       pickerOpenId, buildPickerActions, closePicker,
     ],

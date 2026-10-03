@@ -35,6 +35,82 @@ object TvRemoteKeyBus {
     KeyEvent.KEYCODE_DPAD_DOWN,
   )
 
+  // A held OK/select button. Android does not turn this into a touch, so
+  // React Native's onLongPress (which rides the touch responder) can never fire
+  // from a remote — which is why "hold to favourite" worked on a phone and in
+  // BlueStacks but not on a Fire TV.
+  //
+  // Key repeat starts after ~400ms and then repeats; firing on repeatCount == 1
+  // gives a natural "hold" feel. The matching key-up is then swallowed so the
+  // normal click does not ALSO open the item.
+  private val SELECT_KEYS = setOf(
+    KeyEvent.KEYCODE_DPAD_CENTER,
+    KeyEvent.KEYCODE_ENTER,
+    KeyEvent.KEYCODE_NUMPAD_ENTER,
+    KeyEvent.KEYCODE_BUTTON_A,
+  )
+  private var swallowNextSelectUp = false
+  private var selectDownAt = 0L
+  private const val LONG_PRESS_MS = 600L
+
+  /**
+   * Handles select-key holds. Returns true when the event was consumed.
+   *
+   * Measures how long the button was held rather than waiting for key REPEATS.
+   * Repeat behaviour varies by remote — some Fire TV and HDMI-CEC remotes send a
+   * single ACTION_DOWN and nothing else until ACTION_UP — so a repeat-based
+   * check silently never fires on those. Timing the press works everywhere.
+   */
+  fun dispatchSelect(event: KeyEvent): Boolean {
+    if (event.keyCode !in SELECT_KEYS) return false
+
+    when (event.action) {
+      KeyEvent.ACTION_DOWN -> {
+        if (event.repeatCount == 0) {
+          selectDownAt = event.eventTime
+          swallowNextSelectUp = false
+        } else if (
+          !swallowNextSelectUp &&
+          selectDownAt > 0L &&
+          event.eventTime - selectDownAt >= LONG_PRESS_MS
+        ) {
+          // Repeats are available on this remote: fire as soon as the threshold
+          // passes, so the hold feels responsive rather than waiting for release.
+          val current = listener
+          if (current != null) {
+            swallowNextSelectUp = true
+            Log.d(TAG, "longSelect (held " + (event.eventTime - selectDownAt) + "ms)")
+            current("longSelect")
+            return true
+          }
+        }
+        return false
+      }
+
+      KeyEvent.ACTION_UP -> {
+        val held = if (selectDownAt > 0L) event.eventTime - selectDownAt else 0L
+        selectDownAt = 0L
+        if (swallowNextSelectUp) {
+          swallowNextSelectUp = false
+          Log.d(TAG, "select up swallowed after long press")
+          return true
+        }
+        // No repeats came through, but the button was clearly held: fire now and
+        // consume the release so the item does not also open.
+        if (held >= LONG_PRESS_MS) {
+          val current = listener
+          if (current != null) {
+            Log.d(TAG, "longSelect on release (held " + held + "ms)")
+            current("longSelect")
+            return true
+          }
+        }
+        return false
+      }
+    }
+    return false
+  }
+
   /** Returns true when the key was consumed, so the system does not also act on it. */
   fun dispatch(keyCode: Int): Boolean {
     val eventType = when (keyCode) {
